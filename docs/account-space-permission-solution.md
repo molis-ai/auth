@@ -1,5 +1,8 @@
 # GoalBoard 账号、空间与权限方案
 
+> 历史宏观方案。2026-09-14 起实施以 [Auth V1 决策与开发计划](auth-v1-plan.md) 为准。
+> 主要修订：Auth 不保存 Project Catalog；Team Space 唯一 Owner；V1 无项目转移和账号永久注销；加入 Google/Apple、邮件邀请/验证/找回密码、SDK 和管理页面。
+
 状态：基于当前讨论形成的新一版宏观方案，用于团队评审和后续模块详细设计。
 
 ## 1. 方案结论

@@ -1,0 +1,3 @@
+ALTER TABLE auth_space
+    ADD COLUMN description VARCHAR(200) NOT NULL DEFAULT '',
+    ADD COLUMN avatar_data MEDIUMTEXT NULL;

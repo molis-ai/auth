@@ -31,3 +31,12 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local credentials and future web builds ###
+.env
+.env.*
+!.env.example
+node_modules/
+web/dist/
+sdk/browser/dist/
+sdk/browser/*.tgz

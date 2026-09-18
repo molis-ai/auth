@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>Auth SDK 本机联调</title><link rel="stylesheet" href="/demo.css"><script type="module" src="/demo.js"></script></head>
+<body><main>
+<p class="eyebrow">MOLIS AUTH · LOCAL SDK DEMO</p>
+<h1>产品自己的登录页面</h1>
+<p>本机 SDK 联调工具。请求直接交给独立 Auth；不显示或持久化会话 Token。</p>
+<form id="password-form">
+<label for="email">邮箱</label><input id="email" name="email" type="email" autocomplete="username" required>
+<label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">使用本页登录</button>
+</form>
+<section class="actions" aria-label="登录和会话操作">
+<button id="hosted">使用 Auth 登录页</button><button id="restore">通过 Auth 恢复登录</button>
+<button id="me">读取当前身份</button><button id="logout">退出当前产品</button><button id="logout-all">全部退出</button>
+</section>
+<p id="status" role="status" aria-live="polite">正在加载 SDK…</p>
+<pre id="identity" aria-label="身份信息"></pre>
+<p class="note">刷新页面会清空内存 Token。主动退出后暂停自动恢复，再次登录须点击登录入口。本页不实现业务权限校验。</p>
+</main></body></html>
