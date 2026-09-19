@@ -1,0 +1,31 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "molis-auth-production",
+  "main": "../../src/index.ts",
+  "compatibility_date": "2026-09-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../../../web/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "vars": {
+    "AUTH_ORIGIN": "https://molis-auth-production.sparkling-silence-0a49.workers.dev",
+    "PLATFORM_ADMIN_IDS": ""
+  },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "molis-auth-production",
+      "database_id": "33c19147-0f55-441d-af1b-8d334d064c51",
+      "migrations_dir": "../../migrations"
+    }
+  ]
+}

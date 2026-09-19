@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-const issuer = new URL(process.env.AUTH_DEMO_ISSUER ?? 'http://localhost:41880')
+const issuer = new URL(process.env.AUTH_DEMO_ISSUER ?? 'http://127.0.0.1:8787')
 const clientId = process.env.AUTH_DEMO_CLIENT_ID
 const port = Number(process.env.AUTH_DEMO_PORT ?? 41980)
 if (!clientId || issuer.pathname !== '/' || issuer.search || issuer.hash || issuer.username || issuer.password

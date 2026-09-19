@@ -1,0 +1,20 @@
+{
+  "name": "@molis/auth-cloudflare",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "cloudflare": "node worker/scripts/deployment.ts",
+    "setup": "npm --prefix worker ci && npm --prefix web ci && npm --prefix sdk/browser ci",
+    "dev": "npm run build:web && npm --prefix worker run db:migrate && npm --prefix worker run db:seed && npm --prefix worker run dev",
+    "build:web": "npm --prefix web run build",
+    "check": "npm --prefix worker run check && npm --prefix worker test",
+    "test": "npm run check && npm --prefix web test && npm --prefix sdk/browser test",
+    "build": "npm run build:web && npm --prefix sdk/browser run build && npm --prefix worker run build",
+    "format": "npm --prefix worker run format",
+    "format:check": "npm --prefix worker run format:check",
+    "admin": "npm --prefix worker run admin",
+    "test:e2e": "npm --prefix worker run test:e2e",
+    "test:password": "npm --prefix worker run test:password"
+  }
+}
