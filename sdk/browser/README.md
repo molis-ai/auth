@@ -15,8 +15,8 @@ npm run build
 npm pack --dry-run
 ```
 
-在仓库根也可执行 `./mvnw -B -ntp -Pbrowser-sdk,web package`，分别构建 SDK 与带 Vue 的 Auth Jar。
-SDK 产物为 dist/index.js 和 dist/index.d.ts，不打进 Auth Jar，也不会自动发布。接入项目可先引用本地构建包。
+在仓库根也可执行 `npm run build`，构建 SDK、Vue 页面和 Worker 部署包（dry-run，不部署）。
+SDK 产物为 dist/index.js 和 dist/index.d.ts，不会自动发布。接入项目可先引用本地构建包。
 
 ## 托管页面
 
@@ -117,21 +117,19 @@ if (!result.restorePaused) {
 
 ## 真实服务联调与本机演示
 
-仓库根运行 `./mvnw -B -ntp clean -Pweb,browser-sdk,full-it -Dauth.it.jdbc-url=... -Dauth.it.redis-port=... verify`。
-BrowserSdkRedisIT 创建独立 auth_test_* 数据夹具，通过 stdin 交给 tests/live.mjs，使用实际编译产物调用真实 Auth/Redis/MySQL。
-验证密码→授权码→Token→身份、并发刷新、当前退出后的旧 Token 拒绝、暂停恢复、保留根会话恢复及全部退出后根会话拒绝。
-该用例用可控导航环境和显式 Cookie 转发，不执行浏览器 Cookie/CORS 策略；只有同时启用 browser-sdk 与 full-it 时运行，单独 full-it 会跳过它。
+仓库根运行 `npm test` 验证 SDK、前端及 Worker；启动 `npm run dev` 后执行 `npm run test:e2e` 验证本地 Workers 与 D1 的真实 HTTP 链路。
+SDK 并发刷新和回调状态由 SDK 单元测试覆盖；端到端脚本覆盖注册、登录、PKCE、刷新重放、退出、团队和邀请，但不是完整浏览器 Cookie/CORS 验收。
 
-`demo/` 是保留在源码中的本机独立产品登录页，不进入 npm 包，也不是计划中的业务 Spring Boot 示例。
+`demo/` 是本机独立产品登录页，不进入 npm 包，也不提供业务后端。
 准备专用测试用户、已登记 WEB 客户端及精确 `http://127.0.0.1:41980/callback` 回调后，从仓库根启动：
 
 ```sh
 AUTH_DEMO_CLIENT_ID=已登记测试客户端ID node sdk/browser/demo/server.mjs
 ```
 
-默认 Auth origin 为 http://localhost:41880；可用 AUTH_DEMO_ISSUER 与 AUTH_DEMO_PORT 调整，仍仅接受 loopback。
+默认 Auth origin 为 http://127.0.0.1:8787；可用 AUTH_DEMO_ISSUER 与 AUTH_DEMO_PORT 调整，仍仅接受 loopback。
 本页不预置用户/Secret，不显示 Token，不开启生产服务；提供自定义登录、Auth 托管登录、顶层恢复、身份和退出按钮。
-Auth 需开启真实登录与 Redis，并先使用 web profile 构建页面；仅前端演示服务不具备任何认证后门。
+Auth 通过根目录 `npm run dev` 启动；仅前端演示服务不具备任何认证后门。
 
 2026-09-15 嵌入式浏览器实际检查：跨来源创建事务及密码请求成功，Auth 审计记录登录成功，但 SDK 调用导航后浏览器停留原页，
 未完成 Auth 交接/回调。临时诊断证实调用到达导航函数；assign、replace、href 写法均未改变观察结果，因此未把改写导航当作已修复，

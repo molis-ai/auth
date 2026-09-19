@@ -1,1 +1,0 @@
-ALTER TABLE auth_user ADD COLUMN avatar_data MEDIUMTEXT NULL;

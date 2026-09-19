@@ -25,7 +25,7 @@ test('team avatar uses CSP-compatible data URLs and reports reader failures',asy
 test('team upload keeps CSP restrictions and reports errors without replacing existing avatar',()=>{
   const source=readFileSync(new URL('../src/TeamCreate.vue',import.meta.url),'utf8')
   const helper=readFileSync(new URL('../src/team-avatar.ts',import.meta.url),'utf8')
-  const security=readFileSync(new URL('../../src/main/java/ai/molis/auth/login/AuthPageSecurity.java',import.meta.url),'utf8')
+  const security=readFileSync(new URL('../../worker/src/app.ts',import.meta.url),'utf8')
   assert.match(source,/avatar.value = await prepareTeamAvatar/)
   assert.doesNotMatch(source+helper,/createObjectURL/)
   assert.match(security,/img-src 'self' data:;/)
