@@ -1,0 +1,31 @@
+[package]
+name = "molis-auth-worker"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+worker = { version = "=0.8.6", features = ["d1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+unicode-normalization = "0.1"
+regex = "1"
+futures-util = "0.3"
+png = "0.18"
+url = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+# wasm-bindgen needs the externref table metadata; stripping all symbols removes it.
+strip = "debuginfo"

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomBytes, createHash } from 'node:crypto'
 import { PNG } from 'pngjs'
-const origin = 'http://127.0.0.1:8787',
+const origin = process.env.AUTH_TEST_ORIGIN ?? 'http://127.0.0.1:8787',
   clientId = 'molis-auth-console',
   redirectUri = origin + '/console/callback'
+assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/, 'E2E writes test data: loopback only')
 const salt = Date.now().toString(36),
   password = 'Synthetic-only ' + randomBytes(24).toString('base64url')
 const users = [0, 1, 2].map((i) => `migration-${salt}-${i}@example.test`)

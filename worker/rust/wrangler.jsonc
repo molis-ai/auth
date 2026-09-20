@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "molis-auth-rust-local",
+  "main": "build/worker/shim.mjs",
+  "compatibility_date": "2026-09-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "build": { "command": "node scripts/rust-build.mjs" },
+  "assets": {
+    "directory": "../../web/dist", "binding": "ASSETS", "run_worker_first": true,
+    "html_handling": "none", "not_found_handling": "none"
+  },
+  "vars": { "AUTH_ORIGIN": "http://127.0.0.1:8788", "PLATFORM_ADMIN_IDS": "" },
+  "d1_databases": [{
+    "binding": "DB", "database_name": "auth-rust-local",
+    "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "../migrations"
+  }]
+}

@@ -30,7 +30,7 @@ https://molis-auth-production.sparkling-silence-0a49.workers.dev
 
 ## 2. 安装依赖、登录、创建 D1
 
-使用 Node.js 22.18+，以下命令从仓库根目录开始：
+使用 Node.js 22.18+，以下命令从仓库根目录开始。`npm run setup` 还会准备固定版本 Rust 1.96.0、WASM target 和 worker-build 0.8.6；首次安装/编译需要联网。Workers Builds 同样执行此步骤，不依赖构建镜像预装 Rust：
 
 ```sh
 npm run setup

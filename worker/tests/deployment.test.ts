@@ -7,6 +7,16 @@ const load = (env: string) =>
   JSON.parse(readFileSync(new URL('../deploy/' + env + '/wrangler.json', import.meta.url), 'utf8'))
 const seed = (env: string) =>
   readFileSync(new URL('../deploy/' + env + '/seed.sql', import.meta.url), 'utf8')
+test('deployed backend is Rust WASM, never the legacy TypeScript implementation', () => {
+  for (const env of ['preview', 'production']) {
+    const config = load(env)
+    assert.equal(config.main, '../../rust/build/index.js')
+    assert.equal(config.build.command, 'node scripts/rust-build.mjs')
+    assert.ok(!config.compatibility_flags?.includes('nodejs_compat'))
+  }
+  const local = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+  assert.match(local, /"main": "rust\/build\/index.js"/)
+})
 test('cloud seeds are repeatable and create no users or credentials', () => {
   for (const env of ['preview', 'production']) {
     const db = new DatabaseSync(':memory:')

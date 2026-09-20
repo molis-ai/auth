@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 
 // Deliberately loopback-only: cannot accidentally hit a live service with this script.
-const origin = 'http://127.0.0.1:8787'
+const origin = process.env.AUTH_TEST_ORIGIN ?? 'http://127.0.0.1:8787'
+assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/, 'Smoke tests are loopback only')
 const health = await fetch(origin + '/api/v1/health')
 assert.equal(health.status, 200)
 assert.equal((await health.json()).data.status, 'UP')

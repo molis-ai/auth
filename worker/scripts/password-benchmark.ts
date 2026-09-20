@@ -1,5 +1,21 @@
 import { performance } from 'node:perf_hooks'
-import { derivePassword } from '../src/security/password.ts'
+import { webcrypto } from 'node:crypto'
+
+// Diagnostic only; the production password policy remains in Rust + Web Crypto.
+async function derivePassword(raw: string, salt: Uint8Array, iterations: number) {
+  const key = await webcrypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(raw.normalize('NFC')),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  )
+  return webcrypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
+    key,
+    256,
+  )
+}
 
 console.log(
   'Local Node WebCrypto elapsed time ONLY — not Cloudflare CPU or deployment compatibility.',

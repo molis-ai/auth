@@ -1,11 +1,11 @@
-# Molis Auth — TypeScript / Cloudflare Workers
+# Molis Auth — Rust / Cloudflare Workers
 
-Vue 页面保持原样；新后端使用 TypeScript、Workers 和 D1。运行新版本不需要 Java、MySQL、Redis 或 Docker。
+Vue 页面保持原样；后端使用 Rust 编译为 WASM，通过 Workers 和 D1 运行。不需要 Java、MySQL、Redis 或 Docker。
 旧 Java 源码及其构建配置已移出当前工程；没有删除或覆盖旧 MySQL 数据。当前模块边界见 `../docs/architecture.md`。
 
 ## 本地启动
 
-需要 Node.js 22.18 或更新版本。在仓库根目录执行：
+需要 Node.js 22.18 或更新版本。在仓库根目录执行；setup 自动准备固定版本 Rust/WASM 工具链，首次需要联网：
 
 ```sh
 npm run setup
@@ -49,7 +49,7 @@ npm run admin
 ## 验证
 
 ```sh
-npm run check                      # TS 类型检查及隔离 D1 / 密码 / 回调测试
+npm run check                      # Rust 编译、单元、真实 WASM 集成及密码格式兼容测试
 npm --prefix web test              # 原 Vue 前端测试
 npm run test:e2e                   # 需要本地 8787 正在运行
 npm --prefix worker run test:smoke # 页面、静态资源和接口保护检查
@@ -62,10 +62,10 @@ E2E 仅在本地生成标有 synthetic 的账号和团队，会保留在本地 D
 
 ## Cloudflare 上线前仍需完成
 
-本地可运行不等于已验证免费线上额度：当前没有部署正式 Worker，没有开通任何付费资源。
+本地可运行不等于已验证免费线上额度：本次迁移没有发布或修改正式 Worker，没有开通任何付费资源。
 
-1. 在自己的 Cloudflare 账号创建独立 D1，替换本地占位 `database_id`，配置正式 `AUTH_ORIGIN`。
-2. 正式环境重新初始化 Console 应用及精确 HTTPS 回调地址；不要导入本地测试账号和开发管理员。
+1. 复核已有正式 D1、`AUTH_ORIGIN` 与 Worker 配置；Rust 使用相同表结构，无需重建正式数据库。
+2. 新环境才需要初始化 Console 应用及精确 HTTPS 回调地址；不要导入本地测试账号和开发管理员。
 3. 使用 Secrets 配置 `PROVIDER_STATE_KEY`（随机 32 字节的 base64url）、Google/Apple 客户端凭证；Apple 客户端 secret 需按有效期更新。
 4. 在隔离预览环境验证注册、密码校验和头像处理的真实 Workers CPU/免费额度。密码仍保留原 PBKDF2-SHA256 600,000 次，没有为跑通而降低强度。
 5. Google/Apple 配置正式回调并进行真实联调；测试跨应用登录、刷新、退出和角色撤销。
