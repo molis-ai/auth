@@ -15,7 +15,7 @@
   },
   "vars": {
     "AUTH_ORIGIN": "https://molis-auth-production.sparkling-silence-0a49.workers.dev",
-    "PLATFORM_ADMIN_IDS": ""
+    "PLATFORM_ADMIN_IDS": "7cb468c7-9817-4ac8-912c-ff662abad5ee"
   },
   "triggers": {
     "crons": ["0 * * * *"]
