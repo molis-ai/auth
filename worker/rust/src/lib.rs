@@ -5,6 +5,7 @@ mod authorization;
 mod federation;
 mod http;
 mod identity;
+mod password_kdf;
 mod platform;
 mod security;
 mod store;

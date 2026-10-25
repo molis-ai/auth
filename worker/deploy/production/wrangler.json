@@ -27,5 +27,9 @@
       "database_id": "33c19147-0f55-441d-af1b-8d334d064c51",
       "migrations_dir": "../../migrations"
     }
-  ]
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "PASSWORD_KDF", "class_name": "PasswordKdf" }]
+  },
+  "migrations": [{ "tag": "password-kdf-v1", "new_sqlite_classes": ["PasswordKdf"] }]
 }

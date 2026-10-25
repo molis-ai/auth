@@ -1,5 +1,5 @@
-//! Password derivation uses Workers' native Web Crypto, not a slow WASM KDF.
-//! This preserves existing 600k-iteration credentials without weakening the policy.
+//! Password derivation runs in a private Durable Object with a separate CPU budget.
+//! The existing 600k-iteration credential format and policy are unchanged.
 use crate::http::{Failure, Result};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -12,8 +12,6 @@ extern "C" {
     fn random(n: u32) -> Vec<u8>;
     #[wasm_bindgen(js_name=authUuid)]
     pub fn uuid() -> String;
-    #[wasm_bindgen(catch, js_name=authDerive)]
-    async fn derive(password: &str, salt: &[u8]) -> std::result::Result<JsValue, JsValue>;
 }
 pub fn hash(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
@@ -29,16 +27,15 @@ pub fn normalized(raw: &str) -> Option<String> {
     let value: String = raw.nfc().collect();
     (raw.encode_utf16().count() <= 512 && value.chars().count() <= 128).then_some(value)
 }
-async fn bits(raw: &str, salt: &[u8]) -> Result<Vec<u8>> {
-    let v = derive(raw, salt).await.map_err(|_| Failure {
+async fn bits(raw: &str, salt: &[u8], env: &worker::Env) -> Result<Vec<u8>> {
+    crate::password_kdf::remote_derive(raw, salt, env).await.map_err(|_| Failure {
         status: 503,
         code: "AUTH_UNAVAILABLE",
-    })?;
-    Ok(js_sys::Uint8Array::new(&v).to_vec())
+    })
 }
-pub async fn matches(raw: &str, encoded: &str) -> Result<bool> {
+pub async fn matches(raw: &str, encoded: &str, env: &worker::Env) -> Result<bool> {
     let Some(value) = normalized(raw) else {
-        bits("invalid-password-input", &[0; 16]).await?;
+        bits("invalid-password-input", &[0; 16], env).await?;
         return Ok(false);
     };
     let Some(raw_hex) = encoded.strip_prefix(VERSION) else {
@@ -50,14 +47,14 @@ pub async fn matches(raw: &str, encoded: &str) -> Result<bool> {
     if bytes.len() != 48 || raw_hex.bytes().any(|b| b.is_ascii_uppercase()) {
         return Ok(false);
     }
-    let actual = bits(&value, &bytes[..16]).await?;
+    let actual = bits(&value, &bytes[..16], env).await?;
     let diff = actual
         .iter()
         .zip(&bytes[16..])
         .fold(0u8, |a, (b, c)| a | (b ^ c));
     Ok(actual.len() == 32 && diff == 0)
 }
-pub async fn encode(raw: &str) -> Result<String> {
+pub async fn encode(raw: &str, env: &worker::Env) -> Result<String> {
     let value = normalized(raw).ok_or(Failure {
         status: 400,
         code: "INVALID_PASSWORD",
@@ -118,7 +115,7 @@ pub async fn encode(raw: &str) -> Result<String> {
     Ok(format!(
         "{VERSION}{}{}",
         hex::encode(&salt),
-        hex::encode(bits(&value, &salt).await?)
+        hex::encode(bits(&value, &salt, env).await?)
     ))
 }
 

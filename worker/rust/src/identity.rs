@@ -214,7 +214,7 @@ impl Auth {
                 400,
                 "PASSWORD_MISMATCH",
             )?;
-            let encoded = encode(raw).await?;
+            let encoded = encode(raw, &self.env).await?;
             user = uuid();
             let space = uuid();
             writes.extend([
@@ -230,7 +230,7 @@ impl Auth {
                 .as_str()
                 .map(str::to_owned)
                 .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
-            let matched = matches(raw, &encoded).await?;
+            let matched = matches(raw, &encoded, &self.env).await?;
             if !matched || candidate["status"] != "ACTIVE" {
                 self.s
                     .db

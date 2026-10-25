@@ -122,12 +122,24 @@ PROVIDER_STATE_KEY 使用密码学安全随机 32 字节的 base64url 编码，�
 
 数据库迁移由明确的发布步骤执行，不藏进普通构建命令。更改表结构前备份并验证兼容性；回滚 Worker 代码不会回滚 D1 数据。Wrangler 配置作为域名、普通变量和绑定的来源，不要只在网页修改后又被下次发布覆盖。
 
+## 密码计算组件
+
+注册和密码登录使用当前 Worker 内部绑定的 `PASSWORD_KDF`（Rust `PasswordKdf` Durable Object）。组件通过 RustCrypto 计算 PBKDF2-SHA256 600,000 次，保留原来的盐、NFC 规范化和 `{pbkdf2-sha256-600k-v1}` 密码格式。Cloudflare 生产 Web Crypto 的 PBKDF2 迭代上限不会影响这条路径。
+
+配置中的 `password-kdf-v1` 是 Durable Object 的 SQLite 类迁移，由 `deploy` 应用；不是 D1 表结构迁移。不需要重新初始化 D1、重置密码或重新注册。组件不读写自身存储，只接受内部调用，每次计算使用独立实例，避免所有登录串行排队。公开 HTTP 路由不提供密码派生接口；已有事务、来源校验和限流在调用组件之前执行。
+
+发布必须保留 `PASSWORD_KDF` 绑定、`PasswordKdf` 类导出和迁移记录，`production check` 会检查绑定与迁移。组件故障返回 503，并记录固定诊断码及请求编号，不记录密码、盐或派生结果。不能回退到降低迭代次数的实现；修复前使用 Web Crypto 的版本本身无法完成线上密码登录，不能作为恢复密码功能的回滚目标。
+
+本地测试包括兼容性向量、真实 Durable Object 调用和组件缺失时的拒绝行为。发布仍需在线验证注册、重复注册、正确/错误密码和完整令牌交换；本地测试不代表云端可用性或容量保证。
+
+官方依据：[Web Crypto 迭代限制](https://github.com/cloudflare/workerd/issues/1346)、[Durable Object 限制](https://developers.cloudflare.com/durable-objects/platform/limits/)。SQLite Durable Objects 可用于 Free 计划，仍须遵守该账户的请求与执行时长额度。
+
 ## 7. 上线验收与免费额度
 
 - 登录、注册、刷新恢复、退出、换用户数据隔离。
 - 团队、成员、邀请接受与拒绝、权限边界、超管入口。
 - 头像上传/读取；下游 PKCE 登录、刷新和服务鉴权。
-- 在 Cloudflare 观察真实 CPU 时间、错误率、D1 读写量和存储量。当前 PBKDF2 为 60 万次，免费 Worker CPU 限制是否满足必须在线验证；本地测试不代表免费环境可承载。
+- 在 Cloudflare 观察真实 CPU 时间、错误率、D1 读写量和存储量。PBKDF2 的 60 万次计算位于 Durable Object 中；需要观察其运行耗时和额度，不能用本地耗时推断线上容量。
 - 当前所有静态请求也先经过 Worker，会消耗 Worker 调用额度；后续可在保持安全响应头和路由正确的前提下优化。
 - 不要直接把现有 e2e/mock 脚本指向正式站点。预览验收用测试账号；正式验收只进行明确的小范围操作。
 

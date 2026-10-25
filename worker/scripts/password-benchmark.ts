@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks'
 import { webcrypto } from 'node:crypto'
 
-// Diagnostic only; the production password policy remains in Rust + Web Crypto.
+// Diagnostic comparison only; production derives with RustCrypto inside a Durable Object.
 async function derivePassword(raw: string, salt: Uint8Array, iterations: number) {
   const key = await webcrypto.subtle.importKey(
     'raw',

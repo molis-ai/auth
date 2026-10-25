@@ -12,7 +12,12 @@ pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
     let result = dispatch(&mut a, &env, &mut cors).await;
     let mut response = match result {
         Ok(r) => r,
-        Err(e) => error_response(e, &id)?,
+        Err(e) => {
+            if e.status >= 500 {
+                worker::console_error!("AUTH_SERVER_FAILURE request_id={} code={}", id, e.code);
+            }
+            error_response(e, &id)?
+        }
     };
     if response.status_code() < 400 {
         for c in &a.cookies {

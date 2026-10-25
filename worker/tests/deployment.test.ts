@@ -101,3 +101,19 @@ test('remote commands always select explicit environment; dry-run cannot deploy'
   }
   assert.throws(() => deploymentArgs('delete', 'production'))
 })
+
+test('deployment requires a private same-environment KDF and its SQLite migration', () => {
+  for (const env of ['preview', 'production']) {
+    const other = load(env === 'preview' ? 'production' : 'preview')
+    for (const mutate of [
+      (config: any) => { delete config.durable_objects },
+      (config: any) => { config.durable_objects.bindings[0].script_name = 'another-worker' },
+      (config: any) => { config.durable_objects.bindings[0].class_name = 'WrongClass' },
+      (config: any) => { config.migrations = [] },
+    ]) {
+      const config = load(env)
+      mutate(config)
+      assert.throws(() => validateDeployment(config, other, seed(env), env, true), /PasswordKdf/)
+    }
+  }
+})

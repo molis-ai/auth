@@ -2,7 +2,7 @@ import { Miniflare, Response, convertV4MiniflareOptions } from 'miniflare'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
 
-export async function getRustProxy(bindings, outbound, assets) {
+export async function getRustProxy(bindings, outbound, assets, { passwordKdf = true } = {}) {
   const base = {
     modulesRoot: fileURLToPath(new URL('../rust/build/', import.meta.url)),
     modules: [
@@ -14,6 +14,7 @@ export async function getRustProxy(bindings, outbound, assets) {
     ],
     compatibilityDate: '2026-09-19',
     d1Databases: { DB: 'rust-isolated-test' },
+    durableObjects: passwordKdf ? { PASSWORD_KDF: { className: 'PasswordKdf', useSQLite: true } } : {},
     ...(assets
       ? {
           serviceBindings: {
@@ -40,7 +41,7 @@ export async function getRustProxy(bindings, outbound, assets) {
   const mf = new Miniflare(options(bindings))
   const db = await mf.getD1Database('DB')
   return {
-    env: { DB: db },
+    env: { DB: db, PASSWORD_KDF: passwordKdf ? await mf.getDurableObjectNamespace('PASSWORD_KDF') : undefined },
     async fetch(request, env) {
       return mf.dispatchFetch(request.url, {
         method: request.method,

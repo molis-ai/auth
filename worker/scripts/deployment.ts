@@ -38,6 +38,13 @@ export function validateDeployment(
     require(config.workers_dev === false, '预览环境仅允许配置的域名入口')
   }
   require(config.preview_urls === false, '禁止额外的版本预览入口')
+  const kdf = config.durable_objects?.bindings
+  require(kdf?.length === 1 && kdf[0].name === 'PASSWORD_KDF' &&
+    kdf[0].class_name === 'PasswordKdf' && !kdf[0].script_name && !kdf[0].environment,
+    '密码计算必须绑定当前环境的内部 PasswordKdf Durable Object')
+  require(config.migrations?.some((m: any) => m.tag === 'password-kdf-v1' &&
+    m.new_sqlite_classes?.includes('PasswordKdf')),
+    '缺少 PasswordKdf SQLite Durable Object 迁移')
   require(config.d1_databases?.length === 1 &&
     db.binding === 'DB' &&
     db.database_name === name, 'D1 绑定与环境不匹配')
