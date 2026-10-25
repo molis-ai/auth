@@ -4,8 +4,9 @@ import { ElButton, ElCheckbox, ElInput } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/checkbox/style/css'
 import 'element-plus/es/components/input/style/css'
-import { api, ApiError, checkedCallback, checkedHandoff, takeFragment, readFragment, isDirectLoginEntry, rememberEmail, type AuthProvider, type Configuration, type View } from './protocol'
-import { AuthClient, AuthError } from '../../sdk/browser/src/index.ts'
+import { api, ApiError, checkedCallback, checkedHandoff, takeFragment, isDirectLoginEntry, rememberEmail, type AuthProvider, type Configuration, type View } from './protocol'
+import { AuthError, type AuthOptions } from '../../sdk/browser/src/index.ts'
+import { prepareLoginTransaction } from './login-transaction'
 import { checkedConsole, ConsoleError } from './console-api'
 import { checkedProviderUrl, enabledProviders, saveProviderAttempt, takeProviderAttempt } from './provider'
 import { copy } from './copy'
@@ -21,6 +22,8 @@ const fragment = takeFragment(location, history, initialMode)
 const mode = ref<Mode>(initialMode), language = ref<'zh-CN' | 'en'>(navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
 const t = computed(() => copy[language.value])
 const transaction = ref(fragment?.transaction ?? ''), view = ref<View>(), configuration = ref<Configuration>()
+const directReady = ref(false)
+let directOptions: AuthOptions | undefined
 const selectedProvider = fragment?.provider as AuthProvider | undefined, providers = ref<AuthProvider[]>([])
 const email = ref(''), password = ref(''), confirmPassword = ref(''), remember = ref(false), challenge = ref('')
 const busy = ref(true), terminal = ref(false), verified = ref(false), resetDone = ref(false), error = ref<ApiError>()
@@ -33,7 +36,8 @@ try {
 watch(language, value => { document.documentElement.lang = value; try { localStorage.setItem('molis.auth.locale', value) } catch { /* Optional only. */ } }, { immediate: true })
 const title = computed(() => mode.value === 'register' ? t.value.register : mode.value === 'forgot-password' ? t.value.reset : mode.value === 'verify-email' ? t.value.verify : mode.value === 'complete' ? t.value.complete : mode.value === 'provider' ? t.value.providerTitle : t.value.login)
 const message = computed(() => error.value ? t.value.errors[error.value.code] ?? t.value.errors.AUTH_INTERNAL_ERROR : '')
-const actionable = computed(() => !!view.value && !busy.value && !terminal.value)
+const entryReady = computed(() => !!view.value || (directReady.value && (mode.value === 'login' || mode.value === 'register')))
+const actionable = computed(() => entryReady.value && !busy.value && !terminal.value)
 const externalLogin = computed(() => !!view.value && (view.value.context.clientId !== configuration.value?.console?.clientId || view.value.context.redirectUri !== configuration.value?.console?.redirectUri))
 function switchMode(next: Mode) {
   mode.value = next; password.value = ''; confirmPassword.value = ''; challenge.value = ''; error.value = undefined
@@ -41,13 +45,18 @@ function switchMode(next: Mode) {
 }
 function fail(cause: unknown) {
   error.value = cause instanceof ApiError ? cause : cause instanceof AuthError || cause instanceof ConsoleError ? new ApiError(cause.code, cause.requestId) : new ApiError('INVALID_RESPONSE')
-  if (['NETWORK_ERROR', 'AUTH_UNAVAILABLE', 'AUTH_INTERNAL_ERROR', 'INVALID_RESPONSE', 'ACCOUNT_NOT_AVAILABLE', 'RESET_NOT_AVAILABLE'].includes(error.value.code)) terminal.value = true
+  if (['INVALID_TRANSACTION', 'NETWORK_ERROR', 'AUTH_UNAVAILABLE', 'AUTH_INTERNAL_ERROR', 'INVALID_RESPONSE', 'ACCOUNT_NOT_AVAILABLE', 'RESET_NOT_AVAILABLE'].includes(error.value.code)) terminal.value = true
+}
+async function prepareTransaction() {
+  const ready = await prepareLoginTransaction(directOptions, { transaction: transaction.value, view: view.value })
+  transaction.value = ready.transaction; view.value = ready.view
 }
 async function handoff(url: string) { location.replace(checkedHandoff(url, transaction.value, location.origin)) }
 async function startProvider(provider: AuthProvider) {
   if (!actionable.value || !providers.value.includes(provider)) return
   busy.value = true; error.value = undefined; password.value = ''
   try {
+    await prepareTransaction()
     saveProviderAttempt(sessionStorage, view.value!.context, provider)
     const result = await api<{ authorizationUrl: string }>('/providers/' + provider + '/start', transaction.value, {})
     const destination = checkedProviderUrl(result.authorizationUrl, provider, location.origin)
@@ -74,13 +83,15 @@ async function submit() {
   if (!actionable.value) return
   busy.value = true; error.value = undefined
   try {
+    if (mode.value !== 'login' && mode.value !== 'register') throw new ApiError('EMAIL_FLOW_UNAVAILABLE')
+    if (mode.value === 'register' && password.value !== confirmPassword.value) throw new ApiError('PASSWORD_MISMATCH')
+    await prepareTransaction()
     if (mode.value === 'login') {
       try { rememberEmail(localStorage, remember.value, email.value) } catch { /* Storage denial must not prevent login. */ }
       const result = await api<{ continueUrl: string }>('/transactions/password', transaction.value, { email: email.value, password: password.value })
       rememberCompletion(sessionStorage, view.value!.context)
       await handoff(result.continueUrl)
     } else if (mode.value === 'register') {
-      if (password.value !== confirmPassword.value) throw new ApiError('PASSWORD_MISMATCH')
       const result = await api<{ continueUrl: string }>('/transactions/signup', transaction.value,
         { email: email.value, password: password.value, confirmPassword: confirmPassword.value })
       rememberCompletion(sessionStorage, view.value!.context)
@@ -98,7 +109,14 @@ async function confirmEmail() {
   finally { busy.value = false }
 }
 async function restart() {
-  if (!view.value || busy.value) return
+  if (busy.value) return
+  const nextMode = mode.value === 'register' ? 'register' : 'login'
+  if (directReady.value) {
+    transaction.value = ''; view.value = undefined
+    terminal.value = false; resetDone.value = false; switchMode(nextMode)
+    return
+  }
+  if (!view.value) return
   busy.value = true; error.value = undefined
   try {
     const c = view.value.context
@@ -106,7 +124,7 @@ async function restart() {
       codeChallenge: c.challenge, codeChallengeMethod: 'S256', state: c.state, scopes: c.scopes, forceLogin: true })
     transaction.value = result.transaction
     view.value = await api<View>('/transactions/context', transaction.value)
-    terminal.value = false; resetDone.value = false; switchMode('login')
+    terminal.value = false; resetDone.value = false; switchMode(nextMode)
   } catch (cause) { fail(cause) } finally { busy.value = false }
 }
 onMounted(async () => {
@@ -126,11 +144,9 @@ onMounted(async () => {
       if (!directLoginEntry) { terminal.value = true; throw new ApiError('INVALID_TRANSACTION') }
       const options = checkedConsole({ authOrigin: configuration.value.authOrigin, console: configuration.value.console! }, location.origin)
       if (!options) throw new ApiError('CONSOLE_NOT_ENABLED')
-      // Auth is itself a registered client. The SDK saves its PKCE verifier/state for /console/callback.
-      // Stay on this page: direct visitors should immediately get the normal login form.
-      const started = await new AuthClient(options).beginLogin({ forceLogin: true })
-      transaction.value = readFragment(new URL(started.loginUrl).hash, 'login')?.transaction ?? ''
-      if (!transaction.value) throw new ApiError('INVALID_RESPONSE')
+      // Render the form now; create the console transaction only on submit/provider selection.
+      directOptions = options; directReady.value = true
+      return
     }
     if (mode.value === 'complete') { try { takeProviderAttempt(sessionStorage) } catch { /* Non-secret restart hint must not block a verified callback. */ } }
     if (!transaction.value) return
@@ -181,7 +197,7 @@ onMounted(async () => {
         <div class="entry-content">
         <div v-if="mode !== 'login' && !(mode === 'complete' && busy)" class="panel-heading"><h2>{{ title }}</h2><p v-if="mode === 'register'">{{ t.registerDescription }}</p><p v-else-if="mode === 'verify-email'">{{ t.verifyDescription }}</p></div>
         <p v-if="externalLogin && (mode === 'login' || mode === 'complete')" class="helper">{{ t.returnToApplication }}</p>
-        <div v-if="error && !(error.code === 'INVALID_TRANSACTION' && !view)" class="notice error" role="alert"><p>{{ message }}</p><small v-if="error.retryAfter">{{ error.retryAfter }}s</small><small v-if="error.requestId">{{ t.request }}: {{ error.requestId }}</small></div>
+        <div v-if="error && !(error.code === 'INVALID_TRANSACTION' && !entryReady)" class="notice error" role="alert"><p>{{ message }}</p><small v-if="error.retryAfter">{{ error.retryAfter }}s</small><small v-if="error.requestId">{{ t.request }}: {{ error.requestId }}</small></div>
         <button v-if="error?.code === 'INVALID_TRANSACTION' && view && !terminal" class="text-button" :disabled="busy" @click="restart">{{ t.restart }}</button>
         <div v-if="resetDone" class="notice success" role="status">{{ t.resetDone }}</div>
         <ProviderMailbox v-if="mode === 'provider-mailbox'" :transaction="transaction" :continuation="fragment?.continuation ?? ''" :language="language" :providers="providers" />
@@ -192,7 +208,7 @@ onMounted(async () => {
           <ElButton v-else class="primary" type="primary" :loading="busy" :disabled="terminal || !configuration?.mailboxEnabled" @click="confirmEmail">{{ t.confirm }}</ElButton>
         </template>
         <template v-else-if="mode === 'forgot-password'"><p class="empty-message">{{ language === 'en' ? 'Password recovery is currently unavailable.' : '暂不支持找回密码。' }}</p><a href="/login">{{ t.login }}</a></template>
-        <template v-else-if="!view"><p class="empty-message" role="status"><template v-if="busy">{{ t.checking }}</template><template v-else>{{ t.noTransaction }}<a class="login-recovery-link" href="/login">{{ t.signInAgain }}</a></template></p></template>
+        <template v-else-if="!entryReady"><p class="empty-message" role="status"><template v-if="busy">{{ t.checking }}</template><template v-else>{{ t.noTransaction }}<a class="login-recovery-link" href="/login">{{ t.signInAgain }}</a></template></p></template>
         <template v-else-if="mode === 'complete' && busy"><p class="empty-message" role="status">{{ t.checking }}</p></template>
         <template v-else-if="terminal"><p v-if="!resetDone" class="empty-message">{{ t.restartHint }}</p><ElButton class="primary" type="primary" :loading="busy" @click="restart">{{ t.restart }}</ElButton></template>
         <template v-else-if="mode === 'complete' && confirmationAccount">
@@ -216,7 +232,7 @@ onMounted(async () => {
           </form>
         </template>
         </div>
-        <div v-if="mode === 'login' && view && !terminal" class="entry-footer">
+        <div v-if="mode === 'login' && entryReady && !terminal" class="entry-footer">
           <ElCheckbox v-model="remember" :disabled="busy">{{ t.remember }}</ElCheckbox>
           <button class="text-button" type="button" :disabled="busy" @click="switchMode('register')">{{ t.register }}</button>
         </div>
