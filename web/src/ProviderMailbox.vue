@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AuthErrorNotice from './AuthErrorNotice.vue'
 import { api, ApiError, secretPattern, type Context, type AuthProvider } from './protocol'
 import { saveProviderAttempt } from './provider'
 import { ProviderMailboxFlow } from './provider-mailbox'
 const props = defineProps<{ transaction: string; continuation: string; language: 'en' | 'zh-CN'; providers: AuthProvider[] }>()
-const en = computed(() => props.language === 'en'), busy = ref(true), sent = ref(false), terminal = ref(false), failure = ref('')
+const en = computed(() => props.language === 'en'), busy = ref(true), sent = ref(false), terminal = ref(false), failure = ref<ApiError>()
 const email = ref(''), context = ref<Context>(), provider = ref(''), expires = ref('')
 const linking = ref(false), password = ref('')
 let flow: ProviderMailboxFlow | undefined
 async function work(action: () => Promise<void>) {
-  busy.value = true; failure.value = ''
-  try { await action() } catch (error) { failure.value = error instanceof ApiError ? error.code : 'AUTH_UNAVAILABLE' }
+  busy.value = true; failure.value = undefined
+  try { await action() } catch (error) { failure.value = error instanceof ApiError ? error : new ApiError('AUTH_UNAVAILABLE') }
   finally { terminal.value = flow?.terminal ?? true; busy.value = false }
 }
 async function loadContext() {
@@ -47,8 +48,7 @@ async function restart() { if (busy.value || !context.value) return; await work(
     <p v-if="expires">{{ en ? 'Complete before:' : '请在此时间前完成：' }} {{ new Date(expires).toLocaleString() }}</p>
     <p v-if="linking">{{ en ? 'Submitting or choosing a provider confirms the link after successful verification. Choose the provider identity already attached to this account. Cancelling the later login confirmation will not undo the link.' : '提交密码或选择提供方表示：验证成功后确认关联。请选择已绑定在原账号上的身份。之后取消登录确认不会撤销关联。' }}</p>
     <p v-else>{{ en ? 'Verifying a mailbox will not merge existing accounts. Opening the email link does not sign you in; return here and confirm.' : '验证邮箱不会合并已有账号。打开邮件链接不会自动登录；确认邮件后请回到本页继续。' }}</p>
-    <p v-if="failure" role="alert">{{ failure }} · {{ en ? 'No automatic retry. If expired or uncertain, restart sign-in.' : '未自动重试；过期或结果不确定时，请重新登录。' }}</p>
-    <p v-if="failure === 'ACCOUNT_LINK_REQUIRED'">{{ en ? 'This mailbox already belongs to an account. Sign in with its existing method, then bind your provider from account security.' : '此邮箱已有账号，请先使用该账号原有方式登录，再到账号安全页绑定第三方身份。' }}</p>
+    <AuthErrorNotice v-if="failure" :error="failure" :language="language" mode="provider-mailbox" />
     <form v-if="!terminal && context" @submit.prevent="submit">
       <label class="field">{{ en ? 'Email' : '邮箱' }}<input v-model="email" type="email" autocomplete="username" required maxlength="254" :disabled="busy || sent || linking" /></label>
       <label v-if="linking" class="field">{{ en ? 'Existing password' : '原账号密码' }}<input v-model="password" type="password" autocomplete="current-password" required maxlength="512" :disabled="busy" /></label>

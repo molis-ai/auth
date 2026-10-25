@@ -55,10 +55,14 @@ export async function api<T>(path: string, token?: string, body?: unknown, trans
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { 'X-Auth-Transaction': token } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal,
     })
-    const result = await response.json()
-    if (!response.ok) throw new ApiError(typeof result?.error?.code === 'string' ? result.error.code : 'AUTH_UNAVAILABLE',
-      /^[0-9a-f-]{36}$/.test(result?.requestId ?? '') ? result.requestId : '', Math.min(3600, Math.max(0, Number(response.headers.get('Retry-After')) || 0)))
-    if (!result || !Object.hasOwn(result, 'data')) throw new ApiError('INVALID_RESPONSE')
+    const safeId = (value: unknown): string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) ? value : ''
+    const headerId = safeId(response.headers.get('X-Request-ID'))
+    let result
+    try { result = await response.json() } catch { throw new ApiError(response.ok ? 'INVALID_RESPONSE' : 'AUTH_UNAVAILABLE', headerId) }
+    const requestId = safeId(result?.requestId) || headerId
+    if (!response.ok) throw new ApiError(/^[A-Z][A-Z0-9_]{1,63}$/.test(result?.error?.code ?? '') ? result.error.code : 'AUTH_UNAVAILABLE',
+      requestId, Math.min(3600, Math.max(0, Number(response.headers.get('Retry-After')) || 0)))
+    if (!result || !Object.hasOwn(result, 'data')) throw new ApiError('INVALID_RESPONSE', requestId)
     return result.data as T
   } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError() }
   finally { clearTimeout(timer) }

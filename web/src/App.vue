@@ -10,6 +10,8 @@ import { prepareLoginTransaction } from './login-transaction'
 import { checkedConsole, ConsoleError } from './console-api'
 import { checkedProviderUrl, enabledProviders, saveProviderAttempt, takeProviderAttempt } from './provider'
 import { copy } from './copy'
+import { authFeedback } from './auth-feedback'
+import AuthErrorNotice from './AuthErrorNotice.vue'
 import { CompletionFlow, rememberCompletion, takeCompletion, type ConfirmationAccount } from './completion'
 import ProviderMailbox from './ProviderMailbox.vue'
 import molisLogo from './assets/molis-logo.png'
@@ -35,7 +37,13 @@ try {
 } catch { /* Optional only. */ }
 watch(language, value => { document.documentElement.lang = value; try { localStorage.setItem('molis.auth.locale', value) } catch { /* Optional only. */ } }, { immediate: true })
 const title = computed(() => mode.value === 'register' ? t.value.register : mode.value === 'forgot-password' ? t.value.reset : mode.value === 'verify-email' ? t.value.verify : mode.value === 'complete' ? t.value.complete : mode.value === 'provider' ? t.value.providerTitle : t.value.login)
-const message = computed(() => error.value ? t.value.errors[error.value.code] ?? t.value.errors.AUTH_INTERNAL_ERROR : '')
+const feedback = computed(() => error.value ? authFeedback(error.value, language.value, mode.value) : undefined)
+watch([email, password, confirmPassword], (next, previous) => {
+  const field = feedback.value?.field
+  if (!field) return
+  const index = { email: 0, password: 1, 'confirm-password': 2 }[field]
+  if (next[index] !== previous[index]) error.value = undefined
+})
 const entryReady = computed(() => !!view.value || (directReady.value && (mode.value === 'login' || mode.value === 'register')))
 const actionable = computed(() => entryReady.value && !busy.value && !terminal.value)
 const externalLogin = computed(() => !!view.value && (view.value.context.clientId !== configuration.value?.console?.clientId || view.value.context.redirectUri !== configuration.value?.console?.redirectUri))
@@ -45,7 +53,7 @@ function switchMode(next: Mode) {
 }
 function fail(cause: unknown) {
   error.value = cause instanceof ApiError ? cause : cause instanceof AuthError || cause instanceof ConsoleError ? new ApiError(cause.code, cause.requestId) : new ApiError('INVALID_RESPONSE')
-  if (['INVALID_TRANSACTION', 'NETWORK_ERROR', 'AUTH_UNAVAILABLE', 'AUTH_INTERNAL_ERROR', 'INVALID_RESPONSE', 'ACCOUNT_NOT_AVAILABLE', 'RESET_NOT_AVAILABLE'].includes(error.value.code)) terminal.value = true
+  if (authFeedback(error.value, language.value, mode.value).terminal) terminal.value = true
 }
 async function prepareTransaction() {
   const ready = await prepareLoginTransaction(directOptions, { transaction: transaction.value, view: view.value })
@@ -127,6 +135,11 @@ async function restart() {
     terminal.value = false; resetDone.value = false; switchMode(nextMode)
   } catch (cause) { fail(cause) } finally { busy.value = false }
 }
+async function goToLogin() {
+  if (busy.value) return
+  if (terminal.value) { await restart(); if (terminal.value) return }
+  switchMode('login')
+}
 onMounted(async () => {
   try {
     configuration.value = await api<Configuration>('/ui-configuration')
@@ -197,8 +210,7 @@ onMounted(async () => {
         <div class="entry-content">
         <div v-if="mode !== 'login' && !(mode === 'complete' && busy)" class="panel-heading"><h2>{{ title }}</h2><p v-if="mode === 'register'">{{ t.registerDescription }}</p><p v-else-if="mode === 'verify-email'">{{ t.verifyDescription }}</p></div>
         <p v-if="externalLogin && (mode === 'login' || mode === 'complete')" class="helper">{{ t.returnToApplication }}</p>
-        <div v-if="error && !(error.code === 'INVALID_TRANSACTION' && !entryReady)" class="notice error" role="alert"><p>{{ message }}</p><small v-if="error.retryAfter">{{ error.retryAfter }}s</small><small v-if="error.requestId">{{ t.request }}: {{ error.requestId }}</small></div>
-        <button v-if="error?.code === 'INVALID_TRANSACTION' && view && !terminal" class="text-button" :disabled="busy" @click="restart">{{ t.restart }}</button>
+        <AuthErrorNotice v-if="error" :error="error" :language="language" :mode="mode" message-id="auth-error-message" />
         <div v-if="resetDone" class="notice success" role="status">{{ t.resetDone }}</div>
         <ProviderMailbox v-if="mode === 'provider-mailbox'" :transaction="transaction" :continuation="fragment?.continuation ?? ''" :language="language" :providers="providers" />
         <template v-else-if="mode === 'verify-email'">
@@ -208,9 +220,9 @@ onMounted(async () => {
           <ElButton v-else class="primary" type="primary" :loading="busy" :disabled="terminal || !configuration?.mailboxEnabled" @click="confirmEmail">{{ t.confirm }}</ElButton>
         </template>
         <template v-else-if="mode === 'forgot-password'"><p class="empty-message">{{ language === 'en' ? 'Password recovery is currently unavailable.' : '暂不支持找回密码。' }}</p><a href="/login">{{ t.login }}</a></template>
-        <template v-else-if="!entryReady"><p class="empty-message" role="status"><template v-if="busy">{{ t.checking }}</template><template v-else>{{ t.noTransaction }}<a class="login-recovery-link" href="/login">{{ t.signInAgain }}</a></template></p></template>
+        <template v-else-if="!entryReady"><p class="empty-message" role="status"><template v-if="busy">{{ t.checking }}</template><template v-else><span v-if="!error">{{ t.noTransaction }}</span><a class="login-recovery-link" href="/login">{{ t.signInAgain }}</a></template></p></template>
         <template v-else-if="mode === 'complete' && busy"><p class="empty-message" role="status">{{ t.checking }}</p></template>
-        <template v-else-if="terminal"><p v-if="!resetDone" class="empty-message">{{ t.restartHint }}</p><ElButton class="primary" type="primary" :loading="busy" @click="restart">{{ t.restart }}</ElButton></template>
+        <template v-else-if="terminal"><p v-if="!resetDone && !error" class="empty-message">{{ t.restartHint }}</p><ElButton class="primary" type="primary" :loading="busy" @click="restart">{{ mode === 'register' ? t.restartRegister : t.restart }}</ElButton></template>
         <template v-else-if="mode === 'complete' && confirmationAccount">
           <p class="empty-message">{{ t.confirmAccountNotice }}</p>
           <div class="confirmation-account"><strong v-for="address in confirmationAccount.emails" :key="address">{{ address }}</strong></div>
@@ -224,13 +236,14 @@ onMounted(async () => {
         </template>
         <template v-else-if="mode !== 'complete'">
           <form @submit.prevent="submit">
-            <label class="field" :class="{ 'login-field': mode === 'login' }" for="email"><span :class="{ 'visually-hidden': mode === 'login' }">{{ mode === 'login' ? t.loginIdentifier : t.email }}</span><ElInput id="email" v-model="email" :type="mode === 'login' ? 'text' : 'email'" autocomplete="username" required :maxlength="254" :disabled="busy" :placeholder="mode === 'login' ? t.loginIdentifier : 'you@example.com'" /></label>
-            <label v-if="mode === 'login' || mode === 'register'" class="field" :class="{ 'login-field': mode === 'login' }" for="password"><span :class="{ 'visually-hidden': mode === 'login' }">{{ t.password }}</span><ElInput id="password" v-model="password" type="password" :placeholder="mode === 'login' ? t.password : undefined" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" required show-password :maxlength="512" :disabled="busy" /></label>
-            <label v-if="mode === 'register'" class="field" for="confirm-password"><span>{{ language === 'en' ? 'Confirm password' : '确认密码' }}</span><ElInput id="confirm-password" v-model="confirmPassword" type="password" autocomplete="new-password" required show-password :maxlength="512" :disabled="busy" /></label>
+            <label class="field" :class="{ 'login-field': mode === 'login', 'field-error': feedback?.field === 'email' }" for="email"><span :class="{ 'visually-hidden': mode === 'login' }">{{ mode === 'login' ? t.loginIdentifier : t.email }}</span><ElInput id="email" :aria-invalid="feedback?.field === 'email' || undefined" :aria-describedby="feedback?.field === 'email' ? 'auth-error-message' : undefined" v-model="email" :type="mode === 'login' ? 'text' : 'email'" autocomplete="username" required :maxlength="254" :disabled="busy" :placeholder="mode === 'login' ? t.loginIdentifier : 'you@example.com'" /></label>
+            <label v-if="mode === 'login' || mode === 'register'" class="field" :class="{ 'login-field': mode === 'login', 'field-error': feedback?.field === 'password' }" for="password"><span :class="{ 'visually-hidden': mode === 'login' }">{{ t.password }}</span><ElInput id="password" :aria-invalid="feedback?.field === 'password' || undefined" :aria-describedby="feedback?.field === 'password' ? 'auth-error-message' : undefined" v-model="password" type="password" :placeholder="mode === 'login' ? t.password : undefined" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" required show-password :maxlength="512" :disabled="busy" /></label>
+            <label v-if="mode === 'register'" class="field" :class="{ 'field-error': feedback?.field === 'confirm-password' }" for="confirm-password"><span>{{ language === 'en' ? 'Confirm password' : '确认密码' }}</span><ElInput id="confirm-password" :aria-invalid="feedback?.field === 'confirm-password' || undefined" :aria-describedby="feedback?.field === 'confirm-password' ? 'auth-error-message' : undefined" v-model="confirmPassword" type="password" autocomplete="new-password" required show-password :maxlength="512" :disabled="busy" /></label>
             <p v-if="mode === 'register'" class="field-hint">{{ t.passwordHint }}</p>
             <ElButton class="primary" type="primary" native-type="submit" :loading="busy" :disabled="!actionable">{{ mode === 'login' ? t.submit : t.finishRegister }}</ElButton>
           </form>
         </template>
+        <button v-if="feedback?.goToLogin" class="text-button" type="button" :disabled="busy" @click="goToLogin">{{ t.goToLogin }}</button>
         </div>
         <div v-if="mode === 'login' && entryReady && !terminal" class="entry-footer">
           <ElCheckbox v-model="remember" :disabled="busy">{{ t.remember }}</ElCheckbox>
@@ -240,3 +253,7 @@ onMounted(async () => {
     </main>
   </div>
 </template>
+
+<style scoped>
+.field-error :deep(.el-input__wrapper) { box-shadow: 0 0 0 1px #b34c35 inset; }
+</style>
