@@ -1,6 +1,6 @@
 # AUTH-12 交付记录
 
-状态：2026-11-05，T-01 已整理三仓库本地提交并集成核对时的主线，本轮本地复验及记录已完成；K-06 已按现行重试合同修正测试并定向复验，见第 9 节。功能分支未推送、未合入主线、未发布，未操作真实数据。42 项要求中 39 项在表内注明的隔离范围通过、3 项部分完成；完整条件与证据见 [验收矩阵](acceptance-matrix.md)。CI Full 和真实环境待办未被记为完成。
+状态：2026-11-06，T-01 正在完成远端评审与最终集成验收；Auth、Club 和 Work 三项前置修复已推送并建立 PR，Work 已集成主线 d8232983，本轮本地复验通过。远端状态见第 10 节，旧轮次的“未推送”保留为当时事实。42 项要求中 39 项在表内注明的隔离范围通过、3 项部分完成；完整条件与证据见 [验收矩阵](acceptance-matrix.md)。未发布、未操作真实数据；CI 未完成的部分不标通过。
 
 ## 1 本次交付
 
@@ -20,8 +20,8 @@ AUTH-01 至 AUTH-10 的中央能力、WORK-01 至 WORK-09、CLUB-01 至 CLUB-09 
 
 | 仓库 | 检出分支 | 被验源码基准提交 | 版本含义 |
 | --- | --- | --- | --- |
-| Auth | `codex/unified-account-foundation` | `f4d11dfb71efadcad8087e0585e9431ddd0095fc` | 根包未声明发布版本；统一账号合同 1.1.0；已包含中央实现、T-01 摘要工具及纯格式修正 |
-| Work | `codex/work-01-account-foundation` | `c9d6628c271ea812a9c7423b4869cda03aa8fbd6` | 包版本 0.3.0；包含 K-06 测试修正，已集成主线 `a00f5ba1ce1db9f13853c8923c6068dac62e643f` |
+| Auth | `codex/unified-account-foundation` | `944e8afe3e7de643791c87b852d5f080dd505270` | 根包未声明发布版本；统一账号合同 1.1.0；已包含中央实现、T-01 摘要工具及纯格式修正 |
+| Work | `codex/work-01-account-foundation` | `73cb15048300474fa10373c616db86d52d9b8416` | 包版本 0.3.0；包含三项前置修复，已集成主线 `d82329833844a7dee4c7df56a2d9568b636d9957` |
 | Club | `codex/club-01-account-foundation` | `afff5640a62cc673d0277430e3ab0b4a4e5285b5` | 包版本 0.1.0；已集成主线 `8bb582456c9f3d1e2ec7f7404b0edf991b13277e` |
 
 上述提交已包含本轮被验实现；早期未提交阶段的基础 SHA 与摘要保留在验证记录的历史轮次中。当前基准与 [manifest](delivery-manifest.json) 中 `sourceScope/sourceSha256` 一起标识被验源码；`uncommitted` 只统计这些输入范围内的源码变更。后续仅提交文档时基准不变，检查工具要求该基准仍为当前 HEAD 的祖先，并逐字节复核源码、合同、迁移及矩阵；源码改变不能借此沿用旧证据。
@@ -240,3 +240,26 @@ Auth 格式检查最初报告 3 个文件，其中密码 KDF 夹具和本地配�
 评审材料建议标题：`test(sandbox): align lost acknowledgements with bounded read retries`。评审先核对 ASC-53 与原失败，再核对读取的次数上限、写入不重发及 unknown 后的拒绝；之后沿用第 8 节的资源放行、FTS、Auth 和产品接入顺序。K-06 修复本身不改 API、数据库、页面资源、版本或真实配置，不需新增资源放行。
 
 账号集成分支本轮没有合入新增的 #1762/#1788；独立修复分支的主线构建不代表账号集成已经更新到 `d8232983`。送审前仍须更新各前置分支及最终账号集成 head，处理版本/快照冲突，再做所需 Verify、CI Full 和评审。本轮没有推送、创建 PR、触发 CI 或合并远端分支，真实服务和数据仍未接入。
+
+## 10 T-01 远端收尾（2026-11-06，进行中）
+
+用户已授权继续完成远端收尾。GitHub 连接已可用，操作账号为 `seed47`；仅推送本任务的代码和评审材料，没有读取运行凭据、操作真实数据库或部署。Work 主检出保持不动。
+
+| 评审 | 范围 | 当前提交/状态 |
+| --- | --- | --- |
+| [Work #1842](https://github.com/molis-ai/molis-work/pull/1842) | K-06 重试合同，2 文件 | `8b2e0e901a7f563968a37ec9d73949bfca4470d3`；Verify 待完成 |
+| [Work #1843](https://github.com/molis-ai/molis-work/pull/1843) | 已获批资源放行，1 文件 | `6272990f8ca0d2f6e7138f3ddbdc171882fd49b5`；Verify 待完成 |
+| [Work #1844](https://github.com/molis-ai/molis-work/pull/1844) | FTS 整数读取，5 文件 | `fcc2b97941817ab06152d3af36c28cd730b1a5c1`；Verify 待完成 |
+| [Auth #2](https://github.com/molis-ai/auth/pull/2) | 中央合同、实现、迁移与交付材料 | 已推送；最终证据更新后继续核对 |
+| [Club #27](https://github.com/molis-ai/molis-club/pull/27) | BFF、旧身份映射及完整账号入口 | `afff5640a62cc673d0277430e3ab0b4a4e5285b5` |
+| [Work #1846](https://github.com/molis-ai/molis-work/pull/1846) | Host、动作、完整账号入口 | `73cb15048300474fa10373c616db86d52d9b8416`；草稿，当前父分支为 #1843 |
+
+Work 主线 #1762/#1788 已在 `19cc53051edcb6bcc42b5821ee92a962d4ed665e` 合入。唯一冲突在 `tests/action-read-compatibility.test.ts`：保留账号错误断言，并采用主线的项目读取动作版本 1。中央合同仍为 1.1.0，两端固定副本一致；没有新增 API、迁移或页面资源。资源相对 d8232983 的增量与第 8 节批准值相同。
+
+本轮整体构建、相对主线健康门禁、包边界、67 份公开 API 快照、版本、资源及 Work 逐提交密钥扫描通过；48 个合同测试文件通过。11 个定向文件 131/131 覆盖账号、会话、Host 拒绝、Home/Goals 身份、权益、FTS、知识生命周期及 K-06。六个 Work 账号专项脚本、Club 真实浏览器及三端切换/回退联合验证通过，全部使用外部 mock、合成 D1 和临时 Home。
+
+Auth/Club 没有 GitHub Actions 工作流：沿用明确绑定源码的本地验证，加本轮联合复验，不声称远端 CI 通过。复用 Work 扫描器检查 Auth 新增行时发现 7 个密码字面量，逐项核对为测试中注册到临时 D1 的合成账号密码；没有真实凭据，没有修改 Work 扫描规则或白名单。Club 新增行扫描通过。
+
+前置 PR 的 CI 运行分别为 [1842 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059957428)、[1843 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059970963)、[1844 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059984755)。前两个 Verify 已通过；FTS 另有 [Full](https://github.com/molis-ai/molis-work/actions/runs/42061291149)。账号提交 `73cb1504` 已通过连接器建立隔离集成分支并触发 [账号 Full](https://github.com/molis-ai/molis-work/actions/runs/42068132344)。原 Git 推送报 `commit_refs_rules` 服务端错误，未冒充成功；随后核对连接器建立的分支、实际事件和 SHA。Full 尚在执行，不能据此关闭 T-01。Linux 排除的 macOS 项由本机证据覆盖，未运行 live。
+
+自动审批拒绝了为 #1842/#1843 启用自动合并：现有评审/CI 授权未被认定包含修改 main。两个 PR 最终 Verify 通过后已向用户单独请求合入授权，未绕过拒绝，尚未合入主线。账号 PR 在前置进入 main 后再调整目标及核对 Verify；集成分支本身不合入 main。其余验证不依赖该授权，继续执行并记录。
