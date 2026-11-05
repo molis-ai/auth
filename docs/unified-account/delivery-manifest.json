@@ -1,11 +1,11 @@
 {
-  "recordedAt": "2026-11-05T18:52:21.560Z",
+  "recordedAt": "2026-11-05T19:55:45.537Z",
   "formatVersion": 1,
   "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
   "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
   "repositories": {
     "A": {
-      "baseCommit": "98f1b3fb9acb3d867067d1d02defddfa495ed975",
+      "baseCommit": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
       "uncommitted": false,
       "branch": "codex/unified-account-foundation",
       "packageVersion": null,
@@ -36,7 +36,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+      "baseCommit": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -57,8 +57,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5906,
-      "sourceSha256": "4244da435ca27888536302eb1115f65eaa188ec789ae337a04f96fe14c412612"
+      "fileCount": 5911,
+      "sourceSha256": "35584a9b9feb8ef197c084406882d71ab21847183ba6c50598c3edcd613ee8db"
     },
     "C": {
       "baseCommit": "ce8a89c97fd5e093cd44aac200de85341481335c",
@@ -121,6 +121,6 @@
   "evidence": {
     "requirementCount": 42,
     "pathCount": 75,
-    "matrixSha256": "cbaf3c99b8e26eba1f9a138f1cf12cd55a4562aeda3849e5ca2e7f406cd07d41"
+    "matrixSha256": "7649c91e0bdb2adcc2c2cafda3579c4de75266b4d7701d5fe1aa045cd982523c"
   }
 }

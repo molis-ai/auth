@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-05T18:53:34.690108+00:00",
+  "recordedAt": "2026-11-05T19:56:36.156595+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
   "phase": "T-01_REMOTE_CLOSURE_IN_PROGRESS",
-  "note": "First account Full finished all 16 shards: 1650/1657 files passed, seven persistent failures and five flaky passes. K-07 through K-11 are locally repaired and pushed at fa6231ca9. K-06 merged. FTS independent Verify/Full passed and merge is authorized/queued. Updated resource PR Verify and final integrated account-head Full/Verify remain pending. Each result retains its actual source binding; no real data, providers or deployment.",
+  "note": "Final candidate c235037f4 includes exact prerequisite queue commit 31cad5be9. Local build/gates, 45 contract/SDK/account files (765/765), six Work account scripts, Club browser and cross-product cutover/rollback pass. Final Full and Verify are triggered, pending. Prerequisites must actually reach main; no real data/providers/deployment.",
   "repositories": {
     "A": {
-      "baseCommit": "98f1b3fb9acb3d867067d1d02defddfa495ed975",
+      "baseCommit": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
       "uncommitted": false,
       "branch": "codex/unified-account-foundation",
       "packageVersion": null,
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+      "baseCommit": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,8 +58,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5906,
-      "sourceSha256": "4244da435ca27888536302eb1115f65eaa188ec789ae337a04f96fe14c412612"
+      "fileCount": 5911,
+      "sourceSha256": "35584a9b9feb8ef197c084406882d71ab21847183ba6c50598c3edcd613ee8db"
     },
     "C": {
       "baseCommit": "ce8a89c97fd5e093cd44aac200de85341481335c",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "59fc2a377527ca4c15785cbab5640d70a39db5616cb5e3857423c8ec5574d9a3",
+  "sourceManifestSha256": "00d5ea9b98611026393fc221980a2013a11d653c0d1ecd0c15eef2c066cc62ae",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -1302,6 +1302,499 @@
         "tests/issue-draft-preview.e2e.test.ts"
       ],
       "sourceBase": "cee87ece04bf9e943e234ff124626efabd610c60",
+      "status": "PASS"
+    },
+    {
+      "id": "club-integrated-test-account-browser",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 test-account-browser' -- node scripts/test-account-browser.mjs",
+      "startedAt": "2026-11-05T19:49:53.115783+00:00",
+      "finishedAt": "2026-11-05T19:51:30.592521+00:00",
+      "seconds": 97.48,
+      "exitCode": 0,
+      "log": "club-integrated-test-account-browser.log",
+      "logBytes": 1082,
+      "logSha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 test-account-browser",
+        "--",
+        "node",
+        "scripts/test-account-browser.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "club-integrated-test-account-cutover",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 test-account-cutover' -- node scripts/test-account-cutover.mjs",
+      "startedAt": "2026-11-05T19:51:30.649568+00:00",
+      "finishedAt": "2026-11-05T19:51:42.716273+00:00",
+      "seconds": 12.07,
+      "exitCode": 0,
+      "log": "club-integrated-test-account-cutover.log",
+      "logBytes": 1014,
+      "logSha256": "181257e66949548e5720c6cb81b7cb23c6009526c515082c6b0063a1788568b8",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 test-account-cutover",
+        "--",
+        "node",
+        "scripts/test-account-cutover.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-account-authentication",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 account-authentication' -- node scripts/account-authentication.test.mjs",
+      "startedAt": "2026-11-05T19:48:47.456572+00:00",
+      "finishedAt": "2026-11-05T19:48:59.548211+00:00",
+      "seconds": 12.09,
+      "exitCode": 0,
+      "log": "work-integrated-account-authentication.log",
+      "logBytes": 1940,
+      "logSha256": "66a7ef72bc1b1006d3aff61a7111cb0da2b610ab2510d4c354e999ce171a855f",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-authentication",
+        "--",
+        "node",
+        "scripts/account-authentication.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-account-billing",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 account-billing' -- node scripts/account-billing.test.mjs",
+      "startedAt": "2026-11-05T19:49:34.956044+00:00",
+      "finishedAt": "2026-11-05T19:49:53.060770+00:00",
+      "seconds": 18.1,
+      "exitCode": 0,
+      "log": "work-integrated-account-billing.log",
+      "logBytes": 3303,
+      "logSha256": "b1e7fd14b1cebbcb545681514238feb025109065c3f1cac94527cf28dbb03942",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-billing",
+        "--",
+        "node",
+        "scripts/account-billing.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-account-management",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 account-management' -- node scripts/account-management.test.mjs",
+      "startedAt": "2026-11-05T19:49:09.672828+00:00",
+      "finishedAt": "2026-11-05T19:49:22.762905+00:00",
+      "seconds": 13.09,
+      "exitCode": 0,
+      "log": "work-integrated-account-management.log",
+      "logBytes": 1493,
+      "logSha256": "1d4fb99055e8f22245783d4d8ff7f9cce08d4514e4e16411c1bc1df7f120d765",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-management",
+        "--",
+        "node",
+        "scripts/account-management.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-account-provider",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 account-provider' -- node scripts/account-provider.test.mjs",
+      "startedAt": "2026-11-05T19:48:59.577949+00:00",
+      "finishedAt": "2026-11-05T19:49:09.641006+00:00",
+      "seconds": 10.06,
+      "exitCode": 0,
+      "log": "work-integrated-account-provider.log",
+      "logBytes": 2905,
+      "logSha256": "845d7c8007efe134a942017f55f97fc99fe82b171613b9f9e06b55aa42c39add",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-provider",
+        "--",
+        "node",
+        "scripts/account-provider.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-account-tenants",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 account-tenants' -- node scripts/account-tenants.test.mjs",
+      "startedAt": "2026-11-05T19:49:22.820702+00:00",
+      "finishedAt": "2026-11-05T19:49:34.908150+00:00",
+      "seconds": 12.09,
+      "exitCode": 0,
+      "log": "work-integrated-account-tenants.log",
+      "logBytes": 3224,
+      "logSha256": "f8d36b2d78c7f1a88f80ad276909a72b6224d394575d8e8c1f6bd9f2db189054",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-tenants",
+        "--",
+        "node",
+        "scripts/account-tenants.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-boundary",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm boundary:check",
+      "startedAt": "2026-11-05T19:46:20.014949+00:00",
+      "finishedAt": "2026-11-05T19:46:24.058292+00:00",
+      "seconds": 4.04,
+      "exitCode": 0,
+      "log": "work-integrated-boundary.log",
+      "logBytes": 268,
+      "logSha256": "2cdbeadec164aa11c398533c82c2724342d37e87e2728c9145dc014e285ee501",
+      "argv": [
+        "pnpm",
+        "boundary:check"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-build",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm build",
+      "startedAt": "2026-11-05T19:45:47.694205+00:00",
+      "finishedAt": "2026-11-05T19:46:19.955586+00:00",
+      "seconds": 32.26,
+      "exitCode": 0,
+      "log": "work-integrated-build.log",
+      "logBytes": 32556,
+      "logSha256": "f5ee741ef4cd51f3f5d3e664ef9b180f4772d23bb956995193578529bdb6a058",
+      "argv": [
+        "pnpm",
+        "build"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-central-account",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 central-account' -- node scripts/central-account.test.mjs",
+      "startedAt": "2026-11-05T19:48:44.381892+00:00",
+      "finishedAt": "2026-11-05T19:48:47.408950+00:00",
+      "seconds": 3.03,
+      "exitCode": 0,
+      "log": "work-integrated-central-account.log",
+      "logBytes": 159,
+      "logSha256": "9095cc29103d6cd05c35b2121ff639309010ed972d56c91a87596b1b3f25921a",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 central-account",
+        "--",
+        "node",
+        "scripts/central-account.test.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-contracts-sdk",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label 'T-01 integrated contracts SDK' -- node scripts/run-tests.mjs --jobs 1 tests/action-schema-compiler.test.ts tests/action-plugin-audience.test.ts tests/plugin-manifest-v2.test.ts tests/plugin-declaration-rules.test.ts tests/action-read-compatibility.test.ts tests/runtime-provider-identity.test.ts tests/plugin-capability-availability.test.ts tests/action-error-model.test.ts tests/plugin-model-service.test.ts tests/action-availability-kind.test.ts tests/material-upload.test.ts tests/plugin-runtime-integration.test.ts tests/home-action-scenes.test.ts tests/plugin-artifact-client.test.ts tests/action-service.test.ts tests/execution-lifetime.test.ts tests/system-search.test.ts tests/plugin-sdk-exports.test.ts tests/builtin-manifests-contract.test.ts tests/side-panel-platform.test.ts tests/contextual-interaction.test.ts tests/work-placement.test.ts tests/plugin-action-route.test.ts tests/plugin-sample.e2e.test.ts tests/action-cross-references.test.ts tests/action-artifact-references.test.ts tests/diff-plugin.test.ts tests/question-rules-consistency.test.ts tests/form-draft-questions.test.ts tests/action-cards.test.ts tests/assistant-card-outcomes.test.ts tests/assistant-interaction-html.test.ts tests/assistant-business-gateway.test.ts tests/plugin-sdk-subpaths.test.ts tests/feed-rich-content.test.ts tests/code-incremental-colour.test.ts tests/git-porcelain.test.ts tests/diff-patch.test.ts tests/companion-state-html.test.ts tests/coding-change-html.test.ts tests/plugin-read-groups.test.ts tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts tests/account-entitlements.test.ts",
+      "startedAt": "2026-11-05T19:47:06.608491+00:00",
+      "finishedAt": "2026-11-05T19:48:44.334937+00:00",
+      "seconds": 97.71,
+      "exitCode": 0,
+      "log": "work-integrated-contracts-sdk.log",
+      "logBytes": 3519,
+      "logSha256": "af8f2c541b470fa741f24ce64731d61dd0eec592f04da758a47a01b8e3aae671",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 integrated contracts SDK",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/action-schema-compiler.test.ts",
+        "tests/action-plugin-audience.test.ts",
+        "tests/plugin-manifest-v2.test.ts",
+        "tests/plugin-declaration-rules.test.ts",
+        "tests/action-read-compatibility.test.ts",
+        "tests/runtime-provider-identity.test.ts",
+        "tests/plugin-capability-availability.test.ts",
+        "tests/action-error-model.test.ts",
+        "tests/plugin-model-service.test.ts",
+        "tests/action-availability-kind.test.ts",
+        "tests/material-upload.test.ts",
+        "tests/plugin-runtime-integration.test.ts",
+        "tests/home-action-scenes.test.ts",
+        "tests/plugin-artifact-client.test.ts",
+        "tests/action-service.test.ts",
+        "tests/execution-lifetime.test.ts",
+        "tests/system-search.test.ts",
+        "tests/plugin-sdk-exports.test.ts",
+        "tests/builtin-manifests-contract.test.ts",
+        "tests/side-panel-platform.test.ts",
+        "tests/contextual-interaction.test.ts",
+        "tests/work-placement.test.ts",
+        "tests/plugin-action-route.test.ts",
+        "tests/plugin-sample.e2e.test.ts",
+        "tests/action-cross-references.test.ts",
+        "tests/action-artifact-references.test.ts",
+        "tests/diff-plugin.test.ts",
+        "tests/question-rules-consistency.test.ts",
+        "tests/form-draft-questions.test.ts",
+        "tests/action-cards.test.ts",
+        "tests/assistant-card-outcomes.test.ts",
+        "tests/assistant-interaction-html.test.ts",
+        "tests/assistant-business-gateway.test.ts",
+        "tests/plugin-sdk-subpaths.test.ts",
+        "tests/feed-rich-content.test.ts",
+        "tests/code-incremental-colour.test.ts",
+        "tests/git-porcelain.test.ts",
+        "tests/diff-patch.test.ts",
+        "tests/companion-state-html.test.ts",
+        "tests/coding-change-html.test.ts",
+        "tests/plugin-read-groups.test.ts",
+        "tests/account-client.test.ts",
+        "tests/account-session.test.ts",
+        "tests/security-invariants-account-host.test.ts",
+        "tests/account-entitlements.test.ts"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS",
+      "files": 45,
+      "passed": 765,
+      "total": 765
+    },
+    {
+      "id": "work-integrated-health",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run build --label 'T-01 integrated health' -- node scripts/check-health-gates.mjs --base 31cad5be9809c22d7b393685715c073a63e994ae",
+      "startedAt": "2026-11-05T19:46:24.102387+00:00",
+      "finishedAt": "2026-11-05T19:47:04.492841+00:00",
+      "seconds": 40.36,
+      "exitCode": 0,
+      "log": "work-integrated-health.log",
+      "logBytes": 2003,
+      "logSha256": "ab0554c3061e560600faa4a015987066c311d73ca02bb835819e4975146e7693",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "build",
+        "--label",
+        "T-01 integrated health",
+        "--",
+        "node",
+        "scripts/check-health-gates.mjs",
+        "--base",
+        "31cad5be9809c22d7b393685715c073a63e994ae"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-resources",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/gates/page-assets.mjs --base 31cad5be9809c22d7b393685715c073a63e994ae",
+      "startedAt": "2026-11-05T19:47:04.548292+00:00",
+      "finishedAt": "2026-11-05T19:47:06.561914+00:00",
+      "seconds": 2.01,
+      "exitCode": 0,
+      "log": "work-integrated-resources.log",
+      "logBytes": 125,
+      "logSha256": "d92326d22fa014b6f24ef7b8bf3187606afb2a405d6fbf60ab4c2fcfeff986f5",
+      "argv": [
+        "node",
+        "scripts/gates/page-assets.mjs",
+        "--base",
+        "31cad5be9809c22d7b393685715c073a63e994ae"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-secrets-network",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm secrets:check",
+      "startedAt": "2026-11-05T19:52:52.126834+00:00",
+      "finishedAt": "2026-11-05T19:52:53.139309+00:00",
+      "seconds": 1.01,
+      "exitCode": 0,
+      "log": "work-integrated-secrets-network.log",
+      "logBytes": 147,
+      "logSha256": "649e627f9492ce453819f757206c145c36ed1976d0e2f281f5be7766d289db12",
+      "argv": [
+        "pnpm",
+        "secrets:check"
+      ],
+      "sourceBase": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-integrated-secrets",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm secrets:check",
+      "startedAt": "2026-11-05T19:49:32.035421+00:00",
+      "finishedAt": "2026-11-05T19:51:52.788834+00:00",
+      "seconds": 140.75,
+      "exitCode": 1,
+      "log": "work-integrated-secrets.log",
+      "logBytes": 654,
+      "logSha256": "353e36df6e869e4821ef1fca64baecf6160026bce5d335ad6a3eabdb4dc7b15e",
+      "argv": [
+        "pnpm",
+        "secrets:check"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "ENVIRONMENT_FAILED_BEFORE_CHECK",
+      "note": "pnpm could not fetch official package-manager registry signatures in network-restricted sandbox. Secret scan did not start. Unmodified command passed with normal network access; see work-integrated-secrets-network."
+    },
+    {
+      "id": "work-integrated-versions",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/verify-release-versions.mjs",
+      "startedAt": "2026-11-05T19:51:52.841433+00:00",
+      "finishedAt": "2026-11-05T19:51:53.848576+00:00",
+      "seconds": 1.01,
+      "exitCode": 0,
+      "log": "work-integrated-versions.log",
+      "logBytes": 163,
+      "logSha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a",
+      "argv": [
+        "node",
+        "scripts/verify-release-versions.mjs"
+      ],
+      "sourceBase": "3634b5b8810bcd7748a07c7976fd13f1720437c3",
+      "jointRepositories": {
+        "A": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+        "W": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
       "status": "PASS"
     }
   ],
@@ -8847,6 +9340,1724 @@
           }
         ]
       }
+    },
+    {
+      "phase": "T-01_BEFORE_FINAL_CANDIDATE",
+      "recordedAt": "2026-11-05T18:53:34.690108+00:00",
+      "sourceManifest": {
+        "recordedAt": "2026-11-05T18:52:21.560Z",
+        "formatVersion": 1,
+        "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
+        "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
+        "repositories": {
+          "A": {
+            "baseCommit": "98f1b3fb9acb3d867067d1d02defddfa495ed975",
+            "uncommitted": false,
+            "branch": "codex/unified-account-foundation",
+            "packageVersion": null,
+            "sourceScope": [
+              "contracts",
+              "worker/rust/src",
+              "worker/rust/Cargo.toml",
+              "worker/rust/Cargo.lock",
+              "worker/scripts",
+              "worker/tests",
+              "worker/rust-tests",
+              "worker/migrations",
+              "worker/package.json",
+              "worker/package-lock.json",
+              "worker/unified-account-local-seed.sql",
+              "worker/mock-provider-local-seed.sql",
+              "web/src",
+              "web/tests",
+              "web/package.json",
+              "web/package-lock.json",
+              "sdk/browser/src",
+              "sdk/browser/tests",
+              "sdk/browser/package.json",
+              "sdk/browser/package-lock.json",
+              "package.json"
+            ],
+            "fileCount": 157,
+            "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
+          },
+          "W": {
+            "baseCommit": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+            "uncommitted": false,
+            "branch": "codex/work-01-account-foundation",
+            "packageVersion": "0.3.0",
+            "sourceScope": [
+              "apps",
+              "horizontal",
+              "modules",
+              "packages",
+              "plugins",
+              "server",
+              "scripts",
+              "tests",
+              "examples",
+              "tooling",
+              "vendor",
+              "package.json",
+              "pnpm-lock.yaml",
+              "pnpm-workspace.yaml",
+              "tsconfig.json"
+            ],
+            "fileCount": 5906,
+            "sourceSha256": "4244da435ca27888536302eb1115f65eaa188ec789ae337a04f96fe14c412612"
+          },
+          "C": {
+            "baseCommit": "ce8a89c97fd5e093cd44aac200de85341481335c",
+            "uncommitted": false,
+            "branch": "codex/club-01-account-foundation",
+            "packageVersion": "0.1.0",
+            "sourceScope": [
+              "app",
+              "content",
+              "db",
+              "drizzle",
+              "lib",
+              "scripts",
+              "tests",
+              "package.json",
+              "package-lock.json",
+              "tsconfig.json",
+              "vite.config.ts",
+              "next.config.ts",
+              ".oxlintrc.json",
+              ".oxfmtrc.json"
+            ],
+            "fileCount": 804,
+            "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
+          }
+        },
+        "contractVersion": "1.1.0",
+        "contractFiles": {
+          "schemas.json": "c5955e41d22839b609d3db910bf3fcdd9845d6a284e6fd8f3e811565dbdbab7d",
+          "openapi.json": "cedb83e90eaca58e4a41dc70ece59dad3ebce25f96ed8c3c27caef6132de0711",
+          "policy.json": "1835f71ba99c1203ac79c9ed950d1d8a1c9ab91450919082f516428072440912",
+          "validator-profile.json": "8bd2bb85a58a08d12d8f0ab27dd30d1b29d21123fbde6b39527c64867bb3180c",
+          "validate.ts": "aa89b77100cf1844d0b2f2e436764c01bb3d31597f4bff43815a8e22c917a320",
+          "fixtures.json": "5c889cede6f21215630143990d2433a9dc1fe89b0f2a4c8a811c462c69cacdfb"
+        },
+        "migrations": {
+          "A": {
+            "worker/migrations/0001_identity_and_spaces.sql": "3c315cf7aacd9412842177d0972c70f9711aa76e26c0d750f88e596a56cc38ee",
+            "worker/migrations/0002_ephemeral_primitives.sql": "c6deae30a4f1e6f57182f1f12e7e1a5542cd4a3ef156fdafa5a7c75a71f0d540",
+            "worker/migrations/0003_sessions_and_management.sql": "b8e651a4b4c84b1f595ef16d76c53c6b517f9db094bf178899a43a0f9074febd",
+            "worker/migrations/0004_services.sql": "5e0d83593aed059fb39b05e8d04def6173b667eb495b9188ca735403f118f8ff",
+            "worker/migrations/0005_unified_account.sql": "d21116a3adc05f2ba644a26254da413ffe35f902ddebf23db03d56f7b5879f50",
+            "worker/migrations/0006_mock_delivery.sql": "16f2911e889557fda5dce4b7ffe8105d16ff99ccac8395d76da8f589e20acdff",
+            "worker/migrations/0007_mock_provider_accounts.sql": "08229bc5c1fbd100c4fb39259f312de18f248632fd492c0f2ca11eef1289db3c",
+            "worker/migrations/0008_sensitive_identity_transactions.sql": "7becaa04b4c497b0375bbf351735e5b239e07a17015dfffa0cdfec2f0397343e",
+            "worker/migrations/0009_mock_tenant_notifications.sql": "82a448c69c0d292ff6526e53823fed9dc746418367c263acd60ec116aff59bad",
+            "worker/migrations/0010_subscription_lifecycle.sql": "2ebe26ec2a29444983c03f9a95ff08975c6a1ade9a337567cb66db98d5055eee",
+            "worker/migrations/0011_entitlement_client_product.sql": "90f695d6ac20e12ec57b0f10e9b7833143b1406e66e6b73645e5cdf3a51c6e7c"
+          },
+          "C": {
+            "drizzle/0000_jittery_lady_deathstrike.sql": "269561694dee5c6b10f932529a810899cc37da995c6e5555da7adafc17108b44",
+            "drizzle/0001_nebulous_power_man.sql": "02530652a3101120a63f17198543d812eaad8849f1305ba397ca52f03a37012c",
+            "drizzle/0002_curved_ultron.sql": "ca515d9c5aee5cbc3f1449cc7bbb274885dc0ce0cb466a7bf5d1efe785ac7a3e",
+            "drizzle/0003_applications_multiple_submissions.sql": "5f6b085443fea91852dd85447721a89c7ff066998531c8c67ebebcac3486c95f",
+            "drizzle/0004_central_account_sessions.sql": "c583a437caac17d872f0bad7fb3da30d1bd185bfbd415b2503771b24cd00ba3b",
+            "drizzle/0005_central_account_transactions.sql": "7e2a79a0f0f6727ec1adce3db37d4410d493d383fc3408e6a7cf38edffb33bbd",
+            "drizzle/0006_light_prism.sql": "42262a1c72d518fc21d16bc2b810127942fdf92cc20aa25037c2c7d18434f610"
+          }
+        },
+        "evidence": {
+          "requirementCount": 42,
+          "pathCount": 75,
+          "matrixSha256": "cbaf3c99b8e26eba1f9a138f1cf12cd55a4562aeda3849e5ca2e7f406cd07d41"
+        }
+      },
+      "results": [
+        {
+          "id": "club-test-account-browser",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/test-account-browser.mjs",
+          "startedAt": "2026-11-05T16:02:01.109201+00:00",
+          "finishedAt": "2026-11-05T16:03:28.315893+00:00",
+          "seconds": 87.23,
+          "exitCode": 0,
+          "log": "club-test-account-browser.log",
+          "logBytes": 1082,
+          "logSha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/test-account-browser.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "afff5640a62cc673d0277430e3ab0b4a4e5285b5"
+        },
+        {
+          "id": "club-test-account-cutover",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/test-account-cutover.mjs",
+          "startedAt": "2026-11-05T16:01:49.018765+00:00",
+          "finishedAt": "2026-11-05T16:02:01.054311+00:00",
+          "seconds": 12.04,
+          "exitCode": 0,
+          "log": "club-test-account-cutover.log",
+          "logBytes": 1014,
+          "logSha256": "36b6a304acfef11ff35b877d370d1272e6455171d4daff8e1b13cfacd5d609fe",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/test-account-cutover.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "afff5640a62cc673d0277430e3ab0b4a4e5285b5"
+        },
+        {
+          "id": "work-account-authentication",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/account-authentication.test.mjs",
+          "startedAt": "2026-11-05T16:00:58.602205+00:00",
+          "finishedAt": "2026-11-05T16:01:08.638344+00:00",
+          "seconds": 10.04,
+          "exitCode": 0,
+          "log": "work-account-authentication.log",
+          "logBytes": 1940,
+          "logSha256": "90e2e1a021430c800754cd911f3cacb36d1cccf0aa743e4f935e40f41b64a7c0",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/account-authentication.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-account-billing",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/account-billing.test.mjs",
+          "startedAt": "2026-11-05T16:01:33.917980+00:00",
+          "finishedAt": "2026-11-05T16:01:48.973903+00:00",
+          "seconds": 15.06,
+          "exitCode": 0,
+          "log": "work-account-billing.log",
+          "logBytes": 3303,
+          "logSha256": "06074b0e61251be2097377a734268c2bea8b060166ef0948f4a349a3b4460031",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/account-billing.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-account-management",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/account-management.test.mjs",
+          "startedAt": "2026-11-05T16:01:14.742562+00:00",
+          "finishedAt": "2026-11-05T16:01:24.784553+00:00",
+          "seconds": 10.04,
+          "exitCode": 0,
+          "log": "work-account-management.log",
+          "logBytes": 1493,
+          "logSha256": "af5bf9b4dd6959af4c3a192feb91e6ac4ce4d64e5da3db2827aef539afbe3d67",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/account-management.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-account-provider",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/account-provider.test.mjs",
+          "startedAt": "2026-11-05T16:01:08.686384+00:00",
+          "finishedAt": "2026-11-05T16:01:14.709983+00:00",
+          "seconds": 6.02,
+          "exitCode": 0,
+          "log": "work-account-provider.log",
+          "logBytes": 2905,
+          "logSha256": "e48c75fa86f6acbe1bd66151432d613a7a8d7187530f36ddfe7e63191f5f048a",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/account-provider.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-account-tenants",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/account-tenants.test.mjs",
+          "startedAt": "2026-11-05T16:01:24.833979+00:00",
+          "finishedAt": "2026-11-05T16:01:33.867712+00:00",
+          "seconds": 9.03,
+          "exitCode": 0,
+          "log": "work-account-tenants.log",
+          "logBytes": 3224,
+          "logSha256": "40036f282ab8222812260c864e610d4e406dbd23ba81a6a1af36e08a6846c254",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/account-tenants.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-api",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/gates/api-snapshot.mjs",
+          "startedAt": "2026-11-05T15:54:14.946000+00:00",
+          "finishedAt": "2026-11-05T15:54:16.956106+00:00",
+          "seconds": 2.01,
+          "exitCode": 0,
+          "log": "work-api.log",
+          "logBytes": 81,
+          "logSha256": "08c2d13fbbc688b909b1f8ad34d8d71c5581d9ba039b71fa3dd6b28e8a44f216",
+          "argv": [
+            "node",
+            "scripts/gates/api-snapshot.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-assets",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/gates/page-assets.mjs --base origin/main",
+          "startedAt": "2026-11-05T15:54:17.000462+00:00",
+          "finishedAt": "2026-11-05T15:54:18.008182+00:00",
+          "seconds": 1.01,
+          "exitCode": 0,
+          "log": "work-assets.log",
+          "logBytes": 96,
+          "logSha256": "999696e2bc3675044edb8eb30a8e498cba66230d4420ca2d3288ea3d81bca212",
+          "argv": [
+            "node",
+            "scripts/gates/page-assets.mjs",
+            "--base",
+            "origin/main"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-boundary",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm boundary:check",
+          "startedAt": "2026-11-05T15:54:08.874722+00:00",
+          "finishedAt": "2026-11-05T15:54:14.898548+00:00",
+          "seconds": 6.02,
+          "exitCode": 0,
+          "log": "work-boundary.log",
+          "logBytes": 268,
+          "logSha256": "d7905d098abb090bbc8042e271f6ed1f247b10cc46c24718fb6efc40dde314ca",
+          "argv": [
+            "pnpm",
+            "boundary:check"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T15:46:24.082345+00:00",
+          "finishedAt": "2026-11-05T15:46:59.207073+00:00",
+          "seconds": 35.13,
+          "exitCode": 0,
+          "log": "work-build.log",
+          "logBytes": 32556,
+          "logSha256": "d93f4e9377643082a94ca19d751b7dac7cc37079d06fdb428c918f063270020d",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-central-account",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/central-account.test.mjs",
+          "startedAt": "2026-11-05T16:00:55.553148+00:00",
+          "finishedAt": "2026-11-05T16:00:58.563086+00:00",
+          "seconds": 3.01,
+          "exitCode": 0,
+          "log": "work-central-account.log",
+          "logBytes": 159,
+          "logSha256": "9095cc29103d6cd05c35b2121ff639309010ed972d56c91a87596b1b3f25921a",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/central-account.test.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-contracts",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_WORK_TEST_JOBS=1 node scripts/machine-slot.mjs run browser --label T-01 final contracts -- pnpm test:contracts",
+          "startedAt": "2026-11-05T15:54:20.141996+00:00",
+          "finishedAt": "2026-11-05T15:56:10.548454+00:00",
+          "seconds": 110.41,
+          "exitCode": 0,
+          "log": "work-contracts.log",
+          "logBytes": 4202,
+          "logSha256": "ed58ca8eab295a0d5bd601360a1e627aa6ac8cffbdeb38393acd23ad90ff5c0d",
+          "argv": [
+            "env",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 final contracts",
+            "--",
+            "pnpm",
+            "test:contracts"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e",
+          "passed": 670,
+          "tests": 670,
+          "files": 48
+        },
+        {
+          "id": "work-directed",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "env MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing MOLIS_WORK_TEST_JOBS=1 node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account integration -- node scripts/run-tests.mjs --jobs 1 tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts tests/web-home-isolation.test.ts tests/goal-management-identity.test.ts tests/account-entitlements.test.ts tests/knowledge-cards.test.ts tests/security-invariants-knowledge-lifecycle.test.ts tests/security-invariants-sandbox-signed-background.test.ts tests/security-invariants-plugin-connections.test.ts tests/security-invariants-call-connections.test.ts",
+          "startedAt": "2026-11-05T15:59:19.113750+00:00",
+          "finishedAt": "2026-11-05T16:00:55.505797+00:00",
+          "seconds": 96.39,
+          "exitCode": 0,
+          "log": "work-directed.log",
+          "logBytes": 1396,
+          "logSha256": "6c332430eb835ed5660cbbc81384ec7307d0904d34e2ceb69eacfc043f3aceab",
+          "argv": [
+            "env",
+            "MOLIS_AUTH_SOURCE=/Users/ninebot/workspace/ypf/code/auth",
+            "MOLIS_WORK_SOURCE=/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+            "MOLIS_WORK_TEST_CHROME=/private/tmp/ninebot-chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+            "MOLIS_WORK_TEST_JOBS=1",
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01 account integration",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/account-client.test.ts",
+            "tests/account-session.test.ts",
+            "tests/security-invariants-account-host.test.ts",
+            "tests/web-home-isolation.test.ts",
+            "tests/goal-management-identity.test.ts",
+            "tests/account-entitlements.test.ts",
+            "tests/knowledge-cards.test.ts",
+            "tests/security-invariants-knowledge-lifecycle.test.ts",
+            "tests/security-invariants-sandbox-signed-background.test.ts",
+            "tests/security-invariants-plugin-connections.test.ts",
+            "tests/security-invariants-call-connections.test.ts"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e",
+          "passed": 131,
+          "tests": 131,
+          "files": 11
+        },
+        {
+          "id": "work-health",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/check-health-gates.mjs --base origin/main",
+          "startedAt": "2026-11-05T15:52:49.682825+00:00",
+          "finishedAt": "2026-11-05T15:53:31.863684+00:00",
+          "seconds": 42.18,
+          "exitCode": 0,
+          "log": "work-health.log",
+          "logBytes": 1974,
+          "logSha256": "bb3a3c54d13793ad894305c299da7de930dba780d0742af04c88f63566774ccf",
+          "argv": [
+            "node",
+            "scripts/check-health-gates.mjs",
+            "--base",
+            "origin/main"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-secrets",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm secrets:check",
+          "startedAt": "2026-11-05T15:54:19.091806+00:00",
+          "finishedAt": "2026-11-05T15:54:20.095057+00:00",
+          "seconds": 1.0,
+          "exitCode": 0,
+          "log": "work-secrets.log",
+          "logBytes": 147,
+          "logSha256": "93a574355427933bc6725d0eff92ee5c7bec48e362542c1f4bee097cf3879acb",
+          "argv": [
+            "pnpm",
+            "secrets:check"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-versions",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/verify-release-versions.mjs",
+          "startedAt": "2026-11-05T15:54:18.038685+00:00",
+          "finishedAt": "2026-11-05T15:54:19.045616+00:00",
+          "seconds": 1.01,
+          "exitCode": 0,
+          "log": "work-versions.log",
+          "logBytes": 163,
+          "logSha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a",
+          "argv": [
+            "node",
+            "scripts/verify-release-versions.mjs"
+          ],
+          "status": "PASS",
+          "sourceBase": "19cc53051edcb6bcc42b5821ee92a962d4ed665e"
+        },
+        {
+          "id": "work-k07-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T17:49:35.603601+00:00",
+          "finishedAt": "2026-11-05T17:49:58.703663+00:00",
+          "seconds": 23.1,
+          "exitCode": 0,
+          "log": "work-k07-build.log",
+          "logBytes": 2433,
+          "logSha256": "1335c5738836ec2b4379bc9500c75b31efce5422efba90269599314eca107670",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "PASS"
+        },
+        {
+          "id": "work-k07-boundary",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm boundary:check",
+          "startedAt": "2026-11-05T17:51:45.785568+00:00",
+          "finishedAt": "2026-11-05T17:51:50.805809+00:00",
+          "seconds": 5.02,
+          "exitCode": 0,
+          "log": "work-k07-boundary.log",
+          "logBytes": 268,
+          "logSha256": "d7905d098abb090bbc8042e271f6ed1f247b10cc46c24718fb6efc40dde314ca",
+          "argv": [
+            "pnpm",
+            "boundary:check"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "PASS"
+        },
+        {
+          "id": "work-k07-health",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/check-health-gates.mjs --base origin/main",
+          "startedAt": "2026-11-05T17:50:49.072741+00:00",
+          "finishedAt": "2026-11-05T17:51:36.246286+00:00",
+          "seconds": 47.17,
+          "exitCode": 0,
+          "log": "work-k07-health.log",
+          "logBytes": 1974,
+          "logSha256": "bb3a3c54d13793ad894305c299da7de930dba780d0742af04c88f63566774ccf",
+          "argv": [
+            "node",
+            "scripts/check-health-gates.mjs",
+            "--base",
+            "origin/main"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "PASS"
+        },
+        {
+          "id": "work-k07-regression",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-K07-and-workbench -- node scripts/run-tests.mjs --jobs 1 tests/issue-draft-preview.e2e.test.ts tests/style-has-scope.test.ts tests/plugin-declarative-mounting.test.ts tests/builtin-plugin-agent-texts.test.ts tests/builtin-manifests-contract.test.ts tests/builtin-plugin-composition.test.ts tests/workbench-ui-platform.test.ts tests/i18n.test.ts tests/client-script-undeclared.test.ts tests/ui-request-client.test.ts tests/ui-request-client-pages.test.ts tests/settings-requests-through-helper.test.ts tests/web-service-settings-client.test.ts tests/assistant-island-script.test.ts tests/plugin-client-served.test.ts tests/plugin-list-developer-mode.test.ts tests/plugin-picker-pins.test.ts tests/settings-call-diagnostics.test.ts tests/capabilities-page.test.ts tests/workbench-tab-workspace.e2e.test.ts tests/call-id-lookup.e2e.test.ts tests/ui-request-client.e2e.test.ts tests/request-failure-call-id.e2e.test.ts tests/model-first-setup.e2e.test.ts tests/model-ready-surfaces.e2e.test.ts tests/model-ready-cross-tab.e2e.test.ts tests/assistant-send-intent.e2e.test.ts tests/assistant-page-cards.e2e.test.ts tests/assistant-stale-refresh.e2e.test.ts tests/project-arrival-chooser.test.ts tests/project-brief.test.ts tests/project-arrival.e2e.test.ts tests/onboarding-journey.e2e.test.ts",
+          "startedAt": "2026-11-05T17:50:43.666515+00:00",
+          "finishedAt": "2026-11-05T18:00:36.536928+00:00",
+          "seconds": 592.85,
+          "exitCode": 0,
+          "log": "work-k07-regression.log",
+          "logBytes": 2818,
+          "logSha256": "6428d29d31f6e1be9e4adfab624596255682cb4f142f78767852db9e2a6bab86",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-K07-and-workbench",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/issue-draft-preview.e2e.test.ts",
+            "tests/style-has-scope.test.ts",
+            "tests/plugin-declarative-mounting.test.ts",
+            "tests/builtin-plugin-agent-texts.test.ts",
+            "tests/builtin-manifests-contract.test.ts",
+            "tests/builtin-plugin-composition.test.ts",
+            "tests/workbench-ui-platform.test.ts",
+            "tests/i18n.test.ts",
+            "tests/client-script-undeclared.test.ts",
+            "tests/ui-request-client.test.ts",
+            "tests/ui-request-client-pages.test.ts",
+            "tests/settings-requests-through-helper.test.ts",
+            "tests/web-service-settings-client.test.ts",
+            "tests/assistant-island-script.test.ts",
+            "tests/plugin-client-served.test.ts",
+            "tests/plugin-list-developer-mode.test.ts",
+            "tests/plugin-picker-pins.test.ts",
+            "tests/settings-call-diagnostics.test.ts",
+            "tests/capabilities-page.test.ts",
+            "tests/workbench-tab-workspace.e2e.test.ts",
+            "tests/call-id-lookup.e2e.test.ts",
+            "tests/ui-request-client.e2e.test.ts",
+            "tests/request-failure-call-id.e2e.test.ts",
+            "tests/model-first-setup.e2e.test.ts",
+            "tests/model-ready-surfaces.e2e.test.ts",
+            "tests/model-ready-cross-tab.e2e.test.ts",
+            "tests/assistant-send-intent.e2e.test.ts",
+            "tests/assistant-page-cards.e2e.test.ts",
+            "tests/assistant-stale-refresh.e2e.test.ts",
+            "tests/project-arrival-chooser.test.ts",
+            "tests/project-brief.test.ts",
+            "tests/project-arrival.e2e.test.ts",
+            "tests/onboarding-journey.e2e.test.ts"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "PASS"
+        },
+        {
+          "id": "work-k07-secrets",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm secrets:check",
+          "startedAt": "2026-11-05T17:53:07.732920+00:00",
+          "finishedAt": "2026-11-05T17:53:08.741094+00:00",
+          "seconds": 1.01,
+          "exitCode": 0,
+          "log": "work-k07-secrets.log",
+          "logBytes": 147,
+          "logSha256": "60c5724501780f49db2b41d3b7587f6e7cd87b57a1b9d632b8826753b199e38d",
+          "argv": [
+            "pnpm",
+            "secrets:check"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "PASS"
+        },
+        {
+          "id": "work-k07-visual",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm visual:compare --base-tree /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline --out .impeccable/qa/review/visual/t01-k07",
+          "startedAt": "2026-11-05T17:55:25.824129+00:00",
+          "finishedAt": "2026-11-05T18:07:23.379841+00:00",
+          "seconds": 717.55,
+          "exitCode": 1,
+          "log": "work-k07-visual.log",
+          "logBytes": 28370,
+          "logSha256": "8dcf71459424a6dd830f61a708908a6c6d7e64336d1f24d178fe506bf2f1e0e8",
+          "argv": [
+            "pnpm",
+            "visual:compare",
+            "--base-tree",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+            "--out",
+            ".impeccable/qa/review/visual/t01-k07"
+          ],
+          "sourceBase": "5206ea3e44d918ee126e902d0f11e2d6c4f3f541",
+          "status": "REVIEWED_VISUAL_DIFFERENCE",
+          "note": "64/66 pixel-identical; other two differ by 8 and 7 pixels with channel delta 1. All 22 style differences are the enabled account button opacity. Zero-tolerance exit 1 retained."
+        },
+        {
+          "id": "work-final-main-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T18:09:36.585106+00:00",
+          "finishedAt": "2026-11-05T18:10:09.723404+00:00",
+          "seconds": 33.14,
+          "exitCode": 0,
+          "log": "work-final-main-build.log",
+          "logBytes": 32556,
+          "logSha256": "c5aec6612c3021f80fcd8cb76dc248a4fa462b999390f3ba7a1a74eb68089246",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "sourceBase": "8999db4c94b7a1ab5370816720a8b266c4c7432c",
+          "status": "PASS"
+        },
+        {
+          "id": "work-final-main-gate-tests",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/run-tests.mjs --jobs 1 tests/page-assets-budget.test.ts",
+          "startedAt": "2026-11-05T18:11:01.518173+00:00",
+          "finishedAt": "2026-11-05T18:11:38.691150+00:00",
+          "seconds": 37.17,
+          "exitCode": 0,
+          "log": "work-final-main-gate-tests.log",
+          "logBytes": 20616,
+          "logSha256": "0ea12f3112d0506f60862b42c72b208e52465224988927d6ea6f9fccbbf00c4f",
+          "argv": [
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/page-assets-budget.test.ts"
+          ],
+          "sourceBase": "8999db4c94b7a1ab5370816720a8b266c4c7432c",
+          "status": "PASS"
+        },
+        {
+          "id": "work-full-failures-reproduce",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-Full-failures -- node scripts/run-tests.mjs --jobs 1 tests/goals-page-golden.test.ts tests/runtime-payload.test.ts tests/project-home-start.e2e.test.ts",
+          "startedAt": "2026-11-05T18:15:11.771961+00:00",
+          "finishedAt": "2026-11-05T18:16:39.044826+00:00",
+          "seconds": 87.27,
+          "exitCode": 1,
+          "log": "work-full-failures-reproduce.log",
+          "logBytes": 27243,
+          "logSha256": "998991a0249131749886f5eb5892234b2b48326ed2eca9e06336a354cdc02e5c",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-Full-failures",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/goals-page-golden.test.ts",
+            "tests/runtime-payload.test.ts",
+            "tests/project-home-start.e2e.test.ts"
+          ],
+          "sourceBase": "8999db4c94b7a1ab5370816720a8b266c4c7432c",
+          "status": "FAIL"
+        },
+        {
+          "id": "work-full-failures-fixed",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-account-golden-runtime -- node scripts/run-tests.mjs --jobs 1 tests/license-materials.test.ts tests/runtime-payload.test.ts tests/goals-page-golden.test.ts tests/project-home-start.e2e.test.ts",
+          "startedAt": "2026-11-05T18:25:26.491489+00:00",
+          "finishedAt": "2026-11-05T18:27:04.782470+00:00",
+          "seconds": 98.3,
+          "exitCode": 1,
+          "log": "work-full-failures-fixed.log",
+          "logBytes": 8782,
+          "logSha256": "3890dacc9ee294f6fd65336275c9d1edd8851a74e2c4c86c92edcdd8ff9170f9",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-account-golden-runtime",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/license-materials.test.ts",
+            "tests/runtime-payload.test.ts",
+            "tests/goals-page-golden.test.ts",
+            "tests/project-home-start.e2e.test.ts"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "FAIL",
+          "note": "Project entry 6/6, runtime payload 3/3, license 2/2 passed. Goals browser translation refused absent MOLIS_WORK_TEST_CHROME; corrected environment rerun is work-goals-golden-fixed."
+        },
+        {
+          "id": "work-goals-golden-fixed",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-golden-confirm -- node scripts/run-tests.mjs --jobs 1 tests/goals-page-golden.test.ts",
+          "startedAt": "2026-11-05T18:27:59.152861+00:00",
+          "finishedAt": "2026-11-05T18:28:03.166501+00:00",
+          "seconds": 4.01,
+          "exitCode": 0,
+          "log": "work-goals-golden-fixed.log",
+          "logBytes": 7056,
+          "logSha256": "fbda755c15918add7d804f82c4e21f3c1cc7d34aee0e61ebb19fc20290704fc9",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-golden-confirm",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/goals-page-golden.test.ts"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS",
+          "note": "70 passed, two existing fixture-generation branches skipped; explicit Chrome 156 executable with an isolated profile."
+        },
+        {
+          "id": "work-closeout-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T18:29:44.104190+00:00",
+          "finishedAt": "2026-11-05T18:30:05.196795+00:00",
+          "seconds": 21.09,
+          "exitCode": 0,
+          "log": "work-closeout-build.log",
+          "logBytes": 2435,
+          "logSha256": "028f3f41f70f931e9b3228028136ab75081e20ace15c8e7ff77c996e5451388c",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-closeout-boundary",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm boundary:check",
+          "startedAt": "2026-11-05T18:30:05.255815+00:00",
+          "finishedAt": "2026-11-05T18:30:10.280855+00:00",
+          "seconds": 5.02,
+          "exitCode": 0,
+          "log": "work-closeout-boundary.log",
+          "logBytes": 268,
+          "logSha256": "d7905d098abb090bbc8042e271f6ed1f247b10cc46c24718fb6efc40dde314ca",
+          "argv": [
+            "pnpm",
+            "boundary:check"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-closeout-health",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run build --label T-01-health -- node scripts/check-health-gates.mjs --base origin/main",
+          "startedAt": "2026-11-05T18:30:10.307272+00:00",
+          "finishedAt": "2026-11-05T18:30:53.492903+00:00",
+          "seconds": 43.19,
+          "exitCode": 0,
+          "log": "work-closeout-health.log",
+          "logBytes": 1974,
+          "logSha256": "225f2f31e98545fe166ffa341d3c48176435ae48dbd5570b42adca6d0aaae575",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "build",
+            "--label",
+            "T-01-health",
+            "--",
+            "node",
+            "scripts/check-health-gates.mjs",
+            "--base",
+            "origin/main"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-closeout-contracts",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-contracts -- pnpm test:contracts",
+          "startedAt": "2026-11-05T18:30:53.523395+00:00",
+          "finishedAt": "2026-11-05T18:32:44.988290+00:00",
+          "seconds": 111.47,
+          "exitCode": 0,
+          "log": "work-closeout-contracts.log",
+          "logBytes": 4202,
+          "logSha256": "daf89621b507005e6d293002435bfa9132ebc17c677c272adfe63e69bdedfab8",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-contracts",
+            "--",
+            "pnpm",
+            "test:contracts"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-closeout-account",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-account -- node scripts/run-tests.mjs --jobs 1 tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts",
+          "startedAt": "2026-11-05T18:32:45.036440+00:00",
+          "finishedAt": "2026-11-05T18:32:49.058185+00:00",
+          "seconds": 4.02,
+          "exitCode": 0,
+          "log": "work-closeout-account.log",
+          "logBytes": 490,
+          "logSha256": "65c6c7c2d4903c92d935c59830b1e42f05259d6e9eebab1c8825f0ceb6bbc3e1",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-account",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/account-client.test.ts",
+            "tests/account-session.test.ts",
+            "tests/security-invariants-account-host.test.ts"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-closeout-secrets",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm secrets:check",
+          "startedAt": "2026-11-05T18:34:33.272220+00:00",
+          "finishedAt": "2026-11-05T18:34:34.278205+00:00",
+          "seconds": 1.01,
+          "exitCode": 0,
+          "log": "work-closeout-secrets.log",
+          "logBytes": 147,
+          "logSha256": "129b0c31bed3e6ffb83fab5b5e8019b071c2e524fac9adf3f98150e0634dcddf",
+          "argv": [
+            "pnpm",
+            "secrets:check"
+          ],
+          "sourceBase": "eb201a06b1511f15158333fd2605909e181860c7",
+          "status": "PASS"
+        },
+        {
+          "id": "work-callback-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T18:38:58.805941+00:00",
+          "finishedAt": "2026-11-05T18:39:04.852998+00:00",
+          "seconds": 6.05,
+          "exitCode": 0,
+          "log": "work-callback-build.log",
+          "logBytes": 2134,
+          "logSha256": "7861825c13b58c3c81e6f65ab6590275d644f161a6029b8b329b2d4fcc4931a0",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "work-callback-provider",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-callback-provider -- node scripts/account-provider.test.mjs",
+          "startedAt": "2026-11-05T18:39:04.902573+00:00",
+          "finishedAt": "2026-11-05T18:39:14.972304+00:00",
+          "seconds": 10.07,
+          "exitCode": 0,
+          "log": "work-callback-provider.log",
+          "logBytes": 2905,
+          "logSha256": "1251b38897690ce5ec45de12e7761d1c0a1542806fd684892178f2e2b84686cf",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-callback-provider",
+            "--",
+            "node",
+            "scripts/account-provider.test.mjs"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "work-callback-host-regression",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-callback-host -- node scripts/run-tests.mjs --jobs 1 tests/local-host.test.ts tests/host-periodic-tasks.test.ts tests/local-host-actions.test.ts tests/local-host-queue-scope.test.ts tests/web-mutation-key-settle.test.ts tests/action-before-effect.test.ts tests/action-directory-installation.test.ts tests/action-model-scheduling.test.ts tests/action-read-compatibility.test.ts tests/installer-symlink-dependencies.test.ts tests/system-search-host.test.ts tests/project-arrival.test.ts tests/project-deletion-hooks.test.ts tests/project-deletion-owners.test.ts tests/project-deletion-studios.test.ts tests/project-deletion-assistant.test.ts tests/onboarding-goals-actions.test.ts tests/project-deletion-declarations.test.ts tests/project-deletion-processes.test.ts tests/memory-learning.test.ts tests/goal-management-identity.test.ts tests/home-store-baselines.test.ts tests/private-store-versions.test.ts tests/project-deletion-service.test.ts tests/mcp-connection-identity.test.ts tests/management-door-identity.test.ts tests/plugin-development-artifacts.test.ts tests/mcp-session-authorship-nested.test.ts tests/action-gateway-session-authorship.test.ts tests/anysearch-single-owner.test.ts tests/alchemist-pulse-github.test.ts tests/lark-mcp-launch.test.ts tests/connector-mcp.test.ts tests/network-notices.test.ts tests/model-first-setup-http.test.ts tests/contextual-interaction.test.ts tests/runtime-provider-identity.test.ts tests/local-web-actions.test.ts tests/verify-release-versions.test.ts tests/action-error-model.test.ts tests/action-error-edges.test.ts tests/plugin-platform-home.test.ts tests/web-home-isolation.test.ts tests/feed-sync-authority.test.ts tests/action-gateway.test.ts tests/goals-mcp-actions.test.ts tests/security-invariants-gateway.test.ts tests/plugin-project-database.test.ts tests/settings-call-diagnostics.test.ts tests/runtime-plugin-http-discovery.test.ts tests/shelf-project-results-http.test.ts tests/plugin-model-service.test.ts tests/cli-goals-actions.test.ts tests/shelf-jelly-cognia-images-error-model.test.ts tests/host-pages-error-model.test.ts tests/plugin-route-operations.test.ts tests/security-invariants-connector-private-state.test.ts tests/shell-page-gate.test.ts tests/security-invariants-account-host.test.ts",
+          "startedAt": "2026-11-05T18:39:15.003618+00:00",
+          "finishedAt": "2026-11-05T18:45:36.151405+00:00",
+          "seconds": 381.14,
+          "exitCode": 0,
+          "log": "work-callback-host-regression.log",
+          "logBytes": 4639,
+          "logSha256": "364e96ed83341748b02ea21be024620101477f63d52121d7aa5f67a209c1e357",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-callback-host",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/local-host.test.ts",
+            "tests/host-periodic-tasks.test.ts",
+            "tests/local-host-actions.test.ts",
+            "tests/local-host-queue-scope.test.ts",
+            "tests/web-mutation-key-settle.test.ts",
+            "tests/action-before-effect.test.ts",
+            "tests/action-directory-installation.test.ts",
+            "tests/action-model-scheduling.test.ts",
+            "tests/action-read-compatibility.test.ts",
+            "tests/installer-symlink-dependencies.test.ts",
+            "tests/system-search-host.test.ts",
+            "tests/project-arrival.test.ts",
+            "tests/project-deletion-hooks.test.ts",
+            "tests/project-deletion-owners.test.ts",
+            "tests/project-deletion-studios.test.ts",
+            "tests/project-deletion-assistant.test.ts",
+            "tests/onboarding-goals-actions.test.ts",
+            "tests/project-deletion-declarations.test.ts",
+            "tests/project-deletion-processes.test.ts",
+            "tests/memory-learning.test.ts",
+            "tests/goal-management-identity.test.ts",
+            "tests/home-store-baselines.test.ts",
+            "tests/private-store-versions.test.ts",
+            "tests/project-deletion-service.test.ts",
+            "tests/mcp-connection-identity.test.ts",
+            "tests/management-door-identity.test.ts",
+            "tests/plugin-development-artifacts.test.ts",
+            "tests/mcp-session-authorship-nested.test.ts",
+            "tests/action-gateway-session-authorship.test.ts",
+            "tests/anysearch-single-owner.test.ts",
+            "tests/alchemist-pulse-github.test.ts",
+            "tests/lark-mcp-launch.test.ts",
+            "tests/connector-mcp.test.ts",
+            "tests/network-notices.test.ts",
+            "tests/model-first-setup-http.test.ts",
+            "tests/contextual-interaction.test.ts",
+            "tests/runtime-provider-identity.test.ts",
+            "tests/local-web-actions.test.ts",
+            "tests/verify-release-versions.test.ts",
+            "tests/action-error-model.test.ts",
+            "tests/action-error-edges.test.ts",
+            "tests/plugin-platform-home.test.ts",
+            "tests/web-home-isolation.test.ts",
+            "tests/feed-sync-authority.test.ts",
+            "tests/action-gateway.test.ts",
+            "tests/goals-mcp-actions.test.ts",
+            "tests/security-invariants-gateway.test.ts",
+            "tests/plugin-project-database.test.ts",
+            "tests/settings-call-diagnostics.test.ts",
+            "tests/runtime-plugin-http-discovery.test.ts",
+            "tests/shelf-project-results-http.test.ts",
+            "tests/plugin-model-service.test.ts",
+            "tests/cli-goals-actions.test.ts",
+            "tests/shelf-jelly-cognia-images-error-model.test.ts",
+            "tests/host-pages-error-model.test.ts",
+            "tests/plugin-route-operations.test.ts",
+            "tests/security-invariants-connector-private-state.test.ts",
+            "tests/shell-page-gate.test.ts",
+            "tests/security-invariants-account-host.test.ts"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "work-callback-health",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run build --label T-01-callback-health -- node scripts/check-health-gates.mjs --base origin/main",
+          "startedAt": "2026-11-05T18:45:36.188624+00:00",
+          "finishedAt": "2026-11-05T18:46:17.560584+00:00",
+          "seconds": 41.37,
+          "exitCode": 0,
+          "log": "work-callback-health.log",
+          "logBytes": 1974,
+          "logSha256": "e82e273b48167b5abd824f8d9818693c0b6aa21c596cdaa8278764c24b78fe4e",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "build",
+            "--label",
+            "T-01-callback-health",
+            "--",
+            "node",
+            "scripts/check-health-gates.mjs",
+            "--base",
+            "origin/main"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "work-ci-subset-fixed",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-subset-fixed -- node scripts/run-tests.mjs --jobs 1 tests/ci-product-subset-plan.test.ts tests/ci-product-subset.test.ts",
+          "startedAt": "2026-11-05T18:43:45.490284+00:00",
+          "finishedAt": "2026-11-05T18:46:29.456489+00:00",
+          "seconds": 163.97,
+          "exitCode": 0,
+          "log": "work-ci-subset-fixed.log",
+          "logBytes": 898,
+          "logSha256": "dd7568c1860d08e9074a37b7181d442d78132f21659b95c255789f52bf26b7f4",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-subset-fixed",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/ci-product-subset-plan.test.ts",
+            "tests/ci-product-subset.test.ts"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "work-callback-secrets",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+          "command": "pnpm secrets:check",
+          "startedAt": "2026-11-05T18:50:40.844956+00:00",
+          "finishedAt": "2026-11-05T18:50:41.857810+00:00",
+          "seconds": 1.01,
+          "exitCode": 0,
+          "log": "work-callback-secrets.log",
+          "logBytes": 147,
+          "logSha256": "1c985288aad0f812da54bf51841dc53ac61f0f76a9380f2357cc96aaa5bc24b8",
+          "argv": [
+            "pnpm",
+            "secrets:check"
+          ],
+          "sourceBase": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+          "status": "PASS"
+        },
+        {
+          "id": "issue-baseline-current-main-build",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+          "command": "pnpm build",
+          "startedAt": "2026-11-05T18:16:09.557892+00:00",
+          "finishedAt": "2026-11-05T18:16:44.678593+00:00",
+          "seconds": 35.12,
+          "exitCode": 0,
+          "log": "issue-baseline-current-main-build.log",
+          "logBytes": 32099,
+          "logSha256": "7646c02ab83af4e58a202c2916a4c1c17676debf2e86fe4e8ab024e0996aca58",
+          "argv": [
+            "pnpm",
+            "build"
+          ],
+          "sourceBase": "9f00fd0dad4d4d54e1a1aa4e65bdc6b8b286443b",
+          "status": "PASS"
+        },
+        {
+          "id": "work-full-failures-clean-baseline",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-golden-reference -- env TMPDIR=/private/tmp/molis-t01-golden-base MOLIS_WORK_GOLDEN_DUMP=1 node scripts/run-tests.mjs --jobs 1 tests/goals-page-golden.test.ts tests/runtime-payload.test.ts tests/project-home-start.e2e.test.ts",
+          "startedAt": "2026-11-05T18:17:39.421733+00:00",
+          "finishedAt": "2026-11-05T18:19:14.710407+00:00",
+          "seconds": 95.29,
+          "exitCode": 0,
+          "log": "work-full-failures-clean-baseline.log",
+          "logBytes": 476,
+          "logSha256": "d63a84903b3134438b5c9434ff0ff339bebcdfd6cb2f9135b60fd2b78ca432e2",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-golden-reference",
+            "--",
+            "env",
+            "TMPDIR=/private/tmp/molis-t01-golden-base",
+            "MOLIS_WORK_GOLDEN_DUMP=1",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/goals-page-golden.test.ts",
+            "tests/runtime-payload.test.ts",
+            "tests/project-home-start.e2e.test.ts"
+          ],
+          "sourceBase": "9f00fd0dad4d4d54e1a1aa4e65bdc6b8b286443b",
+          "status": "PASS"
+        },
+        {
+          "id": "work-shell-page-clean-baseline",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-shell-page-reference -- node scripts/run-tests.mjs --jobs 1 tests/shell-page-gate.test.ts",
+          "startedAt": "2026-11-05T18:35:34.781764+00:00",
+          "finishedAt": "2026-11-05T18:35:45.815783+00:00",
+          "seconds": 11.03,
+          "exitCode": 0,
+          "log": "work-shell-page-clean-baseline.log",
+          "logBytes": 437,
+          "logSha256": "c09803bc2769bc8fbaaaca9a4161ccb17a279e9eea8231458131bd7025fe3582",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-shell-page-reference",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/shell-page-gate.test.ts"
+          ],
+          "sourceBase": "9f00fd0dad4d4d54e1a1aa4e65bdc6b8b286443b",
+          "status": "PASS"
+        },
+        {
+          "id": "work-ci-subset-clean-baseline",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-subset-reference -- node scripts/run-tests.mjs --jobs 1 tests/ci-product-subset-plan.test.ts",
+          "startedAt": "2026-11-05T18:43:26.721569+00:00",
+          "finishedAt": "2026-11-05T18:45:38.295254+00:00",
+          "seconds": 131.57,
+          "exitCode": 0,
+          "log": "work-ci-subset-clean-baseline.log",
+          "logBytes": 2213,
+          "logSha256": "edc71070ab309d725aa47871a56fd5bc62cd0fcd342780f3fa6b9a1c8e0982c4",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-subset-reference",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/ci-product-subset-plan.test.ts"
+          ],
+          "sourceBase": "9f00fd0dad4d4d54e1a1aa4e65bdc6b8b286443b",
+          "status": "PASS"
+        },
+        {
+          "id": "issue-clean-baseline-current-chrome",
+          "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-issue-baseline",
+          "command": "node scripts/machine-slot.mjs run browser --label T-01-issue-baseline-Chrome156 -- node scripts/run-tests.mjs --jobs 1 tests/issue-draft-preview.e2e.test.ts",
+          "startedAt": "2026-11-05T17:32:22.119126+00:00",
+          "finishedAt": "2026-11-05T17:32:58.234499+00:00",
+          "seconds": 36.12,
+          "exitCode": 0,
+          "log": "issue-clean-baseline-current-chrome.log",
+          "logBytes": 576,
+          "logSha256": "a8fd4951783285d08f55efdb7f95a2f0f1d8985531f05ba0eae3af2097342519",
+          "argv": [
+            "node",
+            "scripts/machine-slot.mjs",
+            "run",
+            "browser",
+            "--label",
+            "T-01-issue-baseline-Chrome156",
+            "--",
+            "node",
+            "scripts/run-tests.mjs",
+            "--jobs",
+            "1",
+            "tests/issue-draft-preview.e2e.test.ts"
+          ],
+          "sourceBase": "cee87ece04bf9e943e234ff124626efabd610c60",
+          "status": "PASS"
+        }
+      ],
+      "remote": {
+        "githubConnected": true,
+        "githubUser": "seed47",
+        "pullRequests": [
+          {
+            "repository": "molis-ai/molis-work",
+            "number": 1842,
+            "head": "8b2e0e901a7f563968a37ec9d73949bfca4470d3",
+            "run": 42059957428
+          },
+          {
+            "repository": "molis-ai/molis-work",
+            "number": 1843,
+            "head": "e4a587007a489265797a5b5742f257db304fcb6b",
+            "run": 42084366850,
+            "draft": true
+          },
+          {
+            "repository": "molis-ai/molis-work",
+            "number": 1844,
+            "head": "fcc2b97941817ab06152d3af36c28cd730b1a5c1",
+            "run": 42059984755
+          },
+          {
+            "repository": "molis-ai/auth",
+            "number": 2
+          },
+          {
+            "repository": "molis-ai/molis-club",
+            "number": 27
+          },
+          {
+            "repository": "molis-ai/molis-work",
+            "number": 1846,
+            "head": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+            "base": "codex/t01-account-asset-admission",
+            "draft": true
+          }
+        ],
+        "storageFull": {
+          "runId": 42061291149,
+          "head": "fcc2b97941817ab06152d3af36c28cd730b1a5c1",
+          "state": "SUCCESS",
+          "checkedCommit": "eb1747cbe4ad20cc8e9a1bd1e6760fb02947f720",
+          "shardsPassed": 16,
+          "linuxFiles": 1653,
+          "excludedMacOSFiles": 57,
+          "summaryJob": 127433560833,
+          "flaky": [
+            "tests/onboarding-journey.e2e.test.ts"
+          ]
+        },
+        "accountFull": {
+          "runId": 42068132344,
+          "head": "73cb15048300474fa10373c616db86d52d9b8416",
+          "branch": "integration/t01-unified-account-20261106",
+          "state": "FAILED_ALL_SHARDS_COLLECTED",
+          "failedJob": 127387985896,
+          "failure": "ISSUE-45 image draft undo: button covered by two-row arrival bar, initial run and retry both failed",
+          "otherJobs": "All 16 shards finished; final summary may still be queued. This run is failure evidence, never a pass for the repair head.",
+          "passedFiles": 1650,
+          "totalFiles": 1657,
+          "excludedMacOSFiles": 57,
+          "persistentFailures": [
+            "tests/issue-draft-preview.e2e.test.ts",
+            "tests/goals-page-golden.test.ts",
+            "tests/runtime-payload.test.ts",
+            "tests/project-home-start.e2e.test.ts",
+            "tests/license-materials.test.ts",
+            "tests/shell-page-gate.test.ts",
+            "tests/ci-product-subset-plan.test.ts"
+          ],
+          "shards": [
+            {
+              "jobId": 127387985896,
+              "name": "Full suite (2/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 103 of 104 files passed (2 only on a retry) in 33.8 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[2/104] FAIL  tests/coding-question-card.e2e.test.ts  124.0s  5/6 tests",
+                "[89/104] FAIL  tests/onboarding-journey.e2e.test.ts  193.7s  13/14 tests",
+                "[98/104] FAIL  tests/issue-draft-preview.e2e.test.ts  52.7s  3/4 tests"
+              ],
+              "retries": [
+                "[retry 1] ok    tests/coding-question-card.e2e.test.ts  117.6s",
+                "[retry 1] ok    tests/onboarding-journey.e2e.test.ts  196.4s",
+                "[retry 1] FAIL  tests/issue-draft-preview.e2e.test.ts  53.6s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387985896"
+            },
+            {
+              "jobId": 127387986363,
+              "name": "Full suite (14/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 103 of 103 files passed in 16.0 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986363"
+            },
+            {
+              "jobId": 127387986446,
+              "name": "Full suite (3/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed (1 only on a retry) in 18.5 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[3/104] FAIL  tests/code-scale.e2e.test.ts  100.6s  8/9 tests"
+              ],
+              "retries": [
+                "[retry 1] ok    tests/code-scale.e2e.test.ts  82.9s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986446"
+            },
+            {
+              "jobId": 127387986492,
+              "name": "Full suite (6/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed (1 only on a retry) in 23.7 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[68/104] FAIL  tests/workbench-current-tabs.e2e.test.ts  85.6s  2/3 tests"
+              ],
+              "retries": [
+                "[retry 1] ok    tests/workbench-current-tabs.e2e.test.ts  95.7s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986492"
+            },
+            {
+              "jobId": 127387986655,
+              "name": "Full suite (8/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed in 17.6 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986655"
+            },
+            {
+              "jobId": 127387986698,
+              "name": "Full suite (11/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 103 of 103 files passed (1 only on a retry) in 20.8 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[85/103] FAIL  tests/ui-audit-browser.e2e.test.ts  64.7s  0/1 tests"
+              ],
+              "retries": [
+                "[retry 1] ok    tests/ui-audit-browser.e2e.test.ts  66.7s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986698"
+            },
+            {
+              "jobId": 127387986707,
+              "name": "Full suite (1/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 102 of 104 files passed in 17.1 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[22/104] FAIL  tests/goals-page-golden.test.ts  6.9s  54/72 tests",
+                "[61/104] FAIL  tests/runtime-payload.test.ts  38.6s  2/3 tests"
+              ],
+              "retries": [
+                "[retry 1] FAIL  tests/goals-page-golden.test.ts  6.2s",
+                "[retry 1] FAIL  tests/runtime-payload.test.ts  32.6s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986707"
+            },
+            {
+              "jobId": 127387986897,
+              "name": "Full suite (4/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed in 24.3 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387986897"
+            },
+            {
+              "jobId": 127387987008,
+              "name": "Full suite (13/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 102 of 103 files passed in 24.8 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[2/103] FAIL  tests/shell-page-gate.test.ts  34.2s  2/3 tests"
+              ],
+              "retries": [
+                "[retry 1] FAIL  tests/shell-page-gate.test.ts  28.7s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987008"
+            },
+            {
+              "jobId": 127387987222,
+              "name": "Full suite (10/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 102 of 103 files passed in 17.6 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[52/103] FAIL  tests/project-home-start.e2e.test.ts  103.8s  5/6 tests"
+              ],
+              "retries": [
+                "[retry 1] FAIL  tests/project-home-start.e2e.test.ts  84.5s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987222"
+            },
+            {
+              "jobId": 127387987301,
+              "name": "Full suite (16/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 102 of 103 files passed in 12.2 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[23/103] FAIL  tests/ci-product-subset-plan.test.ts  2.5s  16/17 tests"
+              ],
+              "retries": [
+                "[retry 1] FAIL  tests/ci-product-subset-plan.test.ts  2.0s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987301"
+            },
+            {
+              "jobId": 127387987334,
+              "name": "Full suite (9/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed in 17.7 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987334"
+            },
+            {
+              "jobId": 127387987463,
+              "name": "Full suite (15/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 103 of 103 files passed in 18.4 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987463"
+            },
+            {
+              "jobId": 127387987847,
+              "name": "Full suite (7/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 104 of 104 files passed in 11.7 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387987847"
+            },
+            {
+              "jobId": 127387988032,
+              "name": "Full suite (12/16)",
+              "conclusion": "success",
+              "summary": [
+                "run-tests: 103 of 103 files passed in 40.9 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [],
+              "retries": [],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387988032"
+            },
+            {
+              "jobId": 127387988304,
+              "name": "Full suite (5/16)",
+              "conclusion": "failure",
+              "summary": [
+                "run-tests: 103 of 104 files passed in 22.5 min (2 at a time)"
+              ],
+              "excluded": [
+                "run-tests: left out 57 macOS-only files of 1714"
+              ],
+              "failures": [
+                "[32/104] FAIL  tests/license-materials.test.ts  2.1s  1/2 tests"
+              ],
+              "retries": [
+                "[retry 1] FAIL  tests/license-materials.test.ts  1.6s"
+              ],
+              "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387988304"
+            }
+          ],
+          "repairHead": "fa6231ca943aaa68171642ed5d5a52e622fcd136"
+        },
+        "mergeApproval": {
+          "state": "APPROVED_FOR_1842_1843_1844",
+          "automaticReviewInitiallyRejected": true,
+          "userReply": "Allowed merging these two PRs",
+          "merged": false,
+          "queueRuns": [
+            42069148823,
+            42069313262
+          ],
+          "directMergeRejectedByRepository": "Must use merge queue",
+          "mergedPRs": [
+            1842
+          ],
+          "mainCommit": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+          "assetUpdateApproval": "+273 bytes; dequeue, update, Verify, restore review and requeue authorized",
+          "assetDequeueMethod": "Converted to draft, but queue lock persisted. Closed and immediately reopened same PR under explicit dequeue authorization, preserving review history. New head pushed.",
+          "storageMergeApproval": "User explicitly allowed #1844 into merge queue",
+          "storageQueueRun": 42085559491
+        },
+        "prerequisiteVerify": [
+          {
+            "pr": 1842,
+            "runId": 42059957428,
+            "conclusion": "success"
+          },
+          {
+            "pr": 1843,
+            "runId": 42059970963,
+            "conclusion": "success"
+          },
+          {
+            "pr": 1844,
+            "runId": 42059984755,
+            "conclusion": "success"
+          }
+        ]
+      }
     }
   ],
   "remote": {
@@ -8864,7 +11075,8 @@
         "number": 1843,
         "head": "e4a587007a489265797a5b5742f257db304fcb6b",
         "run": 42084366850,
-        "draft": true
+        "draft": false,
+        "queueRun": 42096685693
       },
       {
         "repository": "molis-ai/molis-work",
@@ -8874,18 +11086,21 @@
       },
       {
         "repository": "molis-ai/auth",
-        "number": 2
+        "number": 2,
+        "head": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b"
       },
       {
         "repository": "molis-ai/molis-club",
-        "number": 27
+        "number": 27,
+        "head": "ce8a89c97fd5e093cd44aac200de85341481335c"
       },
       {
         "repository": "molis-ai/molis-work",
         "number": 1846,
-        "head": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
-        "base": "codex/t01-account-asset-admission",
-        "draft": true
+        "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "base": "main",
+        "draft": true,
+        "run": 42098392782
       }
     ],
     "storageFull": {
@@ -8908,7 +11123,7 @@
       "state": "FAILED_ALL_SHARDS_COLLECTED",
       "failedJob": 127387985896,
       "failure": "ISSUE-45 image draft undo: button covered by two-row arrival bar, initial run and retry both failed",
-      "otherJobs": "All 16 shards finished; final summary may still be queued. This run is failure evidence, never a pass for the repair head.",
+      "otherJobs": "All 16 shards and final aggregate finished. Aggregate job 127456360702 failed; archived raw log confirms failure. Never a pass for repair or final heads.",
       "passedFiles": 1650,
       "totalFiles": 1657,
       "excludedMacOSFiles": 57,
@@ -9189,7 +11404,8 @@
           "url": "https://github.com/molis-ai/molis-work/actions/runs/42068132344/job/127387988304"
         }
       ],
-      "repairHead": "fa6231ca943aaa68171642ed5d5a52e622fcd136"
+      "repairHead": "fa6231ca943aaa68171642ed5d5a52e622fcd136",
+      "summaryJob": 127456360702
     },
     "mergeApproval": {
       "state": "APPROVED_FOR_1842_1843_1844",
@@ -9208,7 +11424,15 @@
       "assetUpdateApproval": "+273 bytes; dequeue, update, Verify, restore review and requeue authorized",
       "assetDequeueMethod": "Converted to draft, but queue lock persisted. Closed and immediately reopened same PR under explicit dequeue authorization, preserving review history. New head pushed.",
       "storageMergeApproval": "User explicitly allowed #1844 into merge queue",
-      "storageQueueRun": 42085559491
+      "storageQueueRun": 42085559491,
+      "assetQueueRun": 42096685693,
+      "assetQueueCommit": "31cad5be9809c22d7b393685715c073a63e994ae",
+      "finalCandidate": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "assetRestored": true,
+      "queuedPRs": [
+        1844,
+        1843
+      ]
     },
     "prerequisiteVerify": [
       {
@@ -9218,15 +11442,33 @@
       },
       {
         "pr": 1843,
-        "runId": 42059970963,
-        "conclusion": "success"
+        "runId": 42084366850,
+        "conclusion": "success",
+        "head": "e4a587007a489265797a5b5742f257db304fcb6b",
+        "summaryJob": 127486175115
       },
       {
         "pr": 1844,
         "runId": 42059984755,
         "conclusion": "success"
       }
-    ]
+    ],
+    "finalAccountFull": {
+      "runId": 42098148275,
+      "url": "https://github.com/molis-ai/molis-work/actions/runs/42098148275",
+      "state": "PENDING",
+      "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "event": "push",
+      "branch": "integration/t01-unified-account-20261106"
+    },
+    "finalAccountVerify": {
+      "runId": 42098392782,
+      "url": "https://github.com/molis-ai/molis-work/actions/runs/42098392782",
+      "state": "PENDING",
+      "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "event": "pull_request",
+      "base": "main"
+    }
   },
   "diagnostics": [
     {
@@ -9252,6 +11494,10 @@
     {
       "kind": "CALLBACK_BROWSER_PROBE",
       "note": "New DOM probe raced navigation/popup close (Inspected target navigated or closed). It was replaced by observing the actual Network response MIME, plus original-dialog recovery; product polling/timeouts unchanged. Failed probe result file was overwritten by the successful rerun; failure remains recorded here and in the conversation, not claimed as an archived raw log."
+    },
+    {
+      "kind": "FINAL_VERIFY_TRIGGER",
+      "note": "Retargeted draft #1846 to main. Base edit does not trigger the default PR workflow, and connector has no workflow dispatch; closed and immediately reopened the same draft to trigger default reopened event. Same c235037f4 head and review history preserved."
     }
   ]
 }
