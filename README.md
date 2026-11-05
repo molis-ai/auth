@@ -2,7 +2,7 @@
 
 统一账号、团队与权限服务。后端为 **Rust → WebAssembly → Cloudflare Workers / D1**；前端仍为 Vue，浏览器 SDK 仍为 TypeScript。不需要 Java、MySQL、Redis 或 Docker。
 
-Work 与 Club 的统一账号、租户成员、订阅席位及权益服务已完成各阶段实现，AUTH-12 已汇总[验收矩阵](docs/unified-account/acceptance-matrix.md)、[版本及交付记录](docs/unified-account/delivery.md)。本轮仅合成数据与外部 mock：39 项需求在注明的隔离范围通过，3 项部分完成；两端帮助和共享资源合同夹具已补齐，真实存量接续等待办保留。三仓库代码尚未提交/发布，不能把基础提交当作交付版本。真实支付、业务付费拦截与共享内容后续推进。
+Work 与 Club 的统一账号、租户成员、订阅席位及权益服务已完成各阶段实现，AUTH-12 已汇总[验收矩阵](docs/unified-account/acceptance-matrix.md)、[版本及交付记录](docs/unified-account/delivery.md)。本轮仅合成数据与外部 mock：39 项需求在注明的隔离范围通过，3 项部分完成；两端帮助和共享资源合同夹具已补齐，真实存量接续等待办保留。T-01 已整理三仓库本地提交并集成核对时的主线，验证进度和准确版本见交付记录；功能分支尚未合入主线或发布。真实支付、业务付费拦截与共享内容后续推进。
 
 接口字段、权限及状态机见[接口合同](docs/unified-account/api-contracts.md)；三个仓库的任务、依赖与验收见[开发任务](docs/unified-account/development-tasks.md)。可执行定义见[合同包](contracts/unified-account/README.md)。外部发送和第三方登录当前使用隔离 mock；Host/BFF、v1 SDK 使用边界和管理步骤见[接入说明](docs/unified-account/integration-guide.md)。旧账号保留与真实迁移待办见[迁移方案](docs/unified-account/account-migration-plan.md)。
 

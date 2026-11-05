@@ -1,14 +1,14 @@
 {
-  "recordedAt": "2026-11-05T13:00:46.763Z",
+  "recordedAt": "2026-11-05T14:53:41.158Z",
   "formatVersion": 1,
   "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
-  "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only.",
+  "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
   "repositories": {
     "A": {
-      "baseCommit": "e9c5ffa2fc9ecff1a0f8a3e2f9358411a93ecbe9",
+      "baseCommit": "fc8c0490b8a279ca2a7c10440c96be4c5ee68f36",
+      "uncommitted": false,
       "branch": "codex/unified-account-foundation",
       "packageVersion": null,
-      "uncommitted": true,
       "sourceScope": [
         "contracts",
         "worker/rust/src",
@@ -32,14 +32,14 @@
         "sdk/browser/package-lock.json",
         "package.json"
       ],
-      "fileCount": 155,
-      "sourceSha256": "38f452901efefad50648edd2a4d5cde3fa26931fd7eafe439b52a8400ef1a110"
+      "fileCount": 157,
+      "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "4fd250564e8f48577f9f95d041106569773fcd1d",
+      "baseCommit": "feab8b3e883fdc0c95240eeb8bc18c52d8c51c86",
+      "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
-      "uncommitted": true,
       "sourceScope": [
         "apps",
         "horizontal",
@@ -57,14 +57,14 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5900,
-      "sourceSha256": "7eeff566dd83dd35bc07d763104dc719ba3f62f082fac7ecd978a53ee4658093"
+      "fileCount": 5906,
+      "sourceSha256": "d77ecdf60d382e32a427c4a79c8abfb95cdb990871575035909e7e219a669ed3"
     },
     "C": {
-      "baseCommit": "6e223f849847a8bffd338eb94d757e877101c020",
+      "baseCommit": "eb467ea7a4b2dbd3bfab3d48bc840cb1ff648a9d",
+      "uncommitted": false,
       "branch": "codex/club-01-account-foundation",
       "packageVersion": "0.1.0",
-      "uncommitted": true,
       "sourceScope": [
         "app",
         "content",
@@ -81,8 +81,8 @@
         ".oxlintrc.json",
         ".oxfmtrc.json"
       ],
-      "fileCount": 805,
-      "sourceSha256": "9ce808e49e5fd4a1759b8dd32a4792cde20dd239ee0b278344d479c5f6ca9a1f"
+      "fileCount": 804,
+      "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
   "contractVersion": "1.1.0",
@@ -120,7 +120,7 @@
   },
   "evidence": {
     "requirementCount": 42,
-    "pathCount": 65,
-    "matrixSha256": "978e9175bb61b90cdca2dcb61d993386ad37ab77ea9aec62a854dc39d69ac594"
+    "pathCount": 66,
+    "matrixSha256": "a2df7b43c19b96705fe2cc380222bcc128053ab03675f4776376427d6b5e4cc6"
   }
 }
