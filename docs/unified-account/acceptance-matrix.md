@@ -6,6 +6,8 @@
 
 T-01 已固定提交并进入远端评审。上一轮 Work 为 327 文件、3484/3485，K-06 随后已按 ASC-53 修正并复验。最新主线 d8232983 集成后，48 个合同测试文件、11 个定向文件 131/131、六个 Work 账号专项及 Club 浏览器/联合切换回退通过；未重新执行的历史文件不重复计数。最终 head 的远端 CI 状态见交付记录第 10 节，39 项隔离通过、3 项部分完成的边界不变。
 
+首轮账号 CI Full 的 16 分片已收齐，1,650/1,657 文件通过，7 个持续失败文件对应 K-07～K-11：底栏遮挡、包许可缺失、旧入口断言、独立 HTML 回跳和 CI 重复登记。上述问题均已修复并通过对应本地验证；原始失败、5 个重试通过文件及干净主线对照保留。最终集成 head 的远端验收仍待完成，T-01 保持未完成。具体版本和证据见交付记录第 10 节。
+
 ## 需求覆盖
 
 | 需求 | 本轮归类 | 已有证据及覆盖 | 证据组 | 尚未证明或留后续 |
@@ -101,3 +103,7 @@ AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X
 - **T01-01 / T01-02 / T01-03** 仅提交验收文档不使被验源码基准过期；修改、暂存、新增、删除源码仍标为未提交，非祖先基准拒绝。证明：`A:worker/tests/account-source-revision.test.ts`。提交后的源码字节仍由交付摘要工具检查；此处不把工具通过记为业务测试通过。
 
 - **K06-01 / K06-02** 丢失 HTTPS 确认时，读取严格限制总共 3 次，POST 只发送 1 次；两者均保持可信 unknown、原 DB/文件，并拒绝后续失败记账。证明：`W:tests/security-invariants-sandbox-signed-background.test.ts`；现行重试规则来自 ASC-53，复现及版本见交付记录第 9 节。
+
+- **T01-LAYOUT-01** 进入页侧栏及分隔条不能覆盖底栏，手机、横屏、桌面及明暗主题中真实点击可达；原 ISSUE-45 提交与撤销继续成立。证明：`W:tests/issue-draft-preview.e2e.test.ts`。
+- **T01-ACCOUNT-ENTRY-01** 项目内账号入口可打开表单，关闭后恢复焦点；Goals 快照仅改变已确认的登录按钮属性和提示。证明：`W:tests/project-home-start.e2e.test.ts`、`W:tests/goals-page-golden.test.ts`。account 包许可证及独立载荷分发由 `W:tests/license-materials.test.ts`、`W:tests/runtime-payload.test.ts` 的既有断言覆盖。
+- **T01-CALLBACK-01** 第三方回跳只返回无凭据、不可缓存的纯文本提示，原账号弹窗恢复状态；保留来源、state、重放、取消及重启拒绝。证明：`W:scripts/account-provider.test.mjs`、`W:tests/security-invariants-account-host.test.ts`，整页限制继续由 `W:tests/shell-page-gate.test.ts` 执行。

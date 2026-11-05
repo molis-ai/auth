@@ -1,6 +1,6 @@
 # AUTH-12 交付记录
 
-状态：2026-11-06，T-01 正在完成远端评审与最终集成验收；Auth、Club 和 Work 三项前置修复已推送并建立 PR，Work 已集成主线 d8232983，本轮本地复验通过。远端状态见第 10 节，旧轮次的“未推送”保留为当时事实。42 项要求中 39 项在表内注明的隔离范围通过、3 项部分完成；完整条件与证据见 [验收矩阵](acceptance-matrix.md)。未发布、未操作真实数据；CI 未完成的部分不标通过。
+状态：2026-11-06，T-01 正在完成远端评审与最终集成验收；三仓库及 Work 前置修复已有 PR，Work 已集成主线 9f00fd0dad。账号 Full 暴露的 K-07/K-08/K-09 已通过本地修复验证，最终集成 CI 尚未完成。远端状态见第 10 节，旧轮次的“未推送”保留为当时事实。42 项要求中 39 项在表内注明的隔离范围通过、3 项部分完成；完整条件与证据见 [验收矩阵](acceptance-matrix.md)。未发布、未操作真实数据；CI 未完成的部分不标通过。
 
 ## 1 本次交付
 
@@ -20,9 +20,9 @@ AUTH-01 至 AUTH-10 的中央能力、WORK-01 至 WORK-09、CLUB-01 至 CLUB-09 
 
 | 仓库 | 检出分支 | 被验源码基准提交 | 版本含义 |
 | --- | --- | --- | --- |
-| Auth | `codex/unified-account-foundation` | `944e8afe3e7de643791c87b852d5f080dd505270` | 根包未声明发布版本；统一账号合同 1.1.0；已包含中央实现、T-01 摘要工具及纯格式修正 |
-| Work | `codex/work-01-account-foundation` | `73cb15048300474fa10373c616db86d52d9b8416` | 包版本 0.3.0；包含三项前置修复，已集成主线 `d82329833844a7dee4c7df56a2d9568b636d9957` |
-| Club | `codex/club-01-account-foundation` | `afff5640a62cc673d0277430e3ab0b4a4e5285b5` | 包版本 0.1.0；已集成主线 `8bb582456c9f3d1e2ec7f7404b0edf991b13277e` |
+| Auth | `codex/unified-account-foundation` | `98f1b3fb9acb3d867067d1d02defddfa495ed975` | 根包未声明发布版本；统一账号合同 1.1.0；已包含中央实现、T-01 摘要工具及纯格式修正 |
+| Work | `codex/work-01-account-foundation` | `fa6231ca943aaa68171642ed5d5a52e622fcd136` | 包版本 0.3.0；已集成 main `637a4c841`，包含 K-07～K-11 修复；本地复验通过，最终集成 CI 待完成 |
+| Club | `codex/club-01-account-foundation` | `ce8a89c97fd5e093cd44aac200de85341481335c` | 包版本 0.1.0；已集成主线 `8bb582456c9f3d1e2ec7f7404b0edf991b13277e` |
 
 上述提交已包含本轮被验实现；早期未提交阶段的基础 SHA 与摘要保留在验证记录的历史轮次中。当前基准与 [manifest](delivery-manifest.json) 中 `sourceScope/sourceSha256` 一起标识被验源码；`uncommitted` 只统计这些输入范围内的源码变更。后续仅提交文档时基准不变，检查工具要求该基准仍为当前 HEAD 的祖先，并逐字节复核源码、合同、迁移及矩阵；源码改变不能借此沿用旧证据。
 
@@ -105,6 +105,9 @@ Work 首次帮助截图脚本只设了主题偏好，没有同步实际解析主
 | K-04 | 已补齐：合成资源 owner 在真实 Auth 校验后开放查看/下载，不依赖付费来源；失效、越范围和故障拒绝 | K04-01，E-A11；仅访问合同夹具，真实共享产品仍另期 |
 | K-05 | 已修复：英文 768 宽度、667 横屏个人空间底栏溢出。900px 及以下复用已有双行底栏，保留主操作 | 项目入口 15/15、引导页 14/14；未放宽布局断言。入口 CSS 减少 42 字节，其余资源不变 |
 | K-06 | 已修复测试合同过期：主线 `c916a1f53` 实现 ASC-53 的 GET/HEAD 两次有界重发，RAC2875 仍假定 GET 只发送一次 | 保留原失败及主线对照；现分别严格断言 GET 共 3 次、POST 只 1 次，均保留 trusted unknown、已提交 DB/文件及禁止失败记账的断言。仅两份测试/夹具变更，产品逻辑不变；当前定向与独立评审证据见第 9 节 |
+| K-07 | 本地已修复双行底栏遮挡侧栏撤销；待最终集成 CI | 33 文件 252/252，含原 ISSUE-45 与新增 T01-LAYOUT-01；arrival.css +273 字节获用户批准，独立放行 PR #1843 |
+| K-08 | 本地已补齐 account 包的普通 LICENSE 副本 | 与根文本一致；许可材料 2/2、运行载荷 3/3，未改许可条款 |
+| K-09 | 本地已更新启用登录后的旧入口断言与 16 份整页快照 | 项目入口 6/6；Goals 70 项通过、2 项既有生成分支跳过。独立主线推导预期，保留其余页面标记及全部拒绝断言 |
 
 K-01/K-02/K-05 已在本轮基线修复中定向通过；K-03/K-04 在上一轮补齐，编号保留用于追踪。各轮失败、局部修复及最终复验分列在验证记录中。真实旧密码/第三方接续尚未知，不伪装为已知算法缺陷或可迁移保证。
 
@@ -247,12 +250,12 @@ Auth 格式检查最初报告 3 个文件，其中密码 KDF 夹具和本地配�
 
 | 评审 | 范围 | 当前提交/状态 |
 | --- | --- | --- |
-| [Work #1842](https://github.com/molis-ai/molis-work/pull/1842) | K-06 重试合同，2 文件 | `8b2e0e901a7f563968a37ec9d73949bfca4470d3`；PR Verify 通过，已获授权进入合并队列 |
-| [Work #1843](https://github.com/molis-ai/molis-work/pull/1843) | 已获批资源放行，1 文件 | `6272990f8ca0d2f6e7138f3ddbdc171882fd49b5`；PR Verify 通过，已获授权进入合并队列 |
-| [Work #1844](https://github.com/molis-ai/molis-work/pull/1844) | FTS 整数读取，5 文件 | `fcc2b97941817ab06152d3af36c28cd730b1a5c1`；PR Verify 通过，Full 进行中 |
+| [Work #1842](https://github.com/molis-ai/molis-work/pull/1842) | K-06 重试合同，2 文件 | 队列 Verify 通过，已合入 main：`637a4c841d1ea57ed96b1bec995e6ab47f60bf69`；账号分支已合入该提交 |
+| [Work #1843](https://github.com/molis-ai/molis-work/pull/1843) | 已获批资源放行，1 文件 | `e4a587007a489265797a5b5742f257db304fcb6b`；已获授权出队更新 +273 字节，新版 Verify 待通过后恢复评审并重新入队 |
+| [Work #1844](https://github.com/molis-ai/molis-work/pull/1844) | FTS 整数读取，5 文件 | `fcc2b97941817ab06152d3af36c28cd730b1a5c1`；PR Verify 与 Full 均通过，用户已补充合入授权，队列验证中 |
 | [Auth #2](https://github.com/molis-ai/auth/pull/2) | 中央合同、实现、迁移与交付材料 | 已推送；最终证据更新后继续核对 |
-| [Club #27](https://github.com/molis-ai/molis-club/pull/27) | BFF、旧身份映射及完整账号入口 | `afff5640a62cc673d0277430e3ab0b4a4e5285b5` |
-| [Work #1846](https://github.com/molis-ai/molis-work/pull/1846) | Host、动作、完整账号入口 | `73cb15048300474fa10373c616db86d52d9b8416`；草稿，当前父分支为 #1843 |
+| [Club #27](https://github.com/molis-ai/molis-club/pull/27) | BFF、旧身份映射及完整账号入口 | `ce8a89c`，本轮仅更新交付说明，产品源码未变 |
+| [Work #1846](https://github.com/molis-ai/molis-work/pull/1846) | Host、动作、完整账号入口 | 已推送修复提交 `fa6231ca943aaa68171642ed5d5a52e622fcd136`。草稿，当前父分支为 #1843 |
 
 Work 主线 #1762/#1788 已在 `19cc53051edcb6bcc42b5821ee92a962d4ed665e` 合入。唯一冲突在 `tests/action-read-compatibility.test.ts`：保留账号错误断言，并采用主线的项目读取动作版本 1。中央合同仍为 1.1.0，两端固定副本一致；没有新增 API、迁移或页面资源。资源相对 d8232983 的增量与第 8 节批准值相同。
 
@@ -263,3 +266,39 @@ Auth/Club 没有 GitHub Actions 工作流：沿用明确绑定源码的本地验
 前置 PR 的 CI 运行分别为 [1842 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059957428)、[1843 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059970963)、[1844 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059984755)。前两个 Verify 已通过；FTS 另有 [Full](https://github.com/molis-ai/molis-work/actions/runs/42061291149)。账号提交 `73cb1504` 已通过连接器建立隔离集成分支并触发 [账号 Full](https://github.com/molis-ai/molis-work/actions/runs/42068132344)。原 Git 推送报 `commit_refs_rules` 服务端错误，未冒充成功；随后核对连接器建立的分支、实际事件和 SHA。Full 尚在执行，不能据此关闭 T-01。Linux 排除的 macOS 项由本机证据覆盖，未运行 live。
 
 自动审批最初拒绝为 #1842/#1843 启用自动合并：当时的评审/CI 授权未被认定包含修改 main。两个 PR 最终 Verify 通过后，用户已明确回复“允许合入这两个 PR”。普通合并 API 随后被仓库规则拒绝，原因是必须使用合并队列；未绕过保护，改走仓库队列。已回读两项 `gh-readonly-queue` 引用及 [1842 队列 CI](https://github.com/molis-ai/molis-work/actions/runs/42069148823)、[1843 队列 CI](https://github.com/molis-ai/molis-work/actions/runs/42069313262)。队列正在验证，尚未将“入队”记为“进入 main”；其他 PR 没有合入授权。账号 PR 在前置进入 main 后再调整目标及核对 Verify；集成分支本身不合入 main。
+
+### K-07：窄窗口侧栏被双行底栏覆盖（本地修复通过）
+
+账号 Full `42068132344` 的第 2 分片（job `127387985896`）初次和重试均在 `issue-draft-preview.e2e.test.ts` 的 ISSUE-45 撤销点击失败。相同分片的 Coding 问卷卡及 onboarding 首次失败、重试通过，保留为偶发记录，不抹去首轮失败。
+
+干净主线 `cee87ece0` 与账号分支使用同版 Chrome 156 对照：主线原文件 4/4 通过，账号分支的撤销失败稳定复现。Chrome 145 的另一个焦点失败在两边都出现，属于旧浏览器环境诊断，不能与本回归混为一谈。命中检查发现按钮仍可见，距成功提示仅约 250ms，但顶层实际命中底栏的 Assistant 输入区；因此不调整提示时长、等待上限或删除图片摘要断言。
+
+K-05 把底栏双行布局扩展到 900px 后，侧栏仍按 `--dock-h` 的单行高度定位。本轮将进入页侧栏及分隔条定位到框架实际内容网格，新增 T01-LAYOUT-01 几何与真实点击检查。修复提交 `5206ea3e44d918ee126e902d0f11e2d6c4f3f541` 的 Workbench 必跑/界面相关 33 文件 252/252 通过，图片草稿文件为 5/5；临时探针已移除，失败日志和截图保留。视觉采集两边各 13/13，64/66 图完全一致，另两图分别有 8、7 个像素的单通道 1 级差异；22 份样式快照仅账号按钮 opacity 0.45 → 1。零容差比较退出 1 保留，没有修改阈值。
+
+用户已批准 arrival.css 的 690,296 → 690,569（+273 字节），并批准 #1843 出队更新后重入。转草稿后 GitHub 仍保留队列锁；连接器无单独出队接口，随后关闭并立即重开同一 PR 解除锁定，再推送新 head e4a587007；评审历史保留。新版 [Verify](https://github.com/molis-ai/molis-work/actions/runs/42084366850) 必须通过后才能重新入队，旧 head 的成功不代替它。主线 #1747 合入 9f00fd0dad 后，workbench.css 基点/上限同时减 4，批准增量保持 +452；资源清单由脚本重算为 51 项共 7,442,391 字节，门禁通过。其余已批准增量不变，无新增资源。
+
+### K-08 / K-09：分发许可与已启用登录入口的测试接续
+
+账号 Full 的第 1 分片（job `127387986707`）在 Goals 快照和运行载荷初次/重试均失败；第 5 分片（`127387988304`）缺 LICENSE，第 10 分片（`127387987222`）仍断言登录按钮禁用。独立 main 9f00fd0dad 对照的 Goals、运行载荷、项目入口三个文件均通过，账号分支同样复现失败。
+
+修复提交 `eb201a06b` 补入 account 包 LICENSE 的根文本普通副本，许可材料 2/2、运行载荷 3/3 通过。项目入口保留原布局检查，并增加真实打开/关闭表单及焦点返回，6/6 通过。Goals 的 66 份独立主线输出先匹配原快照，再仅对 16 份整页推导移除 disabled 和替换“暂未开放”提示的预期，候选输出逐字节一致；没有用候选 RECORD 生成预期。最终 70 项通过、2 项既有生成分支跳过。第一次修复复验因未设置该文件要求的 `MOLIS_WORK_TEST_CHROME` 失败，补齐环境后重跑通过；未改变浏览器要求或跳过断言。
+
+### 本轮独立 FTS Full
+
+[FTS Full 42061291149](https://github.com/molis-ai/molis-work/actions/runs/42061291149) 的 16/16 分片和汇总均通过，PR head 为 `fcc2b979`，实际检出 `eb1747cbe4ad20cc8e9a1bd1e6760fb02947f720`。覆盖 1,653 个 Linux 文件；onboarding-journey 首次失败后按既有规则重试通过，保留偶发记录。57 个 macOS 专用文件被 Linux 排除，未运行 live。此结果仅属于 FTS PR，不代替账号最终集成 Full。
+
+用户随后批准 #1844 入队合入 main，[队列验证 42085559491](https://github.com/molis-ai/molis-work/actions/runs/42085559491) 尚在执行。#1842 已于 2026-11-05 18:34 UTC 通过队列合入 main 637a4c841，账号分支 merge ee332503c 已包含它；本次合并没有新增产品差异。#1843 新版尚未重新入队，#1844 尚未合入，不能将旧 #1843 队列的 success 记为新版成功。
+
+### K-10：账号回跳返回未登记的独立 HTML 页面
+
+账号 Full 第 13 分片（job `127387987008`）的整页门禁初次/重试均拒绝 `account-callback-http.ts`，干净 main 9f00fd0dad 的原门禁 3/3 通过。回跳只需完成当前认证并提示回原窗口，修复改为 `text/plain` 完成/取消提示，不新增整页例外或改门禁；原 no-store、no-referrer、nosniff 及 CSP 保持。
+
+**T01-CALLBACK-01** 由 `scripts/account-provider.test.mjs` 验证两种提供方的纯文本响应、成功/取消、拒绝与原窗口恢复；真实 Auth/Host、外部 mock、浏览器弹窗和桌面桥均已通过。新增浏览器检查最初在导航中读取已销毁的文档而失败，改为监听实际回跳响应并断言 MIME，再由原弹窗证明登录完成；没有改变产品轮询或等待上限。Host README 的必跑及整页门禁共 59 文件、653/653 通过，健康门禁相对 main 637a4c841 通过；修复提交 fa6231ca9，最终 CI 另验。
+
+### K-11：产品子集与必需安全作业重复登记
+
+账号 Full 第 16 分片（job `127387987301`）的产品子集规划测试两次失败。`account-session.test.ts` 已由 `test:security` 点名，`security-invariants-account-host.test.ts` 已由其中的 `security-invariants-*.test.ts` 模式覆盖；同时写进产品子集违反原去重断言。修复仅移除两行重复登记，测试文件、全部断言、安全作业及 Verify 依赖不变，`account-client` 继续进入产品子集；没有加隔离、跳过或改重试。干净主线规划 17/17，修复后的规划与执行器 36/36，通过命令和日志已保留。
+
+### 首轮账号 Full 的完整结果
+
+`73cb1504` 的 16 分片已全部结束：1,650/1,657 文件通过，6 个分片有持续失败，共 7 个文件，分别对应 K-07～K-11；57 个 macOS 文件被 Linux 排除。Coding 问卷卡、onboarding、code-scale、workbench-current-tabs、ui-audit-browser 五个文件初次失败后按既有规则重试通过。完整分片摘要保存在验证记录中，持续失败均已本地修复并验证；该运行仍是失败证据，不能改写为最终账号版本通过。
