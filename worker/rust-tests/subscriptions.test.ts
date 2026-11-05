@@ -467,9 +467,24 @@ test('AUTH-08 real catalog and subscription lifecycle with isolated identity moc
         assert.equal((await call(inventoryPath, undefined, owner)).status, 403)
         assert.equal((await call(inventoryPath, undefined, member)).status, 403)
         assert.equal((await call(inventoryPath, undefined, other)).status, 403)
-        assert.equal((await call('/platform/subscriptions/missing/seat-pools', undefined, reader)).status, 404)
-        assert.equal((await call(inventoryPath + '?userId=' + owner.userId, undefined, reader)).status, 400)
-        assert.deepEqual(ok(await call('/platform/subscriptions/' + personal.subscriptionId + '/seat-pools', undefined, reader)).items, [])
+        assert.equal(
+          (await call('/platform/subscriptions/missing/seat-pools', undefined, reader)).status,
+          404,
+        )
+        assert.equal(
+          (await call(inventoryPath + '?userId=' + owner.userId, undefined, reader)).status,
+          400,
+        )
+        assert.deepEqual(
+          ok(
+            await call(
+              '/platform/subscriptions/' + personal.subscriptionId + '/seat-pools',
+              undefined,
+              reader,
+            ),
+          ).items,
+          [],
+        )
         assert.equal((await update(personal, { enabled: false }, owner)).status, 403)
         assert.equal(
           (await update(personal, { owner: { kind: 'USER', id: other.userId } })).status,
@@ -789,7 +804,15 @@ test('AUTH-08 real catalog and subscription lifecycle with isolated identity moc
             'TENANT_DISABLED',
           )
         assert.deepEqual(await getSub(team.subscriptionId), oldTeam)
-        assert.ok(ok(await call('/platform/subscriptions/' + team.subscriptionId + '/seat-pools', undefined, reader)).items.length > 0)
+        assert.ok(
+          ok(
+            await call(
+              '/platform/subscriptions/' + team.subscriptionId + '/seat-pools',
+              undefined,
+              reader,
+            ),
+          ).items.length > 0,
+        )
         assert.deepEqual(ok(await call('/users/me/subscriptions', undefined, owner)).items, [
           oldPersonal,
         ])
@@ -865,13 +888,29 @@ test('AUTH-08 real catalog and subscription lifecycle with isolated identity moc
         )
         assert.notDeepEqual(plans.items, nextPlan.items)
         // The preceding capacity test retires omitted types; restore two current pools for real pagination.
-        team = ok(await update(team, { seatQuantities: { 'demo.standard': 7, 'demo.advanced': 1 } }))
+        team = ok(
+          await update(team, { seatQuantities: { 'demo.standard': 7, 'demo.advanced': 1 } }),
+        )
         const poolPath = '/platform/subscriptions/' + team.subscriptionId + '/seat-pools'
         const poolPage = ok(await call(poolPath + '?limit=1', undefined, reader))
         assert.ok(poolPage.nextCursor)
-        const poolNext = ok(await call(poolPath + '?limit=1&cursor=' + poolPage.nextCursor, undefined, reader))
+        const poolNext = ok(
+          await call(poolPath + '?limit=1&cursor=' + poolPage.nextCursor, undefined, reader),
+        )
         assert.notEqual(poolPage.items[0].seatTypeId, poolNext.items[0].seatTypeId)
-        assert.equal((await call('/platform/subscriptions/' + personal.subscriptionId + '/seat-pools?limit=1&cursor=' + poolPage.nextCursor, undefined, reader)).status, 400)
+        assert.equal(
+          (
+            await call(
+              '/platform/subscriptions/' +
+                personal.subscriptionId +
+                '/seat-pools?limit=1&cursor=' +
+                poolPage.nextCursor,
+              undefined,
+              reader,
+            )
+          ).status,
+          400,
+        )
         await permission(reader, 'SUBSCRIPTION_READ', false)
         assert.equal((await call(poolPath, undefined, reader)).status, 403)
         await permission(reader, 'SUBSCRIPTION_READ')

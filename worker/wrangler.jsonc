@@ -30,5 +30,5 @@
     },
   ],
   "durable_objects": { "bindings": [{ "name": "PASSWORD_KDF", "class_name": "PasswordKdf" }] },
-  "migrations": [{ "tag": "password-kdf-v1", "new_sqlite_classes": ["PasswordKdf"] }]
+  "migrations": [{ "tag": "password-kdf-v1", "new_sqlite_classes": ["PasswordKdf"] }],
 }
