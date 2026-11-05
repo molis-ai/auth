@@ -1,11 +1,11 @@
 {
-  "recordedAt": "2026-11-05T14:53:41.158Z",
+  "recordedAt": "2026-11-05T15:23:49.681Z",
   "formatVersion": 1,
   "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
   "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
   "repositories": {
     "A": {
-      "baseCommit": "fc8c0490b8a279ca2a7c10440c96be4c5ee68f36",
+      "baseCommit": "f4d11dfb71efadcad8087e0585e9431ddd0095fc",
       "uncommitted": false,
       "branch": "codex/unified-account-foundation",
       "packageVersion": null,
@@ -36,7 +36,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "feab8b3e883fdc0c95240eeb8bc18c52d8c51c86",
+      "baseCommit": "c9d6628c271ea812a9c7423b4869cda03aa8fbd6",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,10 +58,10 @@
         "tsconfig.json"
       ],
       "fileCount": 5906,
-      "sourceSha256": "d77ecdf60d382e32a427c4a79c8abfb95cdb990871575035909e7e219a669ed3"
+      "sourceSha256": "7ea2cb5fe94025a590845c157c1b7fd7cca924798a0e81ef1b2cf102c2558584"
     },
     "C": {
-      "baseCommit": "eb467ea7a4b2dbd3bfab3d48bc840cb1ff648a9d",
+      "baseCommit": "afff5640a62cc673d0277430e3ab0b4a4e5285b5",
       "uncommitted": false,
       "branch": "codex/club-01-account-foundation",
       "packageVersion": "0.1.0",
@@ -120,7 +120,7 @@
   },
   "evidence": {
     "requirementCount": 42,
-    "pathCount": 66,
-    "matrixSha256": "a2df7b43c19b96705fe2cc380222bcc128053ab03675f4776376427d6b5e4cc6"
+    "pathCount": 67,
+    "matrixSha256": "5ed4d292bf06eed1bdc9e64bf5ce4e864dca82ca5461c790e4cb673e5394a0b8"
   }
 }
