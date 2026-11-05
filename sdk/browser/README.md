@@ -1,4 +1,6 @@
-# Browser Auth SDK（开发中）
+# Browser Auth SDK（保留的 v1 接入）
+
+Work / Club 的 v2 统一账号通过 Host/BFF 在产品内完成，不使用本包的 Auth 托管确认和浏览器 Token 流程。现阶段没有另行发布通用 v2 npm SDK；正确接入与表单示例见[统一账号接入说明](../../docs/unified-account/integration-guide.md)，验收见[交付记录](../../docs/unified-account/delivery.md)。以下内容只描述仍保留的 v1 SDK。
 
 框架无关的 TypeScript/ESM 用户登录客户端，无运行时依赖，不依赖 Vue。当前为私有本地包，不发布到 npm。
 已实现托管/自定义密码登录、第三方登录入口交接、PKCE 回调、按需轮换、当前身份和退出；真实 HTTP 联动已验证，真实浏览器完整联合验收尚未通过，不是完整 V1 交付。
@@ -63,7 +65,7 @@ await auth.signInWithPassword(email, password)
 ```
 
 SDK 自动创建绑定客户端和 PKCE 的认证事务，密码直接 HTTPS POST 给 Auth，随后顶层跳到 Auth 完成交接。
-Auth 现在显示账号/目标并等待明确确认，不会加载后自动设置登录 Cookie；确认和取消都需要浏览器绑定与一次性证明。这个步骤由 Auth 页面完成，产品 SDK 调用方式不变，见 [确认合同](../../docs/login-confirmation.md)。
+Auth 现在显示账号/目标并等待明确确认，不会加载后自动设置登录 Cookie；确认和取消都需要浏览器绑定与一次性证明。这个步骤由 Auth 页面完成，产品 SDK 调用方式不变，见 [确认合同](../../docs/history/login-confirmation.md)。
 也可先调用 beginLogin 取得托管 loginUrl，再选择自定义密码提交。SDK 不记忆密码，不从邮箱后缀推断 Google/Apple 身份。
 这不是 OAuth password grant；Token 仍由单次授权码加原 PKCE verifier 兑换。
 

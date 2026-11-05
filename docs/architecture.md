@@ -24,6 +24,21 @@ Vue 和 Browser SDK 不变，不导入服务端实现、不接触 D1 绑定或�
 | security | 兼容密码编码、密码策略、头像实际解码与清洗 |
 | runtime/*.js | Web Crypto、随机数、受限外部 HTTP 请求桥接，不包含业务授权决策 |
 
+## Work / Club v2 模块
+
+现有 Vue 与浏览器 SDK 仍服务 v1；Work Host 和 Club BFF 使用 `/api/v2` 的独立产品会话。API、证据和交付边界见[统一账号说明](unified-account/integration-guide.md)及[交付矩阵](unified-account/acceptance-matrix.md)。
+
+| 模块 | 职责 |
+| --- | --- |
+| unified_contracts / unified_policy | 冻结结构校验、环境、客户端登记与 v1/v2 边界 |
+| login_sessions | 独立会话、换码、刷新、活动、范围化退出与撤销 |
+| registration / delivery / external_login | 邮箱手机验证、投递适配与 Google/GitHub mock 授权 |
+| account_management / sensitive_transactions | 资料、再次验证、绑定/换绑/解绑、密码与安全撤销 |
+| tenants / tenant_protocol / tenant_invitations / tenant_membership / tenant_transfers | 受管租户、角色、邀请、交接、启停；成员退出通过同一事务释放席位 |
+| billing / billing_catalog / billing_subscriptions / billing_seats / entitlements | 套餐、订阅、库存、分配历史、审计及按真实成员/来源判定权益 |
+
+上述中央事实仍在同一 D1，通过领域函数和原子 batch 协作。Host/BFF 只保存自身会话与展示缓存；旧 TEAM、登录 auth_grant 不充当新租户或商业席位。v2 平台能力从独立授权记录取得，不因拥有旧 Console 管理权限或租户 OWNER 身份自动获得。
+
 ## 安全与数据兼容
 
 - 继续使用现有 D1 SQL 迁移，不重新建库或重置用户。

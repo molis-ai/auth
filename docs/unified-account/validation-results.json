@@ -1,0 +1,1881 @@
+{
+  "formatVersion": 1,
+  "recordedAt": "2026-11-05T13:11:37.082439+00:00",
+  "scope": "LOCAL_SYNTHETIC_EXTERNAL_MOCK",
+  "note": "Work K-01/K-05 three reported failures fixed; the same SQLite FTS metadata issue also explained K-02. Final disjoint named-file results below are separate from diagnostic and historical runs. No local Full, production data, deployment, payment or real external provider calls.",
+  "repositories": {
+    "A": "auth",
+    "W": "molis-work/codex/work-01-account-foundation",
+    "C": "molis-club/codex/club-01-account-foundation"
+  },
+  "sourceManifestSha256": "a3762e9df372ab5f457938dd83f94e12d1ee56abe99d3012024d8d227294e03e",
+  "logDirectory": "/private/tmp/molis-work-baseline-fixes.t2a71qnl",
+  "toolchain": {
+    "node": "26.9.0",
+    "npm": "11.19.1",
+    "authRust": "1.96.0",
+    "workSwift": "6.3.3",
+    "platform": "macOS arm64"
+  },
+  "serialization": "Machine browser/build slots; all test files --jobs 1; builds and browser batches serialized.",
+  "results": [
+    {
+      "cwd": "W",
+      "command": "NODE_OPTIONS=--import=<isolated stack probe> node scripts/run-tests.mjs --jobs 1 --test-name-pattern=<three reported cases> tests/model-first-setup.e2e.test.ts tests/project-arrival.e2e.test.ts",
+      "status": "REPRODUCED_BEFORE_FIX",
+      "exitCode": 1,
+      "tests": 3,
+      "log": "reproduce.log",
+      "logSha256": "0a509f4c43911722d6bbe74022684752815e5db5ad22efa14bef2060a18d5fe6",
+      "logBytes": 17481,
+      "logUpdatedAt": "2026-11-05T12:37:50.546466+00:00",
+      "passed": 0
+    },
+    {
+      "cwd": "W",
+      "command": "pnpm build",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "build.log",
+      "logSha256": "2852307d8a64f6153e187765c3c19581be4d57005e9d66e1f7a3f7ca1907d8b7",
+      "logBytes": 2911,
+      "logUpdatedAt": "2026-11-05T12:41:35.035336+00:00",
+      "stage": "After initial knowledge-card and layout correction"
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/run-tests.mjs --jobs 1 tests/model-first-setup.e2e.test.ts tests/project-arrival.e2e.test.ts tests/onboarding-journey.e2e.test.ts tests/knowledge-cards.test.ts tests/knowledge-reads.test.ts tests/knowledge-service.test.ts tests/security-invariants-knowledge.test.ts tests/knowledge-locate-budget.test.ts tests/security-invariants-knowledge-lifecycle.test.ts",
+      "status": "PARTIAL_FIX_DIAGNOSTIC",
+      "exitCode": 1,
+      "tests": null,
+      "log": "targets.log",
+      "logSha256": "ea2babb479b41fa2d3b76e2c323776d933b57d88bbe00e3442eb30941451dfef",
+      "logBytes": 14132,
+      "logUpdatedAt": "2026-11-05T12:47:42.671443+00:00",
+      "stage": "Before the same FTS fix was applied to the search index",
+      "files": {
+        "tests/onboarding-journey.e2e.test.ts": {
+          "passed": 14,
+          "total": 14,
+          "status": "ok"
+        },
+        "tests/security-invariants-knowledge-lifecycle.test.ts": {
+          "passed": 2,
+          "total": 3,
+          "status": "FAIL"
+        },
+        "tests/model-first-setup.e2e.test.ts": {
+          "passed": 4,
+          "total": 4,
+          "status": "ok"
+        },
+        "tests/project-arrival.e2e.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/knowledge-cards.test.ts": {
+          "passed": 11,
+          "total": 17,
+          "status": "FAIL"
+        },
+        "tests/knowledge-reads.test.ts": {
+          "passed": 11,
+          "total": 11,
+          "status": "ok"
+        },
+        "tests/knowledge-service.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/knowledge-locate-budget.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        },
+        "tests/security-invariants-knowledge.test.ts": {
+          "passed": 8,
+          "total": 8,
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/gates/page-assets.mjs --base origin/main",
+      "status": "EXPECTED_BUDGET_TIGHTENING_REQUIRED",
+      "exitCode": 1,
+      "tests": null,
+      "log": "assets-before-update.log",
+      "logSha256": "3b5629318ca195d1aa5ddc6a297675d3943952e994e9a1d99c2d0176f975c083",
+      "logBytes": 279,
+      "logUpdatedAt": "2026-11-05T12:42:16.420394+00:00",
+      "details": "The stylesheet shrank by 42 bytes; budget update required."
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/gates/page-assets.mjs --update --base origin/main",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "assets-update.log",
+      "logSha256": "8e0ae0ec3113305b2af1dac85541d7f93c8a4beb3d2f65a5298bd70baa800bbe",
+      "logBytes": 52,
+      "logUpdatedAt": "2026-11-05T12:49:13.329297+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "pnpm build",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "build-final.log",
+      "logSha256": "3e86b8e5b3ce76540003787f1a7b7d23367fe4c180d2fd108bc9b3e1c7a870d1",
+      "logBytes": 2911,
+      "logUpdatedAt": "2026-11-05T12:49:36.551518+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/run-tests.mjs --jobs 1 tests/security-invariants-knowledge-lifecycle.test.ts tests/security-invariants-knowledge.test.ts tests/knowledge-cards.test.ts tests/knowledge-reads.test.ts tests/knowledge-service.test.ts tests/knowledge-locate-budget.test.ts",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": 59,
+      "log": "knowledge-final.log",
+      "logSha256": "9700723c4f613a47f269b67b138ff1f63f3c14d4052ea3c6105fcf82e2712495",
+      "logBytes": 839,
+      "logUpdatedAt": "2026-11-05T12:50:04.973485+00:00",
+      "files": {
+        "tests/security-invariants-knowledge-lifecycle.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/security-invariants-knowledge.test.ts": {
+          "passed": 8,
+          "total": 8,
+          "status": "ok"
+        },
+        "tests/knowledge-cards.test.ts": {
+          "passed": 17,
+          "total": 17,
+          "status": "ok"
+        },
+        "tests/knowledge-reads.test.ts": {
+          "passed": 11,
+          "total": 11,
+          "status": "ok"
+        },
+        "tests/knowledge-service.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/knowledge-locate-budget.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/run-tests.mjs --jobs 1 tests/style-has-scope.test.ts tests/plugin-declarative-mounting.test.ts tests/builtin-plugin-agent-texts.test.ts tests/builtin-manifests-contract.test.ts tests/builtin-plugin-composition.test.ts tests/workbench-ui-platform.test.ts tests/i18n.test.ts tests/client-script-undeclared.test.ts tests/ui-request-client.test.ts tests/ui-request-client-pages.test.ts tests/settings-requests-through-helper.test.ts tests/web-service-settings-client.test.ts tests/assistant-island-script.test.ts tests/plugin-client-served.test.ts tests/plugin-list-developer-mode.test.ts tests/plugin-picker-pins.test.ts tests/settings-call-diagnostics.test.ts tests/capabilities-page.test.ts tests/workbench-tab-workspace.e2e.test.ts tests/call-id-lookup.e2e.test.ts tests/ui-request-client.e2e.test.ts tests/request-failure-call-id.e2e.test.ts tests/model-ready-surfaces.e2e.test.ts tests/model-ready-cross-tab.e2e.test.ts tests/assistant-send-intent.e2e.test.ts tests/assistant-page-cards.e2e.test.ts tests/assistant-stale-refresh.e2e.test.ts tests/project-arrival-chooser.test.ts tests/project-brief.test.ts tests/storage-baseline.test.ts tests/home-store-baselines.test.ts tests/secret-store-keychain-retry.test.ts tests/secret-store-format.test.ts tests/home-backup-recovery.test.ts tests/plugin-private-storage.test.ts tests/system-search.test.ts tests/feed-local-history-delete.test.ts tests/project-deletion-owners.test.ts tests/project-deletion-studios.test.ts tests/security-invariants-secret-snapshot.test.ts tests/security-invariants-connector-private-state.test.ts tests/security-invariants-home-payload-purpose.test.ts tests/security-invariants-connector-private-state-limits.test.ts tests/secret-store-missing-key.test.ts tests/page-assets-budget.test.ts tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts tests/account-entitlements.test.ts tests/model-first-setup.e2e.test.ts tests/project-arrival.e2e.test.ts tests/onboarding-journey.e2e.test.ts",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": 590,
+      "log": "regression-final.log",
+      "logSha256": "da83d46d954df183e47ff70e9fa27ad6b943d9cf78214cc2734c18c9358ed1b7",
+      "logBytes": 4180,
+      "logUpdatedAt": "2026-11-05T13:01:25.529808+00:00",
+      "files": {
+        "tests/onboarding-journey.e2e.test.ts": {
+          "passed": 14,
+          "total": 14,
+          "status": "ok"
+        },
+        "tests/project-arrival.e2e.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/model-ready-surfaces.e2e.test.ts": {
+          "passed": 12,
+          "total": 12,
+          "status": "ok"
+        },
+        "tests/page-assets-budget.test.ts": {
+          "passed": 171,
+          "total": 171,
+          "status": "ok"
+        },
+        "tests/assistant-send-intent.e2e.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        },
+        "tests/request-failure-call-id.e2e.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/model-first-setup.e2e.test.ts": {
+          "passed": 4,
+          "total": 4,
+          "status": "ok"
+        },
+        "tests/workbench-tab-workspace.e2e.test.ts": {
+          "passed": 2,
+          "total": 2,
+          "status": "ok"
+        },
+        "tests/model-ready-cross-tab.e2e.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/ui-request-client.e2e.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/security-invariants-connector-private-state.test.ts": {
+          "passed": 9,
+          "total": 9,
+          "status": "ok"
+        },
+        "tests/security-invariants-connector-private-state-limits.test.ts": {
+          "passed": 4,
+          "total": 4,
+          "status": "ok"
+        },
+        "tests/storage-baseline.test.ts": {
+          "passed": 7,
+          "total": 7,
+          "status": "ok"
+        },
+        "tests/home-backup-recovery.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/plugin-private-storage.test.ts": {
+          "passed": 6,
+          "total": 6,
+          "status": "ok"
+        },
+        "tests/system-search.test.ts": {
+          "passed": 27,
+          "total": 27,
+          "status": "ok"
+        },
+        "tests/feed-local-history-delete.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/secret-store-keychain-retry.test.ts": {
+          "passed": 9,
+          "total": 9,
+          "status": "ok"
+        },
+        "tests/assistant-stale-refresh.e2e.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/project-deletion-owners.test.ts": {
+          "passed": 6,
+          "total": 6,
+          "status": "ok"
+        },
+        "tests/assistant-page-cards.e2e.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/call-id-lookup.e2e.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/client-script-undeclared.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        },
+        "tests/project-deletion-studios.test.ts": {
+          "passed": 4,
+          "total": 4,
+          "status": "ok"
+        },
+        "tests/i18n.test.ts": {
+          "passed": 13,
+          "total": 13,
+          "status": "ok"
+        },
+        "tests/capabilities-page.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/settings-call-diagnostics.test.ts": {
+          "passed": 10,
+          "total": 10,
+          "status": "ok"
+        },
+        "tests/security-invariants-account-host.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/home-store-baselines.test.ts": {
+          "passed": 27,
+          "total": 27,
+          "status": "ok"
+        },
+        "tests/style-has-scope.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/plugin-declarative-mounting.test.ts": {
+          "passed": 12,
+          "total": 12,
+          "status": "ok"
+        },
+        "tests/ui-request-client-pages.test.ts": {
+          "passed": 9,
+          "total": 9,
+          "status": "ok"
+        },
+        "tests/assistant-island-script.test.ts": {
+          "passed": 6,
+          "total": 6,
+          "status": "ok"
+        },
+        "tests/plugin-list-developer-mode.test.ts": {
+          "passed": 4,
+          "total": 4,
+          "status": "ok"
+        },
+        "tests/builtin-plugin-composition.test.ts": {
+          "passed": 7,
+          "total": 7,
+          "status": "ok"
+        },
+        "tests/project-arrival-chooser.test.ts": {
+          "passed": 11,
+          "total": 11,
+          "status": "ok"
+        },
+        "tests/builtin-plugin-agent-texts.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/builtin-manifests-contract.test.ts": {
+          "passed": 2,
+          "total": 2,
+          "status": "ok"
+        },
+        "tests/workbench-ui-platform.test.ts": {
+          "passed": 11,
+          "total": 11,
+          "status": "ok"
+        },
+        "tests/plugin-client-served.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        },
+        "tests/plugin-picker-pins.test.ts": {
+          "passed": 16,
+          "total": 16,
+          "status": "ok"
+        },
+        "tests/ui-request-client.test.ts": {
+          "passed": 32,
+          "total": 32,
+          "status": "ok"
+        },
+        "tests/project-brief.test.ts": {
+          "passed": 14,
+          "total": 14,
+          "status": "ok"
+        },
+        "tests/secret-store-format.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        },
+        "tests/security-invariants-secret-snapshot.test.ts": {
+          "passed": 5,
+          "total": 5,
+          "status": "ok"
+        },
+        "tests/account-client.test.ts": {
+          "passed": 14,
+          "total": 14,
+          "status": "ok"
+        },
+        "tests/account-session.test.ts": {
+          "passed": 23,
+          "total": 23,
+          "status": "ok"
+        },
+        "tests/settings-requests-through-helper.test.ts": {
+          "passed": 15,
+          "total": 15,
+          "status": "ok"
+        },
+        "tests/web-service-settings-client.test.ts": {
+          "passed": 8,
+          "total": 8,
+          "status": "ok"
+        },
+        "tests/security-invariants-home-payload-purpose.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/secret-store-missing-key.test.ts": {
+          "passed": 3,
+          "total": 3,
+          "status": "ok"
+        },
+        "tests/account-entitlements.test.ts": {
+          "passed": 1,
+          "total": 1,
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/check-health-gates.mjs --base origin/main",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "health-final.log",
+      "logSha256": "dcfe1f9fa188a1e50e5689f5ed90e9cded04ca863c4c95b5dbb2748f2f32385c",
+      "logBytes": 1974,
+      "logUpdatedAt": "2026-11-05T12:51:24.030407+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/check-package-boundaries.mjs",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "boundaries.log",
+      "logSha256": "c5e42d8924fc3aa2ad77aa2ea5012316dd377c80da5f103c3243b2234f8a1d6e",
+      "logBytes": 148,
+      "logUpdatedAt": "2026-11-05T12:51:27.095233+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/gates/page-assets.mjs --base origin/main",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "assets-final.log",
+      "logSha256": "05eaf65759b294f2b2e7add0ae5c4f0b4f41984ecfb1f2a3d6fbd6bd54c11b2d",
+      "logBytes": 96,
+      "logUpdatedAt": "2026-11-05T12:51:28.096094+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "diff-check.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "logBytes": 0,
+      "logUpdatedAt": "2026-11-05T12:51:28.106970+00:00"
+    },
+    {
+      "cwd": "W",
+      "command": "node --import tsx --test --test-concurrency=1 <isolated arrival screenshot script>",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": 1,
+      "log": "capture.log",
+      "logSha256": "36ff8e23297bc45c463fce358da1a900715ca6cc107be1ba5382a49948affe03",
+      "logBytes": 615,
+      "logUpdatedAt": "2026-11-05T13:09:57.088772+00:00",
+      "images": 10
+    },
+    {
+      "cwd": "W",
+      "command": "node scripts/visual-compare.mjs --base origin/main --out .impeccable/qa/review/visual/baseline-fixes",
+      "status": "DIFFERENCES_REVIEWED",
+      "exitCode": 1,
+      "tests": null,
+      "log": "visual.log",
+      "logSha256": "e66093fbb5b6fd94b36befb8732a5548d84285ba434690ba8aeebb900e28dec1",
+      "logBytes": 68774,
+      "logUpdatedAt": "2026-11-05T13:09:45.741635+00:00",
+      "reportSha256": "22ce2d604883fe02cac3bad7aaf30852454ae3fb333b393801ce436f832f90c3",
+      "details": {
+        "pictures": 66,
+        "changedPictures": [
+          {
+            "name": "todo@390-light",
+            "changed": true,
+            "ratio": 3.34183983473083e-05,
+            "pixels": 11,
+            "note": "",
+            "maxChannelDelta": 1,
+            "sameDimensions": true
+          },
+          {
+            "name": "todo@390-dark",
+            "changed": true,
+            "ratio": 2.430428970713331e-05,
+            "pixels": 8,
+            "note": "",
+            "maxChannelDelta": 1,
+            "sameDimensions": true
+          },
+          {
+            "name": "todo@1440-dark",
+            "changed": true,
+            "ratio": 6.172839506172839e-06,
+            "pixels": 8,
+            "note": "",
+            "maxChannelDelta": 1,
+            "sameDimensions": true
+          },
+          {
+            "name": "settings-appearance@1440-light",
+            "changed": true,
+            "ratio": 5.401234567901234e-06,
+            "pixels": 7,
+            "note": "",
+            "maxChannelDelta": 1,
+            "sameDimensions": true
+          }
+        ],
+        "unchangedPictures": 62,
+        "styleSnapshots": 22,
+        "styleChanges": [
+          {
+            "label": "button.personal-account[data-account-link]",
+            "prop": "opacity",
+            "before": "0.45",
+            "after": "1"
+          }
+        ],
+        "onlyBase": 0,
+        "onlyHead": 0,
+        "baselineCaptureTests": 13,
+        "headCaptureTests": 13,
+        "tolerance": 0,
+        "maxRatio": 0,
+        "review": "Compared with the prior K-03/K-04 report: the only computed-style change remains the already enabled account button opacity. Four images differ by 7-11 pixels with a maximum channel delta of 1; dimensions match. The separate ten arrival screenshots were inspected; no horizontal overflow or clipped primary action. The zero-tolerance comparison exit 1 is retained, not marked pixel-identical."
+      }
+    },
+    {
+      "cwd": "W clean 4fd250564",
+      "command": "node scripts/run-tests.mjs --jobs 1 tests/knowledge-cards.test.ts",
+      "status": "CLEAN_BASELINE_REPRODUCED",
+      "exitCode": 1,
+      "tests": 16,
+      "log": "baseline-knowledge.log",
+      "logSha256": "bdd0a5c81b7c7fc0766475a3ebddd467a91b5a9df4833be5b822caaa82b78cf0",
+      "logBytes": 10768,
+      "logUpdatedAt": "2026-11-05T13:09:57.906938+00:00",
+      "passed": 11,
+      "failed": 5,
+      "files": {
+        "tests/knowledge-cards.test.ts": {
+          "passed": 11,
+          "total": 16,
+          "status": "FAIL"
+        }
+      }
+    },
+    {
+      "cwd": "A",
+      "command": "node worker/scripts/account-delivery.mjs check <Work checkout> <Club checkout>",
+      "status": "PASS",
+      "exitCode": 0,
+      "tests": null,
+      "log": "delivery-check.log",
+      "logSha256": "206cf871469ed30494f8d6572ef68772a834dec72735265694eba8cf92b6b035",
+      "logBytes": 149,
+      "logUpdatedAt": "2026-11-05T13:00:47.375076+00:00"
+    }
+  ],
+  "workFinalRegression": {
+    "files": {
+      "tests/security-invariants-knowledge-lifecycle.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/security-invariants-knowledge.test.ts": {
+        "passed": 8,
+        "total": 8,
+        "status": "ok"
+      },
+      "tests/knowledge-cards.test.ts": {
+        "passed": 17,
+        "total": 17,
+        "status": "ok"
+      },
+      "tests/knowledge-reads.test.ts": {
+        "passed": 11,
+        "total": 11,
+        "status": "ok"
+      },
+      "tests/knowledge-service.test.ts": {
+        "passed": 15,
+        "total": 15,
+        "status": "ok"
+      },
+      "tests/knowledge-locate-budget.test.ts": {
+        "passed": 5,
+        "total": 5,
+        "status": "ok"
+      },
+      "tests/onboarding-journey.e2e.test.ts": {
+        "passed": 14,
+        "total": 14,
+        "status": "ok"
+      },
+      "tests/project-arrival.e2e.test.ts": {
+        "passed": 15,
+        "total": 15,
+        "status": "ok"
+      },
+      "tests/model-ready-surfaces.e2e.test.ts": {
+        "passed": 12,
+        "total": 12,
+        "status": "ok"
+      },
+      "tests/page-assets-budget.test.ts": {
+        "passed": 171,
+        "total": 171,
+        "status": "ok"
+      },
+      "tests/assistant-send-intent.e2e.test.ts": {
+        "passed": 5,
+        "total": 5,
+        "status": "ok"
+      },
+      "tests/request-failure-call-id.e2e.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/model-first-setup.e2e.test.ts": {
+        "passed": 4,
+        "total": 4,
+        "status": "ok"
+      },
+      "tests/workbench-tab-workspace.e2e.test.ts": {
+        "passed": 2,
+        "total": 2,
+        "status": "ok"
+      },
+      "tests/model-ready-cross-tab.e2e.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/ui-request-client.e2e.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/security-invariants-connector-private-state.test.ts": {
+        "passed": 9,
+        "total": 9,
+        "status": "ok"
+      },
+      "tests/security-invariants-connector-private-state-limits.test.ts": {
+        "passed": 4,
+        "total": 4,
+        "status": "ok"
+      },
+      "tests/storage-baseline.test.ts": {
+        "passed": 7,
+        "total": 7,
+        "status": "ok"
+      },
+      "tests/home-backup-recovery.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/plugin-private-storage.test.ts": {
+        "passed": 6,
+        "total": 6,
+        "status": "ok"
+      },
+      "tests/system-search.test.ts": {
+        "passed": 27,
+        "total": 27,
+        "status": "ok"
+      },
+      "tests/feed-local-history-delete.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/secret-store-keychain-retry.test.ts": {
+        "passed": 9,
+        "total": 9,
+        "status": "ok"
+      },
+      "tests/assistant-stale-refresh.e2e.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/project-deletion-owners.test.ts": {
+        "passed": 6,
+        "total": 6,
+        "status": "ok"
+      },
+      "tests/assistant-page-cards.e2e.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/call-id-lookup.e2e.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/client-script-undeclared.test.ts": {
+        "passed": 5,
+        "total": 5,
+        "status": "ok"
+      },
+      "tests/project-deletion-studios.test.ts": {
+        "passed": 4,
+        "total": 4,
+        "status": "ok"
+      },
+      "tests/i18n.test.ts": {
+        "passed": 13,
+        "total": 13,
+        "status": "ok"
+      },
+      "tests/capabilities-page.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/settings-call-diagnostics.test.ts": {
+        "passed": 10,
+        "total": 10,
+        "status": "ok"
+      },
+      "tests/security-invariants-account-host.test.ts": {
+        "passed": 15,
+        "total": 15,
+        "status": "ok"
+      },
+      "tests/home-store-baselines.test.ts": {
+        "passed": 27,
+        "total": 27,
+        "status": "ok"
+      },
+      "tests/style-has-scope.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/plugin-declarative-mounting.test.ts": {
+        "passed": 12,
+        "total": 12,
+        "status": "ok"
+      },
+      "tests/ui-request-client-pages.test.ts": {
+        "passed": 9,
+        "total": 9,
+        "status": "ok"
+      },
+      "tests/assistant-island-script.test.ts": {
+        "passed": 6,
+        "total": 6,
+        "status": "ok"
+      },
+      "tests/plugin-list-developer-mode.test.ts": {
+        "passed": 4,
+        "total": 4,
+        "status": "ok"
+      },
+      "tests/builtin-plugin-composition.test.ts": {
+        "passed": 7,
+        "total": 7,
+        "status": "ok"
+      },
+      "tests/project-arrival-chooser.test.ts": {
+        "passed": 11,
+        "total": 11,
+        "status": "ok"
+      },
+      "tests/builtin-plugin-agent-texts.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/builtin-manifests-contract.test.ts": {
+        "passed": 2,
+        "total": 2,
+        "status": "ok"
+      },
+      "tests/workbench-ui-platform.test.ts": {
+        "passed": 11,
+        "total": 11,
+        "status": "ok"
+      },
+      "tests/plugin-client-served.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      },
+      "tests/plugin-picker-pins.test.ts": {
+        "passed": 16,
+        "total": 16,
+        "status": "ok"
+      },
+      "tests/ui-request-client.test.ts": {
+        "passed": 32,
+        "total": 32,
+        "status": "ok"
+      },
+      "tests/project-brief.test.ts": {
+        "passed": 14,
+        "total": 14,
+        "status": "ok"
+      },
+      "tests/secret-store-format.test.ts": {
+        "passed": 5,
+        "total": 5,
+        "status": "ok"
+      },
+      "tests/security-invariants-secret-snapshot.test.ts": {
+        "passed": 5,
+        "total": 5,
+        "status": "ok"
+      },
+      "tests/account-client.test.ts": {
+        "passed": 14,
+        "total": 14,
+        "status": "ok"
+      },
+      "tests/account-session.test.ts": {
+        "passed": 23,
+        "total": 23,
+        "status": "ok"
+      },
+      "tests/settings-requests-through-helper.test.ts": {
+        "passed": 15,
+        "total": 15,
+        "status": "ok"
+      },
+      "tests/web-service-settings-client.test.ts": {
+        "passed": 8,
+        "total": 8,
+        "status": "ok"
+      },
+      "tests/security-invariants-home-payload-purpose.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/secret-store-missing-key.test.ts": {
+        "passed": 3,
+        "total": 3,
+        "status": "ok"
+      },
+      "tests/account-entitlements.test.ts": {
+        "passed": 1,
+        "total": 1,
+        "status": "ok"
+      }
+    },
+    "fileCount": 58,
+    "passed": 649,
+    "total": 649,
+    "note": "58 unique files on final product source; direct diagnostic runs and screenshot cases are not added again."
+  },
+  "resourceChange": {
+    "assets": 51,
+    "totalBytes": 7441159,
+    "arrivalCss": {
+      "before": 690207,
+      "after": 690165,
+      "delta": -42
+    },
+    "workbenchJs": 1114199,
+    "newResources": 0,
+    "newGrowthApproval": false
+  },
+  "matrix": {
+    "requirements": 42,
+    "isolatedPass": 39,
+    "partial": 3,
+    "evidenceGroups": 26
+  },
+  "knownIssueStatus": {
+    "K-01": "fixed",
+    "K-02": "fixed",
+    "K-03": "completed in previous round",
+    "K-04": "completed in previous round",
+    "K-05": "fixed"
+  },
+  "notRun": [
+    "Final integration head CI Full",
+    "Auth/Club runtime suites in this Work-only correction round (prior source-bound evidence retained)",
+    "Real account inventory/migration, real Home, real provider delivery/authorization",
+    "Installed Tauri, deployed multi-device verification, payment and shared business storage"
+  ],
+  "previousRuns": [
+    {
+      "formatVersion": 1,
+      "recordedAt": "2026-11-05T11:26:18.253Z",
+      "scope": "LOCAL_SYNTHETIC_EXTERNAL_MOCK",
+      "note": "Results recorded from completed command exits and inspected logs; this JSON is a record, not a runner or production attestation. Source snapshot excludes docs and ignored build outputs. Test counts are per runner, not a unique total across history.",
+      "repositories": {
+        "A": "auth",
+        "W": "molis-work/codex/work-01-account-foundation",
+        "C": "molis-club/codex/club-01-account-foundation"
+      },
+      "sourceManifestSha256": "054ad8cca906914596953753714fde1d0f0752c58dfd2d094518a713057bc385",
+      "logDirectory": "/private/tmp/molis-auth12.DkYzp7",
+      "toolchain": {
+        "node": "26.9.0",
+        "npm": "11.19.1",
+        "authRust": "1.96.0",
+        "workSwift": "6.3.3",
+        "platform": "macOS arm64"
+      },
+      "serialization": "Auth/Work builds and health runs use the Work machine build slot; Work/combined Host runs use the browser slot. No local Work Full run.",
+      "results": [
+        {
+          "cwd": "A/worker",
+          "command": "npm run build:rust",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "auth-build.log",
+          "logSha256": "e1d0e0481cfb7dd96ebd8e18e3d67296d40146cae5ce6777e98714f1af5815ef",
+          "logBytes": 367,
+          "logUpdatedAt": "2026-11-05T11:06:30.081Z"
+        },
+        {
+          "cwd": "A/worker",
+          "command": "node scripts/rust-check.mjs test",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": 20,
+          "log": "auth-rust-unit.log",
+          "logSha256": "7b4ca7b4348de8af127b42ed2d11b20e66fdcc5cee823d1338076b8acc1cea54",
+          "logBytes": 1567,
+          "logUpdatedAt": "2026-11-05T11:16:38.080Z"
+        },
+        {
+          "cwd": "A/worker",
+          "command": "node --test --test-concurrency=1 tests/unified-configuration.test.ts tests/unified-schema.test.ts tests/subscription-migration.test.ts tests/entitlement-migration.test.ts tests/account-migration.test.ts rust-tests/unified-boundary.test.ts rust-tests/unified-policy.test.ts rust-tests/login-sessions.test.ts rust-tests/registration.test.ts rust-tests/external-login.test.ts rust-tests/account-management.test.ts rust-tests/tenants.test.ts rust-tests/subscriptions.test.ts rust-tests/seats.test.ts rust-tests/entitlements.test.ts rust-tests/account-migration.test.ts",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": 103,
+          "log": "auth-regression.log",
+          "logSha256": "d4103c8d6b41369f152202e5ba6c99f6e1729ac88710af17a36bb37b8de65cbd",
+          "logBytes": 17747,
+          "logUpdatedAt": "2026-11-05T11:07:14.731Z"
+        },
+        {
+          "cwd": "A",
+          "command": "npm run contracts:check",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": 7,
+          "log": "auth-contracts.log",
+          "logSha256": "2a3f58780ff0c32e39e172ab5e8d8c4b573e7a0f242f3e52ccbd92fec0e40229",
+          "logBytes": 967,
+          "logUpdatedAt": "2026-11-05T11:14:03.671Z"
+        },
+        {
+          "cwd": "W",
+          "command": "node scripts/run-tests.mjs --jobs 1 tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts tests/web-home-isolation.test.ts tests/goal-management-identity.test.ts tests/account-entitlements.test.ts",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": 71,
+          "log": "work-regression.log",
+          "logSha256": "e1cab93536c7c15e2e80b11216fac60140a43dabfc2cc77a790372d8f8bb2c45",
+          "logBytes": 811,
+          "logUpdatedAt": "2026-11-05T11:14:24.798Z"
+        },
+        {
+          "cwd": "W",
+          "command": "node horizontal/account/scripts/check-contracts.mjs",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "work-contracts.log",
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "logBytes": 0,
+          "logUpdatedAt": "2026-11-05T11:14:24.807Z"
+        },
+        {
+          "cwd": "W",
+          "command": "node scripts/gates/page-assets.mjs --base origin/main",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "work-assets.log",
+          "logSha256": "ce1d44b3a0894991590dc24095a50b4c2a1f4ca0751fbbe17c869b80ba50a566",
+          "logBytes": 96,
+          "logUpdatedAt": "2026-11-05T11:14:25.690Z"
+        },
+        {
+          "cwd": "W",
+          "command": "node scripts/check-health-gates.mjs --base origin/main",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "work-health.log",
+          "logSha256": "dcfe1f9fa188a1e50e5689f5ed90e9cded04ca863c4c95b5dbb2748f2f32385c",
+          "logBytes": 1974,
+          "logUpdatedAt": "2026-11-05T11:24:40.249Z"
+        },
+        {
+          "cwd": "C",
+          "command": "MOLIS_AUTH_SOURCE=<Auth checkout> MOLIS_WORK_SOURCE=<built Work checkout> node scripts/test-account-cutover.mjs",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "joint.log",
+          "logSha256": "db433c340f50a70b1145b87cd732a0c92c0b22fbdb4e1d4af9d4095365e694da",
+          "logBytes": 1014,
+          "logUpdatedAt": "2026-11-05T11:10:00.788Z"
+        },
+        {
+          "cwd": "C",
+          "command": "npm run check",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "club-types.log",
+          "logSha256": "11c74b340653f03363d1fcb5b6438a957f7ff70d6d807631cd08606921f55a86",
+          "logBytes": 42,
+          "logUpdatedAt": "2026-11-05T11:10:00.966Z"
+        },
+        {
+          "cwd": "C",
+          "command": "npm run lint",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "club-lint.log",
+          "logSha256": "38047c033ae9889fb7f593f887fa1e65a3a6667f0e5543e66a9f8a4c71eb42db",
+          "logBytes": 35,
+          "logUpdatedAt": "2026-11-05T11:10:02.481Z"
+        },
+        {
+          "cwd": "C",
+          "command": "npm test",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": 77,
+          "log": "club-unit.log",
+          "logSha256": "47938eeabe7c528e8b38f1a54c233b7d3e272519cad53469a29a81c62b2cf8f6",
+          "logBytes": 8615,
+          "logUpdatedAt": "2026-11-05T11:10:04.797Z"
+        },
+        {
+          "cwd": "C",
+          "command": "node scripts/account-contracts.mjs --check",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "club-contracts.log",
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "logBytes": 0,
+          "logUpdatedAt": "2026-11-05T11:10:04.803Z"
+        },
+        {
+          "cwd": "C",
+          "command": "node scripts/test-account-routes.mjs",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "club-built-routes.log",
+          "logSha256": "7764664912d59c815ee938e3fe196c360d39f5d8e5c351ac58b421715162b4bc",
+          "logBytes": 141,
+          "logUpdatedAt": "2026-11-05T11:10:05.544Z"
+        },
+        {
+          "cwd": "A",
+          "command": "node worker/scripts/account-delivery.mjs check <Work checkout> <Club checkout>",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "delivery-check.log",
+          "logSha256": "85ff352d8afd0caf299f2e447a84740210d8abf58f15bbeffaa2f17128ccd2c8",
+          "logBytes": 298,
+          "logUpdatedAt": "2026-11-05T11:23:31.688Z"
+        },
+        {
+          "cwd": "A",
+          "command": "Temporarily alter only the new manifest digest, assert check exits nonzero, restore original bytes in finally; then check again",
+          "status": "PASS",
+          "exitCode": 0,
+          "tests": null,
+          "log": "delivery-drift.log",
+          "logSha256": "3537ab0bf5f836d4833f9fe3cd9296269656e981c262221cec65770edf377df1",
+          "logBytes": 116,
+          "logUpdatedAt": "2026-11-05T11:23:31.129Z"
+        }
+      ],
+      "notRun": [
+        "Production data inventory or migration",
+        "Real SMS/email or Google/GitHub",
+        "CI Full on final commits",
+        "Tauri packaged app",
+        "Deployed Vinext full-site E2E",
+        "All prior Chrome UI suites in this turn",
+        "Production restore or load/CPU assessment"
+      ],
+      "knownIssueRecord": "delivery.md#5-已知问题",
+      "sourceManifest": {
+        "recordedAt": "2026-11-05T11:23:30.027Z",
+        "formatVersion": 1,
+        "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
+        "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only.",
+        "repositories": {
+          "A": {
+            "baseCommit": "e9c5ffa2fc9ecff1a0f8a3e2f9358411a93ecbe9",
+            "branch": "codex/unified-account-foundation",
+            "packageVersion": null,
+            "uncommitted": true,
+            "sourceScope": [
+              "contracts",
+              "worker/rust/src",
+              "worker/rust/Cargo.toml",
+              "worker/rust/Cargo.lock",
+              "worker/scripts",
+              "worker/tests",
+              "worker/rust-tests",
+              "worker/migrations",
+              "worker/package.json",
+              "worker/package-lock.json",
+              "worker/unified-account-local-seed.sql",
+              "worker/mock-provider-local-seed.sql",
+              "web/src",
+              "web/tests",
+              "web/package.json",
+              "web/package-lock.json",
+              "sdk/browser/src",
+              "sdk/browser/tests",
+              "sdk/browser/package.json",
+              "sdk/browser/package-lock.json",
+              "package.json"
+            ],
+            "fileCount": 154,
+            "sourceSha256": "95c44a947d66e886e68540c32926b811f4ecb594896b11ca1856f2a8c0024574"
+          },
+          "W": {
+            "baseCommit": "4fd250564e8f48577f9f95d041106569773fcd1d",
+            "branch": "codex/work-01-account-foundation",
+            "packageVersion": "0.3.0",
+            "uncommitted": true,
+            "sourceScope": [
+              "apps",
+              "horizontal",
+              "modules",
+              "packages",
+              "plugins",
+              "server",
+              "scripts",
+              "tests",
+              "examples",
+              "tooling",
+              "vendor",
+              "package.json",
+              "pnpm-lock.yaml",
+              "pnpm-workspace.yaml",
+              "tsconfig.json"
+            ],
+            "fileCount": 5899,
+            "sourceSha256": "e8f3c2d18199907d3873d401af498407219c7e8d983d3615b84a8e5a9b066e0a"
+          },
+          "C": {
+            "baseCommit": "6e223f849847a8bffd338eb94d757e877101c020",
+            "branch": "codex/club-01-account-foundation",
+            "packageVersion": "0.1.0",
+            "uncommitted": true,
+            "sourceScope": [
+              "app",
+              "content",
+              "db",
+              "drizzle",
+              "lib",
+              "scripts",
+              "tests",
+              "package.json",
+              "package-lock.json",
+              "tsconfig.json",
+              "vite.config.ts",
+              "next.config.ts",
+              ".oxlintrc.json",
+              ".oxfmtrc.json"
+            ],
+            "fileCount": 804,
+            "sourceSha256": "e068775f9ad972975411a9b511cec004feb4333b08144ec4c6a6ca2b997a6102"
+          }
+        },
+        "contractVersion": "1.1.0",
+        "contractFiles": {
+          "schemas.json": "c5955e41d22839b609d3db910bf3fcdd9845d6a284e6fd8f3e811565dbdbab7d",
+          "openapi.json": "cedb83e90eaca58e4a41dc70ece59dad3ebce25f96ed8c3c27caef6132de0711",
+          "policy.json": "1835f71ba99c1203ac79c9ed950d1d8a1c9ab91450919082f516428072440912",
+          "validator-profile.json": "8bd2bb85a58a08d12d8f0ab27dd30d1b29d21123fbde6b39527c64867bb3180c",
+          "validate.ts": "aa89b77100cf1844d0b2f2e436764c01bb3d31597f4bff43815a8e22c917a320",
+          "fixtures.json": "5c889cede6f21215630143990d2433a9dc1fe89b0f2a4c8a811c462c69cacdfb"
+        },
+        "migrations": {
+          "A": {
+            "worker/migrations/0001_identity_and_spaces.sql": "3c315cf7aacd9412842177d0972c70f9711aa76e26c0d750f88e596a56cc38ee",
+            "worker/migrations/0002_ephemeral_primitives.sql": "c6deae30a4f1e6f57182f1f12e7e1a5542cd4a3ef156fdafa5a7c75a71f0d540",
+            "worker/migrations/0003_sessions_and_management.sql": "b8e651a4b4c84b1f595ef16d76c53c6b517f9db094bf178899a43a0f9074febd",
+            "worker/migrations/0004_services.sql": "5e0d83593aed059fb39b05e8d04def6173b667eb495b9188ca735403f118f8ff",
+            "worker/migrations/0005_unified_account.sql": "d21116a3adc05f2ba644a26254da413ffe35f902ddebf23db03d56f7b5879f50",
+            "worker/migrations/0006_mock_delivery.sql": "16f2911e889557fda5dce4b7ffe8105d16ff99ccac8395d76da8f589e20acdff",
+            "worker/migrations/0007_mock_provider_accounts.sql": "08229bc5c1fbd100c4fb39259f312de18f248632fd492c0f2ca11eef1289db3c",
+            "worker/migrations/0008_sensitive_identity_transactions.sql": "7becaa04b4c497b0375bbf351735e5b239e07a17015dfffa0cdfec2f0397343e",
+            "worker/migrations/0009_mock_tenant_notifications.sql": "82a448c69c0d292ff6526e53823fed9dc746418367c263acd60ec116aff59bad",
+            "worker/migrations/0010_subscription_lifecycle.sql": "2ebe26ec2a29444983c03f9a95ff08975c6a1ade9a337567cb66db98d5055eee",
+            "worker/migrations/0011_entitlement_client_product.sql": "90f695d6ac20e12ec57b0f10e9b7833143b1406e66e6b73645e5cdf3a51c6e7c"
+          },
+          "C": {
+            "drizzle/0000_jittery_lady_deathstrike.sql": "269561694dee5c6b10f932529a810899cc37da995c6e5555da7adafc17108b44",
+            "drizzle/0001_nebulous_power_man.sql": "02530652a3101120a63f17198543d812eaad8849f1305ba397ca52f03a37012c",
+            "drizzle/0002_curved_ultron.sql": "ca515d9c5aee5cbc3f1449cc7bbb274885dc0ce0cb466a7bf5d1efe785ac7a3e",
+            "drizzle/0003_applications_multiple_submissions.sql": "5f6b085443fea91852dd85447721a89c7ff066998531c8c67ebebcac3486c95f",
+            "drizzle/0004_central_account_sessions.sql": "c583a437caac17d872f0bad7fb3da30d1bd185bfbd415b2503771b24cd00ba3b",
+            "drizzle/0005_central_account_transactions.sql": "7e2a79a0f0f6727ec1adce3db37d4410d493d383fc3408e6a7cf38edffb33bbd",
+            "drizzle/0006_light_prism.sql": "42262a1c72d518fc21d16bc2b810127942fdf92cc20aa25037c2c7d18434f610"
+          }
+        },
+        "evidence": {
+          "requirementCount": 42,
+          "pathCount": 56,
+          "matrixSha256": "b54ab656d1f91662e050ce74be3603b961fcb949817065c6ef206a33559a546b"
+        }
+      }
+    },
+    {
+      "label": "K-03/K-04 completed round",
+      "validation": {
+        "formatVersion": 1,
+        "recordedAt": "2026-11-05T12:29:00.242095+00:00",
+        "scope": "LOCAL_SYNTHETIC_EXTERNAL_MOCK",
+        "note": "K-03/K-04 follow-up. Completed commands only. Work regression is incremental: the initial run precedes the titlebar/disclosure adjustment; seven affected files were rechecked. Counts are per runner, never added across rounds. Previous AUTH-12 record and its exact source manifest are retained under previousRuns.",
+        "repositories": {
+          "A": "auth",
+          "W": "molis-work/codex/work-01-account-foundation",
+          "C": "molis-club/codex/club-01-account-foundation"
+        },
+        "sourceManifestSha256": "f0e416361c18340fad4b13260a7ac52894a2f894df2dff32045f7ffd11de3312",
+        "logDirectory": "/private/tmp/molis-k03-k04.slxCWO",
+        "toolchain": {
+          "node": "26.9.0",
+          "npm": "11.19.1",
+          "authRust": "1.96.0",
+          "workSwift": "6.3.3",
+          "platform": "macOS arm64"
+        },
+        "serialization": "Work tests --jobs 1, machine browser slot; builds use build slot; queued baseline/build/recheck work serialized. No local Work Full.",
+        "results": [
+          {
+            "cwd": "A/worker",
+            "command": "node --test --test-concurrency=1 rust-tests/entitlements.test.ts",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": 18,
+            "log": "auth-resources.log",
+            "logSha256": "61449ed3715d475213edf8edb5537f57c2fe522a13e3d91b30ac886e9e35a19f",
+            "logBytes": 2641,
+            "logUpdatedAt": "2026-11-05T11:51:22.587034+00:00"
+          },
+          {
+            "cwd": "A",
+            "command": "npm run contracts:check",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": 7,
+            "log": "auth-contracts.log",
+            "logSha256": "d708fd15ed82fea9bb9b6096960714395a5324fe15b2da50283c0e0a48d988a0",
+            "logBytes": 969,
+            "logUpdatedAt": "2026-11-05T11:58:43.230095+00:00"
+          },
+          {
+            "cwd": "A/worker",
+            "command": "prettier --check rust-tests/shared-resource-fixture.ts rust-tests/entitlements.test.ts",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "auth-format.log",
+            "logSha256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+            "logBytes": 66,
+            "logUpdatedAt": "2026-11-05T12:05:18.192898+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "pnpm build",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "work-final-build.log",
+            "logSha256": "7861825c13b58c3c81e6f65ab6590275d644f161a6029b8b329b2d4fcc4931a0",
+            "logBytes": 2134,
+            "logUpdatedAt": "2026-11-05T12:10:28.373987+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "node horizontal/account/scripts/check-contracts.mjs",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "work-contracts.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "logBytes": 0,
+            "logUpdatedAt": "2026-11-05T12:00:33.037853+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "node scripts/check-health-gates.mjs --base origin/main",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "work-health.log",
+            "logSha256": "dcfe1f9fa188a1e50e5689f5ed90e9cded04ca863c4c95b5dbb2748f2f32385c",
+            "logBytes": 1974,
+            "logUpdatedAt": "2026-11-05T12:11:46.519480+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "node scripts/gates/page-assets.mjs --base origin/main",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "work-assets-final.log",
+            "logSha256": "0ee560a505e907dae7e73eab00a00f86624421547d3a8b61d939ceb70b77792a",
+            "logBytes": 96,
+            "logUpdatedAt": "2026-11-05T12:12:17.254269+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "node scripts/run-tests.mjs --jobs 1 tests/project-arrival.e2e.test.ts tests/onboarding-journey.e2e.test.ts tests/client-script-undeclared.test.ts tests/i18n.test.ts tests/project-arrival-chooser.test.ts tests/style-has-scope.test.ts tests/workbench-ui-platform.test.ts",
+            "status": "KNOWN_BASELINE_FAILURES",
+            "exitCode": 1,
+            "tests": 72,
+            "log": "work-layout-final.log",
+            "logSha256": "37b16daabdd9fd012b03cd8b533db9034711737d6b4e3e24c50348aa7fba5eef",
+            "logBytes": 6235,
+            "logUpdatedAt": "2026-11-05T12:16:12.004236+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "MOLIS_AUTH_SOURCE=/absolute/auth node scripts/account-authentication.test.mjs",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "work-help-browser-final.log",
+            "logSha256": "10b1bf35ecb5784ac4f0a3f3bc55c0afe13254a40cd044ea93fee326ed697b2d",
+            "logBytes": 2156,
+            "logUpdatedAt": "2026-11-05T12:16:24.435229+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "npm run check",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-types.log",
+            "logSha256": "11c74b340653f03363d1fcb5b6438a957f7ff70d6d807631cd08606921f55a86",
+            "logBytes": 42,
+            "logUpdatedAt": "2026-11-05T11:51:56.589231+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "npm run lint",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-lint.log",
+            "logSha256": "38047c033ae9889fb7f593f887fa1e65a3a6667f0e5543e66a9f8a4c71eb42db",
+            "logBytes": 35,
+            "logUpdatedAt": "2026-11-05T11:51:58.354862+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "npm test",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": 77,
+            "log": "club-unit.log",
+            "logSha256": "984055bb5d73214dbff2b773d271cc8a462aa26687e59de498311b1e8b54c578",
+            "logBytes": 8607,
+            "logUpdatedAt": "2026-11-05T11:52:00.774267+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "node scripts/account-contracts.mjs --check",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-contracts.log",
+            "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "logBytes": 0,
+            "logUpdatedAt": "2026-11-05T12:00:33.136618+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "MOLIS_AUTH_SOURCE=/absolute/auth MOLIS_WORK_SOURCE=/absolute/work node scripts/test-account-browser.mjs",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-browser.log",
+            "logSha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f",
+            "logBytes": 1082,
+            "logUpdatedAt": "2026-11-05T11:54:44.622077+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "npm run build",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-build.log",
+            "logSha256": "d32050bc3a53e7deb4cd96ea8b799f7c0efe9daeb19417ac739d017c2e82ac3e",
+            "logBytes": 17026,
+            "logUpdatedAt": "2026-11-05T12:08:24.772508+00:00"
+          },
+          {
+            "cwd": "C",
+            "command": "node scripts/test-account-routes.mjs",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "club-routes.log",
+            "logSha256": "7764664912d59c815ee938e3fe196c360d39f5d8e5c351ac58b421715162b4bc",
+            "logBytes": 141,
+            "logUpdatedAt": "2026-11-05T12:08:25.484600+00:00"
+          },
+          {
+            "cwd": "A",
+            "command": "node worker/scripts/account-delivery.mjs check /absolute/work /absolute/club",
+            "status": "PASS",
+            "exitCode": 0,
+            "tests": null,
+            "log": "delivery-check.log",
+            "logSha256": "ad3d80f0504d9fa9c000bb03529da56910ab86731619e0550815b5638446272f",
+            "logBytes": 149,
+            "logUpdatedAt": "2026-11-05T12:13:02.390506+00:00"
+          },
+          {
+            "cwd": "W",
+            "command": "node scripts/visual-compare.mjs --base origin/main --out .impeccable/qa/review/visual/k03-compare",
+            "status": "REVIEWED_DIFFERENCES",
+            "exitCode": 1,
+            "tests": {
+              "base": 13,
+              "head": 13
+            },
+            "log": "work-visual.log",
+            "logSha256": "b20d961913478d198572cb975f6ff36ff4313899dac6f7c9af9f98cf08636dcf",
+            "logBytes": 68653,
+            "logUpdatedAt": "2026-11-05T12:26:46.417237+00:00"
+          }
+        ],
+        "workIncrementalRegression": {
+          "initial": {
+            "log": "work-required.log",
+            "logSha256": "fe84746664a7963d3f8485062b24f5df789a4b2193a7fb4a3cc2041178b70513",
+            "logBytes": 23530,
+            "logUpdatedAt": "2026-11-05T12:06:12.015105+00:00",
+            "stage": "Before titlebar mark and shared design-system disclosure adjustment",
+            "exitCode": 1,
+            "files": {
+              "tests/model-ready-surfaces.e2e.test.ts": {
+                "passed": 12,
+                "total": 12
+              },
+              "tests/model-first-setup.e2e.test.ts": {
+                "passed": 3,
+                "total": 4
+              },
+              "tests/project-arrival.e2e.test.ts": {
+                "passed": 10,
+                "total": 15
+              },
+              "tests/onboarding-journey.e2e.test.ts": {
+                "passed": 10,
+                "total": 14
+              },
+              "tests/page-assets-budget.test.ts": {
+                "passed": 171,
+                "total": 171
+              },
+              "tests/assistant-send-intent.e2e.test.ts": {
+                "passed": 5,
+                "total": 5
+              },
+              "tests/request-failure-call-id.e2e.test.ts": {
+                "passed": 3,
+                "total": 3
+              },
+              "tests/workbench-tab-workspace.e2e.test.ts": {
+                "passed": 2,
+                "total": 2
+              },
+              "tests/model-ready-cross-tab.e2e.test.ts": {
+                "passed": 3,
+                "total": 3
+              },
+              "tests/ui-request-client.e2e.test.ts": {
+                "passed": 3,
+                "total": 3
+              },
+              "tests/assistant-stale-refresh.e2e.test.ts": {
+                "passed": 1,
+                "total": 1
+              },
+              "tests/project-arrival-chooser.test.ts": {
+                "passed": 11,
+                "total": 11
+              },
+              "tests/project-brief.test.ts": {
+                "passed": 14,
+                "total": 14
+              },
+              "tests/call-id-lookup.e2e.test.ts": {
+                "passed": 1,
+                "total": 1
+              },
+              "tests/assistant-page-cards.e2e.test.ts": {
+                "passed": 1,
+                "total": 1
+              },
+              "tests/client-script-undeclared.test.ts": {
+                "passed": 5,
+                "total": 5
+              },
+              "tests/i18n.test.ts": {
+                "passed": 13,
+                "total": 13
+              },
+              "tests/capabilities-page.test.ts": {
+                "passed": 1,
+                "total": 1
+              },
+              "tests/settings-call-diagnostics.test.ts": {
+                "passed": 10,
+                "total": 10
+              },
+              "tests/style-has-scope.test.ts": {
+                "passed": 3,
+                "total": 3
+              },
+              "tests/builtin-plugin-composition.test.ts": {
+                "passed": 7,
+                "total": 7
+              },
+              "tests/plugin-declarative-mounting.test.ts": {
+                "passed": 12,
+                "total": 12
+              },
+              "tests/ui-request-client-pages.test.ts": {
+                "passed": 9,
+                "total": 9
+              },
+              "tests/assistant-island-script.test.ts": {
+                "passed": 6,
+                "total": 6
+              },
+              "tests/plugin-list-developer-mode.test.ts": {
+                "passed": 4,
+                "total": 4
+              },
+              "tests/plugin-client-served.test.ts": {
+                "passed": 1,
+                "total": 1
+              },
+              "tests/builtin-plugin-agent-texts.test.ts": {
+                "passed": 3,
+                "total": 3
+              },
+              "tests/builtin-manifests-contract.test.ts": {
+                "passed": 2,
+                "total": 2
+              },
+              "tests/workbench-ui-platform.test.ts": {
+                "passed": 11,
+                "total": 11
+              },
+              "tests/plugin-picker-pins.test.ts": {
+                "passed": 16,
+                "total": 16
+              },
+              "tests/ui-request-client.test.ts": {
+                "passed": 32,
+                "total": 32
+              },
+              "tests/settings-requests-through-helper.test.ts": {
+                "passed": 15,
+                "total": 15
+              },
+              "tests/web-service-settings-client.test.ts": {
+                "passed": 8,
+                "total": 8
+              }
+            }
+          },
+          "recheck": {
+            "tests/project-arrival.e2e.test.ts": {
+              "passed": 13,
+              "total": 15
+            },
+            "tests/onboarding-journey.e2e.test.ts": {
+              "passed": 14,
+              "total": 14
+            },
+            "tests/client-script-undeclared.test.ts": {
+              "passed": 5,
+              "total": 5
+            },
+            "tests/i18n.test.ts": {
+              "passed": 13,
+              "total": 13
+            },
+            "tests/project-arrival-chooser.test.ts": {
+              "passed": 11,
+              "total": 11
+            },
+            "tests/style-has-scope.test.ts": {
+              "passed": 3,
+              "total": 3
+            },
+            "tests/workbench-ui-platform.test.ts": {
+              "passed": 11,
+              "total": 11
+            }
+          },
+          "combinedFiles": 33,
+          "combinedPassed": 415,
+          "combinedTotal": 418,
+          "remainingFailures": {
+            "K-01": [
+              "model-first-setup: pending != ready (earlier clean baseline evidence retained)"
+            ],
+            "K-05": [
+              "project-arrival: English 768 personal-space overflow",
+              "project-arrival: 667 landscape personal-space overflow"
+            ]
+          }
+        },
+        "baseline": {
+          "baseCommit": "4fd250564e8f48577f9f95d041106569773fcd1d",
+          "environment": "Clean detached worktree, offline locked dependencies, same Node/Swift/Chrome, temporary Home; worktree removed after verification",
+          "command": "node scripts/run-tests.mjs --jobs 1 \"--test-name-pattern=^in English the chooser|^every state of the chooser|^in English every screen\" tests/project-arrival.e2e.test.ts tests/onboarding-journey.e2e.test.ts",
+          "selectedTests": 3,
+          "passed": 1,
+          "failed": 2,
+          "log": "baseline-layout.log",
+          "logSha256": "dc5a678d01c53bd796fdfdd45380f92bf538de8cfb5c8e0dc992e680bb18957f",
+          "logBytes": 3979,
+          "logUpdatedAt": "2026-11-05T12:08:18.084015+00:00"
+        },
+        "resourceApproval": {
+          "asset": "/assets/molis-work-workbench.js",
+          "beforeBytes": 1113668,
+          "userApprovedMaximumDelta": 537,
+          "finalBytes": 1114199,
+          "finalDelta": 531,
+          "newAssets": 0,
+          "otherAssetsChanged": false
+        },
+        "notRun": [
+          "Real providers or messages",
+          "Real user data, real Home or production migrations",
+          "Local/CI Full at final committed integration head",
+          "Tauri installed package, deployed end-to-end and real multiple devices",
+          "K-02 knowledge lifecycle baseline test",
+          "Production shared-resource service, storage or long-download revocation"
+        ],
+        "visualComparison": {
+          "scope": "Entire account feature working tree versus merge-base, not only the K-03 diff",
+          "captureTestsPerTree": 13,
+          "captureFailures": 0,
+          "pictures": 66,
+          "identicalPictures": 62,
+          "changedPictures": [
+            {
+              "name": "todo@390-light",
+              "pixels": 11,
+              "maxChannelDelta": 1
+            },
+            {
+              "name": "todo@390-dark",
+              "pixels": 8,
+              "maxChannelDelta": 1
+            },
+            {
+              "name": "todo@1024-dark",
+              "pixels": 8,
+              "maxChannelDelta": 1
+            },
+            {
+              "name": "settings-appearance@1440-light",
+              "pixels": 7,
+              "maxChannelDelta": 1
+            }
+          ],
+          "styleSnapshots": 22,
+          "styleChange": "All 22 have only personal-account button opacity 0.45 -> 1 (earlier account-entry enablement); no added/removed style elements or other property changes",
+          "review": "Side-by-side screenshots and all changed pixel bounds/channel deltas inspected. Zero tolerance retained, so comparison exits 1; no assertion or threshold relaxed. No additional layout changes observed.",
+          "reportPath": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/.impeccable/qa/review/visual/k03-compare/report.json",
+          "reportSha256": "9778b0e06597c5692c8d245ba0f83ffc32c68358c30eababc1c2892960b3ce64"
+        }
+      },
+      "sourceManifest": {
+        "recordedAt": "2026-11-05T12:13:01.496Z",
+        "formatVersion": 1,
+        "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
+        "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only.",
+        "repositories": {
+          "A": {
+            "baseCommit": "e9c5ffa2fc9ecff1a0f8a3e2f9358411a93ecbe9",
+            "branch": "codex/unified-account-foundation",
+            "packageVersion": null,
+            "uncommitted": true,
+            "sourceScope": [
+              "contracts",
+              "worker/rust/src",
+              "worker/rust/Cargo.toml",
+              "worker/rust/Cargo.lock",
+              "worker/scripts",
+              "worker/tests",
+              "worker/rust-tests",
+              "worker/migrations",
+              "worker/package.json",
+              "worker/package-lock.json",
+              "worker/unified-account-local-seed.sql",
+              "worker/mock-provider-local-seed.sql",
+              "web/src",
+              "web/tests",
+              "web/package.json",
+              "web/package-lock.json",
+              "sdk/browser/src",
+              "sdk/browser/tests",
+              "sdk/browser/package.json",
+              "sdk/browser/package-lock.json",
+              "package.json"
+            ],
+            "fileCount": 155,
+            "sourceSha256": "38f452901efefad50648edd2a4d5cde3fa26931fd7eafe439b52a8400ef1a110"
+          },
+          "W": {
+            "baseCommit": "4fd250564e8f48577f9f95d041106569773fcd1d",
+            "branch": "codex/work-01-account-foundation",
+            "packageVersion": "0.3.0",
+            "uncommitted": true,
+            "sourceScope": [
+              "apps",
+              "horizontal",
+              "modules",
+              "packages",
+              "plugins",
+              "server",
+              "scripts",
+              "tests",
+              "examples",
+              "tooling",
+              "vendor",
+              "package.json",
+              "pnpm-lock.yaml",
+              "pnpm-workspace.yaml",
+              "tsconfig.json"
+            ],
+            "fileCount": 5899,
+            "sourceSha256": "9ef879430ed8595283ad219046edb29051a8d0c1530cbd243f7d3838219919fb"
+          },
+          "C": {
+            "baseCommit": "6e223f849847a8bffd338eb94d757e877101c020",
+            "branch": "codex/club-01-account-foundation",
+            "packageVersion": "0.1.0",
+            "uncommitted": true,
+            "sourceScope": [
+              "app",
+              "content",
+              "db",
+              "drizzle",
+              "lib",
+              "scripts",
+              "tests",
+              "package.json",
+              "package-lock.json",
+              "tsconfig.json",
+              "vite.config.ts",
+              "next.config.ts",
+              ".oxlintrc.json",
+              ".oxfmtrc.json"
+            ],
+            "fileCount": 805,
+            "sourceSha256": "9ce808e49e5fd4a1759b8dd32a4792cde20dd239ee0b278344d479c5f6ca9a1f"
+          }
+        },
+        "contractVersion": "1.1.0",
+        "contractFiles": {
+          "schemas.json": "c5955e41d22839b609d3db910bf3fcdd9845d6a284e6fd8f3e811565dbdbab7d",
+          "openapi.json": "cedb83e90eaca58e4a41dc70ece59dad3ebce25f96ed8c3c27caef6132de0711",
+          "policy.json": "1835f71ba99c1203ac79c9ed950d1d8a1c9ab91450919082f516428072440912",
+          "validator-profile.json": "8bd2bb85a58a08d12d8f0ab27dd30d1b29d21123fbde6b39527c64867bb3180c",
+          "validate.ts": "aa89b77100cf1844d0b2f2e436764c01bb3d31597f4bff43815a8e22c917a320",
+          "fixtures.json": "5c889cede6f21215630143990d2433a9dc1fe89b0f2a4c8a811c462c69cacdfb"
+        },
+        "migrations": {
+          "A": {
+            "worker/migrations/0001_identity_and_spaces.sql": "3c315cf7aacd9412842177d0972c70f9711aa76e26c0d750f88e596a56cc38ee",
+            "worker/migrations/0002_ephemeral_primitives.sql": "c6deae30a4f1e6f57182f1f12e7e1a5542cd4a3ef156fdafa5a7c75a71f0d540",
+            "worker/migrations/0003_sessions_and_management.sql": "b8e651a4b4c84b1f595ef16d76c53c6b517f9db094bf178899a43a0f9074febd",
+            "worker/migrations/0004_services.sql": "5e0d83593aed059fb39b05e8d04def6173b667eb495b9188ca735403f118f8ff",
+            "worker/migrations/0005_unified_account.sql": "d21116a3adc05f2ba644a26254da413ffe35f902ddebf23db03d56f7b5879f50",
+            "worker/migrations/0006_mock_delivery.sql": "16f2911e889557fda5dce4b7ffe8105d16ff99ccac8395d76da8f589e20acdff",
+            "worker/migrations/0007_mock_provider_accounts.sql": "08229bc5c1fbd100c4fb39259f312de18f248632fd492c0f2ca11eef1289db3c",
+            "worker/migrations/0008_sensitive_identity_transactions.sql": "7becaa04b4c497b0375bbf351735e5b239e07a17015dfffa0cdfec2f0397343e",
+            "worker/migrations/0009_mock_tenant_notifications.sql": "82a448c69c0d292ff6526e53823fed9dc746418367c263acd60ec116aff59bad",
+            "worker/migrations/0010_subscription_lifecycle.sql": "2ebe26ec2a29444983c03f9a95ff08975c6a1ade9a337567cb66db98d5055eee",
+            "worker/migrations/0011_entitlement_client_product.sql": "90f695d6ac20e12ec57b0f10e9b7833143b1406e66e6b73645e5cdf3a51c6e7c"
+          },
+          "C": {
+            "drizzle/0000_jittery_lady_deathstrike.sql": "269561694dee5c6b10f932529a810899cc37da995c6e5555da7adafc17108b44",
+            "drizzle/0001_nebulous_power_man.sql": "02530652a3101120a63f17198543d812eaad8849f1305ba397ca52f03a37012c",
+            "drizzle/0002_curved_ultron.sql": "ca515d9c5aee5cbc3f1449cc7bbb274885dc0ce0cb466a7bf5d1efe785ac7a3e",
+            "drizzle/0003_applications_multiple_submissions.sql": "5f6b085443fea91852dd85447721a89c7ff066998531c8c67ebebcac3486c95f",
+            "drizzle/0004_central_account_sessions.sql": "c583a437caac17d872f0bad7fb3da30d1bd185bfbd415b2503771b24cd00ba3b",
+            "drizzle/0005_central_account_transactions.sql": "7e2a79a0f0f6727ec1adce3db37d4410d493d383fc3408e6a7cf38edffb33bbd",
+            "drizzle/0006_light_prism.sql": "42262a1c72d518fc21d16bc2b810127942fdf92cc20aa25037c2c7d18434f610"
+          }
+        },
+        "evidence": {
+          "requirementCount": 42,
+          "pathCount": 60,
+          "matrixSha256": "4af791133e75def2ce2fb56989ddbe4d5d8a8b96cf3d52f98f7c4d2d697af91a"
+        }
+      }
+    }
+  ]
+}

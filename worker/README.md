@@ -3,6 +3,10 @@
 Vue 页面保持原样；后端使用 Rust 编译为 WASM，通过 Workers 和 D1 运行。不需要 Java、MySQL、Redis 或 Docker。
 旧 Java 源码及其构建配置已移出当前工程；没有删除或覆盖旧 MySQL 数据。当前模块边界见 `../docs/architecture.md`。
 
+Work / Club 的 v2 统一账号实现与任务记录见[开发任务](../docs/unified-account/development-tasks.md)。[AUTH-11 方案](../docs/unified-account/account-migration-plan.md)提供只读存量盘点、合成数据切换/回退和备份恢复演练；没有读取真实数据或提供远程切换命令。下述 Vue 启动及账号功能说明针对保留的 v1 入口，不能据此判断 v2 的邮箱验证、手机号、Google/GitHub 或租户订阅能力。
+
+v2 的当前[交付记录](../docs/unified-account/delivery.md)、[逐项矩阵](../docs/unified-account/acceptance-matrix.md)和[接入/管理说明](../docs/unified-account/integration-guide.md)已由 AUTH-12 汇总。本轮只运行临时数据脚本，不通过下方 dev/admin 命令操作既有本地库。
+
 ## 本地启动
 
 需要 Node.js 22.18 或更新版本。在仓库根目录执行；setup 自动准备固定版本 Rust/WASM 工具链，首次需要联网：
@@ -32,7 +36,7 @@ npm run admin
 管理员身份通过 `PLATFORM_ADMIN_IDS` 配置，不能通过普通注册自行获得。
 不要将开发密码用于正式环境，也不要提交 `.dev.vars` 或实际密钥。
 
-## 当前实现
+## 保留的 Vue / v1 实现
 
 - 邮箱、密码、确认密码注册；密码登录；独立 Console 登录和应用登录事务。
 - PKCE、一次性授权码、访问令牌、刷新令牌轮换/重放撤销、会话恢复和退出。
@@ -42,7 +46,7 @@ npm run admin
 - Google/Apple OAuth 回调、签名与 nonce 校验、浏览器绑定、已有登录账号主动绑定身份。
 - D1 事务保护、一次性状态、限流和过期临时数据清理。
 
-继续保留本期约定：邮箱不验证、不发送邮件、不能通过邮件找回密码；仅支持站内邀请。
+该 v1 入口保留原行为：邮箱不验证、不发送邮件、不能通过邮件找回密码；仅支持站内邀请。
 第三方返回已被其他账号使用的邮箱时不自动合并，需先用原有方式登录，再在账号安全中绑定。
 第三方不提供可信邮箱时不创建账号；邮箱补录/验证续接流程暂不可用。
 
