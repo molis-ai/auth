@@ -247,9 +247,9 @@ Auth 格式检查最初报告 3 个文件，其中密码 KDF 夹具和本地配�
 
 | 评审 | 范围 | 当前提交/状态 |
 | --- | --- | --- |
-| [Work #1842](https://github.com/molis-ai/molis-work/pull/1842) | K-06 重试合同，2 文件 | `8b2e0e901a7f563968a37ec9d73949bfca4470d3`；Verify 待完成 |
-| [Work #1843](https://github.com/molis-ai/molis-work/pull/1843) | 已获批资源放行，1 文件 | `6272990f8ca0d2f6e7138f3ddbdc171882fd49b5`；Verify 待完成 |
-| [Work #1844](https://github.com/molis-ai/molis-work/pull/1844) | FTS 整数读取，5 文件 | `fcc2b97941817ab06152d3af36c28cd730b1a5c1`；Verify 待完成 |
+| [Work #1842](https://github.com/molis-ai/molis-work/pull/1842) | K-06 重试合同，2 文件 | `8b2e0e901a7f563968a37ec9d73949bfca4470d3`；PR Verify 通过，已获授权进入合并队列 |
+| [Work #1843](https://github.com/molis-ai/molis-work/pull/1843) | 已获批资源放行，1 文件 | `6272990f8ca0d2f6e7138f3ddbdc171882fd49b5`；PR Verify 通过，已获授权进入合并队列 |
+| [Work #1844](https://github.com/molis-ai/molis-work/pull/1844) | FTS 整数读取，5 文件 | `fcc2b97941817ab06152d3af36c28cd730b1a5c1`；PR Verify 通过，Full 进行中 |
 | [Auth #2](https://github.com/molis-ai/auth/pull/2) | 中央合同、实现、迁移与交付材料 | 已推送；最终证据更新后继续核对 |
 | [Club #27](https://github.com/molis-ai/molis-club/pull/27) | BFF、旧身份映射及完整账号入口 | `afff5640a62cc673d0277430e3ab0b4a4e5285b5` |
 | [Work #1846](https://github.com/molis-ai/molis-work/pull/1846) | Host、动作、完整账号入口 | `73cb15048300474fa10373c616db86d52d9b8416`；草稿，当前父分支为 #1843 |
@@ -262,4 +262,4 @@ Auth/Club 没有 GitHub Actions 工作流：沿用明确绑定源码的本地验
 
 前置 PR 的 CI 运行分别为 [1842 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059957428)、[1843 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059970963)、[1844 Verify](https://github.com/molis-ai/molis-work/actions/runs/42059984755)。前两个 Verify 已通过；FTS 另有 [Full](https://github.com/molis-ai/molis-work/actions/runs/42061291149)。账号提交 `73cb1504` 已通过连接器建立隔离集成分支并触发 [账号 Full](https://github.com/molis-ai/molis-work/actions/runs/42068132344)。原 Git 推送报 `commit_refs_rules` 服务端错误，未冒充成功；随后核对连接器建立的分支、实际事件和 SHA。Full 尚在执行，不能据此关闭 T-01。Linux 排除的 macOS 项由本机证据覆盖，未运行 live。
 
-自动审批拒绝了为 #1842/#1843 启用自动合并：现有评审/CI 授权未被认定包含修改 main。两个 PR 最终 Verify 通过后已向用户单独请求合入授权，未绕过拒绝，尚未合入主线。账号 PR 在前置进入 main 后再调整目标及核对 Verify；集成分支本身不合入 main。其余验证不依赖该授权，继续执行并记录。
+自动审批最初拒绝为 #1842/#1843 启用自动合并：当时的评审/CI 授权未被认定包含修改 main。两个 PR 最终 Verify 通过后，用户已明确回复“允许合入这两个 PR”。普通合并 API 随后被仓库规则拒绝，原因是必须使用合并队列；未绕过保护，改走仓库队列。已回读两项 `gh-readonly-queue` 引用及 [1842 队列 CI](https://github.com/molis-ai/molis-work/actions/runs/42069148823)、[1843 队列 CI](https://github.com/molis-ai/molis-work/actions/runs/42069313262)。队列正在验证，尚未将“入队”记为“进入 main”；其他 PR 没有合入授权。账号 PR 在前置进入 main 后再调整目标及核对 Verify；集成分支本身不合入 main。

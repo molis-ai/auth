@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-05T16:50:50.687194+00:00",
+  "recordedAt": "2026-11-05T16:57:33.964170+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
   "phase": "T-01_REMOTE_CLOSURE_IN_PROGRESS",
   "note": "Current main integration and isolated local verification passed. Remote PRs were created. Prerequisite Verify and storage Full are running; final account-head Verify/Full are not yet complete. No live provider, real Home/data or deployment operations.",
@@ -7453,10 +7453,15 @@
       "state": "IN_PROGRESS"
     },
     "mergeApproval": {
-      "state": "REQUESTED_FOR_1842_1843",
-      "automaticReviewRejected": true,
-      "reason": "Existing review/CI authorization did not explicitly include auto-merging into main",
-      "merged": false
+      "state": "APPROVED_FOR_1842_1843",
+      "automaticReviewInitiallyRejected": true,
+      "userReply": "Allowed merging these two PRs",
+      "merged": false,
+      "queueRuns": [
+        42069148823,
+        42069313262
+      ],
+      "directMergeRejectedByRepository": "Must use merge queue"
     },
     "prerequisiteVerify": [
       {
@@ -7472,7 +7477,7 @@
       {
         "pr": 1844,
         "runId": 42059984755,
-        "conclusion": null
+        "conclusion": "success"
       }
     ]
   },
