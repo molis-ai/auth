@@ -292,7 +292,7 @@ async fn finish(
     let n = now();
     let t =
         a.s.one(
-            "SELECT status,expires_at FROM auth_transaction WHERE token_hash=?",
+            "SELECT status,expires_at,context FROM auth_transaction WHERE token_hash=?",
             vec![digest.clone().into()],
         )
         .await?;
@@ -300,6 +300,17 @@ async fn finish(
         t["status"] == "READY" && number(&t, "expires_at") > n,
         400,
         "INVALID_TRANSACTION",
+    )?;
+    let context = parsed(&t, "context")?;
+    let client = a.client(&text(&context, "clientId")).await?;
+    let scopes = parsed(&client, "scopes")?;
+    ensure(
+        contains(&parsed(&client, "redirects")?, &context["redirectUri"])
+            && context["scopes"]
+                .as_array()
+                .is_some_and(|requested| requested.iter().all(|scope| contains(&scopes, scope))),
+        400,
+        "INVALID_CLIENT",
     )?;
     let code = string(&b["code"], 4096)?;
     ensure(!code.is_empty(), 400, "INVALID_REQUEST")?;
@@ -335,7 +346,8 @@ async fn finish(
         .await?;
     let mut user = text(&identity, "user_id");
     let target = &data["target"];
-    let mut writes=vec![a.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE token_hash=? AND status='READY' AND expires_at>?)",vec![digest.clone().into(),n.into()])?];
+    let mut writes=vec![a.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=json_extract(auth_transaction.context,'$.clientId')) AND token_hash=? AND status='READY' AND expires_at>?)",vec![digest.clone().into(),n.into()])?];
+    writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id WHERE c.client_id=? AND c.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=c.client_id))", vec![client["client_id"].clone(),client["version"].clone()])?);
     if !target.is_null() {
         ensure(
             user.is_empty() || target["user"] == user,
@@ -383,6 +395,9 @@ async fn finish(
                 n.into(),
             ],
         )?);
+    }
+    if identity.is_null() {
+        writes.extend(crate::account_management::identity_changed(a, &user)?);
     }
     let root = uuid();
     writes.extend([a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![user.clone().into()])?,a.s.statement("INSERT INTO auth_authentication(id,user_id,created_at,activity_at) VALUES (?,?,?,?)",vec![root.clone().into(),user.clone().into(),n.into(),n.into()])?,a.s.statement("UPDATE auth_transaction SET status='AUTHENTICATED',authentication_id=? WHERE token_hash=?",vec![root.into(),digest.into()])?,a.s.audit(if target.is_null(){"account.external.login"}else{"account.external.bind"},user.into(),&a.request_id,Value::Null,Value::Null,Value::Null,false)?]);

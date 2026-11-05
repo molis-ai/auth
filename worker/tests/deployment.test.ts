@@ -106,14 +106,49 @@ test('deployment requires a private same-environment KDF and its SQLite migratio
   for (const env of ['preview', 'production']) {
     const other = load(env === 'preview' ? 'production' : 'preview')
     for (const mutate of [
-      (config: any) => { delete config.durable_objects },
-      (config: any) => { config.durable_objects.bindings[0].script_name = 'another-worker' },
-      (config: any) => { config.durable_objects.bindings[0].class_name = 'WrongClass' },
-      (config: any) => { config.migrations = [] },
+      (config: any) => {
+        delete config.durable_objects
+      },
+      (config: any) => {
+        config.durable_objects.bindings[0].script_name = 'another-worker'
+      },
+      (config: any) => {
+        config.durable_objects.bindings[0].class_name = 'WrongClass'
+      },
+      (config: any) => {
+        config.migrations = []
+      },
     ]) {
       const config = load(env)
       mutate(config)
       assert.throws(() => validateDeployment(config, other, seed(env), env, true), /PasswordKdf/)
+    }
+  }
+})
+
+test('UAS-40: deployment rejects mock in production and mismatched unified environments', () => {
+  for (const environment of ['preview', 'production']) {
+    const config = load(environment),
+      other = load(environment === 'preview' ? 'production' : 'preview')
+    const unified = {
+      environmentId: environment,
+      kind: environment === 'production' ? 'PRODUCTION' : 'TEST',
+      authOrigin: config.vars.AUTH_ORIGIN,
+      deliveryMode: environment === 'production' ? 'LIVE' : 'MOCK',
+      providerMode: environment === 'production' ? 'LIVE' : 'MOCK',
+    }
+    config.vars.UNIFIED_ACCOUNT_CONFIG = JSON.stringify(unified)
+    validateDeployment(config, other, seed(environment), environment, true)
+    config.vars.UNIFIED_ACCOUNT_CONFIG = JSON.stringify({ ...unified, kind: 'LOCAL' })
+    assert.throws(() => validateDeployment(config, other, seed(environment), environment, true))
+    if (environment === 'production') {
+      for (const modes of [{ deliveryMode: 'MOCK' }, { providerMode: 'MOCK' }]) {
+        config.vars.UNIFIED_ACCOUNT_CONFIG = JSON.stringify({ ...unified, ...modes })
+        assert.throws(
+          () => validateDeployment(config, other, seed(environment), environment, true),
+          /UNIFIED_CONFIGURATION_INVALID/,
+        )
+      }
     }
   }
 })

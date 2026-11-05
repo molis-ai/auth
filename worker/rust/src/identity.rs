@@ -14,9 +14,11 @@ pub struct Auth {
 }
 impl Auth {
     pub fn new(request: Request, env: &Env, request_id: String) -> Result<Self> {
+        let origin = env.var("AUTH_ORIGIN")?.to_string();
+        crate::unified_policy::validate_environment(env, &origin)?;
         Ok(Self {
             s: Store::new(env.d1("DB")?),
-            origin: env.var("AUTH_ORIGIN")?.to_string(),
+            origin,
             admins: env
                 .var("PLATFORM_ADMIN_IDS")
                 .map(|v| v.to_string())
@@ -68,6 +70,7 @@ impl Auth {
             400,
             "INVALID_CLIENT",
         )?;
+        crate::unified_policy::ensure_legacy_client(self, id).await?;
         Ok(c)
     }
     pub fn check_origin(&self, c: &Value) -> Result<()> {
@@ -132,16 +135,10 @@ impl Auth {
         )?;
         let ctx = json!({"id":uuid(),"clientId":c["client_id"],"clientType":c["client_type"],"redirectUri":redirect,"challenge":pkce,"state":state,"scopes":b["scopes"],"forceLogin":b["forceLogin"]==true || c["client_type"]!="WEB"});
         let value = secret();
-        self.s
-            .run(
-                "INSERT INTO auth_transaction(token_hash,context,expires_at) VALUES (?,?,?)",
-                vec![
-                    hash(&value).into(),
-                    ctx.to_string().into(),
-                    (now() + 600000).into(),
-                ],
-            )
-            .await?;
+        self.s.batch(vec![
+            self.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id WHERE c.client_id=? AND c.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=c.client_id))", vec![c["client_id"].clone(), c["version"].clone()])?,
+            self.s.statement("INSERT INTO auth_transaction(token_hash,context,expires_at) VALUES (?,?,?)", vec![hash(&value).into(), ctx.to_string().into(), (now() + 600000).into()])?,
+        ], "VERSION_CONFLICT").await?;
         Ok(
             json!({"transaction":value,"loginUrl":format!("{}/login#transaction={value}",self.origin)}),
         )
@@ -206,7 +203,7 @@ impl Auth {
         let raw = string(&b["password"], 512)?;
         let n = now();
         let root = uuid();
-        let mut writes=vec![self.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE token_hash=? AND status='READY' AND expires_at>?)",vec![t["token_hash"].clone(),n.into()])?];
+        let mut writes=vec![self.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=json_extract(auth_transaction.context,'$.clientId')) AND token_hash=? AND status='READY' AND expires_at>?)",vec![t["token_hash"].clone(),n.into()])?];
         let user;
         if signup {
             ensure(
@@ -279,7 +276,7 @@ impl Auth {
             .await?;
         ensure(!a.is_null(), 401, "LOGIN_REQUIRED")?;
         self.root(&text(&a, "id")).await?;
-        let changed=self.s.one("UPDATE auth_transaction SET status='AUTHENTICATED',authentication_id=? WHERE token_hash=? AND status='READY' AND expires_at>? RETURNING token_hash",vec![a["id"].clone(),t["token_hash"].clone(),now().into()]).await?;
+        let changed=self.s.one("UPDATE auth_transaction SET status='AUTHENTICATED',authentication_id=? WHERE NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=json_extract(auth_transaction.context,'$.clientId')) AND token_hash=? AND status='READY' AND expires_at>? RETURNING token_hash",vec![a["id"].clone(),t["token_hash"].clone(),now().into()]).await?;
         ensure(!changed.is_null(), 400, "INVALID_TRANSACTION")?;
         Ok(json!({"continueUrl":format!("{}/complete#transaction={value}",self.origin)}))
     }
@@ -306,7 +303,7 @@ impl Auth {
         let a = self.root(&text(&t, "authentication_id")).await?;
         let proof = secret();
         let browser = secret();
-        let changed=self.s.one("UPDATE auth_transaction SET proof_hash=?,browser_hash=? WHERE token_hash=? AND status='AUTHENTICATED' AND expires_at>? RETURNING token_hash",vec![hash(&proof).into(),hash(&browser).into(),t["token_hash"].clone(),now().into()]).await?;
+        let changed=self.s.one("UPDATE auth_transaction SET proof_hash=?,browser_hash=? WHERE NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=json_extract(auth_transaction.context,'$.clientId')) AND token_hash=? AND status='AUTHENTICATED' AND expires_at>? RETURNING token_hash",vec![hash(&proof).into(),hash(&browser).into(),t["token_hash"].clone(),now().into()]).await?;
         ensure(!changed.is_null(), 400, "INVALID_TRANSACTION")?;
         self.cookies.push(
             cookie_header(&self.origin, &self.completion_cookie(&t), &browser, 600)
@@ -350,7 +347,7 @@ impl Auth {
         let n = now();
         let code = secret();
         let mut writes=vec![
-            self.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE token_hash=? AND status='AUTHENTICATED' AND proof_hash=? AND browser_hash=? AND expires_at>?)",vec![t["token_hash"].clone(),t["proof_hash"].clone(),t["browser_hash"].clone(),n.into()])?,
+            self.s.guard("EXISTS(SELECT 1 FROM auth_transaction WHERE NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=json_extract(auth_transaction.context,'$.clientId')) AND token_hash=? AND status='AUTHENTICATED' AND proof_hash=? AND browser_hash=? AND expires_at>?)",vec![t["token_hash"].clone(),t["proof_hash"].clone(),t["browser_hash"].clone(),n.into()])?,
             self.s.guard(&format!("EXISTS(SELECT 1 FROM auth_authentication a JOIN auth_user u ON u.id=a.user_id WHERE a.id=? AND {ALIVE})"),vec![a["id"].clone(),n.into(),n.into()])?,
             self.s.statement("UPDATE auth_transaction SET status='CONSUMED',proof_hash=NULL,browser_hash=NULL WHERE token_hash=?",vec![t["token_hash"].clone()])?
         ];
@@ -425,7 +422,7 @@ impl Auth {
         )?;
         self.s.authorization = Some((
             format!(
-                "EXISTS(SELECT 1 FROM auth_access_token t JOIN auth_grant g ON g.id=t.grant_id JOIN auth_authentication a ON a.id=g.authentication_id JOIN auth_user u ON u.id=a.user_id JOIN auth_client c ON c.client_id=g.client_id JOIN auth_application app ON app.id=c.application_id WHERE t.token_hash=? AND t.expires_at>? AND g.revoked_at IS NULL AND c.status='ACTIVE' AND app.status='ACTIVE' AND c.version=? AND {ALIVE})"
+                "EXISTS(SELECT 1 FROM auth_access_token t JOIN auth_grant g ON g.id=t.grant_id JOIN auth_authentication a ON a.id=g.authentication_id JOIN auth_user u ON u.id=a.user_id JOIN auth_client c ON c.client_id=g.client_id JOIN auth_application app ON app.id=c.application_id WHERE t.token_hash=? AND t.expires_at>? AND g.revoked_at IS NULL AND c.status='ACTIVE' AND app.status='ACTIVE' AND c.version=? AND NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=c.client_id) AND {ALIVE})"
             ),
             vec![
                 digest.into(),
