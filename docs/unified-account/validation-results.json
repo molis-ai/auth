@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T03:57:03.263159+00:00",
+  "recordedAt": "2026-11-06T04:06:47.650336+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
   "phase": "T-01_VERIFIED_CANDIDATE_NEW_MAIN_INTEGRATION_PENDING",
   "note": "Final Work head 9cf6fe623 and its matching merge tree passed Verify and Full. 1660/1660 Linux files, two existing retries passed, 57 macOS-only files excluded, no live runs. Products 409/409 and security 288/288 separately, no retries there. Local 61 files/891 tests and real Auth/Host/BFF joint mock/synthetic validation passed. All three feature PRs ready; no submitted human reviews or authorization to merge them. Historical failures preserved. No real data, payment, release or deployment. Subsequent main 05d4cf98c introduces a page-assets.json conflict; the successful 9cf6fe623 runs do not validate this newer combination. Main integration and new-head verification remain before merge.",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "acfdf2b2292364769b7c32fb35d46deb472d5cbb6f2c60f8839c57687d4ae169",
+  "sourceManifestSha256": "ccc070114d85a0613406d532d614d5f95dceea208f17180b354e365895c20361",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2673,8 +2673,8 @@
     },
     {
       "id": "K-14",
-      "status": "OPEN_EXTERNAL_BUILD_FAILURE_LOGS_UNAVAILABLE",
-      "resolution": "None yet; Auth/Club Workers Builds failure identified, root cause and branch deployment behavior not established."
+      "status": "DIAGNOSED_EXTERNAL_CHECKS_REMAIN_FAILED",
+      "resolution": "Auth infrastructure initialization timeout before source execution; Club explicit deployment configuration missing. Local same-error reproduction and 7/7 account configuration/contract tests. Existing builds disabled; no cloud configuration change or retry."
     }
   ],
   "matrix": {
@@ -2700,7 +2700,7 @@
     }
   ],
   "notRun": [
-    "Auth/Club external Workers Builds root-cause confirmation and successful rerun; no logs available, automatic production deployment scope unverified",
+    "Successful external Workers Builds rerun; historical Auth initialization and Club missing-deployment-config failures remain, current builds disabled",
     "Integration with newer Work main 05d4cf98c, page-assets conflict resolution and validation of that new candidate",
     "Feature PR human review and main merge; merge requires authorization",
     "Real data, Home or authentication provider operations; payment, release or deployment",
@@ -12993,7 +12993,7 @@
       "note": "Readonly merge calculation; no branch/worktree update. New candidate must rerun applicable local gates/joint validation and CI Full/Verify. New main uses three security shards."
     },
     "externalBuildInvestigation": {
-      "checkedAt": "2026-11-06T03:57:03.263159+00:00",
+      "checkedAt": "2026-11-06T04:06:47.650336+00:00",
       "checks": [
         {
           "repository": "molis-ai/auth",
@@ -13016,21 +13016,86 @@
           "errorText": null
         }
       ],
-      "state": "LOGS_AND_BRANCH_DEPLOY_SETTINGS_REQUIRED",
-      "rootCause": null,
+      "state": "DIAGNOSED_EXTERNAL_CHECKS_REMAIN_FAILED",
+      "rootCause": {
+        "A": "Cloudflare build environment initialization timed out after 9m3s before cloning or source execution.",
+        "C": "Deployment build rejected missing MOLIS_CLUB_ACCOUNT_CONFIG in vite.config.ts; variable absent from displayed build variables."
+      },
       "workHeadChecks": {
         "success": 32,
         "skipped": 2,
         "failure": 0
       },
-      "method": "Read GitHub commit check-runs and statuses. Cloudflare build dashboard navigation did not finish; no build logs or settings obtained.",
+      "method": "Read GitHub checks, then Cloudflare build logs and existing build settings after dashboard loaded. No settings mutations.",
       "actionsNotTaken": [
         "No external build retry",
         "No Cloudflare settings change",
-        "No deployment or data migration",
-        "No further source push after discovering production Worker build hooks"
+        "No deployment or data migration"
       ],
-      "next": "Obtain first build error, build command and non-production branch deploy settings; fix and verify within mock/synthetic scope. Confirm push cannot publish production before syncing documentation commit."
+      "next": "No code guard relaxation or mock configuration in production. Keep existing builds disabled. Revalidate external builds in an authorized isolated environment with registered central configuration during T-03/T-04; old failures remain failures.",
+      "initialInvestigation": {
+        "state": "LOGS_AND_BRANCH_DEPLOY_SETTINGS_REQUIRED",
+        "method": "Read GitHub commit check-runs and statuses. Cloudflare build dashboard navigation did not finish; no build logs or settings obtained.",
+        "rootCause": null
+      },
+      "currentBuildSettings": {
+        "A": {
+          "productionBranch": "main",
+          "nonProductionBranchBuilds": true,
+          "buildsDisabled": true,
+          "changedByThisTask": false
+        },
+        "C": {
+          "productionBranch": "main",
+          "nonProductionBranchBuilds": true,
+          "buildsDisabled": true,
+          "changedByThisTask": false
+        }
+      },
+      "commands": {
+        "A": {
+          "root": "worker/deploy/production",
+          "build": "cd ../../.. && npm run setup && npm test && npm run build:web",
+          "historicalBranchDeploy": "npx wrangler versions upload"
+        },
+        "C": {
+          "root": "/",
+          "build": "npm run build:cloudflare",
+          "historicalBranchDeploy": "npx wrangler versions upload"
+        }
+      },
+      "localVerification": {
+        "missingConfig": {
+          "command": [
+            "node",
+            "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+            "run",
+            "build",
+            "--label",
+            "T-01 Cloudflare missing config diagnosis",
+            "--",
+            "npm",
+            "run",
+            "build:cloudflare"
+          ],
+          "startedAt": "2026-11-06T04:05:26.963429+00:00",
+          "finishedAt": "2026-11-06T04:05:27.636349+00:00",
+          "exitCode": 1,
+          "expectedRejectionObserved": true,
+          "log": "/private/tmp/molis-t01-cloudflare-20261106/club-missing-config.log",
+          "bytes": 1760,
+          "sha256": "8baf1ffdf7320d183f6772a98dce1977b370aeeb2ca44aa8c9e8ccda6f0a6d68",
+          "scope": "Synthetic D1 identifiers only; no configured account, upload, migration or deployment."
+        },
+        "configurationAndContract": {
+          "command": "node --test tests/account-foundation.test.mjs",
+          "tests": 7,
+          "passed": 7,
+          "failed": 0,
+          "exitCode": 0
+        }
+      },
+      "documentationPushSafety": "Both current Workers Builds configurations were read as disabled before documentation push; no setting was changed by this task."
     }
   },
   "diagnostics": [
