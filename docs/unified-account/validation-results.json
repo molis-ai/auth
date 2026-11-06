@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T04:06:47.650336+00:00",
+  "recordedAt": "2026-11-06T04:54:56.283286+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
   "phase": "T-01_VERIFIED_CANDIDATE_NEW_MAIN_INTEGRATION_PENDING",
   "note": "Final Work head 9cf6fe623 and its matching merge tree passed Verify and Full. 1660/1660 Linux files, two existing retries passed, 57 macOS-only files excluded, no live runs. Products 409/409 and security 288/288 separately, no retries there. Local 61 files/891 tests and real Auth/Host/BFF joint mock/synthetic validation passed. All three feature PRs ready; no submitted human reviews or authorization to merge them. Historical failures preserved. No real data, payment, release or deployment. Subsequent main 05d4cf98c introduces a page-assets.json conflict; the successful 9cf6fe623 runs do not validate this newer combination. Main integration and new-head verification remain before merge.",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "ccc070114d85a0613406d532d614d5f95dceea208f17180b354e365895c20361",
+  "sourceManifestSha256": "e3df308b3d1032628262047ce7fbea035e9df1b4eca032ba83fd06e718e80f17",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2674,7 +2674,7 @@
     {
       "id": "K-14",
       "status": "DIAGNOSED_EXTERNAL_CHECKS_REMAIN_FAILED",
-      "resolution": "Auth infrastructure initialization timeout before source execution; Club explicit deployment configuration missing. Local same-error reproduction and 7/7 account configuration/contract tests. Existing builds disabled; no cloud configuration change or retry."
+      "resolution": "Old Auth run initialization timeout; Club deployment configuration absent, locally reproduced and 7/7 config/contract tests passed. The builds-disabled inference was wrong and retracted after approved push triggered a new Auth build; cancelled before upload, reported as failure by Cloudflare."
     }
   ],
   "matrix": {
@@ -2700,7 +2700,7 @@
     }
   ],
   "notRun": [
-    "Successful external Workers Builds rerun; historical Auth initialization and Club missing-deployment-config failures remain, current builds disabled",
+    "Successful external Workers Builds rerun; historical Auth initialization and Club missing-deployment-config failures remain, branch automatic build/upload behavior requires control",
     "Integration with newer Work main 05d4cf98c, page-assets conflict resolution and validation of that new candidate",
     "Feature PR human review and main merge; merge requires authorization",
     "Real data, Home or authentication provider operations; payment, release or deployment",
@@ -13028,11 +13028,11 @@
       },
       "method": "Read GitHub checks, then Cloudflare build logs and existing build settings after dashboard loaded. No settings mutations.",
       "actionsNotTaken": [
-        "No external build retry",
-        "No Cloudflare settings change",
-        "No deployment or data migration"
+        "No build retry",
+        "No Cloudflare configuration change",
+        "No upload, deployment or remote migration"
       ],
-      "next": "No code guard relaxation or mock configuration in production. Keep existing builds disabled. Revalidate external builds in an authorized isolated environment with registered central configuration during T-03/T-04; old failures remain failures.",
+      "next": "Verify and constrain branch automatic uploads or establish validation-only CI before further pushes; no cloud configuration changes authorized or executed. Historical failures and stopped run remain non-success.",
       "initialInvestigation": {
         "state": "LOGS_AND_BRANCH_DEPLOY_SETTINGS_REQUIRED",
         "method": "Read GitHub commit check-runs and statuses. Cloudflare build dashboard navigation did not finish; no build logs or settings obtained.",
@@ -13042,14 +13042,18 @@
         "A": {
           "productionBranch": "main",
           "nonProductionBranchBuilds": true,
-          "buildsDisabled": true,
-          "changedByThisTask": false
+          "changedByThisTask": false,
+          "observedSwitchLabel": "禁用构建",
+          "observedSwitchAriaChecked": true,
+          "disabledStateVerified": false
         },
         "C": {
           "productionBranch": "main",
           "nonProductionBranchBuilds": true,
-          "buildsDisabled": true,
-          "changedByThisTask": false
+          "changedByThisTask": false,
+          "observedSwitchLabel": "禁用构建",
+          "observedSwitchAriaChecked": true,
+          "disabledStateVerified": false
         }
       },
       "commands": {
@@ -13095,7 +13099,32 @@
           "exitCode": 0
         }
       },
-      "documentationPushSafety": "Both current Workers Builds configurations were read as disabled before documentation push; no setting was changed by this task."
+      "documentationPushSafety": "RETRACTED: an aria-checked value was incorrectly treated as proof builds were disabled; approved push triggered an Auth build. No further pushes until branch upload behavior is controlled.",
+      "unexpectedBuildAfterApprovedPush": {
+        "head": "42305437e7dc2bee60a7ad574e020ba9866192fa",
+        "buildId": "49b829a5-3e33-410e-919c-455b91d019f0",
+        "initialCheckId": 127718355948,
+        "finalCheckId": 127718909105,
+        "status": "completed",
+        "githubConclusion": "failure",
+        "action": "Cancelled via Cloudflare UI before upload; 1m46s elapsed, dependency/Rust setup stage.",
+        "uploadStarted": false,
+        "remoteMigrationExecuted": false,
+        "productionTrafficChanged": false,
+        "cloudBuildSettingsChanged": false,
+        "note": "Successful initialization on this attempt does not constitute full build/test success."
+      }
+    },
+    "documentationPublication": {
+      "commits": [
+        "a66f956f4c61793e75774bdcb581314dc2a00518",
+        "42305437e7dc2bee60a7ad574e020ba9866192fa"
+      ],
+      "pushed": true,
+      "authBranch": "codex/unified-account-foundation",
+      "approvedPRBodiesPublished": true,
+      "incorrectDisabledClaimRetractedInPRBodies": true,
+      "correctionDocumentPushPending": true
     }
   },
   "diagnostics": [
