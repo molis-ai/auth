@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-06T08:15:15.863Z",
+  "recordedAt": "2026-11-06T09:42:51.714Z",
   "formatVersion": 1,
   "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
   "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
@@ -36,7 +36,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+      "baseCommit": "9f24014715b69021ad1af20d3c541b5957df41e1",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -57,8 +57,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5934,
-      "sourceSha256": "2ffaa8e9d14c1028552f80fc14e1f2b5ff8a6ba15e3635f44cc919569762c4de"
+      "fileCount": 5940,
+      "sourceSha256": "55c138c80d97e18c2fa48571cf558657d56a6e4bc392838902f2e839ed8cfb84"
     },
     "C": {
       "baseCommit": "262c973f9df9d38575627f60975610fb35b2b711",
@@ -121,6 +121,6 @@
   "evidence": {
     "requirementCount": 42,
     "pathCount": 76,
-    "matrixSha256": "e9cd51bb793c49895e8dc93fb5559daf69eea78dae50c68b1d1f2d237af65f34"
+    "matrixSha256": "edfffa9a24e8f1af0f99ff2720e86c7e7ab134ea23eaee551e5404c5ade50588"
   }
 }

@@ -1,9 +1,9 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T08:17:40.283141+00:00",
+  "recordedAt": "2026-11-06T09:42:50.347491+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
-  "phase": "T-01_FINAL_CORRECTED_HEAD_REMOTE_RUNNING",
-  "note": "Current delivery source and final CI are recorded in remote.finalCorrectionCandidate. Prior navigationMainCandidate is the completed db1 Verify success / Full failure; all earlier histories remain. Named-file batches and repeated cases are not summed as a single Full run.",
+  "phase": "T-01_FINAL_CURSOR_HEAD_REMOTE_RUNNING",
+  "note": "Current candidate is remote.cursorOwnershipCandidate. Previous finalCorrectionCandidate records cdff Verify pass after failed-job rerun and Full 1664/1665 failure. Historical evidence remains; overlapping batches and CI suites are not summed.",
   "repositories": {
     "A": {
       "baseCommit": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+      "baseCommit": "9f24014715b69021ad1af20d3c541b5957df41e1",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,8 +58,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5934,
-      "sourceSha256": "2ffaa8e9d14c1028552f80fc14e1f2b5ff8a6ba15e3635f44cc919569762c4de"
+      "fileCount": 5940,
+      "sourceSha256": "55c138c80d97e18c2fa48571cf558657d56a6e4bc392838902f2e839ed8cfb84"
     },
     "C": {
       "baseCommit": "262c973f9df9d38575627f60975610fb35b2b711",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "a692c6edba7ad322016ccf289b48bf90544213f484a09f7894796239e6273320",
+  "sourceManifestSha256": "85b0ffdc28b2cedf9a019992afde5c0d7daa37abbe9faaed7fa1bb1ce3fb2e04",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2702,13 +2702,38 @@
     },
     {
       "id": "K-19",
-      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Require all four layers and full rules; verify the emitted zone lies between bar and Assistant. No product change or relaxed rule."
+      "status": "RESOLVED_CDFF_CI_PASS",
+      "resolution": "Require all four layers and full rules; verify the emitted zone lies between bar and Assistant. No product change or relaxed rule.",
+      "verification": {
+        "head": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+        "fullRun": 42185999254,
+        "note": "Corresponding files passed; whole Full failed on Frame."
+      }
     },
     {
       "id": "K-20",
+      "status": "RESOLVED_CDFF_CI_PASS",
+      "resolution": "Reuse craft-fade-in at both references; preserve 130 ms / easing / 0-to-1 opacity. Original one-motion assertion unchanged, no additional exception.",
+      "verification": {
+        "head": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+        "fullRun": 42185999254,
+        "note": "Corresponding files passed; whole Full failed on Frame."
+      }
+    },
+    {
+      "id": "K-21",
       "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Reuse craft-fade-in at both references; preserve 130 ms / easing / 0-to-1 opacity. Original one-motion assertion unchanged, no additional exception."
+      "resolution": "Repository counts in main connection board need plural selection for 0/1/2; entire dictionary assertion retained."
+    },
+    {
+      "id": "K-22",
+      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
+      "resolution": "Platform project journal cursor and Goals plugin journal cursor are independent. Comparing them caused repeated refresh/applyUiState and duplicate Frame content reads. Existing goalData node now tracks numeric last successfully applied platform cursor; aborted/failed/deferred refresh does not acknowledge."
+    },
+    {
+      "id": "K-23",
+      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
+      "resolution": "Main specimen state and account action used same Chinese key for different meanings; rename state to 登录已取消; existing dictionary cohesive-unit exact size updated to 3214 without gate changes."
     }
   ],
   "matrix": {
@@ -16961,7 +16986,7 @@
     "finalCorrectionCandidate": {
       "head": "cdff8cea9174fe053e893ee4e927b9af406c745f",
       "main": "0f7db3736c7902b0fba59953382fe519985b04e5",
-      "status": "LOCAL_VALIDATED_REMOTE_RUNNING",
+      "status": "COMPLETED_VERIFY_PASS_AFTER_RERUN_FULL_FAILURE",
       "sourceSha256": "2ffaa8e9d14c1028552f80fc14e1f2b5ff8a6ba15e3635f44cc919569762c4de",
       "repairs": {
         "K-19": "1186ee840feaed66a69e6b517fd36e7bff50374b",
@@ -17238,14 +17263,1068 @@
         "K20ReductionBytes": 74
       },
       "verify": {
-        "runId": 42186006238,
-        "url": "https://github.com/molis-ai/molis-work/actions/runs/42186006238",
-        "status": "in_progress"
+        "id": 42186006238,
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+        "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42186006238",
+        "run_attempt": 2,
+        "logEvidence": [
+          {
+            "jobId": 127800020565,
+            "name": "PR test selection",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800020565.log",
+            "bytes": 22480,
+            "sha256": "5b36ed6ad19192879fd94938ffe771021343a759f415925093ba39610ed1f2d3",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800022348,
+            "name": "Action and plugin contracts (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800022348.log",
+            "bytes": 80455,
+            "sha256": "eb7a9e8c91b22d18adafee84b843a68c3bc3869eed9aee97283afdd415329942",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 24,
+                "total": 24
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800023468,
+            "name": "Shell and Python checks",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800023468.log",
+            "bytes": 17839,
+            "sha256": "60938e64607e7c609fe5e83ffd6d4f41b852c7d7a2664809e21548f6c010e4cc",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800023803,
+            "name": "Package boundaries",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800023803.log",
+            "bytes": 127422,
+            "sha256": "49bf91f60dc7cc621fd0ed100bcd30bc8ace4f15531c159d0725c282919340d9",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 11,
+                "total": 11
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800024001,
+            "name": "Action and plugin contracts (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800024001.log",
+            "bytes": 80392,
+            "sha256": "a372f9d6120028b11650ff763f1650efba0628bf115a4c0c220baf7557070a5e",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 24,
+                "total": 24
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800024331,
+            "name": "Secret scan",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800024331.log",
+            "bytes": 64776,
+            "sha256": "c91a203857e8e82bedd8782e2640f626cead8a915d459f63cd1fa03c471a1c5e",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800024354,
+            "name": "Gates",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800024354.log",
+            "bytes": 117744,
+            "sha256": "e81aef213e8a126b3decff58e9ff59630a9b75c304fc23c07908b1c19018ef11",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 16,
+                "total": 16
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800024430,
+            "name": "Health gate rules (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800024430.log",
+            "bytes": 37451,
+            "sha256": "14d374126d3df7ad8b23e269daf1cf1f599dcb6951fd328204afe8fb9772eecb",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 8,
+                "total": 8
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800024605,
+            "name": "Health gate rules (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800024605.log",
+            "bytes": 37651,
+            "sha256": "5d79ee770c83e5f1598c1f9d89805858cf2f103e485360cb40360fdbaa02ec1d",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 8,
+                "total": 8
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800025147,
+            "name": "Rust and Swift checks",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800025147.log",
+            "bytes": 29664,
+            "sha256": "d31e7568cbddf3d761a76b8c43aa32db1088f8d2c18067d2aeff0b3fd242dfe6",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800025834,
+            "name": "Security invariants (1/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800025834.log",
+            "bytes": 95397,
+            "sha256": "c4388f53bf4547ecb0752410a504d33065822663d56752769af9ab19b4c2d86d",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 94,
+                "total": 94
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800026218,
+            "name": "Product subset (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800026218.log",
+            "bytes": 98359,
+            "sha256": "151c4373c6890a81e79d6d185cc0ff535344e76379f12c432a5c425885dc39af",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": [
+              "ci-product-subset: pass 205, flaky 0, skipped 0, fail 0, timeout 0, not-run 0; 0 quarantined (of 205) in 9.1 min; report in /home/runner/work/_temp/product-subset"
+            ]
+          },
+          {
+            "jobId": 127800026260,
+            "name": "Product subset (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800026260.log",
+            "bytes": 98456,
+            "sha256": "de728c37b9a58116faf8681e7bb136a7c33d251e726cebeb3b41b3cb3c97ed25",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": [
+              "ci-product-subset: pass 204, flaky 0, skipped 0, fail 0, timeout 0, not-run 0; 0 quarantined (of 204) in 6.9 min; report in /home/runner/work/_temp/product-subset"
+            ]
+          },
+          {
+            "jobId": 127800026672,
+            "name": "Security invariants (3/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800026672.log",
+            "bytes": 95860,
+            "sha256": "44684aea57f76ff6f9b33f248e7dd78a22c6f19655c3debe89838b01e44a6ee4",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 97,
+                "total": 97
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127800026687,
+            "name": "Security invariants (2/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127800026687.log",
+            "bytes": 95736,
+            "sha256": "863ef4c5ff2d1ee9b0e2f56193fd59beeba87c93dcf8f566ae5997532103aec0",
+            "checkedCommit": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+            "fileSummaries": [
+              {
+                "passed": 97,
+                "total": 97
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127805209909,
+            "name": "Verify",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-verify-127805209909.log",
+            "bytes": 6222,
+            "sha256": "c426c791ae3defba381bed617e396f1e7929d8acbb46723cdcfb264d1920fb1b",
+            "checkedCommit": null,
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          }
+        ],
+        "jobs": [
+          {
+            "id": 127800019578,
+            "name": "Linux probe ${{ matrix.shard }}/6 (not required)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:47:22Z",
+            "completed_at": "2026-11-06T08:12:21Z"
+          },
+          {
+            "id": 127800020565,
+            "name": "PR test selection",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:13:24Z",
+            "completed_at": "2026-11-06T08:13:45Z"
+          },
+          {
+            "id": 127800020653,
+            "name": "Verified in the merge queue",
+            "status": "completed",
+            "conclusion": "skipped",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:47:23Z",
+            "completed_at": "2026-11-06T08:12:21Z"
+          },
+          {
+            "id": 127800022348,
+            "name": "Action and plugin contracts (2/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:56:51Z",
+            "completed_at": "2026-11-06T09:00:26Z"
+          },
+          {
+            "id": 127800023468,
+            "name": "Shell and Python checks",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:16:55Z",
+            "completed_at": "2026-11-06T08:17:20Z"
+          },
+          {
+            "id": 127800023803,
+            "name": "Package boundaries",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:18:39Z",
+            "completed_at": "2026-11-06T08:23:37Z"
+          },
+          {
+            "id": 127800024001,
+            "name": "Action and plugin contracts (1/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:17:31Z",
+            "completed_at": "2026-11-06T08:20:19Z"
+          },
+          {
+            "id": 127800024331,
+            "name": "Secret scan",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:18:46Z",
+            "completed_at": "2026-11-06T08:19:11Z"
+          },
+          {
+            "id": 127800024354,
+            "name": "Gates",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:18:21Z",
+            "completed_at": "2026-11-06T08:24:19Z"
+          },
+          {
+            "id": 127800024430,
+            "name": "Health gate rules (1/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:13:47Z",
+            "completed_at": "2026-11-06T08:16:53Z"
+          },
+          {
+            "id": 127800024605,
+            "name": "Health gate rules (2/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:13:38Z",
+            "completed_at": "2026-11-06T08:16:18Z"
+          },
+          {
+            "id": 127800025147,
+            "name": "Rust and Swift checks",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:16:20Z",
+            "completed_at": "2026-11-06T08:20:16Z"
+          },
+          {
+            "id": 127800025834,
+            "name": "Security invariants (1/3)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:22:41Z",
+            "completed_at": "2026-11-06T08:36:03Z"
+          },
+          {
+            "id": 127800026218,
+            "name": "Product subset (2/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:22:28Z",
+            "completed_at": "2026-11-06T08:33:33Z"
+          },
+          {
+            "id": 127800026260,
+            "name": "Product subset (1/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:19:28Z",
+            "completed_at": "2026-11-06T08:28:15Z"
+          },
+          {
+            "id": 127800026672,
+            "name": "Security invariants (3/3)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:20:21Z",
+            "completed_at": "2026-11-06T08:36:41Z"
+          },
+          {
+            "id": 127800026687,
+            "name": "Security invariants (2/3)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T08:20:06Z",
+            "completed_at": "2026-11-06T08:35:20Z"
+          },
+          {
+            "id": 127805209909,
+            "name": "Verify",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 2,
+            "started_at": "2026-11-06T09:06:08Z",
+            "completed_at": "2026-11-06T09:06:12Z"
+          }
+        ],
+        "firstAttemptFailure": {
+          "jobId": 127786380143,
+          "file": "tests/action-before-effect.test.ts",
+          "detail": "Pages revoked case exceeded unchanged 15s timeout; abort produced follow-on rejection. Candidate and clean main slotted local runs 23/23; failed job rerun passed unchanged source.",
+          "firstAttemptJobs": [
+            {
+              "id": 127786379511,
+              "name": "PR test selection",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380087,
+              "name": "Health gate rules (1/2)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380105,
+              "name": "Action and plugin contracts (1/2)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380113,
+              "name": "Health gate rules (2/2)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380143,
+              "name": "Action and plugin contracts (2/2)",
+              "conclusion": "failure",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380223,
+              "name": "Gates",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380240,
+              "name": "Shell and Python checks",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380307,
+              "name": "Package boundaries",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786380423,
+              "name": "Secret scan",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786381070,
+              "name": "Verified in the merge queue",
+              "conclusion": "skipped",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786381126,
+              "name": "Linux probe ${{ matrix.shard }}/6 (not required)",
+              "conclusion": "skipped",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926356,
+              "name": "Product subset (1/2)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926399,
+              "name": "Security invariants (2/3)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926421,
+              "name": "Rust and Swift checks",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926495,
+              "name": "Product subset (2/2)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926551,
+              "name": "Security invariants (3/3)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127786926896,
+              "name": "Security invariants (1/3)",
+              "conclusion": "success",
+              "run_attempt": 1
+            },
+            {
+              "id": 127795829939,
+              "name": "Verify",
+              "conclusion": "failure",
+              "run_attempt": 1
+            }
+          ]
+        }
       },
       "full": {
-        "runId": 42185999254,
-        "url": "https://github.com/molis-ai/molis-work/actions/runs/42185999254",
-        "status": "in_progress"
+        "id": 42185999254,
+        "status": "completed",
+        "conclusion": "failure",
+        "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+        "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42185999254",
+        "run_attempt": 1,
+        "logEvidence": [
+          {
+            "jobId": 127786357311,
+            "name": "Full suite (6/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357311.log",
+            "bytes": 148462,
+            "sha256": "a8c5f9ca97522f580ad1589270949391439f37554c59f1fc8db8ad5ae9ebea7d",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357424,
+            "name": "Full suite (8/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357424.log",
+            "bytes": 148640,
+            "sha256": "c16ac1e834a387f3f929c136b8f6fb7f4353005c77a17fbe43cbe884c0dd660f",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357440,
+            "name": "Full suite (11/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357440.log",
+            "bytes": 148962,
+            "sha256": "ae408d00b1a05b2160b5426148c80b62a8a51c90510940668998d87259613586",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357505,
+            "name": "Full suite (10/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357505.log",
+            "bytes": 158484,
+            "sha256": "35645f5594ba5f42a64ee6f9a733de341d57d480526cb3375bdb2d7ca9fa9362",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [
+              "[retry 1] ok    tests/workbench-current-tabs.e2e.test.ts  94.8s"
+            ],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357535,
+            "name": "Full suite (5/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357535.log",
+            "bytes": 148543,
+            "sha256": "794fe14cab6c1883b338be2d73db0f9685e0513b1e722fd79b64e4b48a1ab13d",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357564,
+            "name": "Full suite (3/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357564.log",
+            "bytes": 148396,
+            "sha256": "b57456f5b3b24379ab87c0ac181cd852100525763ed5035d85f9d781f044644a",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357586,
+            "name": "Full suite (7/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357586.log",
+            "bytes": 148574,
+            "sha256": "fb2a276988b1985dbca9e3fb47d0c5eae3aaf8e4ade55b570b672eb0d952a0a8",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357598,
+            "name": "Full suite (9/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357598.log",
+            "bytes": 149338,
+            "sha256": "54f0747b1508df5975a9951ae85e366836fde3029df12fa4cc84b1a23f7f17d6",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357623,
+            "name": "Full suite (4/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357623.log",
+            "bytes": 148911,
+            "sha256": "bee1129e85560547124394b5c8cca96324938bab4fd580091841ffbf5e2e9e1a",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357633,
+            "name": "Full suite (1/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357633.log",
+            "bytes": 148988,
+            "sha256": "4d4f6e6ec4f7536ae6be085837e3f38a1fe4d3e2c3d9c24e04792274c7610993",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 102,
+                "total": 102
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357648,
+            "name": "Full suite (16/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357648.log",
+            "bytes": 148324,
+            "sha256": "b05840a2dded3dbecf5f26e120bbd7368111a8cff16d25d419918a90b38c5ff9",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357649,
+            "name": "Full suite (14/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357649.log",
+            "bytes": 149036,
+            "sha256": "68bd918dd687bc7c135cba91dc23019f06d2e3ee22bd24352520c752d2c766e2",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357662,
+            "name": "Full suite (12/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357662.log",
+            "bytes": 149092,
+            "sha256": "c34c22ec7717d97d4dd772ece2db14eaeef70c91a03b960a01ecda522b47b48b",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357701,
+            "name": "Full suite (13/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357701.log",
+            "bytes": 148312,
+            "sha256": "fc83af9ac0165a1cfff15e49194a9ac82dbaadc703eff8a65afd23c612adf46d",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357726,
+            "name": "Full suite (15/16)",
+            "conclusion": "failure",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357726.log",
+            "bytes": 155092,
+            "sha256": "5da709bd25f0bbcc28d7b0c813f7b3a98169b300aff55d4738b339da2d089839",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [
+              "[retry 1] FAIL  tests/workbench-frame-container.e2e.test.ts  97.5s"
+            ],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127786357741,
+            "name": "Full suite (2/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127786357741.log",
+            "bytes": 148482,
+            "sha256": "220746dc19aa4fa5023c79d3b5974a81645e0010e84511ab6f02c59019546ff1",
+            "checkedCommit": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127812465568,
+            "name": "Full suite",
+            "conclusion": "failure",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/cdff-full-127812465568.log",
+            "bytes": 2532,
+            "sha256": "6e4586e3ac2ae288b48774f21ef9745c5a05f111f56273135f18bb8eb3de5bfc",
+            "checkedCommit": null,
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          }
+        ],
+        "shardCount": 16,
+        "passedFiles": 1664,
+        "totalFiles": 1665,
+        "allShardsCheckedHead": true,
+        "retries": [
+          "[retry 1] ok    tests/workbench-current-tabs.e2e.test.ts  94.8s",
+          "[retry 1] FAIL  tests/workbench-frame-container.e2e.test.ts  97.5s"
+        ],
+        "jobs": [
+          {
+            "id": 127786357311,
+            "name": "Full suite (6/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:32:18Z"
+          },
+          {
+            "id": 127786357424,
+            "name": "Full suite (8/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:39:44Z"
+          },
+          {
+            "id": 127786357440,
+            "name": "Full suite (11/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:31:46Z",
+            "completed_at": "2026-11-06T09:01:55Z"
+          },
+          {
+            "id": 127786357505,
+            "name": "Full suite (10/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:30:10Z"
+          },
+          {
+            "id": 127786357535,
+            "name": "Full suite (5/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:31:46Z"
+          },
+          {
+            "id": 127786357564,
+            "name": "Full suite (3/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:31:19Z"
+          },
+          {
+            "id": 127786357586,
+            "name": "Full suite (7/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:30:19Z"
+          },
+          {
+            "id": 127786357598,
+            "name": "Full suite (9/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:38:45Z"
+          },
+          {
+            "id": 127786357623,
+            "name": "Full suite (4/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:34:05Z"
+          },
+          {
+            "id": 127786357633,
+            "name": "Full suite (1/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:34:35Z"
+          },
+          {
+            "id": 127786357648,
+            "name": "Full suite (16/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:43:09Z",
+            "completed_at": "2026-11-06T09:00:58Z"
+          },
+          {
+            "id": 127786357649,
+            "name": "Full suite (14/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:39:17Z",
+            "completed_at": "2026-11-06T09:17:49Z"
+          },
+          {
+            "id": 127786357662,
+            "name": "Full suite (12/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:37:37Z",
+            "completed_at": "2026-11-06T09:01:17Z"
+          },
+          {
+            "id": 127786357701,
+            "name": "Full suite (13/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:38:58Z",
+            "completed_at": "2026-11-06T08:56:37Z"
+          },
+          {
+            "id": 127786357726,
+            "name": "Full suite (15/16)",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:40:29Z",
+            "completed_at": "2026-11-06T09:06:07Z"
+          },
+          {
+            "id": 127786357741,
+            "name": "Full suite (2/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T08:12:19Z",
+            "completed_at": "2026-11-06T08:38:00Z"
+          },
+          {
+            "id": 127812465568,
+            "name": "Full suite",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "run_attempt": 1,
+            "started_at": "2026-11-06T09:21:24Z",
+            "completed_at": "2026-11-06T09:21:27Z"
+          }
+        ],
+        "persistentFailure": {
+          "file": "tests/workbench-frame-container.e2e.test.ts",
+          "firstFailure": "artifact GET observed twice instead of once",
+          "retry": "failed; assertion details unavailable in retry summary; do not infer identical assertion"
+        }
       },
       "pushedBranches": [
         "codex/work-01-account-foundation",
@@ -17349,6 +18428,420 @@
           "usedSupportedExplicitBrowserVariable": false,
           "notUsedAsDedicatedBrowserEvidence": true
         }
+      },
+      "mergeProof": {
+        "sha": "fc2af760d053563ec33d6cac3e3e1c67869daf67",
+        "node_id": "C_kwDOT5WDidoAKGZjMmFmNzYwZDA1MzU2M2VjMzNkNmNhYzNlM2UxYzY3ODY5ZGFmNjc",
+        "url": "https://api.github.com/repos/molis-ai/molis-work/git/commits/fc2af760d053563ec33d6cac3e3e1c67869daf67",
+        "html_url": "https://github.com/molis-ai/molis-work/commit/fc2af760d053563ec33d6cac3e3e1c67869daf67",
+        "author": {
+          "name": "seed47",
+          "email": "yangpf47@gmail.com",
+          "date": "2026-11-06T08:12:18Z"
+        },
+        "committer": {
+          "name": "GitHub",
+          "email": "noreply@github.com",
+          "date": "2026-11-06T08:12:18Z"
+        },
+        "tree": {
+          "sha": "5834721abd30f9613eed8dbdfb782515b73cd89a",
+          "url": "https://api.github.com/repos/molis-ai/molis-work/git/trees/5834721abd30f9613eed8dbdfb782515b73cd89a"
+        },
+        "message": "Merge cdff8cea9174fe053e893ee4e927b9af406c745f into 0f7db3736c7902b0fba59953382fe519985b04e5",
+        "parents": [
+          {
+            "sha": "0f7db3736c7902b0fba59953382fe519985b04e5",
+            "url": "https://api.github.com/repos/molis-ai/molis-work/git/commits/0f7db3736c7902b0fba59953382fe519985b04e5",
+            "html_url": "https://github.com/molis-ai/molis-work/commit/0f7db3736c7902b0fba59953382fe519985b04e5"
+          },
+          {
+            "sha": "cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "url": "https://api.github.com/repos/molis-ai/molis-work/git/commits/cdff8cea9174fe053e893ee4e927b9af406c745f",
+            "html_url": "https://github.com/molis-ai/molis-work/commit/cdff8cea9174fe053e893ee4e927b9af406c745f"
+          }
+        ],
+        "verification": {
+          "verified": true,
+          "reason": "valid",
+          "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq7YviCRC1aQ7uu5UhlAAA9ksQAArhHpUL1qmHfW78JxgSTnZU\naMmTopsTnbnGNEkHI5jhsdyab/+N8jqYPoEyZh8xTlgOT4A0+gBRP+ktcMagff7P\nrz//ReL2pa8+N8+C769yhRO9rsGPrVRQgbEci0CPIeCnfJWzK/EIpDxNiMYpBHgK\ncDYrxghW2EVd1KDMJ28eZvhWrxPkEenat895jFlZbDZrtzc+6hLal/K4y1fiKvPp\nSnkZhTUVk3HfsfCLgzAnYDGcQJ29Htq9+ZbiffcjnSkMpPLbtu18I4leqYSz7pAL\nmVbHrKv2mkPo4EzEZN2Zqno7Suw6FZ0CtwAr0FnOMHmsiEcNhxEm4gbcKVPgessE\nyXNFqcxO5+l4XDK4m6PMEfYEvs/yrcf21E56mCgVoAFn+ZafoPCNYs2e45MhSu5s\nPkOXHZdUINLzB+wOE8bDrqVnGeMoKHO+u/eip26KEybwEoDms3Dr3FWIn876rv6+\nfxNuwutMQaADIY1IjrRDZdZlSZclMVX+a7ps1sA5/4M21K1p9ud5xFSdwxLMRTnk\neTG8/hDJ/NPuc0hdvz219xAmfTfFOqhLU2CaBQ/nlFKEZxrbBXkInyZ80EQ4TTgm\nXg8HQ4SqTlIqOE7yqPZhp9XqysP7CsD9orUv5fxgphWUBGxLPnB8T2JYAPEObQ9v\nde2zUvunSq4BujKqZ6kV\n=ERTw\n-----END PGP SIGNATURE-----\n",
+          "payload": "tree 5834721abd30f9613eed8dbdfb782515b73cd89a\nparent 0f7db3736c7902b0fba59953382fe519985b04e5\nparent cdff8cea9174fe053e893ee4e927b9af406c745f\nauthor seed47 <yangpf47@gmail.com> 1793952738 +0000\ncommitter GitHub <noreply@github.com> 1793952738 +0000\n\nMerge cdff8cea9174fe053e893ee4e927b9af406c745f into 0f7db3736c7902b0fba59953382fe519985b04e5\n",
+          "verified_at": "2026-11-06T08:12:19Z"
+        }
+      }
+    },
+    "cursorOwnershipCandidate": {
+      "head": "9f24014715b69021ad1af20d3c541b5957df41e1",
+      "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+      "status": "LOCAL_PASS_FINAL_CI_RUNNING",
+      "repairs": {
+        "K-21": "a5c862f62",
+        "K-22": "4d39e3da7",
+        "K-23": "9f24014715b69021ad1af20d3c541b5957df41e1"
+      },
+      "mainConflictsResolved": [
+        "apps/workbench/package.json: retain service-connection-section and account browser builds",
+        "scripts/gates/page-assets.mjs and tooling/gates/page-assets.json: reanchor already approved increments, no new allowance"
+      ],
+      "build": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k23-build.log",
+        "bytes": 2433,
+        "sha256": "97f5efeb3c01200225497cb51c2cbae3dc58dfb6c3a57f9b5eb5f972f2d70618",
+        "exitCode": 0
+      },
+      "directed": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/models-final-targeted.log",
+        "bytes": 3125,
+        "sha256": "e50c2bda9faab9dc12dd0b84d566dea522404618f857ad13ac171eacd8c54401",
+        "files": [
+          {
+            "file": "tests/idle-request-budget.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/workbench-pane-feed.e2e.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/page-assets-budget.test.ts",
+            "passed": 171,
+            "total": 171
+          },
+          {
+            "file": "tests/workbench-frame-container.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/model-first-setup.e2e.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/feed-source-menu-refresh.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/workbench-tab-workspace.e2e.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/workbench-hidden-refresh.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/action-before-effect.test.ts",
+            "passed": 23,
+            "total": 23
+          },
+          {
+            "file": "tests/model-released-key.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/model-settings-http.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/model-providers.test.ts",
+            "passed": 11,
+            "total": 11
+          },
+          {
+            "file": "tests/model-provider-store.test.ts",
+            "passed": 8,
+            "total": 8
+          },
+          {
+            "file": "tests/board-navigation.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/client-script-undeclared.test.ts",
+            "passed": 5,
+            "total": 5
+          },
+          {
+            "file": "tests/model-first-setup-http.test.ts",
+            "passed": 12,
+            "total": 12
+          },
+          {
+            "file": "tests/i18n.test.ts",
+            "passed": 13,
+            "total": 13
+          },
+          {
+            "file": "tests/capabilities-page.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/settings-call-diagnostics.test.ts",
+            "passed": 10,
+            "total": 10
+          },
+          {
+            "file": "tests/one-motion.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/model-provider-list.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/style-has-scope.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/plugin-declarative-mounting.test.ts",
+            "passed": 12,
+            "total": 12
+          },
+          {
+            "file": "tests/builtin-plugin-composition.test.ts",
+            "passed": 7,
+            "total": 7
+          },
+          {
+            "file": "tests/ui-request-client-pages.test.ts",
+            "passed": 9,
+            "total": 9
+          },
+          {
+            "file": "tests/assistant-island-script.test.ts",
+            "passed": 6,
+            "total": 6
+          },
+          {
+            "file": "tests/plugin-list-developer-mode.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/primitive-catalog-bar.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/builtin-plugin-agent-texts.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/builtin-manifests-contract.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/workbench-ui-platform.test.ts",
+            "passed": 11,
+            "total": 11
+          },
+          {
+            "file": "tests/fill-message.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/plugin-client-served.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/plugin-picker-pins.test.ts",
+            "passed": 16,
+            "total": 16
+          },
+          {
+            "file": "tests/design-system-giants.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/ui-request-client.test.ts",
+            "passed": 32,
+            "total": 32
+          },
+          {
+            "file": "tests/settings-requests-through-helper.test.ts",
+            "passed": 15,
+            "total": 15
+          },
+          {
+            "file": "tests/web-service-settings-client.test.ts",
+            "passed": 8,
+            "total": 8
+          }
+        ],
+        "passedFiles": 38,
+        "passedTests": 417,
+        "totalTests": 417
+      },
+      "translationChecks": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k23-translations.log",
+        "bytes": 331,
+        "sha256": "f76f706fde6d3704e069c5a3fd7628bf531b2a0428a799eb285924cbdc343f74",
+        "exitCode": 0
+      },
+      "joint": [
+        {
+          "name": "authentication",
+          "exitCode": 0,
+          "seconds": 12.8,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/547-authentication.log",
+          "bytes": 1940,
+          "sha256": "b51c78a940b14eac6da2754932b87095d8b7edc62e826b5bf82ad7eaeb1da950"
+        },
+        {
+          "name": "cutover",
+          "exitCode": 0,
+          "seconds": 11.3,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/547-cutover.log",
+          "bytes": 1014,
+          "sha256": "292c290deaac9cbef6d5c71afe0661ba12c583ec7b48509ec68f1d05464c4650"
+        }
+      ],
+      "localGates": [
+        {
+          "name": "health",
+          "exitCode": 0,
+          "seconds": 43.94,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/final-health.log",
+          "bytes": 1974,
+          "sha256": "0617fb1f0c243a68bac2b9aca19559623a2bb46df141fbf908230351e5573da4"
+        },
+        {
+          "name": "boundary",
+          "exitCode": 0,
+          "seconds": 4.17,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/final-boundary.log",
+          "bytes": 268,
+          "sha256": "0f5d9b507dfc22af1e5f591cfe0053c69729f104ac599eed810a3319106150fd"
+        },
+        {
+          "name": "assets",
+          "exitCode": 0,
+          "seconds": 1.14,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/final-assets.log",
+          "bytes": 96,
+          "sha256": "2c750e6afbf2ae7a721fcc5c6ea766fe9062ea5ff1b4b82f61bf96bd1a6c8a47"
+        },
+        {
+          "name": "versions",
+          "exitCode": 0,
+          "seconds": 0.32,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/final-versions.log",
+          "bytes": 163,
+          "sha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a"
+        },
+        {
+          "name": "secrets",
+          "exitCode": 0,
+          "seconds": 0.69,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/final-secrets.log",
+          "bytes": 147,
+          "sha256": "3c237e9b16601587bf5040649c914714f4a20e58202c9713429357c237880ac9"
+        }
+      ],
+      "assets": {
+        "count": 51,
+        "bytes": 7460481,
+        "approvedIncrements": {
+          "arrival.css": 645,
+          "workbench.css": 416,
+          "workbench.js": 39622,
+          "plugin-frame.js": 54
+        },
+        "newAllowance": false
+      },
+      "externalProviders": "MOCK",
+      "realDataOperated": false,
+      "deployment": false,
+      "verify": {
+        "runId": 42197111196,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42197111196",
+        "status": "queued"
+      },
+      "full": {
+        "runId": 42197105044,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42197105044",
+        "status": "queued"
+      },
+      "diagnosis": {
+        "K-21": "Repository counts in main connection board need plural selection for 0/1/2; entire dictionary assertion retained.",
+        "K-22": "Platform project journal cursor and Goals plugin journal cursor are independent. Comparing them caused repeated refresh/applyUiState and duplicate Frame content reads. Existing goalData node now tracks numeric last successfully applied platform cursor; aborted/failed/deferred refresh does not acknowledge.",
+        "K-23": "Main specimen state and account action used same Chinese key for different meanings; rename state to 登录已取消; existing dictionary cohesive-unit exact size updated to 3214 without gate changes."
+      },
+      "diagnosticLogs": [
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/service-board-baseline-before.log",
+          "bytes": 2231,
+          "sha256": "58c853beefd67a1f1659f38eb78932347ee77e355be82a1e48ecb1afd047fe73"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/service-board-final-targeted.log",
+          "bytes": 5893,
+          "sha256": "02533b5e912c3d9aa98f130b1e021575495fde99a050aec35645ecc11f1cd4c6"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/frame-passive-network.log",
+          "bytes": 10405,
+          "sha256": "2297260384853215781994a5b52f9ff3b415e254fdfa88442745bc77c5c8c2be"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/frame-cursor-corrected.log",
+          "bytes": 13015,
+          "sha256": "2bc9fcc41e234697d621cb9bf58b9e8f02c0efe104d433bebb89bc3d9971422b"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/frame-cursor-monotonic.log",
+          "bytes": 11982,
+          "sha256": "89994426a97a444406f13251fcd57f4d7a5d1ac5c1f43693053c23ac3df9dcc7"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/frame-cursor-state-diagnostic.log",
+          "bytes": 12662,
+          "sha256": "d59af05a74455dd891bbb708cf38deba1944929a73c5246129f5531479df5847"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/cursor-owner-targeted.log",
+          "bytes": 2803,
+          "sha256": "a9f1a82feec99241383249a8a98da29be4055ad3a2b9fb78de24895f7c49ad98"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/cursor-final-targeted.log",
+          "bytes": 24984,
+          "sha256": "ac33db77c264c4af7df716988681a585e00a920ea6dd2c85a7b18df57f10484d"
+        },
+        {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/547-health.log",
+          "bytes": 978,
+          "sha256": "6e068d4fdf1633c317d5d82aa9c74b0fbb4ae2d624cf785289ef503d951ff93f"
+        }
+      ],
+      "failurePreservation": "Earlier frame instrumentation passes were diagnostic only; one clean-main pass did not disprove intermittent failure. Wrong Goals/platform readiness comparisons failed and were discarded. Final 39-file batch had 38 passes and only stale asset budget failure; next 38-file final-main batch passed including 171 asset cases. Translation conflict was discovered by health after that batch and then corrected; counts across overlapping batches are not added as a single Full.",
+      "sourceSha256": "55c138c80d97e18c2fa48571cf558657d56a6e4bc392838902f2e839ed8cfb84",
+      "pushedBranches": [
+        "codex/work-01-account-foundation",
+        "integration/t01-unified-account-20261106-final"
+      ],
+      "committedSecretsCheck": {
+        "exitCode": 0,
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/final-committed-secrets.log",
+        "bytes": 147,
+        "sha256": "972c9875dc57dca6fc887dd9c7ee4a0e2c44b59d85f742f41be0b946fec08abf"
       }
     }
   },
