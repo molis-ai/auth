@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T04:54:56.283286+00:00",
+  "recordedAt": "2026-11-06T05:10:51.709030+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
   "phase": "T-01_VERIFIED_CANDIDATE_NEW_MAIN_INTEGRATION_PENDING",
   "note": "Final Work head 9cf6fe623 and its matching merge tree passed Verify and Full. 1660/1660 Linux files, two existing retries passed, 57 macOS-only files excluded, no live runs. Products 409/409 and security 288/288 separately, no retries there. Local 61 files/891 tests and real Auth/Host/BFF joint mock/synthetic validation passed. All three feature PRs ready; no submitted human reviews or authorization to merge them. Historical failures preserved. No real data, payment, release or deployment. Subsequent main 05d4cf98c introduces a page-assets.json conflict; the successful 9cf6fe623 runs do not validate this newer combination. Main integration and new-head verification remain before merge.",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "e3df308b3d1032628262047ce7fbea035e9df1b4eca032ba83fd06e718e80f17",
+  "sourceManifestSha256": "44d4ef3351a88063ce23dea0e2de41419143f61d3b968c38915c65e049cb1798",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -13125,6 +13125,67 @@
       "approvedPRBodiesPublished": true,
       "incorrectDisabledClaimRetractedInPRBodies": true,
       "correctionDocumentPushPending": true
+    },
+    "developmentBuildOnly": {
+      "status": "LOCAL_VALIDATED_REMOTE_PENDING",
+      "cloudflare": {
+        "authNonProductionBuilds": false,
+        "clubNonProductionBuilds": false,
+        "savedViaDashboard": true,
+        "previewBranchBuildsObservedOff": true,
+        "productionConfigurationChanged": false,
+        "noDeployOrRealData": true
+      },
+      "workflows": {
+        "A": {
+          "path": ".github/workflows/development-checks.yml",
+          "sha256": "3ea531b4967983f6ff64f9808811736c21678eb161848c4f0a1f5f7d369ac873",
+          "outsideProductSourceManifest": true,
+          "pushBranches": "all except main",
+          "permissions": "contents:read",
+          "uploads": false,
+          "deploys": false,
+          "productionSecrets": false
+        },
+        "C": {
+          "path": ".github/workflows/development-checks.yml",
+          "sha256": "175ce3995365e7ee731112d88948bb5a799f14d6c79744d51488e818d5be3711",
+          "outsideProductSourceManifest": true,
+          "pushBranches": "all except main",
+          "permissions": "contents:read",
+          "uploads": false,
+          "deploys": false,
+          "productionSecrets": false
+        }
+      },
+      "local": {
+        "A": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/auth-local.log",
+          "bytes": 36230,
+          "sha256": "10d4fb853737c936a739eafc2f7b93287c4ce914679bf61eeeba6b1285a545d3",
+          "exitCode": 0,
+          "passedCounts": {
+            "contract": 7,
+            "rust": 20,
+            "worker": 130,
+            "web": 91,
+            "sdk": 27
+          },
+          "build": "PASS",
+          "data": "synthetic/mock"
+        },
+        "C": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/club-local.log",
+          "bytes": 25731,
+          "sha256": "e95a5805be3dbb06eaa41e59d7b49fc3f1d47609bd64cc29ef417b6b590f972e",
+          "exitCode": 0,
+          "passedCounts": {
+            "tests": 77
+          },
+          "build": "PASS",
+          "data": "synthetic/mock"
+        }
+      }
     }
   },
   "diagnostics": [

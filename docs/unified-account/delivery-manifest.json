@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-06T04:54:57.806Z",
+  "recordedAt": "2026-11-06T05:10:53.083Z",
   "formatVersion": 1,
   "purpose": "LOCAL_SYNTHETIC_ACCEPTANCE_NOT_RELEASE",
   "scopeNote": "SHA-256 of sorted [path, kind, byte-sha256] JSON in declared source scopes; excludes docs, ignored builds, runtime configuration/data and most media. Not a complete deployment image. Symlinks hash link text only. baseCommit pins an ancestor with the recorded source; uncommitted covers source inputs only. Later documentation commits do not invalidate this record.",
@@ -121,6 +121,6 @@
   "evidence": {
     "requirementCount": 42,
     "pathCount": 76,
-    "matrixSha256": "99a497352f803aa4b5197fcf784599030435332e3c527af19c0b00c780d41251"
+    "matrixSha256": "594438ea55966ebe62c8d941ff2fd8ae159039d793b51a6f1d56242342c3ba5f"
   }
 }
