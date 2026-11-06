@@ -1,9 +1,9 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T10:30:15.328180+00:00",
+  "recordedAt": "2026-11-06T12:06:17.669410+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
-  "phase": "T-01_FINAL_GRAPH_HEAD_REMOTE_PENDING",
-  "note": "Current delivery candidate is remote.graphRefreshCandidate. Earlier cursorOwnershipCandidate and all preceding CI/diagnostic histories remain separate; no overlapping case counts are added.",
+  "phase": "T-01_FINAL_KANBAN_HEAD_REMOTE_PENDING",
+  "note": "Current delivery candidate is remote.kanbanToggleCandidate. The prior 88f595b3b Verify passed, but Full failed 1665/1666. All prior failures/cancellations/retries remain separately recorded; no old pass is used as final-head evidence.",
   "repositories": {
     "A": {
       "baseCommit": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+      "baseCommit": "356fdaa3a3c18fe333e19abbd2cad926b24477ea",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,8 +58,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5940,
-      "sourceSha256": "79d8eb98a958a6a96581e059d3293af4cee5092572f02bf018fc617229513d43"
+      "fileCount": 5943,
+      "sourceSha256": "672f37672b64c8a7b858d9b462a50db9758418357310693e3e92d92276fe7660"
     },
     "C": {
       "baseCommit": "262c973f9df9d38575627f60975610fb35b2b711",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "aab27db015fb4d3cb2b72b076f191ba438bb2cc706506255cc296be14e961465",
+  "sourceManifestSha256": "cf1d353898bb999f099440ebc395143ab9458fee5b10f50579b0440619c38965",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2744,6 +2744,11 @@
       "id": "K-25",
       "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
       "resolution": "Connection-card multiline choice label aligns the leading icon with the first line. Scoped inline CSS only; no page-asset increase."
+    },
+    {
+      "id": "K-26",
+      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
+      "resolution": "Native toggle does not bubble. Goals subscribed without capture, so outside pointer handling could close desktop columns while the board was hidden. Goals now captures toggle and restores desktop columns using its retained container width; phone folding remains user-controlled."
     }
   ],
   "matrix": {
@@ -2769,13 +2774,11 @@
     }
   ],
   "notRun": [
-    "Successful external Workers Builds rerun; historical Auth initialization and Club missing-deployment-config failures remain, branch automatic build/upload behavior requires control",
-    "Integration with newer Work main 05d4cf98c, page-assets conflict resolution and validation of that new candidate",
-    "Feature PR human review and main merge; merge requires authorization",
-    "Real data, Home or authentication provider operations; payment, release or deployment",
-    "Full rerun of the historical 327 local files; no local Full",
-    "57 macOS-only files excluded by Linux Full; applicable local directed evidence recorded separately; live tests not run",
-    "Auth and Club GitHub Actions (no repository workflows exist)"
+    "Feature PR main merges; separate authorization and production-branch deployment scope confirmation remain required",
+    "Club GitHub Actions did not start due to billing/limit; user explicitly accepts as non-blocking, not recorded as passing",
+    "Real providers/domains, real data/Home, payment, release or deployment",
+    "No local Full; final-head remote Verify/Full remain pending",
+    "Linux excludes macOS-only files; applicable local directed evidence is separate; no live tests"
   ],
   "previousRuns": [
     {
@@ -13034,7 +13037,7 @@
       }
     ],
     "featureReview": {
-      "checkedAt": "2026-11-06 10:29:45 UTC",
+      "checkedAt": "2026-11-06T12:06:17.669242+00:00",
       "readyPRs": [
         "molis-ai/auth#2",
         "molis-ai/molis-club#27",
@@ -13046,7 +13049,7 @@
       "note": "Absence of reviews is not human approval. Prior main authorization covers only Work #1842/#1843/#1844.",
       "headStates": {
         "auth": {
-          "head": "ef3016976dee76287e63b2540606e3315b6724fe",
+          "head": "a50b3ccadd8e124603f717c5cf380130fd0f7266",
           "base": "e9c5ffa2fc9ecff1a0f8a3e2f9358411a93ecbe9",
           "mergeable": true,
           "state": "open",
@@ -13078,12 +13081,12 @@
           }
         },
         "molis-work": {
-          "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
-          "base": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
-          "mergeable": true,
+          "head": "356fdaa3a3c18fe333e19abbd2cad926b24477ea",
+          "base": "c30e251b39c27c421be3d487afacc7353a01cfff",
+          "mergeable": null,
           "state": "open",
           "draft": false,
-          "mergeState": "blocked",
+          "mergeState": "AWAITING_POST_PUSH_RECHECK",
           "reviews": {
             "reviews": {
               "reviews": []
@@ -13096,19 +13099,18 @@
       }
     },
     "latestMainRecheck": {
-      "checkedAt": "2026-11-06 10:29:45 UTC",
-      "workMain": "c7b6584287cd8d7eca30f2760d1a0cbf5662af58",
-      "workHead": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
-      "integratedCodeMain": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+      "checkedAt": "2026-11-06T12:05:09.556784+00:00",
+      "workMain": "c30e251b39c27c421be3d487afacc7353a01cfff",
+      "workHead": "356fdaa3a3c18fe333e19abbd2cad926b24477ea",
+      "integratedCodeMain": "c30e251b39c27c421be3d487afacc7353a01cfff",
       "mergeable": true,
       "conflictFiles": [],
-      "diagnosticCommand": "git merge-tree --write-tree HEAD origin/main",
-      "diagnosticExitCode": 0,
-      "mergeTree": "0f645ebc7e9094355b5419124b5017e26d7bf15c",
-      "worktreeUnchanged": true,
-      "authMergeable": true,
-      "clubMergeable": true,
-      "note": "Latest main adds only two spec document edits after the integrated code baseline. No merge commit created solely to chase documentation. GitHub PR metadata still reports the earlier base; local fetched ref and merge-tree provide this separate current-main check."
+      "resolvedConflicts": [
+        "docs/system/SECURITY-INVARIANTS.md",
+        "scripts/gates/page-assets.mjs",
+        "tooling/gates/page-assets.json"
+      ],
+      "note": "Integrated ASC-59 connector replacement and desktop command availability. Kept main S-108 and account S-109 through S-115; reanchored existing asset admissions, no additional growth allowance."
     },
     "externalBuildInvestigation": {
       "checkedAt": "2026-11-06T04:06:47.650336+00:00",
@@ -13342,17 +13344,32 @@
         "acceptedAsPassing": false
       },
       "authDocumentCI": {
-        "head": "ef3016976dee76287e63b2540606e3315b6724fe",
-        "runId": 42197263523,
-        "jobId": 127823523930,
+        "head": "a50b3ccadd8e124603f717c5cf380130fd0f7266",
+        "runId": 42203237718,
+        "jobId": 127843435881,
+        "url": "https://github.com/molis-ai/auth/actions/runs/42203237718",
         "conclusion": "success",
         "log": {
-          "logPath": "/private/tmp/molis-t01-build-only-20261106/auth-ef301-ci.log",
-          "bytes": 117368,
-          "sha256": "f87fa09047e56d6f37e185fb025a510dbd42fa4099a927439f9baaa5ccf45d65"
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/auth-a50-ci.log",
+          "bytes": 117357,
+          "sha256": "c1b18af669c183ac341c5e19227fd7354607b4b8b7204eb93a1a6a678ce61827"
         },
         "noCloudflareCheck": true
-      }
+      },
+      "authDocumentCIHistory": [
+        {
+          "head": "ef3016976dee76287e63b2540606e3315b6724fe",
+          "runId": 42197263523,
+          "jobId": 127823523930,
+          "conclusion": "success",
+          "log": {
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/auth-ef301-ci.log",
+            "bytes": 117368,
+            "sha256": "f87fa09047e56d6f37e185fb025a510dbd42fa4099a927439f9baaa5ccf45d65"
+          },
+          "noCloudflareCheck": true
+        }
+      ]
     },
     "refreshedMainCandidate": {
       "head": "f5c690d5fa29d7449cb0e0082c5075a653b80ed3",
@@ -18843,23 +18860,313 @@
       "verify": {
         "runId": 42197111196,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42197111196",
-        "status": "queued",
-        "conclusion": null,
-        "observedAt": "2026-11-06 10:29:45 UTC"
+        "status": "completed",
+        "conclusion": "cancelled",
+        "observedAt": "2026-11-06 10:50:27 UTC",
+        "jobs": [
+          {
+            "id": 127823023069,
+            "name": "PR test selection",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:45:47Z",
+            "completed_at": "2026-11-06T09:46:03Z"
+          },
+          {
+            "id": 127823023484,
+            "name": "Secret scan",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:52:44Z",
+            "completed_at": "2026-11-06T09:53:09Z"
+          },
+          {
+            "id": 127823023556,
+            "name": "Shell and Python checks",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:57:15Z",
+            "completed_at": "2026-11-06T09:57:32Z"
+          },
+          {
+            "id": 127823023579,
+            "name": "Package boundaries",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:57:38Z",
+            "completed_at": "2026-11-06T10:02:12Z"
+          },
+          {
+            "id": 127823023607,
+            "name": "Health gate rules (1/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:04:13Z",
+            "completed_at": "2026-11-06T10:07:21Z"
+          },
+          {
+            "id": 127823023642,
+            "name": "Health gate rules (2/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:05:14Z",
+            "completed_at": "2026-11-06T10:08:15Z"
+          },
+          {
+            "id": 127823023648,
+            "name": "Action and plugin contracts (2/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:53:17Z",
+            "completed_at": "2026-11-06T09:57:36Z"
+          },
+          {
+            "id": 127823023725,
+            "name": "Action and plugin contracts (1/2)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:06:14Z",
+            "completed_at": "2026-11-06T10:10:20Z"
+          },
+          {
+            "id": 127823023733,
+            "name": "Gates",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:07:22Z",
+            "completed_at": "2026-11-06T10:13:14Z"
+          },
+          {
+            "id": 127823024425,
+            "name": "Linux probe ${{ matrix.shard }}/6 (not required)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-06T09:43:00Z",
+            "completed_at": "2026-11-06T09:43:00Z"
+          },
+          {
+            "id": 127823024894,
+            "name": "Verified in the merge queue",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-06T09:43:00Z",
+            "completed_at": "2026-11-06T09:43:00Z"
+          },
+          {
+            "id": 127824325813,
+            "name": "Rust and Swift checks",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:49:18Z",
+            "completed_at": "2026-11-06T09:52:25Z"
+          },
+          {
+            "id": 127824325901,
+            "name": "Product subset (2/2)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:46:03Z",
+            "completed_at": "2026-11-06T10:24:14Z"
+          },
+          {
+            "id": 127824325999,
+            "name": "Product subset (1/2)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:46:03Z",
+            "completed_at": "2026-11-06T10:24:14Z"
+          },
+          {
+            "id": 127824326015,
+            "name": "Security invariants (1/3)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:46:03Z",
+            "completed_at": "2026-11-06T10:24:14Z"
+          },
+          {
+            "id": 127824326069,
+            "name": "Security invariants (3/3)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:46:03Z",
+            "completed_at": "2026-11-06T10:24:14Z"
+          },
+          {
+            "id": 127824326085,
+            "name": "Security invariants (2/3)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:46:03Z",
+            "completed_at": "2026-11-06T10:24:14Z"
+          },
+          {
+            "id": 127840624928,
+            "name": "Verify",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-06T10:38:44Z",
+            "completed_at": "2026-11-06T10:38:48Z"
+          }
+        ],
+        "id": 42197111196,
+        "head": "9f24014715b69021ad1af20d3c541b5957df41e1",
+        "attempt": 1
       },
       "full": {
         "runId": 42197105044,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42197105044",
-        "status": "queued",
-        "conclusion": null,
-        "observedAt": "2026-11-06 10:29:45 UTC",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "observedAt": "2026-11-06 10:50:27 UTC",
         "knownFailure": {
           "jobId": 127823003350,
           "file": "tests/visual-order.e2e.test.ts",
           "scope": "four-mode service connection catalog choice icon alignment, 8.6px",
           "resolvedBy": "K-25",
           "completeRunResult": false
-        }
+        },
+        "jobs": [
+          {
+            "id": 127823003066,
+            "name": "Full suite (3/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:48:13Z",
+            "completed_at": "2026-11-06T10:12:30Z"
+          },
+          {
+            "id": 127823003148,
+            "name": "Full suite (9/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:43:13Z",
+            "completed_at": "2026-11-06T10:24:48Z"
+          },
+          {
+            "id": 127823003174,
+            "name": "Full suite (12/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:42:57Z",
+            "completed_at": "2026-11-06T10:24:10Z"
+          },
+          {
+            "id": 127823003198,
+            "name": "Full suite (6/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:45:22Z",
+            "completed_at": "2026-11-06T10:03:13Z"
+          },
+          {
+            "id": 127823003218,
+            "name": "Full suite (5/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:45:23Z",
+            "completed_at": "2026-11-06T10:06:12Z"
+          },
+          {
+            "id": 127823003233,
+            "name": "Full suite (10/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:45:04Z",
+            "completed_at": "2026-11-06T10:01:32Z"
+          },
+          {
+            "id": 127823003234,
+            "name": "Full suite (13/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:42:57Z",
+            "completed_at": "2026-11-06T10:24:10Z"
+          },
+          {
+            "id": 127823003299,
+            "name": "Full suite (1/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:45:57Z",
+            "completed_at": "2026-11-06T10:06:43Z"
+          },
+          {
+            "id": 127823003328,
+            "name": "Full suite (15/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:42:57Z",
+            "completed_at": "2026-11-06T10:24:10Z"
+          },
+          {
+            "id": 127823003341,
+            "name": "Full suite (11/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T10:02:14Z",
+            "completed_at": "2026-11-06T10:25:03Z"
+          },
+          {
+            "id": 127823003350,
+            "name": "Full suite (7/16)",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-06T09:50:56Z",
+            "completed_at": "2026-11-06T10:09:26Z"
+          },
+          {
+            "id": 127823003351,
+            "name": "Full suite (14/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:42:57Z",
+            "completed_at": "2026-11-06T10:24:10Z"
+          },
+          {
+            "id": 127823003358,
+            "name": "Full suite (16/16)",
+            "status": "completed",
+            "conclusion": "cancelled",
+            "started_at": "2026-11-06T09:42:57Z",
+            "completed_at": "2026-11-06T10:24:10Z"
+          },
+          {
+            "id": 127823003372,
+            "name": "Full suite (8/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:54:44Z",
+            "completed_at": "2026-11-06T10:12:12Z"
+          },
+          {
+            "id": 127823003383,
+            "name": "Full suite (2/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:53:31Z",
+            "completed_at": "2026-11-06T10:19:22Z"
+          },
+          {
+            "id": 127823003412,
+            "name": "Full suite (4/16)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T09:46:04Z",
+            "completed_at": "2026-11-06T10:05:02Z"
+          },
+          {
+            "id": 127840981741,
+            "name": "Full suite",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-06T10:50:58Z",
+            "completed_at": "2026-11-06T10:51:01Z"
+          }
+        ],
+        "id": 42197105044,
+        "head": "9f24014715b69021ad1af20d3c541b5957df41e1",
+        "attempt": 1
       },
       "diagnosis": {
         "K-21": "Repository counts in main connection board need plural selection for 0/1/2; entire dictionary assertion retained.",
@@ -18924,12 +19231,30 @@
         "logPath": "/private/tmp/molis-t01-build-only-20261106/final-committed-secrets.log",
         "bytes": 147,
         "sha256": "972c9875dc57dca6fc887dd9c7ee4a0e2c44b59d85f742f41be0b946fec08abf"
+      },
+      "completeShardCounts": {
+        "completedShards": 9,
+        "passedFiles": 931,
+        "totalFiles": 932,
+        "entireRunComplete": false,
+        "notCountedAsFinalCoverage": true
+      },
+      "additionalInterruptedFailure": {
+        "file": "tests/visual-surfaces.e2e.test.ts",
+        "firstAttempt": "11/13, goal-work graph load timeout",
+        "retry": "interrupted by superseding push; no conclusion",
+        "resolvedBy": "K-24"
+      },
+      "cancellation": {
+        "reason": "Superseded by final head 88f595b3b; standard workflow concurrency cancelled unfinished jobs. Aggregate jobs remained queued and held their groups. UI cancellation also requested for these two owned runs.",
+        "workflowConfigurationChanged": false,
+        "otherRunsChanged": false
       }
     },
     "graphRefreshCandidate": {
       "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
       "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
-      "status": "LOCAL_PASS_FINAL_CI_PENDING",
+      "status": "VERIFY_PASS_FULL_FAILED_K26",
       "priorCandidate": "9f24014715b69021ad1af20d3c541b5957df41e1",
       "repair": "K-24",
       "diagnosis": "A loaded momentum graph was invalidated after applyUiState had already synchronized the focused workspace. No next request followed, so graph data remained stale. Move the existing invalidation/reload block before UI restoration; no retry/poll/timeout changes.",
@@ -19944,16 +20269,972 @@
       "verify": {
         "runId": 42202397061,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061",
-        "status": "pending",
+        "status": "completed",
         "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
-        "conclusion": null
+        "conclusion": "success",
+        "checkoutProof": {
+          "mergeCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+          "mergeTree": "0f645ebc7e9094355b5419124b5017e26d7bf15c",
+          "parents": [
+            "c7b6584287cd8d7eca30f2760d1a0cbf5662af58",
+            "88f595b3bc55fbde9f61d425157859d7dd7c68b4"
+          ],
+          "headTree": "e9bb0b1a57c8b17090e28418c06c7d66b1153d6a",
+          "matchesLocalMergeTree": true,
+          "differenceFromFeatureHead": "Two spec document edits only; no product source differences."
+        },
+        "id": 42202397061,
+        "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+        "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061",
+        "run_attempt": 1,
+        "jobs": [
+          {
+            "id": 127846791142,
+            "name": "Gates",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:50Z",
+            "completed_at": "2026-11-06T10:43:11Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791142"
+          },
+          {
+            "id": 127846791166,
+            "name": "Secret scan",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:50Z",
+            "completed_at": "2026-11-06T10:39:12Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791166"
+          },
+          {
+            "id": 127846791169,
+            "name": "Health gate rules (1/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:52Z",
+            "completed_at": "2026-11-06T10:41:59Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791169"
+          },
+          {
+            "id": 127846791187,
+            "name": "PR test selection",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:50Z",
+            "completed_at": "2026-11-06T10:39:07Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791187"
+          },
+          {
+            "id": 127846791238,
+            "name": "Action and plugin contracts (2/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:50Z",
+            "completed_at": "2026-11-06T10:42:59Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791238"
+          },
+          {
+            "id": 127846791389,
+            "name": "Package boundaries",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:51Z",
+            "completed_at": "2026-11-06T10:42:45Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791389"
+          },
+          {
+            "id": 127846791443,
+            "name": "Shell and Python checks",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:51Z",
+            "completed_at": "2026-11-06T10:39:07Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791443"
+          },
+          {
+            "id": 127846791704,
+            "name": "Health gate rules (2/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:51Z",
+            "completed_at": "2026-11-06T10:41:18Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791704"
+          },
+          {
+            "id": 127846791800,
+            "name": "Action and plugin contracts (1/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:38:50Z",
+            "completed_at": "2026-11-06T10:41:33Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791800"
+          },
+          {
+            "id": 127846791835,
+            "name": "Linux probe ${{ matrix.shard }}/6 (not required)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-06T10:38:49Z",
+            "completed_at": "2026-11-06T10:38:48Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791835"
+          },
+          {
+            "id": 127846791999,
+            "name": "Verified in the merge queue",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-06T10:38:49Z",
+            "completed_at": "2026-11-06T10:38:48Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846791999"
+          },
+          {
+            "id": 127846931168,
+            "name": "Security invariants (2/3)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:54:44Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931168"
+          },
+          {
+            "id": 127846931185,
+            "name": "Product subset (1/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:50:28Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931185"
+          },
+          {
+            "id": 127846931189,
+            "name": "Security invariants (3/3)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:52:55Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931189"
+          },
+          {
+            "id": 127846931245,
+            "name": "Product subset (2/2)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:50:56Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931245"
+          },
+          {
+            "id": 127846931290,
+            "name": "Rust and Swift checks",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:42:24Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931290"
+          },
+          {
+            "id": 127846931421,
+            "name": "Security invariants (1/3)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:39:09Z",
+            "completed_at": "2026-11-06T10:54:05Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127846931421"
+          },
+          {
+            "id": 127853507168,
+            "name": "Verify",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:54:46Z",
+            "completed_at": "2026-11-06T10:54:49Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061/job/127853507168"
+          }
+        ],
+        "logEvidence": [
+          {
+            "jobId": 127846791142,
+            "name": "Gates",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791142.log",
+            "bytes": 117661,
+            "sha256": "083b5d1c675e2785556342d8b8a16f00eff4512120f9a708821824be380ff2be",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 16,
+                "total": 16
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791166,
+            "name": "Secret scan",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791166.log",
+            "bytes": 65661,
+            "sha256": "f70a8d83a1423b93e6917ad026d9d38d07ee83f955c372b4e828e3eddd0819f0",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791169,
+            "name": "Health gate rules (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791169.log",
+            "bytes": 37444,
+            "sha256": "9ee95018879cd42f90425ce2964f7301d379f950b42ed86c4102c01bc09afe2f",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 8,
+                "total": 8
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791187,
+            "name": "PR test selection",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791187.log",
+            "bytes": 22596,
+            "sha256": "264f442af814bd9f6c8c6adfa2ae7980c006dd8be224cab78ada629b5bee4ecd",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791238,
+            "name": "Action and plugin contracts (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791238.log",
+            "bytes": 80832,
+            "sha256": "64fc7a09da493c61adac234a88cceb562184530b58ac9c94dad6d81f69f5e9f2",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 24,
+                "total": 24
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791389,
+            "name": "Package boundaries",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791389.log",
+            "bytes": 127784,
+            "sha256": "7909f60c2a3ffe2fe32cba9c83b6b19ab039c8ae454bd1e347571b8d102db2f3",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 11,
+                "total": 11
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791443,
+            "name": "Shell and Python checks",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791443.log",
+            "bytes": 17837,
+            "sha256": "832a5349991d0b046c30e823cb71229f06177eccb3dd9e2517bad4c5ea4c61af",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791704,
+            "name": "Health gate rules (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791704.log",
+            "bytes": 37473,
+            "sha256": "2fc00649a6e65a4950bb3782acab3c2db08b398276cbc92d3598901e5befef16",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 8,
+                "total": 8
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846791800,
+            "name": "Action and plugin contracts (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846791800.log",
+            "bytes": 80760,
+            "sha256": "136df6df5914715491c7b28254d2a1639015c3e5fc32b8b2fbb0baa04f7f8ede",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 24,
+                "total": 24
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846931168,
+            "name": "Security invariants (2/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931168.log",
+            "bytes": 96238,
+            "sha256": "93aa4903a48141ed4ae46625971ebaa366ff9e40244904ac77b569103978842f",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 97,
+                "total": 97
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846931185,
+            "name": "Product subset (1/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931185.log",
+            "bytes": 98942,
+            "sha256": "c97477128238b690e9f84972b6f0529f27802097ca23f80d89a4eb3f780d2b83",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": [
+              "ci-product-subset: pass 204, flaky 0, skipped 0, fail 0, timeout 0, not-run 0; 0 quarantined (of 204) in 9 min; report in /home/runner/work/_temp/product-subset"
+            ]
+          },
+          {
+            "jobId": 127846931189,
+            "name": "Security invariants (3/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931189.log",
+            "bytes": 96121,
+            "sha256": "547bc533e290b575f0b06e2f5d4b183ecd9a2009b91281905e4cff4f7e8cbdfa",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 97,
+                "total": 97
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846931245,
+            "name": "Product subset (2/2)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931245.log",
+            "bytes": 98796,
+            "sha256": "e03c6c2361054bfd76b280cf7ca63b61a3b9a2f98f5f0cd30e32dddacbc4a507",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": [
+              "ci-product-subset: pass 205, flaky 0, skipped 0, fail 0, timeout 0, not-run 0; 0 quarantined (of 205) in 9.7 min; report in /home/runner/work/_temp/product-subset"
+            ]
+          },
+          {
+            "jobId": 127846931290,
+            "name": "Rust and Swift checks",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931290.log",
+            "bytes": 28580,
+            "sha256": "5712022ab720d3e320f7dcd9222290271c16f47a64e09bd6fcdfa0ae29b56627",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127846931421,
+            "name": "Security invariants (1/3)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127846931421.log",
+            "bytes": 95784,
+            "sha256": "1ffed165b67ccbdf7810bbe2e2c7a9e7d7a8fbc3c8a5158d0fbb7e3c8255ba42",
+            "checkedCommit": "96656382adf3f8343775c82a3f7698cce95e6dae",
+            "fileSummaries": [
+              {
+                "passed": 94,
+                "total": 94
+              }
+            ],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127853507168,
+            "name": "Verify",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-verify-127853507168.log",
+            "bytes": 6224,
+            "sha256": "fc506bdef1ec38eb8e74853fa8da362be1e4f2c5ce166d57ff7454bb64dd5884",
+            "checkedCommit": null,
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          }
+        ],
+        "productFiles": 409,
+        "securityFiles": 288,
+        "retriedFiles": 0
       },
       "full": {
         "runId": 42202389267,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267",
-        "status": "pending",
+        "status": "completed",
         "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
-        "conclusion": null
+        "conclusion": "failure",
+        "id": 42202389267,
+        "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+        "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267",
+        "run_attempt": 1,
+        "jobs": [
+          {
+            "id": 127851928650,
+            "name": "Full suite (2/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:09:56Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928650"
+          },
+          {
+            "id": 127851928823,
+            "name": "Full suite (12/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T11:09:57Z",
+            "completed_at": "2026-11-06T11:26:58Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928823"
+          },
+          {
+            "id": 127851928907,
+            "name": "Full suite (8/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:10:12Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928907"
+          },
+          {
+            "id": 127851928915,
+            "name": "Full suite (14/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-06T11:12:25Z",
+            "completed_at": "2026-11-06T11:43:44Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928915"
+          },
+          {
+            "id": 127851928920,
+            "name": "Full suite (7/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:13:42Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928920"
+          },
+          {
+            "id": 127851928959,
+            "name": "Full suite (11/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T11:06:17Z",
+            "completed_at": "2026-11-06T11:38:54Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851928959"
+          },
+          {
+            "id": 127851929003,
+            "name": "Full suite (3/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:16:37Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929003"
+          },
+          {
+            "id": 127851929076,
+            "name": "Full suite (13/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T11:10:13Z",
+            "completed_at": "2026-11-06T11:35:44Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929076"
+          },
+          {
+            "id": 127851929080,
+            "name": "Full suite (15/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T11:13:18Z",
+            "completed_at": "2026-11-06T11:45:33Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929080"
+          },
+          {
+            "id": 127851929098,
+            "name": "Full suite (6/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:14:57Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929098"
+          },
+          {
+            "id": 127851929100,
+            "name": "Full suite (16/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T11:13:29Z",
+            "completed_at": "2026-11-06T11:30:38Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929100"
+          },
+          {
+            "id": 127851929109,
+            "name": "Full suite (4/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:13:25Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929109"
+          },
+          {
+            "id": 127851929184,
+            "name": "Full suite (10/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:13:16Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929184"
+          },
+          {
+            "id": 127851929336,
+            "name": "Full suite (5/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:12:23Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929336"
+          },
+          {
+            "id": 127851929374,
+            "name": "Full suite (1/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:06:15Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851929374"
+          },
+          {
+            "id": 127851930396,
+            "name": "Full suite (9/16)",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-06T10:51:04Z",
+            "completed_at": "2026-11-06T11:14:39Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127851930396"
+          },
+          {
+            "id": 127874667603,
+            "name": "Full suite",
+            "head_sha": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "status": "completed",
+            "conclusion": "failure",
+            "started_at": "2026-11-06T11:45:36Z",
+            "completed_at": "2026-11-06T11:45:40Z",
+            "html_url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267/job/127874667603"
+          }
+        ],
+        "logEvidence": [
+          {
+            "jobId": 127851928650,
+            "name": "Full suite (2/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928650.log",
+            "bytes": 149370,
+            "sha256": "fef6b9355009db2b7c5aae0b599c54a4ea676cc91c1fc7ebda99bf98ded86970",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851928823,
+            "name": "Full suite (12/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928823.log",
+            "bytes": 149577,
+            "sha256": "4df4995b22258e1e92f96eb2e44c41664b1eb477e471b4605db5c7ae8b70c6b4",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851928907,
+            "name": "Full suite (8/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928907.log",
+            "bytes": 150249,
+            "sha256": "26af1cee9e002a0d3446bdd5967de0ae21dfb59278ee375d8ad6e6ca37041580",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851928915,
+            "name": "Full suite (14/16)",
+            "conclusion": "failure",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928915.log",
+            "bytes": 156761,
+            "sha256": "8793ed47af9142875eaf178c571ce64b9986459c9f50c7763330dbf505b588de",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [
+              "[retry 1] FAIL  tests/page-interaction-flow.e2e.test.ts  58.5s"
+            ],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851928920,
+            "name": "Full suite (7/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928920.log",
+            "bytes": 150247,
+            "sha256": "37c14fefbab9e96dd5e3c3cdacd041d4dee081191eba29920fca02fdcc66b7f5",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851928959,
+            "name": "Full suite (11/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851928959.log",
+            "bytes": 150477,
+            "sha256": "5f5fbb5f7d0bc8ae7bbc323b26d65d80796aeb749a549ec6b11df4f7bb349a95",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929003,
+            "name": "Full suite (3/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929003.log",
+            "bytes": 149466,
+            "sha256": "eac028a2ffcc01c62bbdae842a3755607f2930ad79b1d54525f7daa63676d3c0",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929076,
+            "name": "Full suite (13/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929076.log",
+            "bytes": 170872,
+            "sha256": "d888e1555bda9deeb9d0c793aea53ac5aa133ee0a5f6f9b850d767714124f63c",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [
+              "[retry 1] ok    tests/content-editing-regressions.e2e.test.ts  107.5s"
+            ],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929080,
+            "name": "Full suite (15/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929080.log",
+            "bytes": 150475,
+            "sha256": "34569db630b1c80ca633ded407e05bfb37329aecbb383ba0e8ce4b9f61cbd557",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929098,
+            "name": "Full suite (6/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929098.log",
+            "bytes": 153174,
+            "sha256": "7acc950756870b9b1fa39922e325dfb317f9fc7bf1917145d2e59bbd071ade0c",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [
+              "[retry 1] ok    tests/project-home-start.e2e.test.ts  87.1s"
+            ],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929100,
+            "name": "Full suite (16/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929100.log",
+            "bytes": 149708,
+            "sha256": "fe89fcb1ec41653a339ab7bbe4e606d10bd7d4398dc9c5d97b9a6c87d63dbbc0",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929109,
+            "name": "Full suite (4/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929109.log",
+            "bytes": 150102,
+            "sha256": "f62b8da03b19ce7782db89313c580360054105b233753c993763729afdbf1cab",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 103,
+                "total": 103
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929184,
+            "name": "Full suite (10/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929184.log",
+            "bytes": 150284,
+            "sha256": "b2df0c0c068e98d6db657c424b5448ea33e845edb4ca306744ea95e195bb1b1d",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 105,
+                "total": 105
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929336,
+            "name": "Full suite (5/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929336.log",
+            "bytes": 150685,
+            "sha256": "c84aeb3095ab76355bc5193f44b905aeb601a65959a9ce2c8f360928825b9c7c",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851929374,
+            "name": "Full suite (1/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851929374.log",
+            "bytes": 149184,
+            "sha256": "39ce59daefcc56e0627f7c4516e577275620cb541dfceadc772c7cbbcecdbcca",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 102,
+                "total": 102
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127851930396,
+            "name": "Full suite (9/16)",
+            "conclusion": "success",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127851930396.log",
+            "bytes": 149377,
+            "sha256": "1daee1da235e1239780106103113458e8ddf4a0549ac90647a7e4540358f34b7",
+            "checkedCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+            "fileSummaries": [
+              {
+                "passed": 104,
+                "total": 104
+              }
+            ],
+            "excludedMacOS": 57,
+            "retries": [],
+            "productSummaries": []
+          },
+          {
+            "jobId": 127874667603,
+            "name": "Full suite",
+            "conclusion": "failure",
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/88-full-127874667603.log",
+            "bytes": 2532,
+            "sha256": "07ba7fdf8f29e34a345c528d2336efa9aed725c1f85ef640e02a1c684c2d38fc",
+            "checkedCommit": null,
+            "fileSummaries": [],
+            "excludedMacOS": null,
+            "retries": [],
+            "productSummaries": []
+          }
+        ],
+        "shardCount": 16,
+        "passedFiles": 1665,
+        "totalFiles": 1666,
+        "allShardsCheckedHead": true,
+        "retries": [
+          "[retry 1] FAIL  tests/page-interaction-flow.e2e.test.ts  58.5s",
+          "[retry 1] ok    tests/content-editing-regressions.e2e.test.ts  107.5s",
+          "[retry 1] ok    tests/project-home-start.e2e.test.ts  87.1s"
+        ],
+        "excludedMacOS": 57,
+        "liveRun": false,
+        "persistentFailedFile": "tests/page-interaction-flow.e2e.test.ts"
       },
       "externalProviders": "MOCK",
       "realDataOperated": false,
@@ -20028,8 +21309,362 @@
         "authMergeable": true,
         "clubMergeable": true,
         "note": "Readonly merge calculation; no branch/worktree update. New candidate must rerun applicable local gates/joint validation and CI Full/Verify. New main uses three security shards."
+      },
+      {
+        "checkedAt": "2026-11-06 10:29:45 UTC",
+        "workMain": "c7b6584287cd8d7eca30f2760d1a0cbf5662af58",
+        "workHead": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+        "integratedCodeMain": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+        "mergeable": true,
+        "conflictFiles": [],
+        "diagnosticCommand": "git merge-tree --write-tree HEAD origin/main",
+        "diagnosticExitCode": 0,
+        "mergeTree": "0f645ebc7e9094355b5419124b5017e26d7bf15c",
+        "worktreeUnchanged": true,
+        "authMergeable": true,
+        "clubMergeable": true,
+        "note": "Latest main adds only two spec document edits after the integrated code baseline. No merge commit created solely to chase documentation. GitHub PR metadata still reports the earlier base; local fetched ref and merge-tree provide this separate current-main check."
       }
-    ]
+    ],
+    "kanbanToggleCandidate": {
+      "head": "356fdaa3a3c18fe333e19abbd2cad926b24477ea",
+      "main": "c30e251b39c27c421be3d487afacc7353a01cfff",
+      "status": "LOCAL_PASS_FINAL_CI_PENDING",
+      "priorCandidate": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+      "repair": "K-26",
+      "repairCommit": "16e3e6085",
+      "integrationCommit": "356fdaa3a",
+      "diagnosis": "Native toggle does not bubble. Goals subscribed without capture, so outside pointer handling could close desktop columns while the board was hidden. Goals now captures toggle and restores desktop columns using its retained container width; phone folding remains user-controlled.",
+      "before": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-candidate-before.log",
+        "bytes": 5085,
+        "sha256": "079a0dddfba019cb60cb694af79372690e422f09b02a74dd58237f7ed3b056eb",
+        "exitCode": 1,
+        "passed": 2,
+        "total": 3
+      },
+      "cleanMainBefore": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-main-before.log",
+        "bytes": 411,
+        "sha256": "a92a722905151b0b43278ed39d8afb3cae661b8144d8c817717c141c791c3be1",
+        "exitCode": 0,
+        "passed": 3,
+        "total": 3,
+        "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d"
+      },
+      "after": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-browser.log",
+        "bytes": 514,
+        "sha256": "bde01a5c77b936065e0eace53cdca7bbb7c472ce64d23ab22a0c6ff708abda4b",
+        "exitCode": 0,
+        "files": 3,
+        "passed": 7,
+        "total": 7
+      },
+      "build": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-integrated-build.log",
+        "bytes": 2434,
+        "sha256": "b9ccb578fc958c667c3b7bb1524a1bc8b226ad682555174e6a94f64caf25c2f6",
+        "exitCode": 0
+      },
+      "directed": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-integrated-tests.log",
+        "bytes": 3190,
+        "sha256": "8f84addaebf96258df497c695fcc0402259bc7a680d7fd2ae86adb38a83193f9",
+        "exitCode": 0,
+        "files": [
+          {
+            "file": "tests/goals-refresh.e2e.test.ts",
+            "passed": 8,
+            "total": 8
+          },
+          {
+            "file": "tests/connector-mcp-replacement.e2e.test.ts",
+            "passed": 5,
+            "total": 5
+          },
+          {
+            "file": "tests/workbench-frame-container.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/page-assets-budget.test.ts",
+            "passed": 171,
+            "total": 171
+          },
+          {
+            "file": "tests/page-interaction-flow.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/goals-kanban-visibility.e2e.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/attention-journey.e2e.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/management-door-identity.test.ts",
+            "passed": 12,
+            "total": 12
+          },
+          {
+            "file": "tests/goals-actions.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/goals-workbench-registration.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/goals-command-actions.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goals-library-actions.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goal-event-create-flow.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/goal-progress-plugin-identity.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goals-guidance-actions.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goals-planning-actions.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/proposal-entry-chain.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/goals-query-boundaries.test.mjs",
+            "passed": 11,
+            "total": 11
+          },
+          {
+            "file": "tests/goals-input-confirm.test.ts",
+            "passed": 9,
+            "total": 9
+          },
+          {
+            "file": "tests/goal-artifact-inputs.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/feed-goal-promotion.test.ts",
+            "passed": 18,
+            "total": 18
+          },
+          {
+            "file": "tests/goals-command-module.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goal-events.test.ts",
+            "passed": 13,
+            "total": 13
+          },
+          {
+            "file": "tests/goal-events-state.test.ts",
+            "passed": 64,
+            "total": 64
+          },
+          {
+            "file": "tests/goals-query-facts.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/goals-storage-boundaries.test.mjs",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/goals-stored-json.test.ts",
+            "passed": 6,
+            "total": 6
+          },
+          {
+            "file": "tests/goals-personal-methods-stored-json.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/governance-collaboration-module.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/governance-provenance.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/goals-terminal.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/connector-replacement.test.ts",
+            "passed": 5,
+            "total": 5
+          },
+          {
+            "file": "tests/goal-management-identity.test.ts",
+            "passed": 10,
+            "total": 10
+          },
+          {
+            "file": "tests/i18n.test.ts",
+            "passed": 13,
+            "total": 13
+          },
+          {
+            "file": "tests/goals-tree-actions.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/security-invariants-account-host.test.ts",
+            "passed": 15,
+            "total": 15
+          },
+          {
+            "file": "tests/security-invariants-connection-switch.test.ts",
+            "passed": 10,
+            "total": 10
+          },
+          {
+            "file": "tests/fill-message.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/design-system-floating.test.ts",
+            "passed": 6,
+            "total": 6
+          }
+        ],
+        "passedFiles": 39,
+        "passedTests": 435,
+        "totalTests": 435
+      },
+      "localGates": [
+        {
+          "name": "health",
+          "exitCode": 0,
+          "seconds": 46.66,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-health.log",
+          "bytes": 1974,
+          "sha256": "7677a633360d736d2fe0139a7ae2dd1611ba0624b5829fa59826140c0d0f8554"
+        },
+        {
+          "name": "boundary",
+          "exitCode": 0,
+          "seconds": 4.51,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-boundary.log",
+          "bytes": 268,
+          "sha256": "277120772b6d2edf558f9c2694346e0b9a0b20a2113cde517bb617d0640198a0"
+        },
+        {
+          "name": "assets",
+          "exitCode": 0,
+          "seconds": 0.95,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-assets.log",
+          "bytes": 96,
+          "sha256": "2c30ae89dd13cf8453267fb8aaf4526af3982a14e36d54feff38956baafb8d4f"
+        },
+        {
+          "name": "versions",
+          "exitCode": 0,
+          "seconds": 0.35,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-versions.log",
+          "bytes": 163,
+          "sha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a"
+        },
+        {
+          "name": "secrets",
+          "exitCode": 0,
+          "seconds": 0.68,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-secrets.log",
+          "bytes": 147,
+          "sha256": "269b86b15b11592262dd9684afc0d9a3cfc275d252b3720bf31e1f0fcc46417d"
+        }
+      ],
+      "joint": [
+        {
+          "name": "authentication",
+          "exitCode": 0,
+          "seconds": 12.65,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-authentication.log",
+          "bytes": 1940,
+          "sha256": "9acb9db9ecf2df95ea03e6647a0a0e6d537e6f372a5de16c5596bf699ccb6c9b"
+        },
+        {
+          "name": "cutover",
+          "exitCode": 0,
+          "seconds": 11.66,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k26-cutover.log",
+          "bytes": 1014,
+          "sha256": "4565385147c1d8fc365828b742367d450266e966c9b00923efaef104113ebd4c"
+        }
+      ],
+      "assets": {
+        "count": 51,
+        "bytes": 7467035,
+        "approvedIncrements": {
+          "arrival.css": 645,
+          "workbench.css": 416,
+          "workbench.js": 39618,
+          "plugin-frame.js": 54
+        },
+        "newAllowance": false,
+        "repairSavedBytes": 4,
+        "mainAddedBytes": 6558
+      },
+      "verify": {
+        "runId": 42214971980,
+        "status": "in_progress",
+        "conclusion": null,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42214971980",
+        "head": "356fdaa3a3c18fe333e19abbd2cad926b24477ea"
+      },
+      "full": {
+        "runId": 42214964547,
+        "status": "in_progress",
+        "conclusion": null,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42214964547",
+        "head": "356fdaa3a3c18fe333e19abbd2cad926b24477ea"
+      },
+      "externalProviders": "MOCK",
+      "realDataOperated": false,
+      "deployment": false,
+      "sourceSha256": "672f37672b64c8a7b858d9b462a50db9758418357310693e3e92d92276fe7660"
+    }
   },
   "diagnostics": [
     {

@@ -1,6 +1,6 @@
 # AUTH-12 三仓库验收矩阵
 
-状态：2026-11-06，42 项需求已关联证据，39 项隔离通过、3 项部分完成。Work 当前 `88f595b3b` 集成 main `20bdb4c16`；K-24/K-25 已在原候选或干净主线复现并修复，42 文件 432/432 与随后 20 文件 161/161 分批通过、界面采集、账号浏览器/三端切换回退、本地门禁通过，最终远端检查待核回。Auth 最新文档 CI 通过；Club Actions 未启动经用户接受不阻塞。三个功能 PR 尚待合入授权；仅 mock/合成数据，真实提供方、存量、安装包边界不变。版本见 [交付摘要](delivery-manifest.json)，详见 [交付记录](delivery.md)。
+状态：2026-11-06，Auth/Club 开发分支只构建测试，纠正记录已推送；Auth 文档 CI 通过，Club 因额度未启动经用户接受不阻塞。Work 当前候选 `356fdaa3a` 已集成 main `c30e251b3`；K-26 修复桌面看板隐藏后的列状态，最终 39 个具名文件 435/435、账号联合验证和本地门禁通过。最终 Verify/Full 待核回，三个功能 PR 尚未合入。42 项要求仍为 39 项隔离通过、3 项部分完成；仅 mock/合成数据，无真实数据操作或部署。 版本见 [交付摘要](delivery-manifest.json)，详情见 [交付记录](delivery.md)。
 
 `A` 为 Auth 检出，`W` 为 Work 的 `codex/work-01-account-foundation` 检出，`C` 为 Club 的 `codex/club-01-account-foundation` 检出。下表中的 E 编号指后面的可执行证据组；同一组可证明多项要求，不能把各行或历轮测试数量相加当成去重测试总数。
 
@@ -116,3 +116,5 @@ AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X
 - **T01-FRAME-01** 在同次浏览器求值中捕获就绪预览及其内容、禁止控件、当前页面与展开数量，原断言与等待期限保留，避免两次读取间的重绘影响断言。证明：`W:tests/workbench-frame-container.e2e.test.ts`。
 - **T01-ACCOUNT-ENTRY-01** 项目内账号入口可打开表单，关闭后恢复焦点；Goals 快照仅改变已确认的登录按钮属性和提示。证明：`W:tests/project-home-start.e2e.test.ts`、`W:tests/goals-page-golden.test.ts`。account 包许可证及独立载荷分发由 `W:tests/license-materials.test.ts`、`W:tests/runtime-payload.test.ts` 的既有断言覆盖。
 - **T01-CALLBACK-01** 第三方回跳只返回无凭据、不可缓存的纯文本提示，原账号弹窗恢复状态；保留来源、state、重放、取消及重启拒绝。证明：`W:scripts/account-provider.test.mjs`、`W:tests/security-invariants-account-host.test.ts`，整页限制继续由 `W:tests/shell-page-gate.test.ts` 执行。
+
+- **T01-KANBAN-TOGGLE-01** 桌面列经真实 Dock 切走、隐藏和恢复仍展开；手机保留折叠、列内滚动不变。证明：`W:tests/goals-kanban-visibility.e2e.test.ts`、原 `W:tests/page-interaction-flow.e2e.test.ts` 与 `W:tests/attention-journey.e2e.test.ts`。
