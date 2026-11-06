@@ -16,7 +16,14 @@ pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
             if e.status >= 500 {
                 worker::console_error!("AUTH_SERVER_FAILURE request_id={} code={}", id, e.code);
             }
-            error_response(e, &id)?
+            if e.status == 429 && a.request.url()?.path().starts_with("/api/v2/") {
+                json_response(
+                    json!({"error":{"code":e.code,"retryAfterSeconds":60},"requestId":id}),
+                    429,
+                )?
+            } else {
+                error_response(e, &id)?
+            }
         }
     };
     if response.status_code() < 400 {
@@ -48,6 +55,11 @@ pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         ),
     ] {
+        if (k == "Content-Security-Policy" || k == "Referrer-Policy")
+            && response.headers().get(k)?.is_some()
+        {
+            continue;
+        }
         response.headers_mut().set(k, v)?;
     }
     if a.origin.starts_with("https:") {
@@ -62,6 +74,39 @@ async fn dispatch(a: &mut Auth, env: &Env, cors: &mut bool) -> Result<Response> 
     let path = url.path();
     let method = a.request.method();
     let origin = a.header("Origin");
+    // V2 owns its credentials and never falls through to a legacy handler.
+    if path == "/api/v2" || path.starts_with("/api/v2/") {
+        if path == "/api/v2/entitlements/check" {
+            return crate::entitlements::route(a, method).await;
+        }
+        if crate::billing::matches(path) {
+            return crate::billing::route(a, path, method).await;
+        }
+        if [
+            "/api/v2/tenants",
+            "/api/v2/platform/tenants",
+            "/api/v2/invitations",
+            "/api/v2/ownership-transfers",
+        ]
+        .iter()
+        .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
+        {
+            return crate::tenants::route(a, path, method).await;
+        }
+        if path == "/api/v2/users/me"
+            || path.starts_with("/api/v2/users/me/")
+            || path == "/api/v2/auth/password-reset/complete"
+        {
+            return crate::account_management::route(a, path, method).await;
+        }
+        if path.starts_with("/api/v2/auth/external/") || path.starts_with("/api/v2/auth/mock/") {
+            return crate::external_login::browser(a, path, method).await;
+        }
+        if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
+            return crate::registration::route(a, path, method).await;
+        }
+        return crate::login_sessions::route(a, path, method).await;
+    }
     if !origin.is_empty() && path != "/oauth2/callback/apple" {
         *cors = origin == a.origin;
         if !*cors {

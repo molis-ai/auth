@@ -2,6 +2,7 @@ use crate::{
     http::*,
     identity::Auth,
     security::{avatar, uuid},
+    unified_policy::ensure_legacy_space,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Url};
@@ -22,11 +23,12 @@ impl<'a> Teams<'a> {
         json!({"id":t["id"],"name":t["name"],"description":t["description"],"avatarUrl":t["avatar_data"],"spaceType":t["space_type"],"status":t["status"],"version":t["version"],"role":t["role"],"memberCount":t["memberCount"],"ownerName":t["ownerName"],"canInspectManagement":self.p["platformAdmin"]==true || t["role"]=="OWNER" || t["role"]=="ADMIN"})
     }
     async fn team(&self, id: &str, management: bool) -> Result<Value> {
+        ensure_legacy_space(self.a, id).await?;
         let t = self
             .a
             .s
             .one(
-                &format!("{SELECT} WHERE s.id=?"),
+                &format!("{SELECT} WHERE s.id=? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id)"),
                 vec![self.user(), id.into()],
             )
             .await?;
@@ -49,7 +51,7 @@ impl<'a> Teams<'a> {
     fn guard(&self, id: &str, roles: &[&str], active: bool) -> Result<D1PreparedStatement> {
         let mut values = vec![id.into(), self.user()];
         values.extend(roles.iter().map(|s| json!(s)));
-        self.a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_space s JOIN auth_membership m ON m.space_id=s.id WHERE s.id=? AND s.space_type='TEAM' AND m.user_id=? AND m.role IN ({}){})",vec!["?";roles.len()].join(","),if active{" AND s.status='ACTIVE'"}else{""}),values)
+        self.a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_space s JOIN auth_membership m ON m.space_id=s.id WHERE s.id=? AND s.space_type='TEAM' AND m.user_id=? AND m.role IN ({}){} AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id))",vec!["?";roles.len()].join(","),if active{" AND s.status='ACTIVE'"}else{""}),values)
     }
     fn audit(
         &self,
@@ -77,7 +79,7 @@ impl<'a> Teams<'a> {
             "INVALID_REQUEST",
         )?;
         let sql = format!(
-            "{SELECT} WHERE {}(m.user_id IS NOT NULL OR ?=1) AND instr(lower(s.name),lower(?))>0",
+            "{SELECT} WHERE {}(m.user_id IS NOT NULL OR ?=1) AND instr(lower(s.name),lower(?))>0 AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id)",
             if teams {
                 "s.space_type='TEAM' AND "
             } else {
@@ -184,7 +186,7 @@ impl<'a> Teams<'a> {
             400,
             "INVALID_REQUEST",
         )?;
-        let sql = "SELECT u.id,u.display_name displayName,u.status,u.avatar_data avatarUrl,m.role,(SELECT json_group_array(canonical_email) FROM auth_user_email WHERE user_id=u.id) emails FROM auth_membership m JOIN auth_user u ON u.id=m.user_id WHERE m.space_id=? AND (instr(lower(u.display_name),lower(?))>0 OR EXISTS(SELECT 1 FROM auth_user_email e WHERE e.user_id=u.id AND instr(e.canonical_email,lower(?))>0))";
+        let sql = "SELECT u.id,u.display_name displayName,u.status,u.avatar_data avatarUrl,m.role,(SELECT json_group_array(canonical_email) FROM auth_user_email WHERE user_id=u.id) emails FROM auth_membership m JOIN auth_user u ON u.id=m.user_id WHERE m.space_id=? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=m.space_id) AND (instr(lower(u.display_name),lower(?))>0 OR EXISTS(SELECT 1 FROM auth_user_email e WHERE e.user_id=u.id AND instr(e.canonical_email,lower(?))>0))";
         let sorting = if sort == "name" {
             format!("displayName COLLATE NOCASE {order},id")
         } else {
@@ -314,7 +316,7 @@ impl<'a> Teams<'a> {
         )?;
         let q = string(&b["query"], 254)?.trim();
         ensure(q.encode_utf16().count() >= 2, 400, "INVALID_REQUEST")?;
-        let mut rows=self.a.s.all("SELECT u.id,u.display_name displayName,e.canonical_email email,EXISTS(SELECT 1 FROM auth_membership WHERE user_id=u.id AND space_id=?) joined,EXISTS(SELECT 1 FROM auth_invitation WHERE recipient_user_id=u.id AND space_id=? AND status='PENDING' AND expires_at>?) invited FROM auth_user u JOIN auth_user_email e ON e.user_id=u.id WHERE u.status='ACTIVE' AND (instr(lower(u.display_name),lower(?))>0 OR instr(e.canonical_email,lower(?))>0) ORDER BY u.display_name LIMIT 10",vec![id.into(),id.into(),now().into(),q.into(),q.into()]).await?;
+        let mut rows=self.a.s.all("SELECT u.id,u.display_name displayName,e.canonical_email email,EXISTS(SELECT 1 FROM auth_membership WHERE user_id=u.id AND space_id=?) joined,EXISTS(SELECT 1 FROM auth_invitation WHERE recipient_user_id=u.id AND space_id=? AND status='PENDING' AND expires_at>?) invited FROM auth_user u JOIN auth_user_email e ON e.user_id=u.id WHERE u.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=?) AND (instr(lower(u.display_name),lower(?))>0 OR instr(e.canonical_email,lower(?))>0) ORDER BY u.display_name LIMIT 10",vec![id.into(),id.into(),now().into(),id.into(),q.into(),q.into()]).await?;
         for x in &mut rows {
             x["joined"] = json!(number(x, "joined") != 0);
             x["invited"] = json!(number(x, "invited") != 0);
@@ -342,7 +344,7 @@ impl<'a> Teams<'a> {
             self.team(id, true).await?;
         }
         let sql = format!(
-            "SELECT i.id,i.space_id spaceId,s.name spaceName,i.invited_email invitedEmail,u.display_name inviterName,CASE WHEN i.status='PENDING' AND i.expires_at<={} THEN 'EXPIRED' ELSE i.status END status,i.expires_at expiresAt,i.created_at createdAt FROM auth_invitation i JOIN auth_space s ON s.id=i.space_id JOIN auth_user u ON u.id=i.inviter_user_id WHERE {}",
+            "SELECT i.id,i.space_id spaceId,s.name spaceName,i.invited_email invitedEmail,u.display_name inviterName,CASE WHEN i.status='PENDING' AND i.expires_at<={} THEN 'EXPIRED' ELSE i.status END status,i.expires_at expiresAt,i.created_at createdAt FROM auth_invitation i JOIN auth_space s ON s.id=i.space_id JOIN auth_user u ON u.id=i.inviter_user_id WHERE NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id) AND {}",
             now(),
             if id.is_some() {
                 "i.space_id=?"
@@ -381,8 +383,9 @@ impl<'a> Teams<'a> {
             403,
             "INVITATION_FORBIDDEN",
         )?;
+        ensure_legacy_space(self.a, &text(&i, "space_id")).await?;
         let n = now();
-        let mut writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_invitation i JOIN auth_space s ON s.id=i.space_id WHERE i.id=? AND i.recipient_user_id=? AND i.status='PENDING' AND i.expires_at>? AND s.status='ACTIVE')",vec![id.into(),self.user(),n.into()])?];
+        let mut writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_invitation i JOIN auth_space s ON s.id=i.space_id WHERE i.id=? AND i.recipient_user_id=? AND i.status='PENDING' AND i.expires_at>? AND s.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id))",vec![id.into(),self.user(),n.into()])?];
         if accept {
             writes.push(self.a.s.statement("INSERT INTO auth_membership VALUES (?,?,'MEMBER',?) ON CONFLICT(space_id,user_id) DO NOTHING",vec![i["space_id"].clone(),self.user(),n.into()])?);
         }
@@ -415,6 +418,7 @@ impl<'a> Teams<'a> {
             403,
             "INVITATION_FORBIDDEN",
         )?;
+        ensure_legacy_space(self.a, &text(&row, "spaceId")).await?;
         row.as_object_mut().unwrap().remove("recipientUserId");
         if row["status"] == "PENDING" && number(&row, "expiresAt") <= now() {
             row["status"] = "EXPIRED".into();
@@ -429,7 +433,7 @@ impl<'a> Teams<'a> {
     }
     async fn audit_page(&self, id: &str, url: &Url) -> Result<Value> {
         self.team(id, true).await?;
-        let mut r=self.a.s.paginate(url,"SELECT e.id,e.action,e.outcome,e.request_id requestId,e.occurred_at occurredAt,e.change_summary changeSummary,e.denial_reason denialReason,u.display_name actorName,t.display_name targetName FROM auth_audit_event e LEFT JOIN auth_user u ON u.id=e.actor_user_id LEFT JOIN auth_user t ON t.id=e.target_user_id WHERE e.space_id=?",vec![id.into()],"occurredAt DESC,id DESC").await?;
+        let mut r=self.a.s.paginate(url,"SELECT e.id,e.action,e.outcome,e.request_id requestId,e.occurred_at occurredAt,e.change_summary changeSummary,e.denial_reason denialReason,u.display_name actorName,t.display_name targetName FROM auth_audit_event e LEFT JOIN auth_user u ON u.id=e.actor_user_id LEFT JOIN auth_user t ON t.id=e.target_user_id WHERE e.space_id=? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=e.space_id)",vec![id.into()],"occurredAt DESC,id DESC").await?;
         for x in r["items"].as_array_mut().unwrap() {
             x["occurredAt"] = iso(&x["occurredAt"]);
         }

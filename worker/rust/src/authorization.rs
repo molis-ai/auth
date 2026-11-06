@@ -2,6 +2,7 @@ use crate::{
     http::*,
     identity::Auth,
     security::{hash, uuid},
+    unified_policy::ensure_legacy_space,
 };
 use serde_json::{Value, json};
 pub const ROLES: &[&str] = &["OWNER", "ADMIN", "MEMBER", "VIEWER"];
@@ -175,7 +176,7 @@ pub async fn authorize(a: &mut Auth, operation: &str, b: &Value) -> Result<Value
                 vec![]
             } else {
                 args.push((limit + 1).into());
-                a.s.all(&format!("SELECT s.id,s.name,s.space_type spaceType,s.status,m.role FROM auth_space s JOIN auth_membership m ON m.space_id=s.id WHERE m.user_id=? AND s.id>? AND ({}) ORDER BY s.id LIMIT ?",clauses.join(" OR ")),args).await?
+                a.s.all(&format!("SELECT s.id,s.name,s.space_type spaceType,s.status,m.role FROM auth_space s JOIN auth_membership m ON m.space_id=s.id WHERE m.user_id=? AND s.id>? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id) AND ({}) ORDER BY s.id LIMIT ?",clauses.join(" OR ")),args).await?
             };
             let next = if rows.len() > limit as usize {
                 rows[limit as usize - 1]["id"].clone()
@@ -211,8 +212,9 @@ pub async fn authorize(a: &mut Auth, operation: &str, b: &Value) -> Result<Value
                 let r = string(v, 1024)?;
                 ensure(r != user && r != service, 400, "INVALID_REQUEST")?;
             }
+            ensure_legacy_space(a, sid).await?;
             space = sid.into();
-            let row=a.s.one("SELECT s.status,s.space_type,m.role FROM auth_space s LEFT JOIN auth_membership m ON m.space_id=s.id AND m.user_id=? WHERE s.id=?",vec![p["userId"].clone(),space.clone()]).await?;
+            let row=a.s.one("SELECT s.status,s.space_type,m.role FROM auth_space s LEFT JOIN auth_membership m ON m.space_id=s.id AND m.user_id=? WHERE s.id=? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=s.id)",vec![p["userId"].clone(),space.clone()]).await?;
             if operation == "allowed-actions" {
                 ensure(!text(&row, "role").is_empty(), 403, "NO_MEMBERSHIP")?;
                 json!({"allowedActions":actions.as_array().unwrap().iter().filter(|x|decision(&text(&row,"role"),&text(&row,"status"),&text(&row,"space_type"),x.as_str().unwrap_or_default(),&actions,&grants)=="NONE").collect::<Vec<_>>(),"role":row["role"],"decisionId":id})
@@ -235,7 +237,15 @@ pub async fn authorize(a: &mut Auth, operation: &str, b: &Value) -> Result<Value
             });
         }
     };
-    a.s.db.batch(vec![a.s.statement("INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,space_id,application_id,request_id,occurred_at,change_summary) VALUES (?,?,'SUCCESS',?,?,?,?,?,?,?)",vec![uuid().into(),format!("authorization.{operation}").into(),p["userId"].clone(),p["userId"].clone(),space,p["applicationId"].clone(),a.request_id.clone().into(),now().into(),result.to_string().into()])?]).await?;
+    let mut writes = vec![];
+    if !space.is_null() {
+        writes.push(a.s.guard(
+            "NOT EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=?)",
+            vec![space.clone()],
+        )?);
+    }
+    writes.push(a.s.statement("INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,space_id,application_id,request_id,occurred_at,change_summary) VALUES (?,?,'SUCCESS',?,?,?,?,?,?,?)",vec![uuid().into(),format!("authorization.{operation}").into(),p["userId"].clone(),p["userId"].clone(),space,p["applicationId"].clone(),a.request_id.clone().into(),now().into(),result.to_string().into()])?);
+    a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(result)
 }
 #[cfg(test)]

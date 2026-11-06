@@ -1,0 +1,38 @@
+name: Development checks
+
+# Validation only. Cloudflare non-production branch builds are disabled.
+# Production release/deployment remains a separate, explicitly authorized task.
+on:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Auth build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+      - name: Install pinned dependencies and Rust tools
+        run: npm run setup
+      - name: Check contracts and run isolated tests
+        run: npm test
+      - name: Build web and browser SDK
+        run: npm run build:web && npm --prefix sdk/browser run build
+      # npm test already builds the Worker WASM. No deploy, versions upload,
+      # preview, remote D1 operation, artifact upload, or production secret.

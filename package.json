@@ -2,19 +2,25 @@
   "name": "@molis/auth-cloudflare",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18.0" },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "cloudflare": "node worker/scripts/deployment.ts",
     "setup": "npm --prefix worker ci && npm --prefix web ci && npm --prefix sdk/browser ci && npm --prefix worker run setup:rust",
     "dev": "npm run build:web && npm --prefix worker run db:migrate && npm --prefix worker run db:seed && npm --prefix worker run dev",
     "build:web": "npm --prefix web run build",
-    "check": "npm --prefix worker run check && npm --prefix worker test",
+    "check": "npm run contracts:check && npm --prefix worker run check && npm --prefix worker test",
     "test": "npm run check && npm --prefix web test && npm --prefix sdk/browser test",
     "build": "npm run build:web && npm --prefix sdk/browser run build && npm --prefix worker run build",
     "format": "npm --prefix worker run format",
     "format:check": "npm --prefix worker run format:check",
     "admin": "npm --prefix worker run admin",
     "test:e2e": "npm --prefix worker run test:e2e",
-    "test:password": "npm --prefix worker run test:password"
+    "test:password": "npm --prefix worker run test:password",
+    "contracts:generate": "node contracts/unified-account/generate.ts",
+    "contracts:check": "node contracts/unified-account/generate.ts --check && node --test contracts/unified-account/validate.test.ts",
+    "account:migration": "node worker/scripts/account-migration.mjs",
+    "account:migration:club": "node worker/scripts/rehearse-club-mapping.mjs"
   }
 }

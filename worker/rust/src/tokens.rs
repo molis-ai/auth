@@ -114,7 +114,7 @@ impl Auth {
         )?;
         writes.extend([
             self.s.guard(&format!("EXISTS(SELECT 1 FROM auth_authentication a JOIN auth_user u ON u.id=a.user_id WHERE a.id=? AND {ALIVE})"),vec![root_id.into(),n.into(),n.into()])?,
-            self.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application a ON a.id=c.application_id WHERE c.client_id=? AND c.version=? AND c.status='ACTIVE' AND a.status='ACTIVE')",vec![c["client_id"].clone(),c["version"].clone()])?,
+            self.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application a ON a.id=c.application_id WHERE c.client_id=? AND c.version=? AND c.status='ACTIVE' AND a.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=c.client_id))",vec![c["client_id"].clone(),c["version"].clone()])?,
             self.s.statement("INSERT INTO auth_access_token VALUES (?,?,?)",vec![hash(&access).into(),grant.clone().into(),(n+900000).min(expires).into()])?,
             self.s.statement("INSERT INTO auth_refresh_token VALUES (?,?,?,NULL)",vec![hash(&refresh).into(),grant.clone().into(),expires.into()])?
         ]);

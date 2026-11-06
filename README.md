@@ -2,6 +2,12 @@
 
 统一账号、团队与权限服务。后端为 **Rust → WebAssembly → Cloudflare Workers / D1**；前端仍为 Vue，浏览器 SDK 仍为 TypeScript。不需要 Java、MySQL、Redis 或 Docker。
 
+Work 与 Club 的统一账号、租户成员、订阅席位及权益服务已完成各阶段实现，AUTH-12 已汇总[验收矩阵](docs/unified-account/acceptance-matrix.md)、[版本及交付记录](docs/unified-account/delivery.md)。本轮仅合成数据与外部 mock：39 项需求在注明的隔离范围通过，3 项部分完成；两端帮助和共享资源合同夹具已补齐，真实存量接续等待办保留。T-01 已整理三仓库本地提交并集成核对时的主线，验证进度和准确版本见交付记录；功能分支尚未合入主线或发布。真实支付、业务付费拦截与共享内容后续推进。
+
+接口字段、权限及状态机见[接口合同](docs/unified-account/api-contracts.md)；三个仓库的任务、依赖与验收见[开发任务](docs/unified-account/development-tasks.md)。可执行定义见[合同包](contracts/unified-account/README.md)。外部发送和第三方登录当前使用隔离 mock；Host/BFF、v1 SDK 使用边界和管理步骤见[接入说明](docs/unified-account/integration-guide.md)。旧账号保留与真实迁移待办见[迁移方案](docs/unified-account/account-migration-plan.md)。
+
+下一阶段按[实施计划的后续执行指引](docs/unified-account/implementation-plan.md#11-后续执行指引)接续：先集成收尾，再推进受控管理工具及有前置条件的真实环境接入；状态仍以交付台账为准。
+
 ## 启动
 
 安装 Node.js 22.18+，在仓库根目录执行（首次 setup 会下载固定版本 Rust 工具链和构建工具，需要联网）：
@@ -64,6 +70,11 @@ npm run build           # 前端 + SDK + Workers dry-run 打包，不部署
 npm run format:check    # 后端代码格式检查
 npm run test:e2e        # 需要本地服务运行；生成模拟账号和团队
 npm --prefix worker run test:smoke
+# 存量迁移专项：先构建 WASM，再用临时 SQLite / D1 验证
+npm --prefix worker run build:rust
+npm --prefix worker run test:migration
+# 只生成合成数据；目录必须不存在，不读写真实数据库
+npm run account:migration -- rehearse /private/tmp/auth11-example
 ```
 
 新增后端代码统一使用 `npm run format` 格式化。
@@ -71,5 +82,5 @@ npm --prefix worker run test:smoke
 ## 上线边界
 
 本次 Rust 改造不自动发布线上，不修改远程 D1。沿用原 D1 表结构、PBKDF2 密码格式和 API；已有 TS 版本的数据不需要因语言切换重新注册。真实 Cloudflare 免费 CPU/额度、Google/Apple 正式凭证仍需在预览环境验证，不能用本地耗时替代线上验证。
-当前不发送验证或找回密码邮件；第三方缺少可信邮箱时的邮箱验证续接不可用。
+原 Vue / v1 流程没有验证和找回邮件；统一账号 v2 已提供邮箱验证、找回及无邮箱登录方式，外部发送和 Google/GitHub 仍使用 mock。旧账号的验证状态与第三方凭据不会自动升级，接续边界见 AUTH-11 方案。
 部署前检查清单和本地功能说明见 [worker/README.md](worker/README.md)。

@@ -14,7 +14,9 @@ export async function getRustProxy(bindings, outbound, assets, { passwordKdf = t
     ],
     compatibilityDate: '2026-09-19',
     d1Databases: { DB: 'rust-isolated-test' },
-    durableObjects: passwordKdf ? { PASSWORD_KDF: { className: 'PasswordKdf', useSQLite: true } } : {},
+    durableObjects: passwordKdf
+      ? { PASSWORD_KDF: { className: 'PasswordKdf', useSQLite: true } }
+      : {},
     ...(assets
       ? {
           serviceBindings: {
@@ -41,7 +43,10 @@ export async function getRustProxy(bindings, outbound, assets, { passwordKdf = t
   const mf = new Miniflare(options(bindings))
   const db = await mf.getD1Database('DB')
   return {
-    env: { DB: db, PASSWORD_KDF: passwordKdf ? await mf.getDurableObjectNamespace('PASSWORD_KDF') : undefined },
+    env: {
+      DB: db,
+      PASSWORD_KDF: passwordKdf ? await mf.getDurableObjectNamespace('PASSWORD_KDF') : undefined,
+    },
     async fetch(request, env) {
       return mf.dispatchFetch(request.url, {
         method: request.method,
@@ -50,6 +55,8 @@ export async function getRustProxy(bindings, outbound, assets, { passwordKdf = t
         redirect: 'manual',
       })
     },
+    scheduled: async () =>
+      (await mf.getWorker()).scheduled({ cron: '0 * * * *', scheduledTime: Date.now() }),
     dispose: () => mf.dispose(),
   }
 }

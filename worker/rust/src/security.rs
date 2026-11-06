@@ -28,10 +28,12 @@ pub fn normalized(raw: &str) -> Option<String> {
     (raw.encode_utf16().count() <= 512 && value.chars().count() <= 128).then_some(value)
 }
 async fn bits(raw: &str, salt: &[u8], env: &worker::Env) -> Result<Vec<u8>> {
-    crate::password_kdf::remote_derive(raw, salt, env).await.map_err(|_| Failure {
-        status: 503,
-        code: "AUTH_UNAVAILABLE",
-    })
+    crate::password_kdf::remote_derive(raw, salt, env)
+        .await
+        .map_err(|_| Failure {
+            status: 503,
+            code: "AUTH_UNAVAILABLE",
+        })
 }
 pub async fn matches(raw: &str, encoded: &str, env: &worker::Env) -> Result<bool> {
     let Some(value) = normalized(raw) else {

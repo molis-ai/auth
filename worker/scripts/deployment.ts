@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { validateUnifiedConfiguration } from './unified-configuration.ts'
 
 const worker = fileURLToPath(new URL('../', import.meta.url))
 const zero = '00000000-0000-0000-0000-000000000000'
@@ -39,12 +40,14 @@ export function validateDeployment(
   }
   require(config.preview_urls === false, '禁止额外的版本预览入口')
   const kdf = config.durable_objects?.bindings
-  require(kdf?.length === 1 && kdf[0].name === 'PASSWORD_KDF' &&
-    kdf[0].class_name === 'PasswordKdf' && !kdf[0].script_name && !kdf[0].environment,
-    '密码计算必须绑定当前环境的内部 PasswordKdf Durable Object')
-  require(config.migrations?.some((m: any) => m.tag === 'password-kdf-v1' &&
-    m.new_sqlite_classes?.includes('PasswordKdf')),
-    '缺少 PasswordKdf SQLite Durable Object 迁移')
+  require(kdf?.length === 1 &&
+    kdf[0].name === 'PASSWORD_KDF' &&
+    kdf[0].class_name === 'PasswordKdf' &&
+    !kdf[0].script_name &&
+    !kdf[0].environment, '密码计算必须绑定当前环境的内部 PasswordKdf Durable Object')
+  require(config.migrations?.some(
+    (m: any) => m.tag === 'password-kdf-v1' && m.new_sqlite_classes?.includes('PasswordKdf'),
+  ), '缺少 PasswordKdf SQLite Durable Object 迁移')
   require(config.d1_databases?.length === 1 &&
     db.binding === 'DB' &&
     db.database_name === name, 'D1 绑定与环境不匹配')
@@ -61,8 +64,16 @@ export function validateDeployment(
       ), '超管白名单必须填写用户 UUID，不是邮箱')
   require(!admins.includes('826b9c2a-f24a-4ca6-a747-411a5579b643'), '不能复用本地开发超管 ID')
   require(Object.keys(config.vars).every((k) =>
-    ['AUTH_ORIGIN', 'PLATFORM_ADMIN_IDS'].includes(k),
+    ['AUTH_ORIGIN', 'PLATFORM_ADMIN_IDS', 'UNIFIED_ACCOUNT_CONFIG'].includes(k),
   ), '敏感配置请使用 Wrangler secret put，不要写入 vars')
+  if (config.vars.UNIFIED_ACCOUNT_CONFIG !== undefined) {
+    const unified = validateUnifiedConfiguration(
+      JSON.parse(config.vars.UNIFIED_ACCOUNT_CONFIG),
+      config.vars.AUTH_ORIGIN,
+    )
+    require(unified.kind ===
+      (environment === 'production' ? 'PRODUCTION' : 'TEST'), '统一账号环境与部署环境不一致')
+  }
   require(seed.includes('https://' + host + '/console/callback') &&
     !/localhost|127\.0\.0\.1/.test(seed), '初始化回调地址不正确')
 }

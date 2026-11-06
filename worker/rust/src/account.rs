@@ -23,6 +23,7 @@ pub async fn route(
                         "UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=? WHERE id=?",
                         vec![n.clone().into(), image.clone(), now().into(), user.clone()],
                     )?,
+                    a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![now().into(),user.clone()])?,
                     a.s.audit(
                         "account.profile.update",
                         user,
@@ -78,7 +79,7 @@ pub async fn route(
             Ok(result)
         }
         ("/sessions/security-events", Method::Get) => {
-            let mut result=a.s.paginate(&url,"SELECT id,action,outcome,occurred_at occurredAt,request_id requestId,application_id applicationId,NULL authorizationSessionId,NULL authenticationSessionId FROM auth_audit_event WHERE target_user_id=?",vec![user],"occurredAt DESC,id DESC").await?;
+            let mut result=a.s.paginate(&url,"SELECT id,action,outcome,occurred_at occurredAt,request_id requestId,application_id applicationId,NULL authorizationSessionId,NULL authenticationSessionId FROM auth_audit_event e WHERE target_user_id=? AND NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=e.space_id)",vec![user],"occurredAt DESC,id DESC").await?;
             for x in result["items"].as_array_mut().unwrap() {
                 x["occurredAt"] = iso(&x["occurredAt"]);
             }
@@ -114,7 +115,12 @@ pub async fn route(
                         404,
                         "NOT_FOUND",
                     )?;
-                    a.s.batch(vec![a.s.guard("EXISTS(SELECT 1 FROM auth_local_credential WHERE user_id=?) OR EXISTS(SELECT 1 FROM auth_external_identity WHERE user_id=? AND id<>?)",vec![user.clone(),user.clone(),id.into()])?,a.s.statement("DELETE FROM auth_external_identity WHERE id=? AND user_id=?",vec![id.into(),user.clone()])?,a.s.statement("UPDATE auth_authentication SET revoked_at=? WHERE user_id=?",vec![now().into(),user.clone()])?,a.s.audit("account.identity.unlink",user,&a.request_id,Value::Null,Value::Null,Value::Null,false)?],"LAST_LOGIN_METHOD").await?;
+                    let mut writes=vec![a.s.guard("EXISTS(SELECT 1 FROM auth_local_credential WHERE user_id=?) OR EXISTS(SELECT 1 FROM auth_external_identity WHERE user_id=? AND id<>?)",vec![user.clone(),user.clone(),id.into()])?,a.s.statement("DELETE FROM auth_external_identity WHERE id=? AND user_id=?",vec![id.into(),user.clone()])?,a.s.statement("UPDATE auth_authentication SET revoked_at=? WHERE user_id=?",vec![now().into(),user.clone()])?,a.s.audit("account.identity.unlink",user.clone(),&a.request_id,Value::Null,Value::Null,Value::Null,false)?];
+                    writes.extend(crate::account_management::identity_changed(
+                        a,
+                        user.as_str().unwrap(),
+                    )?);
+                    a.s.batch(writes, "LAST_LOGIN_METHOD").await?;
                     return Ok(json!({"unlinked":true,"loggedOut":true}));
                 }
             }

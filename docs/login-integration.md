@@ -1,6 +1,6 @@
-# Molis Auth Web 登录与业务鉴权接入方案
+# Molis Auth v1 Web 登录与业务鉴权接入方案
 
-> 基于当前 TypeScript Worker 与 Browser SDK 实现整理。本文是现状接入合同，不表示所有路径已完成线上验收。
+> 本文保留 v1 Browser SDK 与托管确认协议；后端已迁为 Rust/WASM。Work / Club 使用 v2 Host/BFF，产品内邮箱/手机登录不经过本页的额外账号确认，接入见[统一账号说明](unified-account/integration-guide.md)。本文及以下历史来源地址不代表本期正式环境已确定或已验收。
 > 范围：Web 登录、注册、会话恢复、续期、退出、下游后端鉴权。Google/Apple 属于需额外配置与联调的可选能力。
 
 ## 1. 目标与系统职责

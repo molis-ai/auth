@@ -175,6 +175,58 @@ for (const provider of ['google', 'apple'])
         )?.status,
         'READY',
       )
+      // A changed callback or scope allowlist must also invalidate a pending exchange.
+      const narrowed = await start()
+      const beforeNarrowing = calls
+      await db
+        .prepare("UPDATE auth_client SET scopes=?,version=version+1 WHERE client_id='test-client'")
+        .bind(JSON.stringify(['profile']))
+        .run()
+      const scopeDenied = await worker.fetch(callback(narrowed), env)
+      assert.match(scopeDenied.headers.get('Location')!, /provider-error=INVALID_CLIENT$/)
+      assert.equal(calls, beforeNarrowing)
+      assert.equal(
+        (await db
+          .prepare('SELECT status FROM auth_transaction WHERE token_hash=?')
+          .bind(hash(narrowed.transaction))
+          .first())!.status,
+        'READY',
+      )
+      await db
+        .prepare("UPDATE auth_client SET scopes=?,version=version+1 WHERE client_id='test-client'")
+        .bind(JSON.stringify(['account']))
+        .run()
+
+      // AUTH-02 / UAS-11: an in-flight v1 callback cannot bypass a newly registered policy.
+      const switched = await start()
+      const before = await db.prepare('SELECT count(*) n FROM auth_authentication').first()
+      const previousCalls = calls
+      await db.batch([
+        db
+          .prepare(
+            "INSERT INTO auth_environment(id,kind,auth_origin,delivery_mode,provider_mode,created_at,updated_at) VALUES ('provider-test','TEST',?,'MOCK','MOCK',?,?)",
+          )
+          .bind(origin, Date.now(), Date.now()),
+        db
+          .prepare(
+            "INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at) VALUES ('test-client','unified-account-v2','provider-test',?, ?,?)",
+          )
+          .bind(JSON.stringify([origin]), Date.now(), Date.now()),
+      ])
+      const blocked = await worker.fetch(callback(switched), env)
+      assert.match(blocked.headers.get('Location')!, /provider-error=CLIENT_POLICY_REQUIRES_V2$/)
+      assert.equal(calls, previousCalls, 'reject before external exchange')
+      assert.equal(
+        (await db.prepare('SELECT count(*) n FROM auth_authentication').first())!.n,
+        before!.n,
+      )
+      assert.equal(
+        (await db
+          .prepare('SELECT status FROM auth_transaction WHERE token_hash=?')
+          .bind(hash(switched.transaction))
+          .first())!.status,
+        'READY',
+      )
     } finally {
       await proxy.dispose()
     }

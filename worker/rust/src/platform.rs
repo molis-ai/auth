@@ -214,6 +214,9 @@ impl<'a> Platform<'a> {
             Value::Null
         };
         let client = id.map(str::to_owned).unwrap_or(text(b, "clientId"));
+        if id.is_some() {
+            crate::unified_policy::ensure_legacy_client(self.a, &client).await?;
+        }
         let kind = if old.is_null() {
             text(b, "clientType")
         } else {
@@ -287,7 +290,7 @@ impl<'a> Platform<'a> {
                     "CONSOLE_PROTECTED",
                 )?;
             }
-            vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_client WHERE client_id=? AND version=?)",vec![client.clone().into(),b["version"].clone()])?,self.a.s.statement("UPDATE auth_client SET status=?,scopes=?,redirects=?,version=version+1 WHERE client_id=?",vec![b["status"].clone(),b["scopes"].to_string().into(),b["redirects"].to_string().into(),client.clone().into()])?,self.audit("platform.client.update",Value::Null,Value::Null,Value::Null)?]
+            vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_client WHERE client_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM auth_client_policy cp WHERE cp.client_id=auth_client.client_id))",vec![client.clone().into(),b["version"].clone()])?,self.a.s.statement("UPDATE auth_client SET status=?,scopes=?,redirects=?,version=version+1 WHERE client_id=?",vec![b["status"].clone(),b["scopes"].to_string().into(),b["redirects"].to_string().into(),client.clone().into()])?,self.audit("platform.client.update",Value::Null,Value::Null,Value::Null)?]
         } else {
             let app = app.unwrap();
             self.app(app).await?;
@@ -426,7 +429,9 @@ impl<'a> Platform<'a> {
         })
     }
     async fn audit_page(&self) -> Result<Value> {
-        let mut r=self.a.s.paginate(&self.a.request.url()?,"SELECT id,action,outcome,actor_user_id actorUserId,target_user_id targetUserId,application_id applicationId,occurred_at occurredAt,request_id requestId,change_summary changeSummary FROM auth_audit_event",vec![],"occurredAt DESC,id DESC").await?;
+        // Legacy authorization.spaces events have a null space_id but retain whole
+        // space lists. A later managed transition must also hide that historical data.
+        let mut r=self.a.s.paginate(&self.a.request.url()?,"SELECT id,action,outcome,actor_user_id actorUserId,target_user_id targetUserId,application_id applicationId,occurred_at occurredAt,request_id requestId,CASE WHEN e.action='authorization.spaces' AND EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(e.change_summary) THEN e.change_summary ELSE '{}' END,'$.spaces') listed JOIN auth_managed_tenant mt ON mt.space_id=CASE WHEN listed.type='object' THEN json_extract(listed.value,'$.id') ELSE NULL END) THEN NULL ELSE e.change_summary END changeSummary FROM auth_audit_event e WHERE NOT EXISTS(SELECT 1 FROM auth_managed_tenant mt WHERE mt.space_id=e.space_id)",vec![],"occurredAt DESC,id DESC").await?;
         for x in r["items"].as_array_mut().unwrap() {
             x["occurredAt"] = iso(&x["occurredAt"]);
         }
