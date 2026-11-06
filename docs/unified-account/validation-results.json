@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-05T19:56:36.156595+00:00",
+  "recordedAt": "2026-11-06T03:57:03.263159+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
-  "phase": "T-01_REMOTE_CLOSURE_IN_PROGRESS",
-  "note": "Final candidate c235037f4 includes exact prerequisite queue commit 31cad5be9. Local build/gates, 45 contract/SDK/account files (765/765), six Work account scripts, Club browser and cross-product cutover/rollback pass. Final Full and Verify are triggered, pending. Prerequisites must actually reach main; no real data/providers/deployment.",
+  "phase": "T-01_VERIFIED_CANDIDATE_NEW_MAIN_INTEGRATION_PENDING",
+  "note": "Final Work head 9cf6fe623 and its matching merge tree passed Verify and Full. 1660/1660 Linux files, two existing retries passed, 57 macOS-only files excluded, no live runs. Products 409/409 and security 288/288 separately, no retries there. Local 61 files/891 tests and real Auth/Host/BFF joint mock/synthetic validation passed. All three feature PRs ready; no submitted human reviews or authorization to merge them. Historical failures preserved. No real data, payment, release or deployment. Subsequent main 05d4cf98c introduces a page-assets.json conflict; the successful 9cf6fe623 runs do not validate this newer combination. Main integration and new-head verification remain before merge.",
   "repositories": {
     "A": {
-      "baseCommit": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b",
+      "baseCommit": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
       "uncommitted": false,
       "branch": "codex/unified-account-foundation",
       "packageVersion": null,
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "baseCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,8 +58,8 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5911,
-      "sourceSha256": "35584a9b9feb8ef197c084406882d71ab21847183ba6c50598c3edcd613ee8db"
+      "fileCount": 5917,
+      "sourceSha256": "50b9585815e12a53d3a213f92eefe1cbbd1e8aee8c78564d67a839e6e41901fa"
     },
     "C": {
       "baseCommit": "ce8a89c97fd5e093cd44aac200de85341481335c",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "00d5ea9b98611026393fc221980a2013a11d653c0d1ecd0c15eef2c066cc62ae",
+  "sourceManifestSha256": "acfdf2b2292364769b7c32fb35d46deb472d5cbb6f2c60f8839c57687d4ae169",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -1796,6 +1796,788 @@
         "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
       },
       "status": "PASS"
+    },
+    {
+      "id": "work-scroll-reproduce",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01-scroll-reproduce -- node scripts/run-tests.mjs --jobs 1 tests/chrome-inner-scroll.test.ts",
+      "startedAt": "2026-11-05T21:02:15.875781+00:00",
+      "finishedAt": "2026-11-05T21:02:18.907149+00:00",
+      "seconds": 3.03,
+      "exitCode": 1,
+      "log": "work-scroll-reproduce.log",
+      "logBytes": 22363,
+      "logSha256": "8b83f1f2a88d55173711e209df8d651f5848c2cf109a2823603e19d85e85f91c",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01-scroll-reproduce",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/chrome-inner-scroll.test.ts"
+      ],
+      "sourceBase": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "status": "FAIL_REPRODUCED_OLD_EXPECTATION"
+    },
+    {
+      "id": "work-scroll-baseline-install",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-scroll-baseline",
+      "command": "pnpm install --frozen-lockfile --offline",
+      "startedAt": "2026-11-05T21:02:48.917209+00:00",
+      "finishedAt": "2026-11-05T21:02:52.933863+00:00",
+      "seconds": 4.02,
+      "exitCode": 0,
+      "log": "work-scroll-baseline-install.log",
+      "logBytes": 5755,
+      "logSha256": "0b70ec407fd56c300a5dbfb58f386d70f9173d9159f29d9690f8ddb54e8e45b9",
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile",
+        "--offline"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-scroll-baseline-build",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-scroll-baseline",
+      "command": "pnpm build",
+      "startedAt": "2026-11-05T21:02:52.988864+00:00",
+      "finishedAt": "2026-11-05T21:04:09.659107+00:00",
+      "seconds": 76.67,
+      "exitCode": 0,
+      "log": "work-scroll-baseline-build.log",
+      "logBytes": 33859,
+      "logSha256": "e08ab375513e452d054a31530115cf6c627aac4adc9e8b58c9aa6693ad21fd72",
+      "argv": [
+        "pnpm",
+        "build"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-scroll-baseline",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-scroll-baseline",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01-scroll-baseline -- node scripts/run-tests.mjs --jobs 1 tests/chrome-inner-scroll.test.ts",
+      "startedAt": "2026-11-05T21:04:09.703411+00:00",
+      "finishedAt": "2026-11-05T21:04:11.726269+00:00",
+      "seconds": 2.02,
+      "exitCode": 0,
+      "log": "work-scroll-baseline.log",
+      "logBytes": 490,
+      "logSha256": "ec0429dd527301e6b67aecae6ce830a9ef299b1696e8bb7f7396658eee86d443",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01-scroll-baseline",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/chrome-inner-scroll.test.ts"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-scroll-fixed",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01-scroll-fixed -- node scripts/run-tests.mjs --jobs 1 tests/chrome-inner-scroll.test.ts tests/issue-draft-preview.e2e.test.ts tests/scrollbars-hidden.test.ts",
+      "startedAt": "2026-11-05T21:04:30.087102+00:00",
+      "finishedAt": "2026-11-05T21:05:17.377405+00:00",
+      "seconds": 47.29,
+      "exitCode": 0,
+      "log": "work-scroll-fixed.log",
+      "logBytes": 482,
+      "logSha256": "ad94c1307ce8d9d23b37ebda5ed71334331cc0ff229255cbf420560295b2d006",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01-scroll-fixed",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/chrome-inner-scroll.test.ts",
+        "tests/issue-draft-preview.e2e.test.ts",
+        "tests/scrollbars-hidden.test.ts"
+      ],
+      "sourceBase": "998dd633357c1e19dfceb60c2b9dfb29fd9bf4b5",
+      "status": "PASS"
+    },
+    {
+      "id": "work-scroll-health",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run build --label T-01-scroll-health -- node scripts/check-health-gates.mjs --base 31cad5be9809c22d7b393685715c073a63e994ae",
+      "startedAt": "2026-11-05T21:06:28.566760+00:00",
+      "finishedAt": "2026-11-05T21:07:08.896601+00:00",
+      "seconds": 40.38,
+      "exitCode": 0,
+      "log": "work-scroll-health.log",
+      "logBytes": 2003,
+      "logSha256": "ab0554c3061e560600faa4a015987066c311d73ca02bb835819e4975146e7693",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "build",
+        "--label",
+        "T-01-scroll-health",
+        "--",
+        "node",
+        "scripts/check-health-gates.mjs",
+        "--base",
+        "31cad5be9809c22d7b393685715c073a63e994ae"
+      ],
+      "sourceBase": "998dd633357c1e19dfceb60c2b9dfb29fd9bf4b5",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-reproduce",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01 frame reproduction -- node scripts/run-tests.mjs --jobs 1 tests/workbench-frame-container.e2e.test.ts",
+      "startedAt": "2026-11-05T21:33:23.753777+00:00",
+      "finishedAt": "2026-11-05T21:34:02.994318+00:00",
+      "seconds": 39.24,
+      "exitCode": 0,
+      "log": "work-frame-reproduce.log",
+      "logBytes": 4367,
+      "logSha256": "a6bb9e8cee54e7c10f09a97fe6e3bb8bf6ba07295add9213fff3458040a9ff56",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 frame reproduction",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/workbench-frame-container.e2e.test.ts"
+      ],
+      "sourceBase": "998dd633357c1e19dfceb60c2b9dfb29fd9bf4b5",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-baseline-install",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-frame-baseline",
+      "command": "pnpm install --frozen-lockfile --offline",
+      "startedAt": "2026-11-05T21:35:01.271127+00:00",
+      "finishedAt": "2026-11-05T21:35:05.300597+00:00",
+      "seconds": 4.03,
+      "exitCode": 0,
+      "log": "work-frame-baseline-install.log",
+      "logBytes": 5755,
+      "logSha256": "6c13baccc4b3786e160e5a82c01f178e7763a4f277e76a8571735b91a2598b1a",
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile",
+        "--offline"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-baseline-build",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-frame-baseline",
+      "command": "pnpm build",
+      "startedAt": "2026-11-05T21:35:05.350149+00:00",
+      "finishedAt": "2026-11-05T21:36:22.049990+00:00",
+      "seconds": 76.7,
+      "exitCode": 0,
+      "log": "work-frame-baseline-build.log",
+      "logBytes": 33857,
+      "logSha256": "ffa264273771a63b80a7d66555a13acc894a71f5658ede328e5e6f5713d2f60f",
+      "argv": [
+        "pnpm",
+        "build"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-baseline",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/t01-frame-baseline",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01 frame baseline -- node scripts/run-tests.mjs --jobs 1 tests/workbench-frame-container.e2e.test.ts",
+      "startedAt": "2026-11-05T21:36:22.104975+00:00",
+      "finishedAt": "2026-11-05T21:37:01.347179+00:00",
+      "seconds": 39.24,
+      "exitCode": 0,
+      "log": "work-frame-baseline.log",
+      "logBytes": 4891,
+      "logSha256": "a11d3ddcf81440f880e6a9ccd8bcaf3ceaf16749a336f87493a8c8226dc4dc9c",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 frame baseline",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/workbench-frame-container.e2e.test.ts"
+      ],
+      "sourceBase": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-fixed",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run browser --label T-01 frame atomic observation -- node scripts/run-tests.mjs --jobs 1 tests/workbench-frame-container.e2e.test.ts",
+      "startedAt": "2026-11-05T21:36:51.992702+00:00",
+      "finishedAt": "2026-11-05T21:37:39.278206+00:00",
+      "seconds": 47.29,
+      "exitCode": 0,
+      "log": "work-frame-fixed.log",
+      "logBytes": 4575,
+      "logSha256": "91b934f74d8f5a55943d24c880a5152bb61aec809539e65cab35c62e15e836f0",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 frame atomic observation",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/workbench-frame-container.e2e.test.ts"
+      ],
+      "sourceBase": "42bd1d463e2b274c684fc3c0844a7b170a18c6e2",
+      "status": "PASS"
+    },
+    {
+      "id": "work-frame-health",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/machine-slot.mjs run build --label T-01 frame health -- node scripts/check-health-gates.mjs --base 31cad5be9809c22d7b393685715c073a63e994ae",
+      "startedAt": "2026-11-05T21:38:19.937729+00:00",
+      "finishedAt": "2026-11-05T21:39:01.325666+00:00",
+      "seconds": 41.36,
+      "exitCode": 0,
+      "log": "work-frame-health.log",
+      "logBytes": 2003,
+      "logSha256": "ab0554c3061e560600faa4a015987066c311d73ca02bb835819e4975146e7693",
+      "argv": [
+        "node",
+        "scripts/machine-slot.mjs",
+        "run",
+        "build",
+        "--label",
+        "T-01 frame health",
+        "--",
+        "node",
+        "scripts/check-health-gates.mjs",
+        "--base",
+        "31cad5be9809c22d7b393685715c073a63e994ae"
+      ],
+      "sourceBase": "42bd1d463e2b274c684fc3c0844a7b170a18c6e2",
+      "status": "PASS"
+    },
+    {
+      "id": "club-final-main-test-account-browser",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 test-account-browser -- node scripts/test-account-browser.mjs",
+      "startedAt": "2026-11-06T02:01:30.396231+00:00",
+      "finishedAt": "2026-11-06T02:03:05.938840+00:00",
+      "seconds": 95.54,
+      "exitCode": 0,
+      "log": "club-final-main-test-account-browser.log",
+      "logBytes": 1082,
+      "logSha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 test-account-browser",
+        "--",
+        "node",
+        "scripts/test-account-browser.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "club-final-main-test-account-cutover",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-club/.claude/worktrees/club-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 test-account-cutover -- node scripts/test-account-cutover.mjs",
+      "startedAt": "2026-11-06T02:03:05.993885+00:00",
+      "finishedAt": "2026-11-06T02:03:18.061595+00:00",
+      "seconds": 12.07,
+      "exitCode": 0,
+      "log": "club-final-main-test-account-cutover.log",
+      "logBytes": 1014,
+      "logSha256": "e9dae441f3b155ac180df9a5688f085b9ce55149bdbe8a0b0b547fe772cfeff1",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 test-account-cutover",
+        "--",
+        "node",
+        "scripts/test-account-cutover.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-account-authentication",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account-authentication -- node scripts/account-authentication.test.mjs",
+      "startedAt": "2026-11-06T02:00:24.742221+00:00",
+      "finishedAt": "2026-11-06T02:00:37.829224+00:00",
+      "seconds": 13.09,
+      "exitCode": 0,
+      "log": "work-final-main-account-authentication.log",
+      "logBytes": 1940,
+      "logSha256": "03e865f24a006003761662f8d2b489dc07740731b78df78bc8bbe3a65ccb88d4",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-authentication",
+        "--",
+        "node",
+        "scripts/account-authentication.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-account-billing",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account-billing -- node scripts/account-billing.test.mjs",
+      "startedAt": "2026-11-06T02:01:12.255468+00:00",
+      "finishedAt": "2026-11-06T02:01:30.348130+00:00",
+      "seconds": 18.09,
+      "exitCode": 0,
+      "log": "work-final-main-account-billing.log",
+      "logBytes": 3303,
+      "logSha256": "3c0bf5b952b54dc268dd689bf8a07dc21d1751942df311df1e9924eef9e0e4ef",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-billing",
+        "--",
+        "node",
+        "scripts/account-billing.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-account-management",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account-management -- node scripts/account-management.test.mjs",
+      "startedAt": "2026-11-06T02:00:46.985055+00:00",
+      "finishedAt": "2026-11-06T02:01:00.099136+00:00",
+      "seconds": 13.11,
+      "exitCode": 0,
+      "log": "work-final-main-account-management.log",
+      "logBytes": 1493,
+      "logSha256": "aa6ba33f3ed80938d323f41bde5da7133ef6df7e49ec878a3e41f507bc3c7857",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-management",
+        "--",
+        "node",
+        "scripts/account-management.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-account-provider",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account-provider -- node scripts/account-provider.test.mjs",
+      "startedAt": "2026-11-06T02:00:37.888166+00:00",
+      "finishedAt": "2026-11-06T02:00:46.950068+00:00",
+      "seconds": 9.06,
+      "exitCode": 0,
+      "log": "work-final-main-account-provider.log",
+      "logBytes": 2905,
+      "logSha256": "9e06689b97ddf90f5544bd08915e6c99954faad27e8761b2950a7f3e90a572bb",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-provider",
+        "--",
+        "node",
+        "scripts/account-provider.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-account-tenants",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 account-tenants -- node scripts/account-tenants.test.mjs",
+      "startedAt": "2026-11-06T02:01:00.138992+00:00",
+      "finishedAt": "2026-11-06T02:01:12.204738+00:00",
+      "seconds": 12.07,
+      "exitCode": 0,
+      "log": "work-final-main-account-tenants.log",
+      "logBytes": 3224,
+      "logSha256": "b03a86ce0f51de7bffb59af0dbdae455ec6792328a0840c4330a80912c673d12",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 account-tenants",
+        "--",
+        "node",
+        "scripts/account-tenants.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-boundary",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm boundary:check",
+      "startedAt": "2026-11-06T01:55:39.524418+00:00",
+      "finishedAt": "2026-11-06T01:55:43.567174+00:00",
+      "seconds": 4.04,
+      "exitCode": 0,
+      "log": "work-final-main-boundary.log",
+      "logBytes": 268,
+      "logSha256": "ff1e58925f57e8a4bbccd2ad5c6e566c6d10faa79280cd9c519dfbba4d4df47a",
+      "argv": [
+        "pnpm",
+        "boundary:check"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-central-account",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 central-account -- node scripts/central-account.test.mjs",
+      "startedAt": "2026-11-06T02:00:21.666150+00:00",
+      "finishedAt": "2026-11-06T02:00:24.695176+00:00",
+      "seconds": 3.03,
+      "exitCode": 0,
+      "log": "work-final-main-central-account.log",
+      "logBytes": 159,
+      "logSha256": "9095cc29103d6cd05c35b2121ff639309010ed972d56c91a87596b1b3f25921a",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 central-account",
+        "--",
+        "node",
+        "scripts/central-account.test.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-contracts-sdk",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run browser --label T-01 integrated contracts SDK -- node scripts/run-tests.mjs --jobs 1 tests/action-schema-compiler.test.ts tests/action-plugin-audience.test.ts tests/plugin-manifest-v2.test.ts tests/plugin-declaration-rules.test.ts tests/action-read-compatibility.test.ts tests/runtime-provider-identity.test.ts tests/plugin-capability-availability.test.ts tests/action-error-model.test.ts tests/plugin-model-service.test.ts tests/action-availability-kind.test.ts tests/material-upload.test.ts tests/plugin-runtime-integration.test.ts tests/home-action-scenes.test.ts tests/plugin-artifact-client.test.ts tests/action-service.test.ts tests/execution-lifetime.test.ts tests/system-search.test.ts tests/plugin-sdk-exports.test.ts tests/builtin-manifests-contract.test.ts tests/side-panel-platform.test.ts tests/contextual-interaction.test.ts tests/work-placement.test.ts tests/plugin-action-route.test.ts tests/plugin-sample.e2e.test.ts tests/action-cross-references.test.ts tests/action-artifact-references.test.ts tests/diff-plugin.test.ts tests/question-rules-consistency.test.ts tests/form-draft-questions.test.ts tests/action-cards.test.ts tests/assistant-card-outcomes.test.ts tests/assistant-interaction-html.test.ts tests/assistant-business-gateway.test.ts tests/plugin-sdk-subpaths.test.ts tests/feed-rich-content.test.ts tests/code-incremental-colour.test.ts tests/git-porcelain.test.ts tests/diff-patch.test.ts tests/companion-state-html.test.ts tests/coding-change-html.test.ts tests/plugin-read-groups.test.ts tests/account-client.test.ts tests/account-session.test.ts tests/security-invariants-account-host.test.ts tests/account-entitlements.test.ts tests/action-contract-snapshot.test.ts tests/security-invariants-connection-switch.test.ts tests/security-invariants-connection-refresh.test.ts tests/connector-status.test.ts tests/health-gates-initial-versions.test.ts tests/browser-fixture-startup-cleanup.test.ts tests/workbench-frame-container.e2e.test.ts tests/chrome-inner-scroll.test.ts tests/issue-draft-preview.e2e.test.ts tests/mcp-effect-authority.test.ts tests/mcp-scene-effect-authority.test.ts tests/action-authority-tail.test.ts tests/plugin-owner-effect-fence.test.ts tests/action-before-effect.test.ts tests/functions-scene-configuration.test.ts tests/functions-effect-boundaries.test.ts",
+      "startedAt": "2026-11-06T01:56:25.050415+00:00",
+      "finishedAt": "2026-11-06T02:00:21.637756+00:00",
+      "seconds": 236.59,
+      "exitCode": 0,
+      "log": "work-final-main-contracts-sdk.log",
+      "logBytes": 4694,
+      "logSha256": "51ff034c9e12e74ac066e8ae78d144504ee76d67b839d25e64451bb7cb1d90df",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "browser",
+        "--label",
+        "T-01 integrated contracts SDK",
+        "--",
+        "node",
+        "scripts/run-tests.mjs",
+        "--jobs",
+        "1",
+        "tests/action-schema-compiler.test.ts",
+        "tests/action-plugin-audience.test.ts",
+        "tests/plugin-manifest-v2.test.ts",
+        "tests/plugin-declaration-rules.test.ts",
+        "tests/action-read-compatibility.test.ts",
+        "tests/runtime-provider-identity.test.ts",
+        "tests/plugin-capability-availability.test.ts",
+        "tests/action-error-model.test.ts",
+        "tests/plugin-model-service.test.ts",
+        "tests/action-availability-kind.test.ts",
+        "tests/material-upload.test.ts",
+        "tests/plugin-runtime-integration.test.ts",
+        "tests/home-action-scenes.test.ts",
+        "tests/plugin-artifact-client.test.ts",
+        "tests/action-service.test.ts",
+        "tests/execution-lifetime.test.ts",
+        "tests/system-search.test.ts",
+        "tests/plugin-sdk-exports.test.ts",
+        "tests/builtin-manifests-contract.test.ts",
+        "tests/side-panel-platform.test.ts",
+        "tests/contextual-interaction.test.ts",
+        "tests/work-placement.test.ts",
+        "tests/plugin-action-route.test.ts",
+        "tests/plugin-sample.e2e.test.ts",
+        "tests/action-cross-references.test.ts",
+        "tests/action-artifact-references.test.ts",
+        "tests/diff-plugin.test.ts",
+        "tests/question-rules-consistency.test.ts",
+        "tests/form-draft-questions.test.ts",
+        "tests/action-cards.test.ts",
+        "tests/assistant-card-outcomes.test.ts",
+        "tests/assistant-interaction-html.test.ts",
+        "tests/assistant-business-gateway.test.ts",
+        "tests/plugin-sdk-subpaths.test.ts",
+        "tests/feed-rich-content.test.ts",
+        "tests/code-incremental-colour.test.ts",
+        "tests/git-porcelain.test.ts",
+        "tests/diff-patch.test.ts",
+        "tests/companion-state-html.test.ts",
+        "tests/coding-change-html.test.ts",
+        "tests/plugin-read-groups.test.ts",
+        "tests/account-client.test.ts",
+        "tests/account-session.test.ts",
+        "tests/security-invariants-account-host.test.ts",
+        "tests/account-entitlements.test.ts",
+        "tests/action-contract-snapshot.test.ts",
+        "tests/security-invariants-connection-switch.test.ts",
+        "tests/security-invariants-connection-refresh.test.ts",
+        "tests/connector-status.test.ts",
+        "tests/health-gates-initial-versions.test.ts",
+        "tests/browser-fixture-startup-cleanup.test.ts",
+        "tests/workbench-frame-container.e2e.test.ts",
+        "tests/chrome-inner-scroll.test.ts",
+        "tests/issue-draft-preview.e2e.test.ts",
+        "tests/mcp-effect-authority.test.ts",
+        "tests/mcp-scene-effect-authority.test.ts",
+        "tests/action-authority-tail.test.ts",
+        "tests/plugin-owner-effect-fence.test.ts",
+        "tests/action-before-effect.test.ts",
+        "tests/functions-scene-configuration.test.ts",
+        "tests/functions-effect-boundaries.test.ts"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-health",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node /Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs run build --label T-01 integrated health -- node scripts/check-health-gates.mjs --base 3a6b292ef",
+      "startedAt": "2026-11-06T01:55:43.603899+00:00",
+      "finishedAt": "2026-11-06T01:56:22.953554+00:00",
+      "seconds": 39.35,
+      "exitCode": 0,
+      "log": "work-final-main-health.log",
+      "logBytes": 1972,
+      "logSha256": "6029f985de92219cece9be04b0af0be220c55ce229bb3d3a2b287b365e2c07cf",
+      "argv": [
+        "node",
+        "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation/scripts/machine-slot.mjs",
+        "run",
+        "build",
+        "--label",
+        "T-01 integrated health",
+        "--",
+        "node",
+        "scripts/check-health-gates.mjs",
+        "--base",
+        "3a6b292ef"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-resources",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/gates/page-assets.mjs --base 3a6b292ef",
+      "startedAt": "2026-11-06T01:56:23.001812+00:00",
+      "finishedAt": "2026-11-06T01:56:25.006464+00:00",
+      "seconds": 2.0,
+      "exitCode": 0,
+      "log": "work-final-main-resources.log",
+      "logBytes": 94,
+      "logSha256": "a3c15eb80de534a8db5212425d1e46f5eefc6c41a7bab2976bbb31c33a199977",
+      "argv": [
+        "node",
+        "scripts/gates/page-assets.mjs",
+        "--base",
+        "3a6b292ef"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-secrets",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm secrets:check",
+      "startedAt": "2026-11-06T02:01:52.883879+00:00",
+      "finishedAt": "2026-11-06T02:01:53.896189+00:00",
+      "seconds": 1.01,
+      "exitCode": 0,
+      "log": "work-final-main-secrets.log",
+      "logBytes": 147,
+      "logSha256": "2622c79d5d8778ac0440c9fb54882eb56570a5171ebdb434c40efca68ce68742",
+      "argv": [
+        "pnpm",
+        "secrets:check"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-main-versions",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "node scripts/verify-release-versions.mjs",
+      "startedAt": "2026-11-06T02:01:53.934246+00:00",
+      "finishedAt": "2026-11-06T02:01:54.937727+00:00",
+      "seconds": 1.0,
+      "exitCode": 0,
+      "log": "work-final-main-versions.log",
+      "logBytes": 163,
+      "logSha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a",
+      "argv": [
+        "node",
+        "scripts/verify-release-versions.mjs"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "work-final-head-secrets",
+      "cwd": "/Users/ninebot/workspace/ypf/code/molis-work/.claude/worktrees/work-01-account-foundation",
+      "command": "pnpm secrets:check",
+      "startedAt": "2026-11-06T02:03:45.192076+00:00",
+      "finishedAt": "2026-11-06T02:03:46.202381+00:00",
+      "seconds": 1.01,
+      "exitCode": 0,
+      "log": "work-final-head-secrets.log",
+      "logBytes": 147,
+      "logSha256": "5b91557ab0196edcd962ab6b0c2f0d10024eb4040c91581db75838a3c9f9811b",
+      "argv": [
+        "pnpm",
+        "secrets:check"
+      ],
+      "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+      "jointRepositories": {
+        "A": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "W": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "C": "ce8a89c97fd5e093cd44aac200de85341481335c"
+      },
+      "status": "PASS"
     }
   ],
   "workDirectedResults": {
@@ -1821,28 +2603,78 @@
     },
     {
       "id": "K-07",
-      "status": "LOCALLY_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Arrival side panel respects the actual content grid. Six viewport sizes and both themes; 33 files/252 tests pass. Exact +273 bytes approved. Visual differences explicitly reviewed."
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Arrival side panel respects the actual content grid. Six viewport sizes and both themes; 33 files/252 tests pass. Exact +273 bytes approved. Visual differences explicitly reviewed.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
     },
     {
       "id": "K-08",
-      "status": "LOCALLY_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Regular account LICENSE equals root text and ships in runtime payload; license 2/2 and payload 3/3 pass."
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Regular account LICENSE equals root text and ships in runtime payload; license 2/2 and payload 3/3 pass.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
     },
     {
       "id": "K-09",
-      "status": "LOCALLY_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Enabled account entry and independent-main-derived 16 whole-page snapshots; project 6/6, Goals 70 pass plus two existing generation skips."
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Enabled account entry and independent-main-derived 16 whole-page snapshots; project 6/6, Goals 70 pass plus two existing generation skips.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
     },
     {
       "id": "K-10",
-      "status": "LOCALLY_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Callback acknowledges in text/plain, retaining security headers and state/replay refusal; mock provider/browser/native bridge and 59 Host files/653 tests pass; no page exception."
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Callback acknowledges in text/plain, retaining security headers and state/replay refusal; mock provider/browser/native bridge and 59 Host files/653 tests pass; no page exception.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
     },
     {
       "id": "K-11",
-      "status": "LOCALLY_RESOLVED_FINAL_CI_PENDING",
-      "resolution": "Removed only product-subset duplicates already run by mandatory test:security. Test files/assertions and workflow unchanged. Planner/runner 36/36; main planner 17/17."
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Removed only product-subset duplicates already run by mandatory test:security. Test files/assertions and workflow unchanged. Planner/runner 36/36; main planner 17/17.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
+    },
+    {
+      "id": "K-12",
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Layout expectations updated to existing relative arrival and 900px breakpoint. Baseline 4/4, candidate 3/4 before correction, three repaired files 12/12. No product, deadline or gate change.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
+    },
+    {
+      "id": "K-13",
+      "status": "RESOLVED_FINAL_CI_PASS",
+      "resolution": "Capture preview readiness/content/forbidden controls in one browser evaluation. CI original first attempt failed during redraw; retry cancelled at 45-minute job cutoff. Original file and product path identical to main; baseline and original candidate each locally 3/3; repair 3/3. All original assertions and 10s/90s deadlines retained.",
+      "finalVerification": {
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "fullRun": 42147888320,
+        "verifyRun": 42147893187
+      }
+    },
+    {
+      "id": "K-14",
+      "status": "OPEN_EXTERNAL_BUILD_FAILURE_LOGS_UNAVAILABLE",
+      "resolution": "None yet; Auth/Club Workers Builds failure identified, root cause and branch deployment behavior not established."
     }
   ],
   "matrix": {
@@ -1868,9 +2700,12 @@
     }
   ],
   "notRun": [
-    "Final account-head Verify/Full and merge disposition remain pending",
-    "Real data, Home or authentication provider operations; payment or deployment",
-    "Full rerun of the historical 327 local files",
+    "Auth/Club external Workers Builds root-cause confirmation and successful rerun; no logs available, automatic production deployment scope unverified",
+    "Integration with newer Work main 05d4cf98c, page-assets conflict resolution and validation of that new candidate",
+    "Feature PR human review and main merge; merge requires authorization",
+    "Real data, Home or authentication provider operations; payment, release or deployment",
+    "Full rerun of the historical 327 local files; no local Full",
+    "57 macOS-only files excluded by Linux Full; applicable local directed evidence recorded separately; live tests not run",
     "Auth and Club GitHub Actions (no repository workflows exist)"
   ],
   "previousRuns": [
@@ -7952,7 +8787,7 @@
         "All prior Chrome UI suites in this turn",
         "Production restore or load/CPU assessment"
       ],
-      "knownIssueRecord": "delivery.md#5-\u5df2\u77e5\u95ee\u9898",
+      "knownIssueRecord": "delivery.md#5-已知问题",
       "sourceManifest": {
         "recordedAt": "2026-11-05T11:23:30.027Z",
         "formatVersion": 1,
@@ -11068,7 +11903,8 @@
         "repository": "molis-ai/molis-work",
         "number": 1842,
         "head": "8b2e0e901a7f563968a37ec9d73949bfca4470d3",
-        "run": 42059957428
+        "run": 42059957428,
+        "merged": true
       },
       {
         "repository": "molis-ai/molis-work",
@@ -11076,31 +11912,40 @@
         "head": "e4a587007a489265797a5b5742f257db304fcb6b",
         "run": 42084366850,
         "draft": false,
-        "queueRun": 42096685693
+        "queueRun": 42116972915,
+        "merged": true
       },
       {
         "repository": "molis-ai/molis-work",
         "number": 1844,
         "head": "fcc2b97941817ab06152d3af36c28cd730b1a5c1",
-        "run": 42059984755
+        "run": 42059984755,
+        "merged": true,
+        "queueRun": 42103565729
       },
       {
         "repository": "molis-ai/auth",
         "number": 2,
-        "head": "16c6b100d3c1070fd9ccb5ee3bf0aa65736e201b"
+        "draft": false,
+        "merged": false,
+        "headAtSourceVerification": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+        "note": "Subsequent delivery-only documentation commit is identified in Git history; source unchanged."
       },
       {
         "repository": "molis-ai/molis-club",
         "number": 27,
-        "head": "ce8a89c97fd5e093cd44aac200de85341481335c"
+        "head": "ce8a89c97fd5e093cd44aac200de85341481335c",
+        "draft": false,
+        "merged": false
       },
       {
         "repository": "molis-ai/molis-work",
         "number": 1846,
-        "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+        "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
         "base": "main",
-        "draft": true,
-        "run": 42098392782
+        "draft": false,
+        "run": 42147893187,
+        "merged": false
       }
     ],
     "storageFull": {
@@ -11411,28 +12256,28 @@
       "state": "APPROVED_FOR_1842_1843_1844",
       "automaticReviewInitiallyRejected": true,
       "userReply": "Allowed merging these two PRs",
-      "merged": false,
+      "merged": true,
       "queueRuns": [
         42069148823,
         42069313262
       ],
       "directMergeRejectedByRepository": "Must use merge queue",
       "mergedPRs": [
-        1842
+        1842,
+        1843,
+        1844
       ],
-      "mainCommit": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+      "mainCommit": "3a6b292efbc96241978eabed4951e5f8903ecc9c",
       "assetUpdateApproval": "+273 bytes; dequeue, update, Verify, restore review and requeue authorized",
       "assetDequeueMethod": "Converted to draft, but queue lock persisted. Closed and immediately reopened same PR under explicit dequeue authorization, preserving review history. New head pushed.",
       "storageMergeApproval": "User explicitly allowed #1844 into merge queue",
-      "storageQueueRun": 42085559491,
-      "assetQueueRun": 42096685693,
-      "assetQueueCommit": "31cad5be9809c22d7b393685715c073a63e994ae",
-      "finalCandidate": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "storageQueueRun": 42103565729,
+      "assetQueueRun": 42116972915,
+      "assetQueueCommit": "be628562d7147e51b2bb882a83053a2fb602821d",
+      "finalCandidate": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
       "assetRestored": true,
-      "queuedPRs": [
-        1844,
-        1843
-      ]
+      "queuedPRs": [],
+      "storageQueueCommit": "a5b5e057515e5ce535645884138bf9a58d42680f"
     },
     "prerequisiteVerify": [
       {
@@ -11454,20 +12299,738 @@
       }
     ],
     "finalAccountFull": {
-      "runId": 42098148275,
-      "url": "https://github.com/molis-ai/molis-work/actions/runs/42098148275",
-      "state": "PENDING",
-      "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "runId": 42147888320,
+      "url": "https://github.com/molis-ai/molis-work/actions/runs/42147888320",
+      "state": "SUCCESS",
+      "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
       "event": "push",
-      "branch": "integration/t01-unified-account-20261106"
+      "branch": "integration/t01-unified-account-20261106",
+      "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+      "completedAt": "2026-11-06T03:13:59Z",
+      "summaryJob": 127687759058,
+      "shards": 16,
+      "passedShards": 16,
+      "files": 1660,
+      "passedFiles": 1660,
+      "firstAttemptPassedFiles": 1658,
+      "persistentFailedFiles": 0,
+      "retryPassedFiles": [
+        "tests/plugin-tab-groups.e2e.test.ts",
+        "tests/issue-home-locale.e2e.test.ts"
+      ],
+      "macOSExcludedFiles": 57,
+      "liveRun": false,
+      "jobResults": [
+        {
+          "jobId": 127663689992,
+          "name": "Full suite (10/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:25:34.3210852Z run-tests: 104 of 104 files passed in 19.8 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:05:44.2151126Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690091,
+          "name": "Full suite (2/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:31:42.0988077Z run-tests: 104 of 104 files passed in 24.8 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:51.4863465Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690097,
+          "name": "Full suite (8/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:24:30.9405874Z run-tests: 104 of 104 files passed in 14.6 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:09:57.4795088Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690117,
+          "name": "Full suite (4/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:28:31.4762667Z run-tests: 104 of 104 files passed in 19.4 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:09:05.3653698Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690140,
+          "name": "Full suite (9/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:25:20.0088122Z run-tests: 104 of 104 files passed in 18.7 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:38.9914891Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690203,
+          "name": "Full suite (7/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:27:47.5547198Z run-tests: 104 of 104 files passed in 22.0 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:05:45.8707753Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690226,
+          "name": "Full suite (5/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:30:40.4889305Z run-tests: 104 of 104 files passed (1 only on a retry) in 24.0 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:41.3524584Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [
+            "2026-11-06T02:24:54.3550616Z [95/104] FAIL  tests/plugin-tab-groups.e2e.test.ts  189.1s  4/5 tests"
+          ],
+          "retries": [
+            "2026-11-06T02:30:40.4887273Z [retry 1] ok    tests/plugin-tab-groups.e2e.test.ts  147.4s"
+          ]
+        },
+        {
+          "jobId": 127663690230,
+          "name": "Full suite (3/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:23:14.4839937Z run-tests: 104 of 104 files passed in 16.5 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:42.3185378Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690258,
+          "name": "Full suite (12/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:52:39.3463814Z run-tests: 104 of 104 files passed in 16.0 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:36:36.4019264Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690274,
+          "name": "Full suite (14/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:55:15.8898804Z run-tests: 103 of 103 files passed in 15.7 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:39:36.4556551Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690280,
+          "name": "Full suite (1/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:22:10.2555109Z run-tests: 104 of 104 files passed in 15.7 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:29.7911109Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690288,
+          "name": "Full suite (16/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T03:01:35.2361059Z run-tests: 103 of 103 files passed in 19.1 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:42:31.6872767Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690316,
+          "name": "Full suite (13/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:57:36.0588881Z run-tests: 103 of 103 files passed in 17.5 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:40:08.9270139Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690345,
+          "name": "Full suite (11/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:42:51.3636568Z run-tests: 104 of 104 files passed in 12.7 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:30:07.9788452Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        },
+        {
+          "jobId": 127663690499,
+          "name": "Full suite (6/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T02:21:13.5558531Z run-tests: 104 of 104 files passed (1 only on a retry) in 15.1 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:06:08.9355821Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [
+            "2026-11-06T02:14:36.1250570Z [60/104] FAIL  tests/issue-home-locale.e2e.test.ts  39.1s  3/4 tests"
+          ],
+          "retries": [
+            "2026-11-06T02:21:13.5557471Z [retry 1] ok    tests/issue-home-locale.e2e.test.ts  24.1s"
+          ]
+        },
+        {
+          "jobId": 127663690314,
+          "name": "Full suite (15/16)",
+          "conclusion": "success",
+          "checkedCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+          "summary": [
+            "2026-11-06T03:13:50.0831599Z run-tests: 103 of 103 files passed in 32.8 min (2 at a time)"
+          ],
+          "excluded": [
+            "2026-11-06T02:41:04.8173933Z run-tests: left out 57 macOS-only files of 1717"
+          ],
+          "failures": [],
+          "retries": []
+        }
+      ]
     },
     "finalAccountVerify": {
-      "runId": 42098392782,
-      "url": "https://github.com/molis-ai/molis-work/actions/runs/42098392782",
-      "state": "PENDING",
-      "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+      "runId": 42147893187,
+      "url": "https://github.com/molis-ai/molis-work/actions/runs/42147893187",
+      "state": "SUCCESS",
+      "head": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
       "event": "pull_request",
-      "base": "main"
+      "base": "main",
+      "checkedCommit": "8db29f8d8ff184045a5fd5a1ea9a8a505411c2e3",
+      "baseCommit": "3a6b292efbc96241978eabed4951e5f8903ecc9c",
+      "checkedTree": "b7c4488c85ca8a512b653ddb8ae607373f09674c",
+      "sameTreeAsFinalHead": true,
+      "completedAt": "2026-11-06T02:32:57Z",
+      "summaryJob": 127673697617,
+      "productSubset": {
+        "files": 409,
+        "passed": 409,
+        "retryPassed": 0,
+        "jobs": [
+          127663814392,
+          127663814518
+        ]
+      },
+      "security": {
+        "files": 288,
+        "passed": 288,
+        "retryPassed": 0,
+        "jobs": [
+          127663814398,
+          127663814399
+        ]
+      },
+      "note": "Counts overlap with Full and are not summed as unique coverage."
+    },
+    "invalidatedQueues": [
+      {
+        "runId": 42096685693,
+        "head": "31cad5be9809c22d7b393685715c073a63e994ae",
+        "note": "Prior queue changed when preceding PR 1840 left and reentered; two jobs failed only at missing queue-ref guard."
+      },
+      {
+        "runId": 42085559491,
+        "head": "f9c5a57930f33ba00dc56ffd6710796d0f09a262",
+        "note": "Verify passed but queue rebuilt before merge; not actual main."
+      }
+    ],
+    "candidateHistory": [
+      {
+        "full": {
+          "runId": 42098148275,
+          "url": "https://github.com/molis-ai/molis-work/actions/runs/42098148275",
+          "state": "FAILED_ALL_SHARDS_COLLECTED",
+          "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+          "event": "push",
+          "branch": "integration/t01-unified-account-20261106",
+          "shards": [
+            {
+              "jobId": 127493538978,
+              "name": "Full suite (2/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 24.4 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539012,
+              "name": "Full suite (9/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 23.0 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539021,
+              "name": "Full suite (3/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 13.0 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539059,
+              "name": "Full suite (7/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 12.6 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539071,
+              "name": "Full suite (12/16)",
+              "conclusion": "failure",
+              "summary": "run-tests: 102 of 103 files passed in 19.8 min (2 at a time)",
+              "initialPasses": 102,
+              "failed": [
+                "tests/chrome-inner-scroll.test.ts"
+              ],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539085,
+              "name": "Full suite (16/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 103 of 103 files passed in 19.7 min (2 at a time)",
+              "initialPasses": 103,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539138,
+              "name": "Full suite (8/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 16.7 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539171,
+              "name": "Full suite (6/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 13.7 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539176,
+              "name": "Full suite (4/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 16.2 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539222,
+              "name": "Full suite (11/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 103 of 103 files passed in 17.1 min (2 at a time)",
+              "initialPasses": 103,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539269,
+              "name": "Full suite (13/16)",
+              "conclusion": "cancelled",
+              "summary": null,
+              "initialPasses": 102,
+              "failed": [
+                "tests/workbench-frame-container.e2e.test.ts"
+              ],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539344,
+              "name": "Full suite (14/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 103 of 103 files passed in 22.1 min (2 at a time)",
+              "initialPasses": 103,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539364,
+              "name": "Full suite (5/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 28.3 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539400,
+              "name": "Full suite (10/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 15.0 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539428,
+              "name": "Full suite (15/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 103 of 103 files passed in 12.2 min (2 at a time)",
+              "initialPasses": 103,
+              "failed": [],
+              "flakes": []
+            },
+            {
+              "jobId": 127493539442,
+              "name": "Full suite (1/16)",
+              "conclusion": "success",
+              "summary": "run-tests: 104 of 104 files passed in 14.4 min (2 at a time)",
+              "initialPasses": 104,
+              "failed": [],
+              "flakes": []
+            }
+          ],
+          "summaryJob": 127544450634,
+          "shardsPassed": 14,
+          "shardsFailed": 1,
+          "shardsCancelled": 1,
+          "totalFiles": 1658,
+          "firstAttemptPassedFiles": 1656,
+          "excludedMacOSFiles": 57,
+          "persistentFailures": [
+            "tests/chrome-inner-scroll.test.ts"
+          ],
+          "unfinishedRetryFiles": [
+            "tests/workbench-frame-container.e2e.test.ts"
+          ],
+          "flaky": []
+        },
+        "verify": {
+          "runId": 42098392782,
+          "url": "https://github.com/molis-ai/molis-work/actions/runs/42098392782",
+          "state": "FAILURE",
+          "head": "c235037f40a3447b1ae3e0c222b40a6f10f55855",
+          "event": "pull_request",
+          "base": "main",
+          "failedJob": 127502471281,
+          "summaryJob": 127548035012,
+          "productShard1": {
+            "passed": 204,
+            "total": 205,
+            "flaky": 0
+          }
+        }
+      }
+    ],
+    "mergedPrerequisites": [
+      {
+        "pr": 1842,
+        "mainCommit": "637a4c841d1ea57ed96b1bec995e6ab47f60bf69",
+        "queueRun": 42069148823
+      },
+      {
+        "pr": 1844,
+        "mainCommit": "a5b5e057515e5ce535645884138bf9a58d42680f",
+        "queueRun": 42103565729,
+        "summaryJob": 127555561000,
+        "mergedAt": "2026-11-05T21:55:19Z"
+      },
+      {
+        "pr": 1843,
+        "mainCommit": "be628562d7147e51b2bb882a83053a2fb602821d",
+        "queueRun": 42116972915,
+        "summaryJob": 127578939303,
+        "mergedAt": "2026-11-05T22:35:37Z"
+      }
+    ],
+    "assetQueueEnvironmentFailure": {
+      "runId": 42103571475,
+      "jobId": 127523552467,
+      "file": "tests/runtime-plugin-http-discovery.test.ts",
+      "failure": "Chrome debugger did not start",
+      "passedFiles": 142,
+      "totalFiles": 143,
+      "finalQueueRun": 42116972915,
+      "finalJob": 127560164356,
+      "finalFileTests": "27/27",
+      "finalShardFiles": "143/143"
+    },
+    "finalJobLogs": [
+      {
+        "jobId": 127663689992,
+        "path": "remote/job-127663689992.log",
+        "bytes": 147040,
+        "sha256": "ee82792e5b04ceb6347bf30d96be6cc8dad3dfa6aac6db96b435f11f6e3c10c5"
+      },
+      {
+        "jobId": 127663690091,
+        "path": "remote/job-127663690091.log",
+        "bytes": 147956,
+        "sha256": "0613eb57fa68e44925319ea654ff4d7795dd15ebf2e3390e8a7c288a60030a81"
+      },
+      {
+        "jobId": 127663690097,
+        "path": "remote/job-127663690097.log",
+        "bytes": 147128,
+        "sha256": "80ad996e0f8b782f9c0109b3a18057e4a36f3440c0964a01df3b135816851534"
+      },
+      {
+        "jobId": 127663690117,
+        "path": "remote/job-127663690117.log",
+        "bytes": 147038,
+        "sha256": "b2046aa76cbf5dee83c5c1561c701bde979cbf64bd0bf33bb61b35e8687f3fb7"
+      },
+      {
+        "jobId": 127663690140,
+        "path": "remote/job-127663690140.log",
+        "bytes": 147803,
+        "sha256": "c16fe1f527213a83cb5e0c70654581d62fa8ccf67a9bd09e7366bc73f74da92a"
+      },
+      {
+        "jobId": 127663690203,
+        "path": "remote/job-127663690203.log",
+        "bytes": 146996,
+        "sha256": "2d43b1ec5d0a80e599f4cbd7d9db3d35554d763c202ada44fd4fc9a0793f6dc7"
+      },
+      {
+        "jobId": 127663690226,
+        "path": "remote/job-127663690226.log",
+        "bytes": 174817,
+        "sha256": "f604a0e917a9fe7e30f1ffea512fcaf6847d7fd7d11a9e6020d3723dc0860d1c"
+      },
+      {
+        "jobId": 127663690230,
+        "path": "remote/job-127663690230.log",
+        "bytes": 148083,
+        "sha256": "848fb791f4372797feb02b859b97a9f40c0ca6f5cd4eb0a9527aa1195669c87f"
+      },
+      {
+        "jobId": 127663690258,
+        "path": "remote/job-127663690258.log",
+        "bytes": 148209,
+        "sha256": "ed76e455ca23243fb01d4a006874d54f4d566a179bee2a4ceb3cd45630e58e6a"
+      },
+      {
+        "jobId": 127663690274,
+        "path": "remote/job-127663690274.log",
+        "bytes": 147441,
+        "sha256": "6f29d50ed9f98ef8e53914c5cc8968c9ad57c030a4cb4212b2c87820ba0b9a5d"
+      },
+      {
+        "jobId": 127663690280,
+        "path": "remote/job-127663690280.log",
+        "bytes": 147171,
+        "sha256": "998a83229f2dc4409db20e56e8e25a329b152cfc260f4ba8c7b799bc515201af"
+      },
+      {
+        "jobId": 127663690288,
+        "path": "remote/job-127663690288.log",
+        "bytes": 148123,
+        "sha256": "4d2a2702055543267ae63aeb96a1ef6791234a37c7ed5e8d62e22602c83da92a"
+      },
+      {
+        "jobId": 127663690316,
+        "path": "remote/job-127663690316.log",
+        "bytes": 147401,
+        "sha256": "0eff0f74262d26a6bafa4b40fd1f04d5e06de92773557b5ad26cfcf6521e2331"
+      },
+      {
+        "jobId": 127663690345,
+        "path": "remote/job-127663690345.log",
+        "bytes": 147552,
+        "sha256": "bbc1a83e4b3f83f062248a1968b99c3a103389d672c8729215446c14695f2830"
+      },
+      {
+        "jobId": 127663690499,
+        "path": "remote/job-127663690499.log",
+        "bytes": 151456,
+        "sha256": "616a326785fcdb20bf691a4bc3df50cb6387104842ef15dcf1fc429608d45b39"
+      },
+      {
+        "jobId": 127673697617,
+        "path": "remote/job-127673697617.log",
+        "bytes": 6221,
+        "sha256": "04a690627b415564c444d3ec95539163b49ce048ecd29d8fe161427ef31851e2"
+      },
+      {
+        "jobId": 127663814392,
+        "path": "remote/job-127663814392.log",
+        "bytes": 98143,
+        "sha256": "30ca69443baf8f8e59c3a3ea58299d4f02476fdd48387178df854fdf11a1c163"
+      },
+      {
+        "jobId": 127663814518,
+        "path": "remote/job-127663814518.log",
+        "bytes": 98072,
+        "sha256": "113a5b17da426edb18aec158cde5c2006eaae75b532a75252882a6a26d04da64"
+      },
+      {
+        "jobId": 127663814398,
+        "path": "remote/job-127663814398.log",
+        "bytes": 100803,
+        "sha256": "261401a0da59df2f4dc7b4ea918632e0737434879412b3151c8ea21d0b1c412b"
+      },
+      {
+        "jobId": 127663814399,
+        "path": "remote/job-127663814399.log",
+        "bytes": 100612,
+        "sha256": "ab780bb6bf44a041e1af1627233a03a378b31f4e2feae672c2e388db5b4cbc27"
+      },
+      {
+        "jobId": 127663705810,
+        "path": "remote/job-127663705810.log",
+        "bytes": 63350,
+        "sha256": "8675f5d1fb01c9f3309e253e0706fdf650979774207ba9b12017801b93e7f126"
+      },
+      {
+        "jobId": 127663690314,
+        "path": "remote/job-127663690314.log",
+        "bytes": 147487,
+        "sha256": "e52c4414f51c857ce94c0b3b11f59cdd152e9f528319b77a90b567611368eddf"
+      },
+      {
+        "jobId": 127687759058,
+        "path": "remote/job-127687759058.log",
+        "bytes": 2464,
+        "sha256": "c881a372c6e47d6cd8c924c9c3246dba4fd8c716d559465c7ae95709108cc9bb"
+      }
+    ],
+    "featureReview": {
+      "checkedAt": "2026-11-06T03:39:56.797867+00:00",
+      "readyPRs": [
+        "molis-ai/auth#2",
+        "molis-ai/molis-club#27",
+        "molis-ai/molis-work#1846"
+      ],
+      "submittedReviews": 0,
+      "reviewThreads": 0,
+      "mainMergeAuthorized": false,
+      "note": "Absence of reviews is not human approval. Prior main authorization covers only Work #1842/#1843/#1844."
+    },
+    "latestMainRecheck": {
+      "checkedAt": "2026-11-06T03:39:56.797867+00:00",
+      "workMain": "05d4cf98c46858bba5ab331b94d587db02b1c017",
+      "workHead": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+      "mergeable": false,
+      "mergeableState": "dirty",
+      "conflictFiles": [
+        "tooling/gates/page-assets.json"
+      ],
+      "diagnosticCommand": "git merge-tree --write-tree --name-only --no-messages HEAD origin/main",
+      "diagnosticExitCode": 1,
+      "worktreeUnchanged": true,
+      "authMergeable": true,
+      "clubMergeable": true,
+      "note": "Readonly merge calculation; no branch/worktree update. New candidate must rerun applicable local gates/joint validation and CI Full/Verify. New main uses three security shards."
+    },
+    "externalBuildInvestigation": {
+      "checkedAt": "2026-11-06T03:57:03.263159+00:00",
+      "checks": [
+        {
+          "repository": "molis-ai/auth",
+          "head": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
+          "checkId": 127500868569,
+          "name": "Workers Builds: molis-auth-production",
+          "buildId": "3f515832-7afc-47bb-9b14-f0fbbc16dcad",
+          "conclusion": "failure",
+          "annotations": 0,
+          "errorText": null
+        },
+        {
+          "repository": "molis-ai/molis-club",
+          "head": "ce8a89c97fd5e093cd44aac200de85341481335c",
+          "checkId": 127429899640,
+          "name": "Workers Builds: molis-club-production",
+          "buildId": "7fdea50c-60af-4688-9a93-7bbde8dbfdaf",
+          "conclusion": "failure",
+          "annotations": 0,
+          "errorText": null
+        }
+      ],
+      "state": "LOGS_AND_BRANCH_DEPLOY_SETTINGS_REQUIRED",
+      "rootCause": null,
+      "workHeadChecks": {
+        "success": 32,
+        "skipped": 2,
+        "failure": 0
+      },
+      "method": "Read GitHub commit check-runs and statuses. Cloudflare build dashboard navigation did not finish; no build logs or settings obtained.",
+      "actionsNotTaken": [
+        "No external build retry",
+        "No Cloudflare settings change",
+        "No deployment or data migration",
+        "No further source push after discovering production Worker build hooks"
+      ],
+      "next": "Obtain first build error, build command and non-production branch deploy settings; fix and verify within mock/synthetic scope. Confirm push cannot publish production before syncing documentation commit."
     }
   },
   "diagnostics": [
@@ -11498,6 +13061,24 @@
     {
       "kind": "FINAL_VERIFY_TRIGGER",
       "note": "Retargeted draft #1846 to main. Base edit does not trigger the default PR workflow, and connector has no workflow dispatch; closed and immediately reopened the same draft to trigger default reopened event. Same c235037f4 head and review history preserved."
+    },
+    {
+      "issue": "Final push preflight SSH fetch reset once",
+      "resolution": "Read-only connector verified main 3a6b292ef unchanged; identical git fetch succeeded on retry, final-head original secret scan passed 48460 lines. No SSH configuration or credential change."
     }
-  ]
+  ],
+  "finalDirectedResults": {
+    "files": 61,
+    "tests": 891,
+    "passed": 891,
+    "failed": 0,
+    "skipped": 0,
+    "sourceBase": "db232b61a06bb8ea3f65ff550156ce4a8690b3f8",
+    "note": "Includes SDK and Host integration changes from actual main; no local Full."
+  },
+  "localLogAvailability": {
+    "checkedAt": "2026-11-06T03:39:56.797867+00:00",
+    "directoryExists": false,
+    "note": "Original temporary evidence directory was absent on final status recheck. Historical command/result/byte/hash records are retained; final GitHub run and job links remain the remote evidence source."
+  }
 }
