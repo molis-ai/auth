@@ -1,9 +1,9 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T05:10:51.709030+00:00",
+  "recordedAt": "2026-11-06T06:44:54.738294+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
-  "phase": "T-01_VERIFIED_CANDIDATE_NEW_MAIN_INTEGRATION_PENDING",
-  "note": "Final Work head 9cf6fe623 and its matching merge tree passed Verify and Full. 1660/1660 Linux files, two existing retries passed, 57 macOS-only files excluded, no live runs. Products 409/409 and security 288/288 separately, no retries there. Local 61 files/891 tests and real Auth/Host/BFF joint mock/synthetic validation passed. All three feature PRs ready; no submitted human reviews or authorization to merge them. Historical failures preserved. No real data, payment, release or deployment. Subsequent main 05d4cf98c introduces a page-assets.json conflict; the successful 9cf6fe623 runs do not validate this newer combination. Main integration and new-head verification remain before merge.",
+  "phase": "T-01_FINAL_HEAD_REMOTE_RUNNING",
+  "note": "Current delivery source and final CI are recorded in remote.navigationMainCandidate. Older candidates and all observed failures remain separately recorded; combined named-file coverage is not a single Full run.",
   "repositories": {
     "A": {
       "baseCommit": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+      "baseCommit": "db1cafd2de0615ecbb94abe36f52737a9c878612",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -58,11 +58,11 @@
         "pnpm-workspace.yaml",
         "tsconfig.json"
       ],
-      "fileCount": 5917,
-      "sourceSha256": "50b9585815e12a53d3a213f92eefe1cbbd1e8aee8c78564d67a839e6e41901fa"
+      "fileCount": 5934,
+      "sourceSha256": "5dda76de4e2daa27fd84e1d80a6bfeec2bd400fb6bf05611a35d0d05c347f1d8"
     },
     "C": {
-      "baseCommit": "ce8a89c97fd5e093cd44aac200de85341481335c",
+      "baseCommit": "262c973f9df9d38575627f60975610fb35b2b711",
       "uncommitted": false,
       "branch": "codex/club-01-account-foundation",
       "packageVersion": "0.1.0",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "44d4ef3351a88063ce23dea0e2de41419143f61d3b968c38915c65e049cb1798",
+  "sourceManifestSha256": "a6aea31ab53804f0317358c30bbf7e1391c26f055fb3f33a8980fd6bd5a0b271",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2673,8 +2673,32 @@
     },
     {
       "id": "K-14",
-      "status": "DIAGNOSED_EXTERNAL_CHECKS_REMAIN_FAILED",
+      "status": "DEV_BUILD_ONLY_BOUNDARY_FIXED_HISTORICAL_FAILURES_RETAINED",
       "resolution": "Old Auth run initialization timeout; Club deployment configuration absent, locally reproduced and 7/7 config/contract tests passed. The builds-disabled inference was wrong and retracted after approved push triggered a new Auth build; cancelled before upload, reported as failure by Cloudflare."
+    },
+    {
+      "id": "K-15",
+      "status": "RESOLVED_LOCAL_REMOTE_PENDING",
+      "summary": "Ordinary menu 34px and touch 44px kept; described rows expand without clipping.",
+      "evidence": "remote.navigationMainCandidate"
+    },
+    {
+      "id": "K-16",
+      "status": "RESOLVED_LOCAL_REMOTE_PENDING",
+      "summary": "Model and navigation label plurals use existing shared count contract.",
+      "evidence": "remote.navigationMainCandidate"
+    },
+    {
+      "id": "K-17",
+      "status": "RESOLVED_LOCAL_REMOTE_PENDING",
+      "summary": "Motion fixture establishes its initial paint before transition; original assertions and deadlines kept.",
+      "evidence": "remote.navigationMainCandidate"
+    },
+    {
+      "id": "K-18",
+      "status": "RESOLVED_LOCAL_JOINT_PASS",
+      "summary": "Account scripts await onboarding aria-busy=false before finding exit; all eight scripts pass.",
+      "evidence": "remote.navigationMainCandidate"
     }
   ],
   "matrix": {
@@ -13124,17 +13148,29 @@
       "authBranch": "codex/unified-account-foundation",
       "approvedPRBodiesPublished": true,
       "incorrectDisabledClaimRetractedInPRBodies": true,
-      "correctionDocumentPushPending": true
+      "correctionDocumentPushPending": false,
+      "correctionCommit": "ae665a4446e1e7f9b072cbeebf066bf5fa81525d",
+      "correctionIncludedInPushedHead": "ba54f01e125ef7009087c10f60c79d4cc8656e2f"
     },
     "developmentBuildOnly": {
-      "status": "LOCAL_VALIDATED_REMOTE_PENDING",
+      "status": "AUTH_REMOTE_PASS_CLUB_LOCAL_PASS_REMOTE_BILLING_NOT_BLOCKING",
       "cloudflare": {
         "authNonProductionBuilds": false,
         "clubNonProductionBuilds": false,
         "savedViaDashboard": true,
         "previewBranchBuildsObservedOff": true,
         "productionConfigurationChanged": false,
-        "noDeployOrRealData": true
+        "noDeployOrRealData": true,
+        "afterPushCheckRuns": {
+          "auth": [
+            "Auth build and tests"
+          ],
+          "club": [
+            "Club build and tests"
+          ],
+          "observedNoCloudflareCheck": true,
+          "observedAt": "2026-11-06T05:20:34.809893+00:00"
+        }
       },
       "workflows": {
         "A": {
@@ -13185,6 +13221,2785 @@
           "build": "PASS",
           "data": "synthetic/mock"
         }
+      },
+      "authRemote": {
+        "head": "ba54f01e125ef7009087c10f60c79d4cc8656e2f",
+        "runId": 42166921808,
+        "jobId": 127725437083,
+        "conclusion": "success",
+        "url": "https://github.com/molis-ai/auth/actions/runs/42166921808",
+        "counts": {
+          "contract": 7,
+          "rust": 20,
+          "worker": 130,
+          "web": 91,
+          "sdk": 27
+        }
+      },
+      "clubRemote": {
+        "head": "262c973f9df9d38575627f60975610fb35b2b711",
+        "runId": 42166941237,
+        "jobId": 127725493765,
+        "conclusion": "failure",
+        "url": "https://github.com/molis-ai/molis-club/actions/runs/42166941237",
+        "jobStarted": false,
+        "reason": "GitHub: recent account payments failed or spending limit needs increase",
+        "userDecision": "2026-11-06: return to main task; ignore Actions here for now, not blocking",
+        "acceptedAsPassing": false
+      }
+    },
+    "refreshedMainCandidate": {
+      "head": "f5c690d5fa29d7449cb0e0082c5075a653b80ed3",
+      "sourceCommit": "d8d41cf42f9a0e9fba67cc53690216734d2da019",
+      "main": "2e973052234c076b4a3f13d86023193ed748ae75",
+      "mergeConflict": "tooling/gates/page-assets.json",
+      "resolved": true,
+      "assets": {
+        "count": 51,
+        "bytes": 7445327,
+        "approvedAccountIncrementsUnchanged": true,
+        "workbenchJs": [
+          1077514,
+          1117143
+        ],
+        "workbenchCss": [
+          1194792,
+          1195244
+        ]
+      },
+      "localGates": "PASS",
+      "targeted": {
+        "files": 102,
+        "tests": 1440,
+        "status": "PASS",
+        "exitCode": 0,
+        "sourceCommit": "d8d41cf42f9a0e9fba67cc53690216734d2da019",
+        "candidateSameSource": "f5c690d5fa29d7449cb0e0082c5075a653b80ed3",
+        "fileResults": [
+          {
+            "file": "tests/ci-product-subset.test.ts",
+            "result": "ok",
+            "seconds": 47.6,
+            "passed": 19,
+            "total": 19,
+            "note": ""
+          },
+          {
+            "file": "tests/issue-draft-preview.e2e.test.ts",
+            "result": "ok",
+            "seconds": 41.9,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/workbench-frame-container.e2e.test.ts",
+            "result": "ok",
+            "seconds": 38.3,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/page-assets-budget.test.ts",
+            "result": "ok",
+            "seconds": 36.9,
+            "passed": 171,
+            "total": 171,
+            "note": ""
+          },
+          {
+            "file": "tests/runtime-plugin-http-discovery.test.ts",
+            "result": "ok",
+            "seconds": 36.8,
+            "passed": 27,
+            "total": 27,
+            "note": ""
+          },
+          {
+            "file": "tests/model-first-setup.e2e.test.ts",
+            "result": "ok",
+            "seconds": 33.0,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-processes.test.ts",
+            "result": "ok",
+            "seconds": 26.4,
+            "passed": 16,
+            "total": 16,
+            "note": ""
+          },
+          {
+            "file": "tests/connector-mcp.test.ts",
+            "result": "ok",
+            "seconds": 20.9,
+            "passed": 92,
+            "total": 92,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-service.test.ts",
+            "result": "ok",
+            "seconds": 18.6,
+            "passed": 15,
+            "total": 15,
+            "note": ""
+          },
+          {
+            "file": "tests/security-invariants-connector-private-state.test.ts",
+            "result": "ok",
+            "seconds": 14.3,
+            "passed": 9,
+            "total": 9,
+            "note": ""
+          },
+          {
+            "file": "tests/action-before-effect.test.ts",
+            "result": "ok",
+            "seconds": 14.2,
+            "passed": 23,
+            "total": 23,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-hooks.test.ts",
+            "result": "ok",
+            "seconds": 13.0,
+            "passed": 11,
+            "total": 11,
+            "note": ""
+          },
+          {
+            "file": "tests/feed-sync-authority.test.ts",
+            "result": "ok",
+            "seconds": 12.3,
+            "passed": 18,
+            "total": 18,
+            "note": ""
+          },
+          {
+            "file": "tests/local-web-actions.test.ts",
+            "result": "ok",
+            "seconds": 11.1,
+            "passed": 14,
+            "total": 14,
+            "note": ""
+          },
+          {
+            "file": "tests/web-home-isolation.test.ts",
+            "result": "ok",
+            "seconds": 9.8,
+            "passed": 8,
+            "total": 8,
+            "note": ""
+          },
+          {
+            "file": "tests/shelf-jelly-cognia-images-error-model.test.ts",
+            "result": "ok",
+            "seconds": 10.4,
+            "passed": 13,
+            "total": 13,
+            "note": ""
+          },
+          {
+            "file": "tests/management-door-identity.test.ts",
+            "result": "ok",
+            "seconds": 10.3,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/assistant-executor.test.ts",
+            "result": "ok",
+            "seconds": 2.5,
+            "passed": 16,
+            "total": 16,
+            "note": ""
+          },
+          {
+            "file": "tests/assistant-send-delivery.test.ts",
+            "result": "ok",
+            "seconds": 1.7,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/ci-test-selection.test.ts",
+            "result": "ok",
+            "seconds": 1.2,
+            "passed": 10,
+            "total": 10,
+            "note": ""
+          },
+          {
+            "file": "tests/composer-board.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/home-plugin-stage-navigation.test.ts",
+            "result": "ok",
+            "seconds": 10.1,
+            "passed": 10,
+            "total": 10,
+            "note": ""
+          },
+          {
+            "file": "tests/home-plugin-stage-pages.test.ts",
+            "result": "ok",
+            "seconds": 4.8,
+            "passed": 9,
+            "total": 9,
+            "note": ""
+          },
+          {
+            "file": "tests/model-provider-list.test.ts",
+            "result": "ok",
+            "seconds": 1.9,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/run-tests-shard.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/action-read-compatibility.test.ts",
+            "result": "ok",
+            "seconds": 10.0,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/goal-management-identity.test.ts",
+            "result": "ok",
+            "seconds": 8.4,
+            "passed": 10,
+            "total": 10,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-owners.test.ts",
+            "result": "ok",
+            "seconds": 8.1,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/action-gateway.test.ts",
+            "result": "ok",
+            "seconds": 7.2,
+            "passed": 13,
+            "total": 13,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-project-database.test.ts",
+            "result": "ok",
+            "seconds": 6.5,
+            "passed": 11,
+            "total": 11,
+            "note": ""
+          },
+          {
+            "file": "tests/client-script-undeclared.test.ts",
+            "result": "ok",
+            "seconds": 5.9,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-platform-home.test.ts",
+            "result": "ok",
+            "seconds": 6.3,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/goals-mcp-actions.test.ts",
+            "result": "ok",
+            "seconds": 5.6,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/memory-learning.test.ts",
+            "result": "ok",
+            "seconds": 5.7,
+            "passed": 23,
+            "total": 23,
+            "note": ""
+          },
+          {
+            "file": "tests/model-first-setup-http.test.ts",
+            "result": "ok",
+            "seconds": 5.3,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-model-service.test.ts",
+            "result": "ok",
+            "seconds": 6.0,
+            "passed": 18,
+            "total": 18,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-studios.test.ts",
+            "result": "ok",
+            "seconds": 5.5,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/home-plugin-platform.test.ts",
+            "result": "ok",
+            "seconds": 5.3,
+            "passed": 7,
+            "total": 7,
+            "note": ""
+          },
+          {
+            "file": "tests/issue-home-runtime.test.ts",
+            "result": "ok",
+            "seconds": 5.2,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-development-artifacts.test.ts",
+            "result": "ok",
+            "seconds": 4.7,
+            "passed": 9,
+            "total": 9,
+            "note": ""
+          },
+          {
+            "file": "tests/alchemist-pulse-github.test.ts",
+            "result": "ok",
+            "seconds": 4.7,
+            "passed": 8,
+            "total": 8,
+            "note": ""
+          },
+          {
+            "file": "tests/lark-mcp-launch.test.ts",
+            "result": "ok",
+            "seconds": 3.6,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/cli-goals-actions.test.ts",
+            "result": "ok",
+            "seconds": 4.1,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/i18n.test.ts",
+            "result": "ok",
+            "seconds": 4.1,
+            "passed": 13,
+            "total": 13,
+            "note": ""
+          },
+          {
+            "file": "tests/onboarding-goals-actions.test.ts",
+            "result": "ok",
+            "seconds": 4.0,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/home-plugin-model-lifecycle.test.ts",
+            "result": "ok",
+            "seconds": 3.9,
+            "passed": 8,
+            "total": 8,
+            "note": ""
+          },
+          {
+            "file": "tests/system-search-host.test.ts",
+            "result": "ok",
+            "seconds": 3.7,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/mcp-connection-identity.test.ts",
+            "result": "ok",
+            "seconds": 3.7,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/mcp-session-authorship-nested.test.ts",
+            "result": "ok",
+            "seconds": 3.7,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-route-operations.test.ts",
+            "result": "ok",
+            "seconds": 3.7,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/home-plugin-private-store.test.ts",
+            "result": "ok",
+            "seconds": 3.4,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/action-model-scheduling.test.ts",
+            "result": "ok",
+            "seconds": 3.3,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/security-invariants-gateway.test.ts",
+            "result": "ok",
+            "seconds": 3.3,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/shelf-project-results-http.test.ts",
+            "result": "ok",
+            "seconds": 3.3,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/local-host-queue-scope.test.ts",
+            "result": "ok",
+            "seconds": 3.3,
+            "passed": 7,
+            "total": 7,
+            "note": ""
+          },
+          {
+            "file": "tests/local-host.test.ts",
+            "result": "ok",
+            "seconds": 3.2,
+            "passed": 10,
+            "total": 10,
+            "note": ""
+          },
+          {
+            "file": "tests/capabilities-page.test.ts",
+            "result": "ok",
+            "seconds": 3.1,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/settings-call-diagnostics.test.ts",
+            "result": "ok",
+            "seconds": 3.1,
+            "passed": 10,
+            "total": 10,
+            "note": ""
+          },
+          {
+            "file": "tests/verify-release-versions.test.ts",
+            "result": "ok",
+            "seconds": 2.7,
+            "passed": 22,
+            "total": 22,
+            "note": ""
+          },
+          {
+            "file": "tests/security-invariants-account-host.test.ts",
+            "result": "ok",
+            "seconds": 2.8,
+            "passed": 15,
+            "total": 15,
+            "note": ""
+          },
+          {
+            "file": "tests/action-error-model.test.ts",
+            "result": "ok",
+            "seconds": 2.4,
+            "passed": 15,
+            "total": 15,
+            "note": ""
+          },
+          {
+            "file": "tests/action-gateway-session-authorship.test.ts",
+            "result": "ok",
+            "seconds": 2.4,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/action-error-edges.test.ts",
+            "result": "ok",
+            "seconds": 2.6,
+            "passed": 5,
+            "total": 5,
+            "note": ""
+          },
+          {
+            "file": "tests/host-pages-error-model.test.ts",
+            "result": "ok",
+            "seconds": 2.3,
+            "passed": 17,
+            "total": 17,
+            "note": ""
+          },
+          {
+            "file": "tests/network-notices.test.ts",
+            "result": "ok",
+            "seconds": 2.7,
+            "passed": 8,
+            "total": 8,
+            "note": ""
+          },
+          {
+            "file": "tests/home-store-baselines.test.ts",
+            "result": "ok",
+            "seconds": 2.0,
+            "passed": 27,
+            "total": 27,
+            "note": ""
+          },
+          {
+            "file": "tests/local-host-actions.test.ts",
+            "result": "ok",
+            "seconds": 2.1,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/host-periodic-tasks.test.ts",
+            "result": "ok",
+            "seconds": 2.1,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/runtime-provider-identity.test.ts",
+            "result": "ok",
+            "seconds": 1.9,
+            "passed": 7,
+            "total": 7,
+            "note": ""
+          },
+          {
+            "file": "tests/anysearch-single-owner.test.ts",
+            "result": "ok",
+            "seconds": 1.6,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/contextual-interaction.test.ts",
+            "result": "ok",
+            "seconds": 1.8,
+            "passed": 45,
+            "total": 45,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-capability-availability.test.ts",
+            "result": "ok",
+            "seconds": 1.9,
+            "passed": 7,
+            "total": 7,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-list-developer-mode.test.ts",
+            "result": "ok",
+            "seconds": 1.6,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-assistant.test.ts",
+            "result": "ok",
+            "seconds": 1.5,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/style-has-scope.test.ts",
+            "result": "ok",
+            "seconds": 1.5,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/ui-request-client-pages.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 9,
+            "total": 9,
+            "note": ""
+          },
+          {
+            "file": "tests/action-directory-installation.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/chrome-inner-scroll.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-declarative-mounting.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/web-mutation-key-settle.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 4,
+            "total": 4,
+            "note": ""
+          },
+          {
+            "file": "tests/assistant-island-script.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 6,
+            "total": 6,
+            "note": ""
+          },
+          {
+            "file": "tests/builtin-plugin-composition.test.ts",
+            "result": "ok",
+            "seconds": 1.6,
+            "passed": 7,
+            "total": 7,
+            "note": ""
+          },
+          {
+            "file": "tests/private-store-versions.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/project-deletion-declarations.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-client-served.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/workbench-ui-platform.test.ts",
+            "result": "ok",
+            "seconds": 0.7,
+            "passed": 11,
+            "total": 11,
+            "note": ""
+          },
+          {
+            "file": "tests/builtin-manifests-contract.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/builtin-plugin-agent-texts.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-declaration-rules.test.ts",
+            "result": "ok",
+            "seconds": 0.7,
+            "passed": 277,
+            "total": 277,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-picker-pins.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 16,
+            "total": 16,
+            "note": ""
+          },
+          {
+            "file": "tests/account-client.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 14,
+            "total": 14,
+            "note": ""
+          },
+          {
+            "file": "tests/account-session.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 23,
+            "total": 23,
+            "note": ""
+          },
+          {
+            "file": "tests/action-availability-kind.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/action-plugin-audience.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": ""
+          },
+          {
+            "file": "tests/action-schema-compiler.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/installer-symlink-dependencies.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 3,
+            "total": 3,
+            "note": ""
+          },
+          {
+            "file": "tests/plugin-manifest-v2.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 13,
+            "total": 13,
+            "note": ""
+          },
+          {
+            "file": "tests/account-entitlements.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 1,
+            "total": 1,
+            "note": ""
+          },
+          {
+            "file": "tests/project-arrival.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 12,
+            "total": 12,
+            "note": ""
+          },
+          {
+            "file": "tests/settings-requests-through-helper.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 15,
+            "total": 15,
+            "note": ""
+          },
+          {
+            "file": "tests/ui-request-client.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 32,
+            "total": 32,
+            "note": ""
+          },
+          {
+            "file": "tests/web-service-settings-client.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 8,
+            "total": 8,
+            "note": ""
+          }
+        ]
+      },
+      "joint": {
+        "scripts": 8,
+        "status": "PASS",
+        "exitCode": 0,
+        "results": [
+          {
+            "script": "central-account",
+            "exitCode": 0,
+            "seconds": 2.44,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/central-account.log"
+          },
+          {
+            "script": "account-authentication",
+            "exitCode": 0,
+            "seconds": 11.65,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/account-authentication.log"
+          },
+          {
+            "script": "account-provider",
+            "exitCode": 0,
+            "seconds": 9.17,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/account-provider.log"
+          },
+          {
+            "script": "account-management",
+            "exitCode": 0,
+            "seconds": 12.3,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/account-management.log"
+          },
+          {
+            "script": "account-tenants",
+            "exitCode": 0,
+            "seconds": 10.9,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/account-tenants.log"
+          },
+          {
+            "script": "account-billing",
+            "exitCode": 0,
+            "seconds": 17.19,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/account-billing.log"
+          },
+          {
+            "script": "test-account-browser",
+            "exitCode": 0,
+            "seconds": 90.23,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/test-account-browser.log"
+          },
+          {
+            "script": "test-account-cutover",
+            "exitCode": 0,
+            "seconds": 11.58,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/test-account-cutover.log"
+          }
+        ]
+      },
+      "verify": {
+        "runId": 42167529569,
+        "status": "completed",
+        "checkedMerge": "8a6256fd5c466f1efed7093301ad4c3c9d33cbdc",
+        "tree": "ac957421984de3e1b21b8249eab9e219fa52c6d5",
+        "treeMatchesCandidate": true,
+        "parents": [
+          "2e973052234c076b4a3f13d86023193ed748ae75",
+          "f5c690d5fa29d7449cb0e0082c5075a653b80ed3"
+        ],
+        "conclusion": "success",
+        "productFiles": 409,
+        "securityFiles": 288,
+        "retryPassed": 0
+      },
+      "full": {
+        "runId": 42167522647,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42167522647",
+        "head": "f5c690d5fa29d7449cb0e0082c5075a653b80ed3",
+        "shardsCompleted": 16,
+        "shardsPassed": 14,
+        "shardsFailed": 2,
+        "passedFiles": 1662,
+        "totalFiles": 1664,
+        "excludedMacOS": 57,
+        "liveRun": false,
+        "persistentFailures": [
+          "tests/touch-targets.e2e.test.ts",
+          "tests/fill-message.test.ts"
+        ],
+        "issues": [
+          "K-15",
+          "K-16"
+        ],
+        "logs": [
+          {
+            "jobId": 127727328681,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [
+              "[retry 1] ok    tests/product-experience-polish.e2e.test.ts  58.4s",
+              "[retry 1] ok    tests/ui-audit-browser.e2e.test.ts  61.2s"
+            ],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328681.log",
+            "bytes": 155381,
+            "sha256": "b058f1cf38b690850614260443a3b3459a006ff1e98e86abb2cbc605028d7eec"
+          },
+          {
+            "jobId": 127727328806,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328806.log",
+            "bytes": 147555,
+            "sha256": "2e37a8ef5b0ca21a3870b057994994c22f16590dbdf6836199a4c700d454ff4f"
+          },
+          {
+            "jobId": 127727328817,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328817.log",
+            "bytes": 147744,
+            "sha256": "8576eea31b37ef32114d83ecafbf6f017d7b70cedf8778e9b11f4eac936eee1c"
+          },
+          {
+            "jobId": 127727328877,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [
+              "[retry 1] ok    tests/code-scale.e2e.test.ts  89.5s"
+            ],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328877.log",
+            "bytes": 153511,
+            "sha256": "79e91df562cc0669d6f0fffa18c2c4be549510015b85cc476a720cbcb10f67ce"
+          },
+          {
+            "jobId": 127727328888,
+            "passedFiles": 102,
+            "totalFiles": 103,
+            "retries": [
+              "[retry 1] FAIL  tests/touch-targets.e2e.test.ts  301.0s"
+            ],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328888.log",
+            "bytes": 150466,
+            "sha256": "c620c64e4959f666ec0f09b5fb93d14d282ac61ccfa56cee06384be07dafe615"
+          },
+          {
+            "jobId": 127727328905,
+            "passedFiles": 105,
+            "totalFiles": 105,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328905.log",
+            "bytes": 148169,
+            "sha256": "df9479e94bcb9eb114e53e0b6188b856ef97ad1e8e758bd971c5ed45f0320970"
+          },
+          {
+            "jobId": 127727328907,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328907.log",
+            "bytes": 147012,
+            "sha256": "9c32ef521c434477ca4e60739c0a507410c7ddb35a231a41f307b171c049d3fd"
+          },
+          {
+            "jobId": 127727328915,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328915.log",
+            "bytes": 147739,
+            "sha256": "52e613e7dd5ae9925af2d8662772e3cdf55751fcca58700e9444c1209373e2d7"
+          },
+          {
+            "jobId": 127727328935,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328935.log",
+            "bytes": 147921,
+            "sha256": "469be03a81f71d1f66cef3bbca6e278c8fe301f9a3be8593630e4a1f5daf1f28"
+          },
+          {
+            "jobId": 127727328938,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328938.log",
+            "bytes": 148030,
+            "sha256": "c3c5999deeca78aa09890b28f37d9bbe352fb504e3f7831dff5ea10af4b1c48c"
+          },
+          {
+            "jobId": 127727328957,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328957.log",
+            "bytes": 147833,
+            "sha256": "bf8df7ce9a41b899af46f18eb3f64c7a2070c926a49728426dba5f1d73deff28"
+          },
+          {
+            "jobId": 127727328986,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727328986.log",
+            "bytes": 147776,
+            "sha256": "c060ce8bfec094caaa8c08010543115eaab928fdfe0e10555d4fd57372596c8c"
+          },
+          {
+            "jobId": 127727329007,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [
+              "[retry 1] ok    tests/workbench-current-tabs.e2e.test.ts  101.9s"
+            ],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727329007.log",
+            "bytes": 155190,
+            "sha256": "84587de9a93e94d91fe9c92f406241520f81c6b5f9b551511a22e7dfce27029b"
+          },
+          {
+            "jobId": 127727329024,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727329024.log",
+            "bytes": 147537,
+            "sha256": "4c82b52b46a6938324921be38dd7012f05710f27f218325c8871042d0400bf48"
+          },
+          {
+            "jobId": 127727329053,
+            "passedFiles": 103,
+            "totalFiles": 104,
+            "retries": [
+              "[retry 1] FAIL  tests/fill-message.test.ts  2.0s"
+            ],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727329053.log",
+            "bytes": 149972,
+            "sha256": "043619b3da4d8406bf2493490e8c52125a9e1d42928440159a30d95fa46b04be"
+          },
+          {
+            "jobId": 127727329069,
+            "passedFiles": 104,
+            "totalFiles": 104,
+            "retries": [],
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/full-127727329069.log",
+            "bytes": 147034,
+            "sha256": "d6f60d12fdb309fd49b4e7b9d7bae3f8125681ff1578927e9514f80368c0af1a"
+          }
+        ],
+        "runConclusion": "failure"
+      },
+      "logs": {
+        "auth-github.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/auth-github.log",
+          "bytes": 117361,
+          "sha256": "459f6390d398f21b48f1c1eb9f8d4ce6a4dc5f91b2c0260e00c349a1208af57c"
+        },
+        "work-final-build.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-final-build.log",
+          "bytes": 2134,
+          "sha256": "7861825c13b58c3c81e6f65ab6590275d644f161a6029b8b329b2d4fcc4931a0"
+        },
+        "work-final-health.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-final-health.log",
+          "bytes": 1974,
+          "sha256": "987184fb2a74ee00cb9e8bbdb3c6b881e694bb0fd775cb88f1afbbd1be96d63b"
+        },
+        "work-boundary.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-boundary.log",
+          "bytes": 268,
+          "sha256": "abb0d7b948391f08b8b9069cc48c7ebd20b5e8adffdba2b7860f57c89d03e934"
+        },
+        "work-final-assets.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-final-assets.log",
+          "bytes": 96,
+          "sha256": "25504762546d6fb842a5408c9fe86f32431f6fd61c0e62d11c15271c316bda34"
+        },
+        "work-versions.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-versions.log",
+          "bytes": 163,
+          "sha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a"
+        },
+        "work-final-secrets.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-final-secrets.log",
+          "bytes": 147,
+          "sha256": "072ac223fb542fb77f56944162a2fda1068db1286f55d6d513cb022944ea1d63"
+        },
+        "work-test-files.json": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-test-files.json",
+          "bytes": 4290,
+          "sha256": "4f9b3f7be5ed3774f9892a9f4df73c0658bfa0abddc1f4915e6ca76ea39fb267"
+        },
+        "work-targeted.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-targeted.log",
+          "bytes": 7667,
+          "sha256": "94fdd03bbad2dcecb43f8e395a8e381fb61f3d91a01bdae0f3addf7da402ae48"
+        },
+        "work-targeted-results.json": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/work-targeted-results.json",
+          "bytes": 15310,
+          "sha256": "050cb885b0296cfd5ea746b67da583eb0931cc669df2d14dd9c14a1a1646d853"
+        },
+        "joint.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/joint.log",
+          "bytes": 1382,
+          "sha256": "0817e6b9ea1aea33b4f9c75304e2cf093db3ce502d11158d61b7f20c25736b34"
+        },
+        "joint-results.json": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/joint-results.json",
+          "bytes": 1345,
+          "sha256": "8c9c06cb23a3a3b9dfb162ce834ec53084b53c7cb13dcaff166d8d594ba80724"
+        },
+        "central-account.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/central-account.log",
+          "bytes": 159,
+          "sha256": "9095cc29103d6cd05c35b2121ff639309010ed972d56c91a87596b1b3f25921a"
+        },
+        "account-authentication.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/account-authentication.log",
+          "bytes": 1940,
+          "sha256": "ce780a77c5f7fa7b6975b3830dd1477596bc0db06ea069964cf3c4aea9ccdd1c"
+        },
+        "account-provider.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/account-provider.log",
+          "bytes": 2905,
+          "sha256": "80e52fbe2fbe9ccc31718a5dfad18bf84fd342436d1c39dd15412b715cbdbe26"
+        },
+        "account-management.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/account-management.log",
+          "bytes": 1493,
+          "sha256": "07371dafb599f7e88ba9591bd8e62aec80ac789d16a4eda2ea4f5782c7d41aa2"
+        },
+        "account-tenants.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/account-tenants.log",
+          "bytes": 3224,
+          "sha256": "5b5245111e542c59ba18b10356ad4e0be8769161459a0a7f1d046d09135d36b0"
+        },
+        "account-billing.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/account-billing.log",
+          "bytes": 3303,
+          "sha256": "a9710d5701bab6039b61c4287adbf71bf1b6d60a14b38e6e28c1bea1589638a4"
+        },
+        "test-account-browser.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/test-account-browser.log",
+          "bytes": 1082,
+          "sha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f"
+        },
+        "test-account-cutover.log": {
+          "path": "/private/tmp/molis-t01-build-only-20261106/test-account-cutover.log",
+          "bytes": 1014,
+          "sha256": "884795731e9b73ca34969671fd199bfffc44abaa1f7914bcb4fbad0615158ebe"
+        }
+      },
+      "scope": "mock / synthetic / temporary Home and D1; no production data or deployment"
+    },
+    "navigationMainCandidate": {
+      "head": "db1cafd2de0615ecbb94abe36f52737a9c878612",
+      "main": "614e57a29651e55887526d1947d32c1fe9dbff6f",
+      "status": "LOCAL_VALIDATED_REMOTE_RUNNING",
+      "mergeConflictsResolved": [
+        "apps/workbench/package.json",
+        "scripts/gates/page-assets.mjs",
+        "tooling/gates/page-assets.json"
+      ],
+      "assets": {
+        "count": 51,
+        "bytes": 7458862,
+        "approvedAccountIncrementsUnchanged": true,
+        "main": "614e57a29651e55887526d1947d32c1fe9dbff6f",
+        "measured": {
+          "/assets/inter-latin-variable.woff2": 48256,
+          "/assets/molis-work-arrival.css": 693852,
+          "/assets/molis-work-capabilities.js": 54258,
+          "/assets/molis-work-knowledge.js": 26940,
+          "/assets/molis-work-pages-editor.js": 708426,
+          "/assets/molis-work-plugin-frame.js": 208325,
+          "/assets/molis-work-plugins/characters.js": 30152,
+          "/assets/molis-work-settings.css": 827545,
+          "/assets/molis-work-workbench.css": 1204949,
+          "/assets/molis-work-workbench.js": 1117143,
+          "/assets/noto-sans-sc-400.woff2": 1141536,
+          "/assets/molis-work-plugins/cognia.js": 22157,
+          "/assets/molis-work-plugins/plugin-builder.js": 122665,
+          "/assets/molis-work-plugins/images.js": 19897,
+          "/assets/molis-work-plugins/jelly.js": 76899,
+          "/assets/molis-work-plugins/issues.js": 27806,
+          "/assets/molis-work-plugins/feed.js": 37211,
+          "/assets/molis-work-plugins/inbox.js": 9297,
+          "/assets/molis-work-plugins/schedule.js": 12570,
+          "/assets/molis-work-plugins/shelf.js": 64967,
+          "/assets/molis-work-plugins/pages.js": 39130,
+          "/assets/molis-work-plugins/form.js": 30252,
+          "/assets/molis-work-plugins/dataset.js": 23851,
+          "/assets/molis-work-plugins/ppt.js": 27364,
+          "/assets/molis-work-plugins/lingguang.js": 23173,
+          "/assets/molis-work-plugins/todo.js": 54057,
+          "/assets/molis-work-plugins/alchemist.js": 52702,
+          "/assets/molis-work-plugins/workflows.js": 71581,
+          "/assets/molis-work-plugins/coding.js": 290006,
+          "/assets/molis-work-plugins/files.js": 11227,
+          "/assets/molis-work-plugins/git.js": 30295,
+          "/assets/molis-work-plugins/diff.js": 1483,
+          "/assets/molis-work-plugins/text-stats.js": 1281,
+          "/assets/molis-work-plugins/cognia.css": 8283,
+          "/assets/molis-work-plugins/plugin-builder.css": 19933,
+          "/assets/molis-work-plugins/images.css": 7851,
+          "/assets/molis-work-plugins/jelly.css": 19581,
+          "/assets/molis-work-plugins/feed.css": 43247,
+          "/assets/molis-work-plugins/schedule.css": 1269,
+          "/assets/molis-work-plugins/shelf.css": 36541,
+          "/assets/molis-work-plugins/pages.css": 47876,
+          "/assets/molis-work-plugins/form.css": 8726,
+          "/assets/molis-work-plugins/dataset.css": 6892,
+          "/assets/molis-work-plugins/ppt.css": 6952,
+          "/assets/molis-work-plugins/lingguang.css": 4505,
+          "/assets/molis-work-plugins/todo.css": 13157,
+          "/assets/molis-work-plugins/alchemist.css": 151,
+          "/assets/molis-work-plugins/workflows.css": 40735,
+          "/assets/molis-work-plugins/coding.css": 75514,
+          "/assets/molis-work-plugins/files.css": 3199,
+          "/assets/molis-work-plugins/git.css": 3197
+        },
+        "accountDeltas": {
+          "/assets/molis-work-arrival.css": 683,
+          "/assets/molis-work-plugin-frame.js": 54,
+          "/assets/molis-work-workbench.css": 452,
+          "/assets/molis-work-workbench.js": 39629
+        }
+      },
+      "localGates": {
+        "status": "PASS",
+        "entries": [
+          {
+            "name": "health",
+            "exitCode": 0,
+            "seconds": 42.25,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/work-db1-health.log",
+            "bytes": 1974,
+            "sha256": "a6257d05330d55055eb299c7e80c2e887b57a4462be057b514b5a43dc86e7e0b"
+          },
+          {
+            "name": "boundary",
+            "exitCode": 0,
+            "seconds": 4.16,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/work-db1-boundary.log",
+            "bytes": 268,
+            "sha256": "2cb1457ba16f6b6727f74ae4c2313b28abfd696bc05bbf77f8d51936c544ace0"
+          },
+          {
+            "name": "assets",
+            "exitCode": 0,
+            "seconds": 1.13,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/work-db1-assets.log",
+            "bytes": 10502,
+            "sha256": "ec7716e2548057e53156f5ea0d1751c0bd708669a7c007c3f196c345f1bad2e2"
+          },
+          {
+            "name": "versions",
+            "exitCode": 0,
+            "seconds": 0.32,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/work-db1-versions.log",
+            "bytes": 163,
+            "sha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a"
+          },
+          {
+            "name": "secrets",
+            "exitCode": 0,
+            "seconds": 0.62,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/work-db1-secrets.log",
+            "bytes": 147,
+            "sha256": "ed68ba819c593a0d6949ec424f116a241e865dbe9a47abaa916485de5970b24c"
+          }
+        ]
+      },
+      "tests": "LOCAL_PASS_REMOTE_PENDING",
+      "externalProviders": "MOCK",
+      "data": "synthetic only",
+      "deployment": false,
+      "repairCommit": "b6fc184cd13e2b49862e4b96857aacf2e61281b6",
+      "navigationMergeCommit": "39942cfdf2b8dbd41c364b3f06369b05df8b7628",
+      "mergeCommit": "db1cafd2de0615ecbb94abe36f52737a9c878612",
+      "verify": {
+        "runId": 42175728816,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42175728816",
+        "status": "in_progress"
+      },
+      "full": {
+        "runId": 42175719600,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42175719600",
+        "status": "in_progress"
+      },
+      "pushedBranches": [
+        "codex/work-01-account-foundation",
+        "integration/t01-unified-account-20261106-final"
+      ],
+      "build": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/work-614-build.log",
+        "bytes": 32836,
+        "sha256": "00bd7b80397d0340b11532d43ce7815c2e5ef19d706db7c85ece1c59a87118d7",
+        "exitCode": 0,
+        "head": "db1cafd2de0615ecbb94abe36f52737a9c878612"
+      },
+      "directedCoverage": {
+        "mode": "latest result per named file across repair batches; not a single Full run",
+        "files": 120,
+        "passedCases": 1576,
+        "fileResults": [
+          {
+            "file": "tests/assistant-context-strip.e2e.test.ts",
+            "result": "ok",
+            "seconds": 45.5,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/assistant-text-html.e2e.test.ts",
+            "result": "ok",
+            "seconds": 15.1,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/board-navigation.e2e.test.ts",
+            "result": "ok",
+            "seconds": 9.6,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/interaction-client.e2e.test.ts",
+            "result": "ok",
+            "seconds": 7.8,
+            "passed": 16,
+            "total": 16,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/media-zoom-board.e2e.test.ts",
+            "result": "ok",
+            "seconds": 8.8,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/overflow-fade.e2e.test.ts",
+            "result": "ok",
+            "passed": 3,
+            "total": 3,
+            "log": "work-242-dedicated-browser.log",
+            "source": "5f9ad0819 source state"
+          },
+          {
+            "file": "tests/touch-targets.e2e.test.ts",
+            "result": "ok",
+            "seconds": 305.5,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/visual-mechanisms.e2e.test.ts",
+            "result": "ok",
+            "passed": 7,
+            "total": 7,
+            "log": "work-final242-motion.log",
+            "source": "b6fc184cd13e2b49862e4b96857aacf2e61281b6 (same tested bytes; commit saved after run)"
+          },
+          {
+            "file": "tests/ci-product-subset.test.ts",
+            "result": "ok",
+            "seconds": 47.5,
+            "passed": 19,
+            "total": 19,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/issue-draft-preview.e2e.test.ts",
+            "result": "ok",
+            "seconds": 41.3,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/assistant-side-groups.e2e.test.ts",
+            "result": "ok",
+            "seconds": 39.2,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/workbench-frame-container.e2e.test.ts",
+            "result": "ok",
+            "seconds": 40.2,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/page-assets-budget.test.ts",
+            "result": "ok",
+            "seconds": 37.9,
+            "passed": 171,
+            "total": 171,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/runtime-plugin-http-discovery.test.ts",
+            "result": "ok",
+            "seconds": 37.5,
+            "passed": 27,
+            "total": 27,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/model-first-setup.e2e.test.ts",
+            "result": "ok",
+            "seconds": 33.4,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-processes.test.ts",
+            "result": "ok",
+            "seconds": 26.6,
+            "passed": 16,
+            "total": 16,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/connector-mcp.test.ts",
+            "result": "ok",
+            "seconds": 21.8,
+            "passed": 92,
+            "total": 92,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-service.test.ts",
+            "result": "ok",
+            "seconds": 18.6,
+            "passed": 15,
+            "total": 15,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/security-invariants-connector-private-state.test.ts",
+            "result": "ok",
+            "seconds": 14.7,
+            "passed": 9,
+            "total": 9,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-before-effect.test.ts",
+            "result": "ok",
+            "seconds": 14.6,
+            "passed": 23,
+            "total": 23,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-hooks.test.ts",
+            "result": "ok",
+            "seconds": 13.2,
+            "passed": 11,
+            "total": 11,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/feed-sync-authority.test.ts",
+            "result": "ok",
+            "seconds": 13.0,
+            "passed": 18,
+            "total": 18,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/local-web-actions.test.ts",
+            "result": "ok",
+            "seconds": 11.6,
+            "passed": 14,
+            "total": 14,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/shelf-jelly-cognia-images-error-model.test.ts",
+            "result": "ok",
+            "seconds": 10.9,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/management-door-identity.test.ts",
+            "result": "ok",
+            "seconds": 11.1,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-plugin-stage-navigation.test.ts",
+            "result": "ok",
+            "seconds": 10.9,
+            "passed": 10,
+            "total": 10,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-read-compatibility.test.ts",
+            "result": "ok",
+            "seconds": 10.4,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/arrival-components.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/context-toolbar.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/design-system-floating.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/fill-message.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/interaction-components.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/studio-english.test.ts",
+            "result": "ok",
+            "seconds": 0.9,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/visual-foundation.test.ts",
+            "result": "ok",
+            "seconds": 1.6,
+            "passed": 31,
+            "total": 31,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/shell-page-gate.test.ts",
+            "result": "ok",
+            "seconds": 10.4,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/web-home-isolation.test.ts",
+            "result": "ok",
+            "seconds": 10.1,
+            "passed": 8,
+            "total": 8,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/goal-management-identity.test.ts",
+            "result": "ok",
+            "seconds": 8.6,
+            "passed": 10,
+            "total": 10,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-owners.test.ts",
+            "result": "ok",
+            "seconds": 8.6,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-gateway.test.ts",
+            "result": "ok",
+            "seconds": 7.6,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-project-database.test.ts",
+            "result": "ok",
+            "seconds": 6.8,
+            "passed": 11,
+            "total": 11,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-platform-home.test.ts",
+            "result": "ok",
+            "seconds": 6.5,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-model-service.test.ts",
+            "result": "ok",
+            "seconds": 5.9,
+            "passed": 18,
+            "total": 18,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/client-script-undeclared.test.ts",
+            "result": "ok",
+            "seconds": 6.1,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/memory-learning.test.ts",
+            "result": "ok",
+            "seconds": 6.0,
+            "passed": 23,
+            "total": 23,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/goals-mcp-actions.test.ts",
+            "result": "ok",
+            "seconds": 5.7,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-studios.test.ts",
+            "result": "ok",
+            "seconds": 5.7,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-plugin-platform.test.ts",
+            "result": "ok",
+            "seconds": 5.5,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/model-first-setup-http.test.ts",
+            "result": "ok",
+            "seconds": 5.8,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/issue-home-runtime.test.ts",
+            "result": "ok",
+            "seconds": 5.7,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-plugin-stage-pages.test.ts",
+            "result": "ok",
+            "seconds": 5.1,
+            "passed": 9,
+            "total": 9,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/alchemist-pulse-github.test.ts",
+            "result": "ok",
+            "seconds": 4.8,
+            "passed": 8,
+            "total": 8,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-development-artifacts.test.ts",
+            "result": "ok",
+            "seconds": 5.0,
+            "passed": 9,
+            "total": 9,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/cli-goals-actions.test.ts",
+            "result": "ok",
+            "seconds": 4.3,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/i18n.test.ts",
+            "result": "ok",
+            "seconds": 4.7,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/onboarding-goals-actions.test.ts",
+            "result": "ok",
+            "seconds": 4.3,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-plugin-model-lifecycle.test.ts",
+            "result": "ok",
+            "seconds": 4.1,
+            "passed": 8,
+            "total": 8,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/mcp-connection-identity.test.ts",
+            "result": "ok",
+            "seconds": 4.0,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/mcp-session-authorship-nested.test.ts",
+            "result": "ok",
+            "seconds": 3.9,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-route-operations.test.ts",
+            "result": "ok",
+            "seconds": 3.7,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/system-search-host.test.ts",
+            "result": "ok",
+            "seconds": 4.1,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/lark-mcp-launch.test.ts",
+            "result": "ok",
+            "seconds": 3.5,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-plugin-private-store.test.ts",
+            "result": "ok",
+            "seconds": 3.6,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-model-scheduling.test.ts",
+            "result": "ok",
+            "seconds": 3.5,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/local-host-queue-scope.test.ts",
+            "result": "ok",
+            "seconds": 3.4,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/security-invariants-gateway.test.ts",
+            "result": "ok",
+            "seconds": 3.5,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/shelf-project-results-http.test.ts",
+            "result": "ok",
+            "seconds": 3.5,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/local-host.test.ts",
+            "result": "ok",
+            "seconds": 3.3,
+            "passed": 10,
+            "total": 10,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/capabilities-page.test.ts",
+            "result": "ok",
+            "seconds": 3.5,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/settings-call-diagnostics.test.ts",
+            "result": "ok",
+            "seconds": 3.1,
+            "passed": 10,
+            "total": 10,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/security-invariants-account-host.test.ts",
+            "result": "ok",
+            "seconds": 2.9,
+            "passed": 15,
+            "total": 15,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/network-notices.test.ts",
+            "result": "ok",
+            "seconds": 2.0,
+            "passed": 8,
+            "total": 8,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/verify-release-versions.test.ts",
+            "result": "ok",
+            "seconds": 3.2,
+            "passed": 22,
+            "total": 22,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-error-edges.test.ts",
+            "result": "ok",
+            "seconds": 2.4,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/assistant-executor.test.ts",
+            "result": "ok",
+            "seconds": 2.6,
+            "passed": 16,
+            "total": 16,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-error-model.test.ts",
+            "result": "ok",
+            "seconds": 2.4,
+            "passed": 15,
+            "total": 15,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-gateway-session-authorship.test.ts",
+            "result": "ok",
+            "seconds": 2.5,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/host-pages-error-model.test.ts",
+            "result": "ok",
+            "seconds": 2.4,
+            "passed": 17,
+            "total": 17,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/host-periodic-tasks.test.ts",
+            "result": "ok",
+            "seconds": 1.8,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/local-host-actions.test.ts",
+            "result": "ok",
+            "seconds": 2.0,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/home-store-baselines.test.ts",
+            "result": "ok",
+            "seconds": 1.9,
+            "passed": 27,
+            "total": 27,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/model-provider-list.test.ts",
+            "result": "ok",
+            "seconds": 2.0,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/plugin-capability-availability.test.ts",
+            "result": "ok",
+            "seconds": 1.5,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/runtime-provider-identity.test.ts",
+            "result": "ok",
+            "seconds": 1.8,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/contextual-interaction.test.ts",
+            "result": "ok",
+            "seconds": 1.5,
+            "passed": 45,
+            "total": 45,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/assistant-send-delivery.test.ts",
+            "result": "ok",
+            "seconds": 2.0,
+            "passed": 5,
+            "total": 5,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/coss-control-language.test.ts",
+            "result": "ok",
+            "seconds": 1.7,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/anysearch-single-owner.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/builtin-plugin-composition.test.ts",
+            "result": "ok",
+            "seconds": 1.2,
+            "passed": 7,
+            "total": 7,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/plugin-list-developer-mode.test.ts",
+            "result": "ok",
+            "seconds": 1.2,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/project-deletion-assistant.test.ts",
+            "result": "ok",
+            "seconds": 1.5,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/style-has-scope.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/action-directory-installation.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-declarative-mounting.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/assistant-island-script.test.ts",
+            "result": "ok",
+            "seconds": 1.2,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/chrome-inner-scroll.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/private-store-versions.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-deletion-declarations.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/ui-request-client-pages.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 9,
+            "total": 9,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/web-mutation-key-settle.test.ts",
+            "result": "ok",
+            "seconds": 1.4,
+            "passed": 4,
+            "total": 4,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/ci-test-selection.test.ts",
+            "result": "ok",
+            "seconds": 1.3,
+            "passed": 10,
+            "total": 10,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-declaration-rules.test.ts",
+            "result": "ok",
+            "seconds": 0.7,
+            "passed": 277,
+            "total": 277,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/workbench-ui-platform.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 11,
+            "total": 11,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/builtin-manifests-contract.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/builtin-plugin-agent-texts.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/plugin-client-served.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/plugin-picker-pins.test.ts",
+            "result": "ok",
+            "seconds": 0.6,
+            "passed": 16,
+            "total": 16,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/account-client.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 14,
+            "total": 14,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/account-session.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 23,
+            "total": 23,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-availability-kind.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-plugin-audience.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/action-schema-compiler.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/composer-board.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 2,
+            "total": 2,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/installer-symlink-dependencies.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 3,
+            "total": 3,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/plugin-manifest-v2.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 13,
+            "total": 13,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/project-arrival.test.ts",
+            "result": "ok",
+            "seconds": 0.2,
+            "passed": 12,
+            "total": 12,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/account-entitlements.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 1,
+            "total": 1,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/run-tests-shard.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 6,
+            "total": 6,
+            "note": "",
+            "log": "work-242-targeted.log",
+            "source": "5f9ad0819e22924c9075097fdf031ec2f5119332"
+          },
+          {
+            "file": "tests/settings-requests-through-helper.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 15,
+            "total": 15,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/ui-request-client.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 32,
+            "total": 32,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          },
+          {
+            "file": "tests/web-service-settings-client.test.ts",
+            "result": "ok",
+            "seconds": 0.1,
+            "passed": 8,
+            "total": 8,
+            "note": "",
+            "log": "work-final242-targeted.log",
+            "source": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+            "exactCommit": false
+          }
+        ],
+        "initialBatch": {
+          "sourceCommit": "5f9ad0819e22924c9075097fdf031ec2f5119332",
+          "passedFiles": 117,
+          "totalFiles": 120,
+          "passedCases": 1566,
+          "totalCases": 1576,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/work-242-targeted.log",
+          "bytes": 23810,
+          "sha256": "e8ef3be6e4642a757d64eb341df4df00a46f8a884e32b2b03dcede09283b025d"
+        },
+        "followupBatch": {
+          "sourceState": "working tree after 5f9ad0819: navigation plural and standards-mode fixture; before final initial-paint fix",
+          "exactCommit": false,
+          "passedFiles": 22,
+          "totalFiles": 23,
+          "passedCases": 171,
+          "totalCases": 172,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/work-final242-targeted.log",
+          "bytes": 4024,
+          "sha256": "ded49f59bfbd62ebf2194cb56bd28c58e3e5fde7e0d1617475903968fbdf4faa"
+        },
+        "resolvedEnvironment": {
+          "file": "tests/overflow-fade.e2e.test.ts",
+          "passed": 3,
+          "total": 3,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/work-242-dedicated-browser.log",
+          "bytes": 685,
+          "sha256": "6db56afeabc999856aff044b9777a45df2e9d62b1fc512a1b8ba652a0a821209"
+        },
+        "resolvedMotion": {
+          "sourceCommit": "b6fc184cd13e2b49862e4b96857aacf2e61281b6",
+          "passed": 7,
+          "total": 7,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/work-final242-motion.log",
+          "bytes": 1114,
+          "sha256": "a24e8a498fad5c803d607ecf690c43892e6501101552f2ff258275613e20ec6e"
+        }
+      },
+      "finalContractTests": {
+        "head": "db1cafd2de0615ecbb94abe36f52737a9c878612",
+        "files": 10,
+        "passed": 359,
+        "total": 359,
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/work-614-targeted.log",
+        "bytes": 1217,
+        "sha256": "17c5ee1f73b60fb29584ba97825a064a7610df2d86e5310e2940f45434a930b2"
+      },
+      "joint": {
+        "sourceCommit": "b6fc184cd13e2b49862e4b96857aacf2e61281b6",
+        "scripts": [
+          {
+            "script": "central-account",
+            "exitCode": 0,
+            "seconds": 2.94,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-central-account.log",
+            "bytes": 159,
+            "sha256": "9095cc29103d6cd05c35b2121ff639309010ed972d56c91a87596b1b3f25921a"
+          },
+          {
+            "script": "account-authentication",
+            "exitCode": 0,
+            "seconds": 12.07,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-account-authentication.log",
+            "bytes": 1940,
+            "sha256": "d44e9cdbc83a4ff7e63708c1bd66a7554aaaa70707d97c06e7bc4eeb27d16a7a"
+          },
+          {
+            "script": "account-provider",
+            "exitCode": 0,
+            "seconds": 9.13,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-account-provider.log",
+            "bytes": 2905,
+            "sha256": "d7c3f7c962de1f888f061f438d94a60933128d8775f36391f205e5b43ed6c51c"
+          },
+          {
+            "script": "account-management",
+            "exitCode": 0,
+            "seconds": 12.79,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-account-management.log",
+            "bytes": 1493,
+            "sha256": "8f30f7a81f096a9a92aee958567dfdd5099f31743d4551df992e58f51c1bce1f"
+          },
+          {
+            "script": "account-tenants",
+            "exitCode": 0,
+            "seconds": 11.14,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-account-tenants.log",
+            "bytes": 3224,
+            "sha256": "fea7ed3c788b66c0cafb838f9a0ea4b96bfba6265e8bc524f84370fb162a517e"
+          },
+          {
+            "script": "account-billing",
+            "exitCode": 0,
+            "seconds": 17.24,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-account-billing.log",
+            "bytes": 3303,
+            "sha256": "20e9ce2b47738b44b585bafb818e989149b3d05fd95454b7238924308a1d63a6"
+          },
+          {
+            "script": "test-account-browser",
+            "exitCode": 0,
+            "seconds": 87.51,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-test-account-browser.log",
+            "bytes": 1082,
+            "sha256": "5c68cce4a029a2b21464a02fe0670b93e219472078654d0f016b0e61f9d32a5f"
+          },
+          {
+            "script": "test-account-cutover",
+            "exitCode": 0,
+            "seconds": 11.41,
+            "logPath": "/private/tmp/molis-t01-build-only-20261106/242-test-account-cutover.log",
+            "bytes": 1014,
+            "sha256": "f86bb4eedd5412f01b388e379f71622bc01e4e5e4318fe059462ebef68df4b0c"
+          }
+        ],
+        "status": "PASS",
+        "finalHeadCutover": {
+          "head": "db1cafd2de0615ecbb94abe36f52737a9c878612",
+          "exitCode": 0,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/work-614-cutover.log",
+          "bytes": 1014,
+          "sha256": "267bfaf22e638bb7c016b8a818f99959c278fbaa978dce4c00c5dc1308b07fa5"
+        },
+        "beforeReadyFailure": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/before-ready-242-account-management.log",
+          "bytes": 3134,
+          "sha256": "d33f8aa2915942aca5bff7fd56eec96911824beef41e5e2beddb7073614b3bb5"
+        }
+      },
+      "baselineComparisons": [
+        {
+          "head": "2e973052234c076b4a3f13d86023193ed748ae75",
+          "case": "menu height 2/4 failed",
+          "expectedFailure": true,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/baseline-touch-targets.log",
+          "bytes": 2325,
+          "sha256": "dc41e8779592a9e9ba242487ab5f142980c13b51da477f5fe7b3ff6974a5e4ee"
+        },
+        {
+          "head": "2e973052234c076b4a3f13d86023193ed748ae75",
+          "case": "model plural 1/2 failed",
+          "expectedFailure": true,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/baseline-fill-message.log",
+          "bytes": 1469,
+          "sha256": "832f1d5aa2fd36d50e193b84e06df9430b57f2187fcebf58b3383dd202218a28"
+        },
+        {
+          "head": "242d75d038f10b7347c364d7b8ed39f986b05c19",
+          "case": "model and navigation plurals 1/2 failed",
+          "expectedFailure": true,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/baseline-242-fill-message.log",
+          "bytes": 1499,
+          "sha256": "e8c5e42e2381bb710e0c788715aa73944141b248cad4048b39365b0fa444ffeb"
+        },
+        {
+          "head": "242d75d038f10b7347c364d7b8ed39f986b05c19",
+          "case": "motion 1/7 failed",
+          "expectedFailure": true,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/baseline-242-visual.log",
+          "bytes": 1860,
+          "sha256": "b2e6fc6ac883db59dc02d00fba850cd1a560bc9b9ba0207075ea4d41ba3bc11d"
+        }
+      ],
+      "motionDiagnostics": {
+        "firstModeComparison": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/disclosure-diagnostic.log",
+          "bytes": 438,
+          "sha256": "1174fb605227c62216426613f380faafecf83c0a2ba3c283b24f0c9d0171c3b6"
+        },
+        "controlledInitialFrameComparison": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/disclosure-frames.log",
+          "bytes": 549,
+          "sha256": "8587e66029dd4b25c49bb3e60492a4276772e7df7c84d25fbb7c4787f27be1d2"
+        },
+        "finding": "Standards mode alone still failed. After two initial animation frames both document modes opened with intermediate heights; retained standards mode to match product pages. No production CSS or timeout/retry change."
+      },
+      "browserEnvironment": {
+        "version": "Google Chrome 156.0.8078.80",
+        "dedicatedExecutable": "/private/tmp/molis-t01-test-browser/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "programOnlyCopy": true,
+        "userProfileCopied": false,
+        "freshTemporaryProfiles": true,
+        "preexistingTestingBrowser": "incomplete cached Chrome 145 bundle; not used"
       }
     }
   },
