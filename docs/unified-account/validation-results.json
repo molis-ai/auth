@@ -1,9 +1,9 @@
 {
   "formatVersion": 1,
-  "recordedAt": "2026-11-06T09:42:50.347491+00:00",
+  "recordedAt": "2026-11-06T10:30:15.328180+00:00",
   "scope": "SYNTHETIC_EXTERNAL_MOCK_LOCAL_AND_GITHUB_REVIEW",
-  "phase": "T-01_FINAL_CURSOR_HEAD_REMOTE_RUNNING",
-  "note": "Current candidate is remote.cursorOwnershipCandidate. Previous finalCorrectionCandidate records cdff Verify pass after failed-job rerun and Full 1664/1665 failure. Historical evidence remains; overlapping batches and CI suites are not summed.",
+  "phase": "T-01_FINAL_GRAPH_HEAD_REMOTE_PENDING",
+  "note": "Current delivery candidate is remote.graphRefreshCandidate. Earlier cursorOwnershipCandidate and all preceding CI/diagnostic histories remain separate; no overlapping case counts are added.",
   "repositories": {
     "A": {
       "baseCommit": "90efa46665c7fe82d5dfbe5019e2f38511bc9396",
@@ -37,7 +37,7 @@
       "sourceSha256": "8bde6b4bcac7bf9c2963aa359c6bf29664fe695976d3e16c33f644a16305a087"
     },
     "W": {
-      "baseCommit": "9f24014715b69021ad1af20d3c541b5957df41e1",
+      "baseCommit": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
       "uncommitted": false,
       "branch": "codex/work-01-account-foundation",
       "packageVersion": "0.3.0",
@@ -59,7 +59,7 @@
         "tsconfig.json"
       ],
       "fileCount": 5940,
-      "sourceSha256": "55c138c80d97e18c2fa48571cf558657d56a6e4bc392838902f2e839ed8cfb84"
+      "sourceSha256": "79d8eb98a958a6a96581e059d3293af4cee5092572f02bf018fc617229513d43"
     },
     "C": {
       "baseCommit": "262c973f9df9d38575627f60975610fb35b2b711",
@@ -86,7 +86,7 @@
       "sourceSha256": "1fe3284ded46e71d6f961c7da06e7b84bf2612f0bfc30f0ac28867b9729ca9e6"
     }
   },
-  "sourceManifestSha256": "85b0ffdc28b2cedf9a019992afde5c0d7daa37abbe9faaed7fa1bb1ce3fb2e04",
+  "sourceManifestSha256": "aab27db015fb4d3cb2b72b076f191ba438bb2cc706506255cc296be14e961465",
   "toolchain": {
     "node": "26.9.0",
     "npm": "11.19.1",
@@ -2734,6 +2734,16 @@
       "id": "K-23",
       "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
       "resolution": "Main specimen state and account action used same Chinese key for different meanings; rename state to 登录已取消; existing dictionary cohesive-unit exact size updated to 3214 without gate changes."
+    },
+    {
+      "id": "K-24",
+      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
+      "resolution": "A loaded momentum graph was invalidated after applyUiState had already synchronized the focused workspace. No next request followed, so graph data remained stale. Move the existing invalidation/reload block before UI restoration; no retry/poll/timeout changes."
+    },
+    {
+      "id": "K-25",
+      "status": "LOCAL_RESOLVED_FINAL_CI_PENDING",
+      "resolution": "Connection-card multiline choice label aligns the leading icon with the first line. Scoped inline CSS only; no page-asset increase."
     }
   ],
   "matrix": {
@@ -13024,7 +13034,7 @@
       }
     ],
     "featureReview": {
-      "checkedAt": "2026-11-06T03:39:56.797867+00:00",
+      "checkedAt": "2026-11-06 10:29:45 UTC",
       "readyPRs": [
         "molis-ai/auth#2",
         "molis-ai/molis-club#27",
@@ -13033,23 +13043,72 @@
       "submittedReviews": 0,
       "reviewThreads": 0,
       "mainMergeAuthorized": false,
-      "note": "Absence of reviews is not human approval. Prior main authorization covers only Work #1842/#1843/#1844."
+      "note": "Absence of reviews is not human approval. Prior main authorization covers only Work #1842/#1843/#1844.",
+      "headStates": {
+        "auth": {
+          "head": "ef3016976dee76287e63b2540606e3315b6724fe",
+          "base": "e9c5ffa2fc9ecff1a0f8a3e2f9358411a93ecbe9",
+          "mergeable": true,
+          "state": "open",
+          "draft": false,
+          "mergeState": "clean",
+          "reviews": {
+            "reviews": {
+              "reviews": []
+            },
+            "threads": {
+              "review_threads": []
+            }
+          }
+        },
+        "molis-club": {
+          "head": "262c973f9df9d38575627f60975610fb35b2b711",
+          "base": "8bb582456c9f3d1e2ec7f7404b0edf991b13277e",
+          "mergeable": true,
+          "state": "open",
+          "draft": false,
+          "mergeState": "unstable",
+          "reviews": {
+            "reviews": {
+              "reviews": []
+            },
+            "threads": {
+              "review_threads": []
+            }
+          }
+        },
+        "molis-work": {
+          "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+          "base": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+          "mergeable": true,
+          "state": "open",
+          "draft": false,
+          "mergeState": "blocked",
+          "reviews": {
+            "reviews": {
+              "reviews": []
+            },
+            "threads": {
+              "review_threads": []
+            }
+          }
+        }
+      }
     },
     "latestMainRecheck": {
-      "checkedAt": "2026-11-06T03:39:56.797867+00:00",
-      "workMain": "05d4cf98c46858bba5ab331b94d587db02b1c017",
-      "workHead": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
-      "mergeable": false,
-      "mergeableState": "dirty",
-      "conflictFiles": [
-        "tooling/gates/page-assets.json"
-      ],
-      "diagnosticCommand": "git merge-tree --write-tree --name-only --no-messages HEAD origin/main",
-      "diagnosticExitCode": 1,
+      "checkedAt": "2026-11-06 10:29:45 UTC",
+      "workMain": "c7b6584287cd8d7eca30f2760d1a0cbf5662af58",
+      "workHead": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+      "integratedCodeMain": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+      "mergeable": true,
+      "conflictFiles": [],
+      "diagnosticCommand": "git merge-tree --write-tree HEAD origin/main",
+      "diagnosticExitCode": 0,
+      "mergeTree": "0f645ebc7e9094355b5419124b5017e26d7bf15c",
       "worktreeUnchanged": true,
       "authMergeable": true,
       "clubMergeable": true,
-      "note": "Readonly merge calculation; no branch/worktree update. New candidate must rerun applicable local gates/joint validation and CI Full/Verify. New main uses three security shards."
+      "note": "Latest main adds only two spec document edits after the integrated code baseline. No merge commit created solely to chase documentation. GitHub PR metadata still reports the earlier base; local fetched ref and merge-tree provide this separate current-main check."
     },
     "externalBuildInvestigation": {
       "checkedAt": "2026-11-06T04:06:47.650336+00:00",
@@ -13281,6 +13340,18 @@
         "reason": "GitHub: recent account payments failed or spending limit needs increase",
         "userDecision": "2026-11-06: return to main task; ignore Actions here for now, not blocking",
         "acceptedAsPassing": false
+      },
+      "authDocumentCI": {
+        "head": "ef3016976dee76287e63b2540606e3315b6724fe",
+        "runId": 42197263523,
+        "jobId": 127823523930,
+        "conclusion": "success",
+        "log": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/auth-ef301-ci.log",
+          "bytes": 117368,
+          "sha256": "f87fa09047e56d6f37e185fb025a510dbd42fa4099a927439f9baaa5ccf45d65"
+        },
+        "noCloudflareCheck": true
       }
     },
     "refreshedMainCandidate": {
@@ -18473,7 +18544,7 @@
     "cursorOwnershipCandidate": {
       "head": "9f24014715b69021ad1af20d3c541b5957df41e1",
       "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
-      "status": "LOCAL_PASS_FINAL_CI_RUNNING",
+      "status": "SUPERSEDED_BY_K24_GRAPH_REFRESH",
       "repairs": {
         "K-21": "a5c862f62",
         "K-22": "4d39e3da7",
@@ -18772,12 +18843,23 @@
       "verify": {
         "runId": 42197111196,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42197111196",
-        "status": "queued"
+        "status": "queued",
+        "conclusion": null,
+        "observedAt": "2026-11-06 10:29:45 UTC"
       },
       "full": {
         "runId": 42197105044,
         "url": "https://github.com/molis-ai/molis-work/actions/runs/42197105044",
-        "status": "queued"
+        "status": "queued",
+        "conclusion": null,
+        "observedAt": "2026-11-06 10:29:45 UTC",
+        "knownFailure": {
+          "jobId": 127823003350,
+          "file": "tests/visual-order.e2e.test.ts",
+          "scope": "four-mode service connection catalog choice icon alignment, 8.6px",
+          "resolvedBy": "K-25",
+          "completeRunResult": false
+        }
       },
       "diagnosis": {
         "K-21": "Repository counts in main connection board need plural selection for 0/1/2; entire dictionary assertion retained.",
@@ -18843,7 +18925,1111 @@
         "bytes": 147,
         "sha256": "972c9875dc57dca6fc887dd9c7ee4a0e2c44b59d85f742f41be0b946fec08abf"
       }
-    }
+    },
+    "graphRefreshCandidate": {
+      "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+      "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+      "status": "LOCAL_PASS_FINAL_CI_PENDING",
+      "priorCandidate": "9f24014715b69021ad1af20d3c541b5957df41e1",
+      "repair": "K-24",
+      "diagnosis": "A loaded momentum graph was invalidated after applyUiState had already synchronized the focused workspace. No next request followed, so graph data remained stale. Move the existing invalidation/reload block before UI restoration; no retry/poll/timeout changes.",
+      "before": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/graph-before.log",
+        "bytes": 5046,
+        "sha256": "daad91e8f4e1f520e9ad924f4b86ff8664b650d771e4f56600968cae1280924a",
+        "exitCode": 1
+      },
+      "cleanMainBefore": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/graph-main-before.log",
+        "bytes": 5036,
+        "sha256": "2edb7c0077b688bcf461398f9c391152ecc86c5698a06b82b62f2da38a25dc92",
+        "exitCode": 1,
+        "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+        "test": "T01-GRAPH-REFRESH-01",
+        "onlyAddedRegressionTransplanted": true,
+        "baselineRestored": true
+      },
+      "after": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/graph-after.log",
+        "bytes": 231,
+        "sha256": "c1fdc3f50148b4ed465cfc787cdd7edac454a7696ae2c21dbeb677e217e9244a",
+        "exitCode": 0,
+        "passed": 1,
+        "total": 1
+      },
+      "firstVisualFailure": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/final-visual.log",
+        "bytes": 30170,
+        "sha256": "8811d7a67cfab2e568f83a7a030e0129e261e3400b02656f51ce8b86720816de",
+        "exitCode": 1,
+        "base": "13/13",
+        "head": "11/13; goal-work loaded flag timeout, only 62/66 pictures"
+      },
+      "diagnostic": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/visual-graph-diagnostic.log",
+        "bytes": 7902,
+        "sha256": "bccf51bf2367a30ef54d26ed1bc9f29dc6975b92f5eba86e0ddb67951cba76ce",
+        "exitCode": 1,
+        "graphLoaded": false,
+        "graphBusy": false,
+        "nodes": 17
+      },
+      "build": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-build.log",
+        "bytes": 2433,
+        "sha256": "40b7c80a8c96537ea47438be5b7daf91dd253e27caffaa380bf660893fd753f4",
+        "exitCode": 0
+      },
+      "directed": {
+        "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-targeted.log",
+        "bytes": 3415,
+        "sha256": "330f6885ab5cf0f65e3ae7bcf5bd4d59da87a73ccbdee7385d349175d71ddc25",
+        "exitCode": 0,
+        "files": [
+          {
+            "file": "tests/model-ready-surfaces.e2e.test.ts",
+            "passed": 12,
+            "total": 12
+          },
+          {
+            "file": "tests/goals-refresh.e2e.test.ts",
+            "passed": 8,
+            "total": 8
+          },
+          {
+            "file": "tests/goals-momentum.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/visual-surfaces.e2e.test.ts",
+            "passed": 13,
+            "total": 13
+          },
+          {
+            "file": "tests/workbench-pane-feed.e2e.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/request-failure-call-id.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/page-assets-budget.test.ts",
+            "passed": 171,
+            "total": 171
+          },
+          {
+            "file": "tests/workbench-frame-container.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/assistant-send-intent.e2e.test.ts",
+            "passed": 5,
+            "total": 5
+          },
+          {
+            "file": "tests/feed-source-menu-refresh.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/model-first-setup.e2e.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/workbench-tab-workspace.e2e.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/model-ready-cross-tab.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/workbench-hidden-refresh.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/ui-request-client.e2e.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/action-before-effect.test.ts",
+            "passed": 23,
+            "total": 23
+          },
+          {
+            "file": "tests/assistant-stale-refresh.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/board-navigation.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/call-id-lookup.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/assistant-page-cards.e2e.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/client-script-undeclared.test.ts",
+            "passed": 5,
+            "total": 5
+          },
+          {
+            "file": "tests/i18n.test.ts",
+            "passed": 13,
+            "total": 13
+          },
+          {
+            "file": "tests/capabilities-page.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/settings-call-diagnostics.test.ts",
+            "passed": 10,
+            "total": 10
+          },
+          {
+            "file": "tests/one-motion.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/style-has-scope.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/ui-request-client-pages.test.ts",
+            "passed": 9,
+            "total": 9
+          },
+          {
+            "file": "tests/assistant-island-script.test.ts",
+            "passed": 6,
+            "total": 6
+          },
+          {
+            "file": "tests/plugin-declarative-mounting.test.ts",
+            "passed": 12,
+            "total": 12
+          },
+          {
+            "file": "tests/builtin-plugin-composition.test.ts",
+            "passed": 7,
+            "total": 7
+          },
+          {
+            "file": "tests/plugin-list-developer-mode.test.ts",
+            "passed": 4,
+            "total": 4
+          },
+          {
+            "file": "tests/primitive-catalog-bar.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/fill-message.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/builtin-plugin-agent-texts.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/builtin-manifests-contract.test.ts",
+            "passed": 2,
+            "total": 2
+          },
+          {
+            "file": "tests/workbench-ui-platform.test.ts",
+            "passed": 11,
+            "total": 11
+          },
+          {
+            "file": "tests/plugin-client-served.test.ts",
+            "passed": 1,
+            "total": 1
+          },
+          {
+            "file": "tests/plugin-picker-pins.test.ts",
+            "passed": 16,
+            "total": 16
+          },
+          {
+            "file": "tests/design-system-giants.test.ts",
+            "passed": 3,
+            "total": 3
+          },
+          {
+            "file": "tests/ui-request-client.test.ts",
+            "passed": 32,
+            "total": 32
+          },
+          {
+            "file": "tests/settings-requests-through-helper.test.ts",
+            "passed": 15,
+            "total": 15
+          },
+          {
+            "file": "tests/web-service-settings-client.test.ts",
+            "passed": 8,
+            "total": 8
+          }
+        ],
+        "passedFiles": 42,
+        "passedTests": 432,
+        "totalTests": 432,
+        "testedCommit": "52640fa37"
+      },
+      "visual": {
+        "report": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-visual-compare/report.json",
+          "bytes": 6774088,
+          "sha256": "2e04132f9ccf7422da841ce5b23c9d34746f6b135bef09e7effc81aa48e148f0"
+        },
+        "headCapture": "13/13, 66 pictures, 22 style snapshots",
+        "base": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d",
+        "comparison": {
+          "tolerance": 0,
+          "maxRatio": 0,
+          "pictures": [
+            {
+              "name": "todo@1440-dark",
+              "changed": true,
+              "ratio": 6.172839506172839e-06,
+              "pixels": 8,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@1440-light",
+              "changed": true,
+              "ratio": 5.401234567901234e-06,
+              "pixels": 7,
+              "note": ""
+            },
+            {
+              "name": "assistant@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "assistant@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "assistant@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "assistant@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "assistant@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "assistant@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-frame@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goal-work@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "goals-list@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "home@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "pages@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "plugin-picker@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "project-settings-general@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@1440-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "side-files@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "todo@1024-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "todo@1024-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "todo@1440-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "todo@390-dark",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            },
+            {
+              "name": "todo@390-light",
+              "changed": false,
+              "ratio": 0,
+              "pixels": 0,
+              "note": ""
+            }
+          ],
+          "styles": [
+            {
+              "name": "assistant@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "assistant@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goal-frame@1440-dark",
+              "changed": true,
+              "changeCount": 483,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goal-frame@1440-light",
+              "changed": true,
+              "changeCount": 483,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goal-work@1440-dark",
+              "changed": true,
+              "changeCount": 601,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goal-work@1440-light",
+              "changed": true,
+              "changeCount": 601,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goals-list@1440-dark",
+              "changed": true,
+              "changeCount": 590,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "goals-list@1440-light",
+              "changed": true,
+              "changeCount": 590,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "home@1440-dark",
+              "changed": true,
+              "changeCount": 494,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "home@1440-light",
+              "changed": true,
+              "changeCount": 494,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "pages@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "pages@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "plugin-picker@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "plugin-picker@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "project-settings-general@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "project-settings-general@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "settings-appearance@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "settings-appearance@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "side-files@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "side-files@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "todo@1440-dark",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            },
+            {
+              "name": "todo@1440-light",
+              "changed": true,
+              "changeCount": 485,
+              "onlyBase": 791,
+              "onlyHead": 790
+            }
+          ]
+        },
+        "summary": {
+          "exitCode": 1,
+          "tolerance": 0,
+          "maxRatio": 0,
+          "pictureCount": 66,
+          "unchangedPictures": 64,
+          "changedPictures": [
+            {
+              "name": "todo@1440-dark",
+              "changed": true,
+              "ratio": 6.172839506172839e-06,
+              "pixels": 8,
+              "note": ""
+            },
+            {
+              "name": "settings-appearance@1440-light",
+              "changed": true,
+              "ratio": 5.401234567901234e-06,
+              "pixels": 7,
+              "note": ""
+            }
+          ],
+          "maxChannelDifference": 1,
+          "styleSnapshots": 22,
+          "stylePropertyDifferences": 11126,
+          "classification": "All style property differences and only-side elements occur within the Goals tree subtree, except the 22 existing account button opacity 0.45 to 1 differences. Tree structure after refresh differs from the baseline. No claim of zero style difference; screenshots and graph/read-only/selected-Goal regressions are separate evidence.",
+          "zeroToleranceExitPreserved": true
+        },
+        "pixelEvidence": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-visual-pixels.json",
+          "bytes": 2248,
+          "sha256": "49e41b4c6a148c657194a46e5a7e94a97f17a1f2966f4d27a60b63212e80e376"
+        },
+        "captureCommit": "52640fa37",
+        "laterChange": "88f595b3b only adjusts inline connection-card specimen CSS, outside the 66 captured surfaces; separate six captures and original full visual-order pass."
+      },
+      "localGates": [
+        {
+          "name": "health",
+          "exitCode": 0,
+          "seconds": 40.99,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-health.log",
+          "bytes": 1974,
+          "sha256": "0617fb1f0c243a68bac2b9aca19559623a2bb46df141fbf908230351e5573da4"
+        },
+        {
+          "name": "boundary",
+          "exitCode": 0,
+          "seconds": 4.11,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-boundary.log",
+          "bytes": 268,
+          "sha256": "0f5d9b507dfc22af1e5f591cfe0053c69729f104ac599eed810a3319106150fd"
+        },
+        {
+          "name": "assets",
+          "exitCode": 0,
+          "seconds": 1.08,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-assets.log",
+          "bytes": 96,
+          "sha256": "2c750e6afbf2ae7a721fcc5c6ea766fe9062ea5ff1b4b82f61bf96bd1a6c8a47"
+        },
+        {
+          "name": "versions",
+          "exitCode": 0,
+          "seconds": 0.31,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-versions.log",
+          "bytes": 163,
+          "sha256": "c06da0b9ce7bd1ca38874c68f31662a0daa86661132fe1fb94eca6f5fc7d836a"
+        },
+        {
+          "name": "secrets",
+          "exitCode": 0,
+          "seconds": 0.64,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-secrets.log",
+          "bytes": 147,
+          "sha256": "8954fe86dcfa15429ac81a8162990acc8b5a8a36f28c7369d0b206dcfa6c5e88"
+        }
+      ],
+      "joint": [
+        {
+          "name": "authentication",
+          "exitCode": 0,
+          "seconds": 12.71,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-authentication.log",
+          "bytes": 1940,
+          "sha256": "91a1787c71d373b05ec552e10d5f34cf29040c0ac019d3b179ba25ddd66e11d9"
+        },
+        {
+          "name": "cutover",
+          "exitCode": 0,
+          "seconds": 11.56,
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k24-cutover.log",
+          "bytes": 1014,
+          "sha256": "d161cc37ce392a4ce17d02caca3e7f4a76f81c939e494219de7e7edb82e47335"
+        }
+      ],
+      "assets": {
+        "count": 51,
+        "bytes": 7460481,
+        "approvedIncrements": {
+          "arrival.css": 645,
+          "workbench.css": 416,
+          "workbench.js": 39622,
+          "plugin-frame.js": 54
+        },
+        "newAllowance": false
+      },
+      "verify": {
+        "runId": 42202397061,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42202397061",
+        "status": "pending",
+        "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+        "conclusion": null
+      },
+      "full": {
+        "runId": 42202389267,
+        "url": "https://github.com/molis-ai/molis-work/actions/runs/42202389267",
+        "status": "pending",
+        "head": "88f595b3bc55fbde9f61d425157859d7dd7c68b4",
+        "conclusion": null
+      },
+      "externalProviders": "MOCK",
+      "realDataOperated": false,
+      "deployment": false,
+      "sourceSha256": "79d8eb98a958a6a96581e059d3293af4cee5092572f02bf018fc617229513d43",
+      "repairs": {
+        "K-24": "52640fa375c7e9cffe73e93f41353be42a195e2c",
+        "K-25": "88f595b3bc55fbde9f61d425157859d7dd7c68b4"
+      },
+      "cardAlignment": {
+        "description": "Connection-card multiline choice label aligns the leading icon with the first line. Scoped inline CSS only; no page-asset increase.",
+        "baseline": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-main-catalog-before.log",
+          "bytes": 2470,
+          "sha256": "268e03ed50a998c96ce5411b6bf31098c87bf70d91717e844a4df5ef261cdfa4",
+          "exitCode": 1,
+          "scope": "same order audit, catalog-only diagnostic at all four original modes",
+          "main": "20bdb4c166ccbf9716a1ba84842f2dcde734a11d"
+        },
+        "final": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-tests.log",
+          "bytes": 1852,
+          "sha256": "318cdeb5499522ebb78e7a33f0ee8e386ff42ce5c2fabe4f64610eb96f7e0a1e",
+          "exitCode": 0,
+          "files": 20,
+          "passed": 161,
+          "total": 161
+        },
+        "screenshots": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-catalog-isolated.log",
+          "bytes": 201,
+          "sha256": "d88619f3a3a1119581c1f499f33e126b7b62caa1512c7a461f540e1b03792941",
+          "exitCode": 0,
+          "runner": "scripts/run-tests.mjs creates isolated Home and canonical TMPDIR",
+          "widths": [
+            1440,
+            1024,
+            390
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ]
+        },
+        "metrics": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-catalog/metrics.json",
+          "bytes": 2020,
+          "sha256": "747a00f3a1ac7b29853cb5f7e31fe622bcec769d15652bc677f432dd93067e98"
+        },
+        "firstCaptureFailure": {
+          "logPath": "/private/tmp/molis-t01-build-only-20261106/k25-catalog.log",
+          "bytes": 1283,
+          "sha256": "00643da64c349aedf920c852e6c91b8288a6d4ce6bce49eeda2e1370f0c456e1",
+          "exitCode": 1,
+          "reason": "Direct node:test invocation omitted canonical TMPDIR; explicit temporary Home aliases were refused by configurePersonalPlanning before browser startup. Re-run through standard isolated runner."
+        }
+      }
+    },
+    "latestMainRecheckHistory": [
+      {
+        "checkedAt": "2026-11-06T03:39:56.797867+00:00",
+        "workMain": "05d4cf98c46858bba5ab331b94d587db02b1c017",
+        "workHead": "9cf6fe6235c6603b8aaa07db37471b2d1558466e",
+        "mergeable": false,
+        "mergeableState": "dirty",
+        "conflictFiles": [
+          "tooling/gates/page-assets.json"
+        ],
+        "diagnosticCommand": "git merge-tree --write-tree --name-only --no-messages HEAD origin/main",
+        "diagnosticExitCode": 1,
+        "worktreeUnchanged": true,
+        "authMergeable": true,
+        "clubMergeable": true,
+        "note": "Readonly merge calculation; no branch/worktree update. New candidate must rerun applicable local gates/joint validation and CI Full/Verify. New main uses three security shards."
+      }
+    ]
   },
   "diagnostics": [
     {
