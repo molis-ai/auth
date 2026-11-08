@@ -1,6 +1,6 @@
 # AUTH-12 交付记录
 
-状态：2026-11-06，Auth/Club 开发分支只构建测试，纠正记录已推送；Auth 文档 CI 通过，Club 因额度未启动经用户接受不阻塞。Work 当前候选 `356fdaa3a` 已集成 main `c30e251b3`；K-26 修复桌面看板隐藏后的列状态，最终 39 个具名文件 435/435、账号联合验证和本地门禁通过。最终 Verify/Full 待核回，三个功能 PR 尚未合入。42 项要求仍为 39 项隔离通过、3 项部分完成；仅 mock/合成数据，无真实数据操作或部署。
+状态：2026-11-08，Auth、Work、Club 的统一账号功能 PR 均已合入各自的 `main`，Work 功能 PR 最终 head 的 Verify 和 Full suite 已通过。真实 GitHub 登录已在 Work 网页、Work Tauri 和 Club 的隔离环境通过，桌面 WebView 修复已进入 Work `main`。[Auth #3](https://github.com/molis-ai/auth/pull/3) 的 GitHub LIVE 适配及实测配置已通过 CI 并合入 Auth `main`（`99c28b3`），合入后生产版本仍为 `b6e35a45`。短信、邮件、Google 的真实联调和 D-09 真实存量盘点待完成。历轮合成数据和 mock 验收见下文，真实联调及生产待办分别见[外部依赖台账](external-dependencies.md)和第 6 节。
 
 ## 1 本次交付
 
@@ -132,15 +132,15 @@ K-01/K-02/K-05 已在本轮基线修复中定向通过；K-03/K-04 在上一轮�
 
 | 编号 | 优先级与事项 | 依赖/负责范围 | 完成标准 |
 | --- | --- | --- | --- |
-| T-01 | P0 内部收尾：开发 CI、纠正记录和主线集成/本地修复完成，最终 CI 待核回 | 三个功能 PR 可评审，前置三 PR 已合入；Club Actions 额度限制经用户接受不阻塞 | 核回 `356fdaa3a` 的 Verify/Full，固定交付记录；处理实际评审意见，取得功能 PR 合入授权，并核对生产分支自动部署范围 |
+| T-01 | P0 内部收尾：三个功能 PR 已合入，Work 最终 head 的 CI 已核回 | [Auth #2](https://github.com/molis-ai/auth/pull/2) → `67904ef1`；[Work #1846](https://github.com/molis-ai/molis-work/pull/1846) → `1e6075392`；[Club #27](https://github.com/molis-ai/molis-club/pull/27) → `ec1efb28` | Work 最终 head `9c313f9ec` 的 [Verify](https://github.com/molis-ai/molis-work/actions/runs/42435486564/job/128595480784) 与 [Full suite](https://github.com/molis-ai/molis-work/actions/runs/42435515891) 成功。Club 历史 Actions 额度限制仍按第 10 节记录；生产部署与切换证据另行核对 |
 | T-02 | P0 真实切换前：D-09 只读盘点与接续决定 | 先获准取得副本；Auth/Club 运维，Work personal 使用方 | 部署/迁移日志、账号/哈希/验证状态/稳定身份、冲突、旧 TEAM、全部 Web/桌面 Client、归属覆盖和回退窗口明确；再开发所需适配并演练 |
-| T-03 | P0 真实登录前：短信/邮件、Google/GitHub 与域名 | 服务商与应用/域名准备；Auth 适配 | 实际发送、官方授权/取消/回调、生产配置拒绝和无 mock 回退证据；当前 mock 通过不代替它 |
-| T-04 | P0 发布前：安装包、部署后及多设备验收 | T-01/T-03 的可部署版本和隔离环境 | Tauri 实际系统浏览器/本机回跳、Vinext 完整部署链路、HTTPS/Cookie、独立设备 30/90 天与退出范围；线上 CPU/容量实测 |
+| T-03 | P0 真实登录前：[短信/邮件、Google/GitHub 与域名台账](external-dependencies.md) | [Auth #3](https://github.com/molis-ai/auth/pull/3) 已通过 [CI](https://github.com/molis-ai/auth/actions/runs/42467985462/job/128691842151) 并合入 `main`（`99c28b3`）。三端 staging GitHub 登录、桌面无代理回跳、Club 再次验证和重复绑定拒绝已验。独立生产应用 #4002664 已登记到 `auth.molis.ai`。 | [GitHub 生产配置、验收和回滚](external-dependencies.md#github-生产上线准备)已记录。生产待确认，需先对齐仓库域名与产品回跳。当前 Worker 版本为 `b6e35a45`。邮件/短信待实际送达，Google 待真实授权与回调。 |
+| T-04 | P0 发布前：安装包、部署后及多设备验收 | [Tauri 复用已有 WebView 与无系统代理 GitHub 回跳已通过](external-dependencies.md#t-04-work-tauri-分发包的-github-回跳)；[Work #1975](https://github.com/molis-ai/molis-work/pull/1975) 经 [队列 Verify](https://github.com/molis-ai/molis-work/actions/runs/42465377604/job/128686323619) 通过并合入 `main`（`f1b9993a2`），已从 `origin/main` 回读核对 | 待补正式分发包验收、Vinext 完整部署链路、HTTPS/Cookie、独立设备 30/90 天与退出范围，以及线上 CPU/容量实测 |
 | T-05 | P0 运营前：平台初始化、套餐与密钥/恢复规程 | 运维受控授权；Auth/Club/Work | v2 平台权限授予/回收有审核；目录发布与正式套餐清单明确；密钥管理、备份恢复、异常处理有负责人。测试 SQL 授权不能作为生产工具 |
 | T-06 | 后续业务：D-01 正式功能清单、D-06 离线许可与执行中撤权 | 具体业务接入 | 业务服务按资源范围接权益，明确额度/缓存/撤权，不仅依赖页面展示 |
 | T-07 | 后续商业与协作：支付、真实自动续费、共享存储/同步 | 独立需求与方案 | 独立验收，不混入本期账号管理的完成声明 |
 
-后续执行顺序及约束已固化在[实施计划第 11 节](implementation-plan.md#11-后续执行指引)：先完成 T-01 的可评审提交整理及最终集成 CI 验证，随后优先细化 T-05 的 mock 开发；T-02/T-03 随授权和资源就绪推进，T-04 补实际交付形态验收。K-01 至 K-05 已有对应隔离证据。此处维护待办状态，执行指引不表示这些事项已开工，也不要求现在开放真实数据或提供密钥。
+后续依赖见[实施计划第 11 节](implementation-plan.md#11-后续执行指引)。三仓主功能已合入，T-03 可优先收口已实测的 GitHub LIVE 适配，并行准备短信、邮件和 Google 资源。T-05 可继续用合成数据细化受控管理和恢复流程。T-02 在获准取得只读副本后开始实际盘点，T-04 按可部署版本继续补正式交付形态和多设备证据。K-01 至 K-05 的隔离证据保留。
 
 ## 7 复现入口
 
