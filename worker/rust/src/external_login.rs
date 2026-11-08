@@ -1,5 +1,6 @@
-//! AUTH-05: provider adapters with an isolated, browser-bound mock authorization server.
+//! Browser-bound product authorization for isolated mock providers and live GitHub.
 use crate::{
+    github_login::Github,
     http::*,
     identity::Auth,
     login_sessions::{client_guard, registered_client},
@@ -57,6 +58,13 @@ fn mock(c: &Value) -> Result<()> {
         "UPSTREAM_UNAVAILABLE",
     )
 }
+fn check_provider(a: &Auth, c: &Value, p: &str) -> Result<()> {
+    if c["provider_mode"] == "LIVE" && p == "github" {
+        Github::configured(a)?;
+        return Ok(());
+    }
+    mock(c)
+}
 fn name(a: &Auth, state: &str) -> String {
     format!(
         "{}molis_provider_{}",
@@ -75,6 +83,7 @@ fn redirect(url: &str) -> Result<Response> {
     let mut r = Response::empty()?.with_status(303);
     r.headers_mut().set("Location", url)?;
     r.headers_mut().set("Cache-Control", "no-store")?;
+    r.headers_mut().set("Referrer-Policy", "no-referrer")?;
     Ok(r)
 }
 fn q(a: &Auth) -> Result<Value> {
@@ -112,7 +121,7 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
         400,
         "INVALID_REQUEST",
     )?;
-    mock(c)?;
+    check_provider(a, c, p)?;
     target(t, "VERIFIED")?;
     a.rate_ip("v2-provider-start", 30).await?;
     let n = now();
@@ -127,7 +136,7 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
         json!({"browserStartUrl":format!("{}/api/v2/auth/external/{p}/browser-start?ticket={ticket}",a.origin)}),
     )
 }
-async fn checked(a: &Auth, t: &Value) -> Result<(Value, Value)> {
+async fn checked(a: &Auth, t: &Value, p: &str) -> Result<(Value, Value)> {
     ensure(
         !t.is_null()
             && (t["purpose"] == "LOGIN" || crate::sensitive_transactions::protected(t))
@@ -138,7 +147,7 @@ async fn checked(a: &Auth, t: &Value) -> Result<(Value, Value)> {
         "INVALID_CREDENTIALS",
     )?;
     let c = registered_client(a, &text(t, "client_id")).await?;
-    mock(&c)?;
+    check_provider(a, &c, p)?;
     ensure(
         c["environment_id"] == t["environment_id"]
             && contains(&parsed(&c, "redirects")?, &t["redirect_uri"]),
@@ -163,7 +172,7 @@ async fn flow(a: &Auth, p: &str, state: &str) -> Result<(Value, Value, Value, St
             vec![hash(state).into(), provider(p)?.into()],
         )
         .await?;
-    let (c, ctx) = checked(a, &t).await?;
+    let (c, ctx) = checked(a, &t, p).await?;
     let browser = cookie_value(a, state);
     ensure(
         token(&browser) && t["browser_hash"] == hash(&browser) && ctx["state"] == state,
@@ -185,13 +194,17 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
             vec![parsed(&receipt, "payload")?["transactionId"].clone()],
         )
         .await?;
-    let (c, ctx) = checked(a, &t).await?;
+    let (c, ctx) = checked(a, &t, p).await?;
     ensure(t["method"] == provider(p)?, 400, "INVALID_REQUEST")?;
     let state = text(&ctx, "state");
     let browser = secret();
     a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), &browser, 600));
+    if c["provider_mode"] == "LIVE" {
+        let url = Github::configured(a)?.authorize_url(&state, &text(&ctx, "verifier"))?;
+        return redirect(url.as_str());
+    }
     redirect(&format!(
         "{}/api/v2/auth/mock/{p}/authorize?state={state}",
         a.origin
@@ -257,6 +270,7 @@ async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<Response> {
     )?;
     let state = text(&b, "state");
     let (t, c, ctx, browser) = flow(a, p, &state).await?;
+    mock(&c)?;
     if method == Method::Get {
         let accounts=a.s.all("SELECT id,label FROM auth_mock_provider_account WHERE environment_id=? AND provider=? ORDER BY id LIMIT 50",vec![c["environment_id"].clone(),provider(p)?.into()]).await?;
         let options = accounts
@@ -355,106 +369,156 @@ async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<Response> {
     url.query_pairs_mut().append_pair("code", &code);
     redirect(url.as_str())
 }
-async fn callback_once(a: &mut Auth, p: &str) -> Result<Response> {
-    let b = q(a)?;
+async fn commit_identity(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    identity: &Value,
+    mock_code: Option<(&str, &str)>,
+) -> Result<()> {
+    let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, now(), "PENDING")?];
+    if crate::sensitive_transactions::protected(t) {
+        let mut verified_identity = identity.clone();
+        verified_identity["type"] = t["method"].clone();
+        writes.extend(
+            crate::sensitive_transactions::verified(a, t, &verified_identity, now()).await?,
+        );
+    } else {
+        let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
+        let n = now();
+        let user;
+        let epoch;
+        if existing.is_null() {
+            user = uuid();
+            epoch = 0;
+            writes.extend(new_user(a, &user, n)?);
+            writes.push(a.s.statement(
+                "INSERT INTO auth_external_identity VALUES (?,?,?,?,?,?)",
+                vec![
+                    uuid().into(),
+                    user.clone().into(),
+                    t["method"].clone(),
+                    identity["issuer"].clone(),
+                    identity["subject"].clone(),
+                    n.into(),
+                ],
+            )?);
+        } else {
+            ensure(existing["status"] == "ACTIVE", 401, "INVALID_CREDENTIALS")?;
+            user = text(&existing, "user_id");
+            epoch = number(&existing, "session_epoch");
+            writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_external_identity WHERE issuer=? AND subject=? AND user_id=?)",vec![identity["issuer"].clone(),identity["subject"].clone(),user.clone().into()])?);
+        }
+        writes.push(a.s.statement(
+            "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
+            vec![user.clone().into(), n.into()],
+        )?);
+        writes.push(boundary(a, t, &user, epoch)?);
+        writes.push(a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![user.clone().into(),epoch.into(),t["id"].clone()])?);
+        writes.push(a.s.audit(
+            "account.v2.external.verify",
+            user.into(),
+            &a.request_id,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            false,
+        )?);
+    }
+    if let Some((digest, binding)) = mock_code {
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.into(),binding.into(),now().into()])?);
+        writes.push(a.s.statement(
+            "DELETE FROM auth_one_use WHERE token_hash=?",
+            vec![digest.into()],
+        )?);
+    }
+    a.s.batch(writes, "VERSION_CONFLICT").await?;
+    Ok(())
+}
+
+async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
+    let mut b = q(a)?;
+    let state = text(&b, "state");
+    ensure(token(&state), 400, "INVALID_REQUEST")?;
+    let (t, c, ctx, browser) = flow(a, p, &state).await?;
+    let live = c["provider_mode"] == "LIVE";
+    if live {
+        ensure(
+            b["iss"] == Github::AUTHORIZATION_ISSUER,
+            400,
+            "INVALID_REQUEST",
+        )?;
+        // GitHub adds its issuer and may include diagnostics on an error.
+        // Validate the issuer before translating into the product contract.
+        if let Some(fields) = b.as_object_mut() {
+            fields.remove("iss");
+            if fields.contains_key("error") {
+                fields.remove("error_description");
+                fields.remove("error_uri");
+            }
+        }
+    }
     ensure(
         crate::unified_contracts::validate_named("ProviderCallback", &b).is_ok(),
         400,
         "INVALID_REQUEST",
     )?;
-    let state = text(&b, "state");
-    let (t, c, ctx, browser) = flow(a, p, &state).await?;
-    let mut writes = vec![client_guard(a, &c)?, tx_guard(a, &t, now(), "PENDING")?];
     let result = if b.get("error").is_some() {
-        writes.push(a.s.statement("UPDATE auth_product_transaction SET status='CANCELLED',completed_at=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![now().into(),t["id"].clone()])?);
+        a.s.batch(
+            vec![
+                client_guard(a, &c)?,
+                tx_guard(a, &t, now(), "PENDING")?,
+                a.s.statement("UPDATE auth_product_transaction SET status='CANCELLED',completed_at=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![now().into(),t["id"].clone()])?,
+            ],
+            "VERSION_CONFLICT",
+        ).await?;
         if b["error"] == "access_denied" {
             "CANCELLED"
         } else {
             "FAILED"
         }
     } else {
-        let digest = hash(&text(&b, "code"));
+        let raw = text(&b, "code");
+        let digest = hash(&raw);
         let binding = hash(&format!("{p}:{state}:{browser}"));
-        let code=a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.clone().into(),binding.clone().into(),now().into()]).await?;
-        ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
-        let claims = opened(
-            a,
-            parsed(&code, "payload")?.as_str().ok_or(Failure {
-                status: 400,
-                code: "INVALID_REQUEST",
-            })?,
-        )
-        .await?;
-        let identity = normalize(p, &claims, &t, &ctx)?;
-        if crate::sensitive_transactions::protected(&t) {
-            let mut verified_identity = identity.clone();
-            verified_identity["type"] = provider(p)?.into();
-            writes.extend(
-                crate::sensitive_transactions::verified(a, &t, &verified_identity, now()).await?,
-            );
+        let (identity, mock_code) = if live {
+            (
+                Github::configured(a)?
+                    .exchange(&raw, &text(&ctx, "verifier"))
+                    .await?,
+                None,
+            )
         } else {
-            let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
-            let n = now();
-            let user;
-            let epoch;
-            if existing.is_null() {
-                user = uuid();
-                epoch = 0;
-                writes.extend(new_user(a, &user, n)?);
-                writes.push(a.s.statement(
-                    "INSERT INTO auth_external_identity VALUES (?,?,?,?,?,?)",
-                    vec![
-                        uuid().into(),
-                        user.clone().into(),
-                        provider(p)?.into(),
-                        identity["issuer"].clone(),
-                        identity["subject"].clone(),
-                        n.into(),
-                    ],
-                )?);
-            } else {
-                ensure(existing["status"] == "ACTIVE", 401, "INVALID_CREDENTIALS")?;
-                user = text(&existing, "user_id");
-                epoch = number(&existing, "session_epoch");
-                writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_external_identity WHERE issuer=? AND subject=? AND user_id=?)",vec![identity["issuer"].clone(),identity["subject"].clone(),user.clone().into()])?);
+            let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.clone().into(),binding.clone().into(),now().into()]).await?;
+            ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
+            let claims = opened(
+                a,
+                parsed(&code, "payload")?.as_str().ok_or(Failure {
+                    status: 400,
+                    code: "INVALID_REQUEST",
+                })?,
+            )
+            .await?;
+            (
+                normalize(p, &claims, &t, &ctx)?,
+                Some((digest.as_str(), binding.as_str())),
+            )
+        };
+        // A concurrent first login can win the identity insert. Retry only the
+        // guarded local commit, keeping GitHub's one-time exchange out of the retry.
+        match commit_identity(a, &t, &c, &identity, mock_code).await {
+            Err(e) if e.code == "ALREADY_EXISTS" => {
+                commit_identity(a, &t, &c, &identity, mock_code).await?;
             }
-            writes.push(a.s.statement(
-                "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-                vec![user.clone().into(), n.into()],
-            )?);
-            writes.push(boundary(a, &t, &user, epoch)?);
-            writes.push(a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![user.clone().into(),epoch.into(),t["id"].clone()])?);
-            writes.push(a.s.audit(
-                "account.v2.external.verify",
-                user.into(),
-                &a.request_id,
-                Value::Null,
-                Value::Null,
-                Value::Null,
-                false,
-            )?);
+            result => result?,
         }
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.clone().into(),binding.into(),now().into()])?);
-        writes.push(a.s.statement(
-            "DELETE FROM auth_one_use WHERE token_hash=?",
-            vec![digest.into()],
-        )?);
         "VERIFIED"
     };
-    writes.insert(0, tx_guard(a, &t, now(), "PENDING")?);
-    a.s.batch(writes, "VERSION_CONFLICT").await?;
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), "", 0));
     redirect(&target(&t, result)?)
 }
-async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
-    // A concurrent first login may have created the stable identity. The failed
-    // batch rolled back its code consumption; retry once against the new owner.
-    match callback_once(a, p).await {
-        Err(e) if e.code == "ALREADY_EXISTS" => callback_once(a, p).await,
-        other => other,
-    }
-}
+
 pub async fn browser(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     let parts: Vec<_> = path.trim_matches('/').split('/').collect();
     ensure(parts.len() == 6, 404, "NOT_FOUND")?;

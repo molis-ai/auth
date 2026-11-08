@@ -1,0 +1,55 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "molis-auth-staging",
+  "main": "../../rust/build/index.js",
+  "build": {
+    "command": "node scripts/rust-build.mjs"
+  },
+  "compatibility_date": "2026-09-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../../../web/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "vars": {
+    "AUTH_ORIGIN": "https://auth-staging.molis.ai",
+    "PLATFORM_ADMIN_IDS": "",
+    "UNIFIED_ACCOUNT_CONFIG": "{\"environmentId\":\"unified-staging\",\"kind\":\"TEST\",\"authOrigin\":\"https://auth-staging.molis.ai\",\"deliveryMode\":\"MOCK\",\"providerMode\":\"LIVE\"}",
+    "UNIFIED_GITHUB_CLIENT_ID": "Ov23lic95wYM63qGp9PX"
+  },
+  "routes": [
+    {
+      "pattern": "auth-staging.molis.ai",
+      "custom_domain": true
+    }
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "molis-auth-staging",
+      "database_id": "de8dc585-1d73-401d-8f4c-37e8e227702d",
+      "migrations_dir": "../../migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PASSWORD_KDF",
+        "class_name": "PasswordKdf"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "password-kdf-v1",
+      "new_sqlite_classes": ["PasswordKdf"]
+    }
+  ]
+}

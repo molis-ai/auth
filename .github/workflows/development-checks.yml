@@ -30,6 +30,14 @@ jobs:
           node-version: 24.22.1
       - name: Install pinned dependencies and Rust tools
         run: npm run setup
+      - name: Build the locked wasm-bindgen CLI
+        run: |
+          # worker-build otherwise fetches a prebuilt binary from GitHub Releases.
+          version=$(awk -F '"' '/^name = "wasm-bindgen"$/ { getline; print $2; exit }' worker/rust/Cargo.lock)
+          test -n "$version"
+          toolchain=$(node --input-type=module -e "import { installedToolchain } from './worker/scripts/rust-toolchain.mjs'; process.stdout.write(installedToolchain())")
+          cargo "+$toolchain" install --locked --version "=$version" --root "$RUNNER_TEMP/auth-wasm-tools" wasm-bindgen-cli
+          echo "WASM_BINDGEN_BIN=$RUNNER_TEMP/auth-wasm-tools/bin/wasm-bindgen" >> "$GITHUB_ENV"
       - name: Check contracts and run isolated tests
         run: npm test
       - name: Build web and browser SDK
