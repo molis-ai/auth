@@ -32,7 +32,7 @@ async fn password_enabled(a: &Auth, user: &str) -> Result<bool> {
         .await?
         .is_null())
 }
-fn method_view(row: &Value, c: &Value, password: bool) -> Value {
+fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
     let kind = text(row, "type");
     let target = text(row, "target");
     let verified = !row["verified_at"].is_null();
@@ -68,6 +68,11 @@ fn method_view(row: &Value, c: &Value, password: bool) -> Value {
     let usable = match kind.as_str() {
         "EMAIL" => verified && password,
         "PHONE" => verified && c["delivery_mode"] == "MOCK",
+        "GITHUB" if c["provider_mode"] == "LIVE" => {
+            verified
+                && row["issuer"] == crate::github_login::ISSUER
+                && crate::github_login::Github::configured(a).is_ok()
+        }
         _ => {
             c["provider_mode"] == "MOCK"
                 && row["issuer"]
@@ -83,7 +88,10 @@ fn method_view(row: &Value, c: &Value, password: bool) -> Value {
 async fn methods(a: &Auth, user: &str, c: &Value) -> Result<Vec<Value>> {
     let rows=a.s.all("SELECT id,'EMAIL' type,canonical_email target,verified_at,NULL issuer FROM auth_user_email WHERE user_id=? UNION ALL SELECT id,'PHONE',canonical_phone,verified_at,NULL FROM auth_user_phone WHERE user_id=? UNION ALL SELECT id,provider,subject,created_at,issuer FROM auth_external_identity WHERE user_id=? AND provider IN ('GOOGLE','GITHUB') ORDER BY type,id",vec![user.into(),user.into(),user.into()]).await?;
     let password = password_enabled(a, user).await?;
-    Ok(rows.iter().map(|r| method_view(r, c, password)).collect())
+    Ok(rows
+        .iter()
+        .map(|r| method_view(a, r, c, password))
+        .collect())
 }
 fn version_guard(a: &Auth, user: &str, us: &Value) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
@@ -285,7 +293,7 @@ async fn mutation(
             }
         }
         let row = json!({"id":binding_id,"type":identity["type"],"target":if identity.get("target").is_some(){identity["target"].clone()}else{identity["subject"].clone()},"issuer":identity["issuer"],"verified_at":n});
-        list.push(method_view(&row, c, password_enabled(a, &user).await?));
+        list.push(method_view(a, &row, c, password_enabled(a, &user).await?));
         writes.extend(consume(a, &new)?);
     }
     ensure(list.len() <= 20, 400, "INVALID_REQUEST")?;

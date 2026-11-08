@@ -11,6 +11,7 @@ mod delivery;
 mod entitlements;
 mod external_login;
 mod federation;
+mod github_login;
 mod http;
 mod identity;
 mod login_sessions;

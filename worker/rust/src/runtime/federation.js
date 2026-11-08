@@ -50,6 +50,10 @@ export async function authFetchJson(url, form) {
     redirect: 'manual',
     signal: AbortSignal.timeout(10000),
   })
+  return boundedJson(r)
+}
+
+async function boundedJson(r) {
   if (!r.ok) throw Error('upstream')
   const reader = r.body.getReader()
   let n = 0,
@@ -71,4 +75,35 @@ export async function authFetchJson(url, form) {
     offset += c.length
   }
   return new TextDecoder().decode(bytes)
+}
+
+export async function githubUser(form) {
+  const request = { redirect: 'manual', signal: AbortSignal.timeout(10000) }
+  const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+    ...request,
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form,
+  })
+  const token = JSON.parse(await boundedJson(tokenResponse))
+  if (
+    typeof token.access_token !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,1024}$/.test(token.access_token) ||
+    token.token_type?.toLowerCase() !== 'bearer'
+  ) {
+    throw Error('github exchange')
+  }
+  return boundedJson(
+    await fetch('https://api.github.com/user', {
+      ...request,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: 'Bearer ' + token.access_token,
+        'User-Agent': 'Molis-Auth',
+      },
+    }),
+  )
 }
