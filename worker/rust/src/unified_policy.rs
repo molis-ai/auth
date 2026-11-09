@@ -1,5 +1,5 @@
 //! Foundation boundary for the unified account protocol. No v2 login is issued here.
-use crate::{http::*, identity::Auth};
+use crate::http::*;
 use serde_json::Value;
 use worker::{Env, Url};
 
@@ -37,7 +37,7 @@ pub fn validate_configuration(value: &Value, auth_origin: &str) -> Result<()> {
 }
 
 pub fn validate_environment(env: &Env, auth_origin: &str) -> Result<()> {
-    // Absent means not enabled, never a fallback to mock. Existing products keep their protocol.
+    // Credentials still require an explicit registered environment; absence never enables mock.
     if let Ok(raw) = env.var("UNIFIED_ACCOUNT_CONFIG") {
         let value = serde_json::from_str(&raw.to_string()).map_err(|_| Failure {
             status: 503,
@@ -46,27 +46,6 @@ pub fn validate_environment(env: &Env, auth_origin: &str) -> Result<()> {
         validate_configuration(&value, auth_origin)?;
     }
     Ok(())
-}
-
-pub async fn ensure_legacy_client(a: &Auth, client_id: &str) -> Result<()> {
-    let policy =
-        a.s.one(
-            "SELECT client_id FROM auth_client_policy WHERE client_id=?",
-            vec![client_id.into()],
-        )
-        .await?;
-    // Presence is authoritative, including malformed profiles: never default to legacy.
-    ensure(policy.is_null(), 403, "CLIENT_POLICY_REQUIRES_V2")
-}
-
-pub async fn ensure_legacy_space(a: &Auth, space_id: &str) -> Result<()> {
-    let tenant =
-        a.s.one(
-            "SELECT space_id FROM auth_managed_tenant WHERE space_id=?",
-            vec![space_id.into()],
-        )
-        .await?;
-    ensure(tenant.is_null(), 403, "TENANT_API_REQUIRED")
 }
 
 #[cfg(test)]

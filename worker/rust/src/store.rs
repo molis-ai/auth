@@ -5,13 +5,13 @@ use worker::{D1Database, D1PreparedStatement};
 
 pub struct Store {
     pub db: D1Database,
-    pub authorization: Option<(String, Vec<Value>)>,
+    pub web_owner: Option<(String, i64)>,
 }
 impl Store {
     pub fn new(db: D1Database) -> Self {
         Self {
             db,
-            authorization: None,
+            web_owner: None,
         }
     }
     pub fn statement(&self, sql: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
@@ -45,62 +45,6 @@ impl Store {
         self.statement(sql, values)?.run().await?;
         Ok(())
     }
-    pub async fn paginate(
-        &self,
-        url: &worker::Url,
-        sql: &str,
-        mut values: Vec<Value>,
-        order: &str,
-    ) -> Result<Value> {
-        let limit = query(url, "limit", "25").parse::<i64>().unwrap_or(0);
-        let page = query(url, "page", "1").parse::<i64>().unwrap_or(0);
-        ensure(
-            (1..=100).contains(&limit) && (1..=1000000).contains(&page),
-            400,
-            "INVALID_REQUEST",
-        )?;
-        if url.query_pairs().any(|(k, _)| k == "page") {
-            let total = number(
-                &self
-                    .one(&format!("SELECT count(*) n FROM ({sql})"), values.clone())
-                    .await?,
-                "n",
-            );
-            let actual = page.min(((total + limit - 1) / limit).max(1));
-            values.extend([limit.into(), ((actual - 1) * limit).into()]);
-            let rows = self
-                .all(
-                    &format!("SELECT * FROM ({sql}) page_rows ORDER BY {order} LIMIT ? OFFSET ?"),
-                    values,
-                )
-                .await?;
-            Ok(serde_json::json!({"items":rows,"total":total,"page":actual,"pageSize":limit}))
-        } else {
-            let cursor = query(url, "cursor", "0");
-            ensure(
-                !cursor.is_empty()
-                    && cursor.len() <= 9
-                    && cursor.bytes().all(|b| b.is_ascii_digit()),
-                400,
-                "INVALID_REQUEST",
-            )?;
-            let offset = cursor.parse::<i64>().unwrap();
-            values.extend([(limit + 1).into(), offset.into()]);
-            let mut rows = self
-                .all(
-                    &format!("SELECT * FROM ({sql}) page_rows ORDER BY {order} LIMIT ? OFFSET ?"),
-                    values,
-                )
-                .await?;
-            let next = if rows.len() > limit as usize {
-                Value::String((offset + limit).to_string())
-            } else {
-                Value::Null
-            };
-            rows.truncate(limit as usize);
-            Ok(serde_json::json!({"items":rows,"nextCursor":next}))
-        }
-    }
     pub fn guard(&self, condition: &str, mut values: Vec<Value>) -> Result<D1PreparedStatement> {
         values.insert(0, Value::String(uuid()));
         self.statement(&format!("INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN ({condition}) THEN 1 ELSE 0 END)"),values)
@@ -110,13 +54,8 @@ impl Store {
         mut statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
-        if let Some((sql, args)) = &self.authorization {
-            let mut args = args.clone();
-            let time = now();
-            for i in [1, 3, 4] {
-                args[i] = time.into();
-            }
-            statements.insert(0, self.guard(sql, args)?);
+        if let Some((id, revision)) = &self.web_owner {
+            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY' AND expires_at>?)", vec![id.clone().into(),(*revision).into(),now().into()])?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         match self.db.batch(statements).await {

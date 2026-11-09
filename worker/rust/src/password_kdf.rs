@@ -94,7 +94,7 @@ pub async fn remote_derive(password: &str, salt: &[u8], env: &Env) -> Result<Vec
 mod tests {
     use super::*;
     #[test]
-    fn existing_jdk_record_is_unchanged() {
+    fn known_sha256_derivation_vector() {
         let input = Derivation {
             password: "migration-test-密码-é".into(),
             salt: "000102030405060708090a0b0c0d0e0f".into(),

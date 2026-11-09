@@ -2,7 +2,9 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "molis-auth-preview",
   "main": "../../rust/build/index.js",
-  "build": { "command": "node scripts/rust-build.mjs" },
+  "build": {
+    "command": "node scripts/rust-build.mjs"
+  },
   "compatibility_date": "2026-09-19",
   "workers_dev": false,
   "preview_urls": false,
@@ -15,7 +17,9 @@
   },
   "vars": {
     "AUTH_ORIGIN": "https://auth-preview.adeptify.me",
-    "PLATFORM_ADMIN_IDS": ""
+    "AUTH_WEB_CLIENT_ID": "molis-auth-web-preview",
+    "TENANT_CREATION_POLICY": "SELF_SERVICE",
+    "UNIFIED_ACCOUNT_CONFIG": "{\"environmentId\":\"auth-preview\",\"kind\":\"TEST\",\"authOrigin\":\"https://auth-preview.adeptify.me\",\"deliveryMode\":\"LIVE\",\"providerMode\":\"LIVE\"}"
   },
   "routes": [
     {
@@ -24,7 +28,9 @@
     }
   ],
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": [
+      "0 * * * *"
+    ]
   },
   "d1_databases": [
     {
@@ -35,7 +41,19 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "PASSWORD_KDF", "class_name": "PasswordKdf" }]
+    "bindings": [
+      {
+        "name": "PASSWORD_KDF",
+        "class_name": "PasswordKdf"
+      }
+    ]
   },
-  "migrations": [{ "tag": "password-kdf-v1", "new_sqlite_classes": ["PasswordKdf"] }]
+  "migrations": [
+    {
+      "tag": "password-kdf-v1",
+      "new_sqlite_classes": [
+        "PasswordKdf"
+      ]
+    }
+  ]
 }

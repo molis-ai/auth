@@ -137,83 +137,6 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         'TokenSet',
       )
     }
-    async function legacyLogin(email: string, password: string) {
-      const jar = new Map<string, string>()
-      let access = ''
-      async function request(path: string, body?: any, transaction?: string) {
-        const r = await p.fetch(
-          new Request(origin + path, {
-            method: body === undefined ? 'GET' : 'POST',
-            headers: {
-              Origin: origin,
-              Cookie: [...jar].map(([k, v]) => k + '=' + v).join('; '),
-              ...(body === undefined
-                ? {}
-                : {
-                    'Content-Type':
-                      body instanceof URLSearchParams
-                        ? 'application/x-www-form-urlencoded'
-                        : 'application/json',
-                  }),
-              ...(transaction ? { 'X-Auth-Transaction': transaction } : {}),
-              ...(access ? { Authorization: 'Bearer ' + access } : {}),
-            },
-            body:
-              body === undefined
-                ? undefined
-                : body instanceof URLSearchParams
-                  ? body
-                  : JSON.stringify(body),
-          }),
-        )
-        for (const raw of r.headers.getSetCookie()) {
-          const pair = raw.split(';')[0]
-          const at = pair.indexOf('=')
-          jar.set(pair.slice(0, at), pair.slice(at + 1))
-        }
-        return { status: r.status, ...(await r.json()) }
-      }
-      const verifier = secret(),
-        clientId = 'molis-auth-console',
-        redirectUri = origin + '/console/callback'
-      const start = ok(
-        await request('/api/v1/auth/transactions', {
-          clientId,
-          redirectUri,
-          state: secret(),
-          codeChallenge: challenge(verifier),
-          codeChallengeMethod: 'S256',
-          scopes: ['account', 'profile'],
-        }),
-      )
-      ok(
-        await request('/api/v1/auth/transactions/password', { email, password }, start.transaction),
-      )
-      const proof = ok(
-        await request('/api/v1/auth/transactions/confirmation', {}, start.transaction),
-      )
-      const done = ok(
-        await request(
-          '/api/v1/auth/transactions/complete',
-          { confirmation: proof.confirmation, confirmed: true },
-          start.transaction,
-        ),
-      )
-      const tokens = await request(
-        '/oauth2/token',
-        new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          redirect_uri: redirectUri,
-          code: new URL(done.redirectTo).searchParams.get('code')!,
-          code_verifier: verifier,
-        }),
-      )
-      assert.equal(tokens.status, 200, JSON.stringify(tokens))
-      access = tokens.access_token
-      ok(await request('/api/v1/users/me'))
-      return { request }
-    }
     async function phoneLogin(address: string, club = false) {
       const t = await begin('LOGIN', 'PHONE_OTP', undefined, {}, club)
       const proof = await verify(t, address)
@@ -323,7 +246,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
     const b = await phoneLogin('+8613800000012')
     let emailBinding: string, phoneBinding: string, googleBinding: string
     let password = 'Fixture-Saturn-Seven-93'
-    let legacy: Awaited<ReturnType<typeof legacyLogin>>
+    let peer: Awaited<ReturnType<typeof passwordLogin>>
     await suite.test(
       'UAS-03/26: profile versioning, PNG cleaning/removal, platform view and idempotent retry',
       async () => {
@@ -850,15 +773,23 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       },
     )
     await suite.test(
-      'UAS-26/41: existing clients advance shared account versions and invalidate stale v2 identity proofs',
+      'UAS-26/41 V2U-01: independent V2 clients share versions and identity-proof revocation',
       async () => {
-        legacy = await legacyLogin('new-alice@example.test', password)
+        peer = await passwordLogin('new-alice@example.test', password, true)
         const before = await me(a)
         ok(
-          await legacy.request('/api/v1/users/me/profile', {
-            displayName: 'Shared account',
-            avatarUrl: null,
-          }),
+          await call(
+            '/users/me/profile',
+            {
+              displayName: 'Shared account',
+              avatarDataUrl: null,
+              expectedVersion: before.user.version,
+            },
+            peer,
+            undefined,
+            secret(),
+            'PATCH',
+          ),
         )
         assert.equal((await me(a)).user.version, before.user.version + 1)
         assert.equal(
@@ -876,19 +807,12 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         )
         await db
           .prepare(
-            "INSERT INTO auth_mock_provider_account(id,environment_id,provider,subject,label) VALUES ('legacy-extra','unified-local','GOOGLE','legacy-extra-subject','Extra identity fixture')",
+            "INSERT INTO auth_mock_provider_account(id,environment_id,provider,subject,label) VALUES ('peer-extra','unified-local','GOOGLE','peer-extra-subject','Extra identity fixture')",
           )
           .run()
-        await bind(
-          a,
-          'GOOGLE',
-          'legacy-extra',
-          'EMAIL_PASSWORD',
-          'new-alice@example.test',
-          password,
-        )
+        await bind(a, 'GOOGLE', 'peer-extra', 'EMAIL_PASSWORD', 'new-alice@example.test', password)
         const extra = await db
-          .prepare("SELECT id FROM auth_external_identity WHERE subject='legacy-extra-subject'")
+          .prepare("SELECT id FROM auth_external_identity WHERE subject='peer-extra-subject'")
           .first()
         const operationProof = await reauth(
           a,
@@ -897,7 +821,21 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           'GOOGLE',
           '',
         )
-        ok(await legacy.request('/api/v1/sessions/login-methods/' + extra.id + '/unlink', {}))
+        const unlinkProof = await reauth(
+          peer,
+          'UNLINK_METHOD',
+          { bindingId: extra.id },
+          'EMAIL_PASSWORD',
+          'new-alice@example.test',
+          password,
+        )
+        ok(
+          await call(
+            '/users/me/login-methods/' + extra.id + '/unlink',
+            { operationProof: unlinkProof, expectedVersion: (await me(peer)).user.version },
+            peer,
+          ),
+        )
         assert.equal(
           (
             await call(
@@ -912,7 +850,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           ).status,
           401,
         )
-        legacy = await legacyLogin('new-alice@example.test', password)
+        peer = await passwordLogin('new-alice@example.test', password, true)
       },
     )
     await suite.test(
@@ -964,7 +902,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           await call('/auth/password-reset/complete', body, undefined, reset.proof),
           'PasswordResetResult',
         )
-        assert.equal((await legacy.request('/api/v1/users/me')).status, 401)
+        assert.equal((await call('/users/me', undefined, peer)).status, 401)
         assert.equal(
           (await call('/auth/password-reset/complete', body, undefined, reset.proof)).status,
           401,

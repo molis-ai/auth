@@ -284,7 +284,6 @@ async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
     if all {
         writes.push(a.s.statement("UPDATE auth_user_security SET session_epoch=session_epoch+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE user_id=?",vec![n.into(),s["user_id"].clone()])?);
         writes.push(a.s.statement("UPDATE auth_login_session SET revoked_at=?,session_revision=session_revision+1 WHERE user_id=? AND revoked_at IS NULL",vec![n.into(),s["user_id"].clone()])?);
-        writes.push(a.s.statement("UPDATE auth_grant SET revoked_at=? WHERE client_id IN (SELECT client_id FROM auth_client_policy) AND authentication_id IN (SELECT id FROM auth_authentication WHERE user_id=?) AND revoked_at IS NULL",vec![n.into(),s["user_id"].clone()])?);
     } else {
         writes.push(a.s.statement("UPDATE auth_login_session SET revoked_at=?,session_revision=session_revision+1 WHERE id=?",vec![n.into(),s["id"].clone()])?);
     }

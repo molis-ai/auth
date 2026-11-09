@@ -35,7 +35,7 @@ test('cloud seeds are repeatable and create no users or credentials', () => {
       assert.equal(db.prepare('SELECT count(*) AS n FROM auth_local_credential').get()!.n, 0)
       assert.equal(
         db.prepare('SELECT redirects FROM auth_client').get()!.redirects,
-        JSON.stringify([load(env).vars.AUTH_ORIGIN + '/console/callback']),
+        JSON.stringify([load(env).vars.AUTH_ORIGIN + '/account/callback']),
       )
     } finally {
       db.close()

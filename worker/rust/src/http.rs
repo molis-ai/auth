@@ -109,12 +109,6 @@ pub fn name(v: &Value) -> Result<String> {
     )?;
     Ok(s.to_owned())
 }
-pub fn query(url: &worker::Url, key: &str, default: &str) -> String {
-    url.query_pairs()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v.into_owned())
-        .unwrap_or(default.into())
-}
 pub fn form(body: &str) -> Result<Value> {
     let mut value = json!({});
     for (key, item) in url::form_urlencoded::parse(body.as_bytes()) {
@@ -134,13 +128,6 @@ pub fn cookie(header: &str, key: &str) -> String {
         found[0].to_owned()
     } else {
         String::new()
-    }
-}
-pub fn root_cookie(origin: &str) -> &'static str {
-    if origin.starts_with("https:") {
-        "__Host-auth_session"
-    } else {
-        "auth_session_dev"
     }
 }
 pub fn cookie_header(origin: &str, key: &str, value: &str, age: i64) -> String {

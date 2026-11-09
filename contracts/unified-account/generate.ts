@@ -117,6 +117,13 @@ add(
     'SUBSCRIPTION_READ',
     'SUBSCRIPTION_WRITE',
     'AUDIT_READ',
+    'APPLICATION_READ',
+    'APPLICATION_WRITE',
+    'CLIENT_READ',
+    'CLIENT_WRITE',
+    'USER_READ',
+    'USER_STATUS',
+    'PLATFORM_PERMISSION_WRITE',
   ),
 )
 add(
@@ -126,7 +133,7 @@ add(
     loginMethods: arr(ref('LoginMethod'), 20),
     passwordEnabled: bool,
     session: ref('SessionView'),
-    platformCapabilities: arr(ref('PlatformCapability'), 7),
+    platformCapabilities: arr(ref('PlatformCapability'), 14),
   }),
 )
 add(
@@ -355,6 +362,24 @@ add(
 )
 add('TenantUpdateRequest', obj({ name, ...expected }))
 add('TenantCreateRequest', obj({ name, ownerUserId: id, reason }))
+add('PlatformApplication', obj({ applicationId: id, name, status: en('ACTIVE', 'DISABLED'), version }))
+add('PlatformApplicationPage', obj({ items: arr(ref('PlatformApplication')), nextCursor: nullable(str(1, 2048)) }))
+add('ApplicationCreateRequest', obj({ name }))
+add('ApplicationUpdateRequest', obj({ name, status: en('ACTIVE', 'DISABLED'), ...expected }))
+const origins = { ...arr(str(1, 2048, { format: 'http-origin' }), 32, 1), uniqueItems: true }
+const redirects = { ...arr(url, 32, 1), uniqueItems: true }
+add('PlatformLoginClient', obj({ clientId: id, applicationId: id, clientType: en('WEB', 'MACOS', 'CLI'), status: en('ACTIVE', 'DISABLED'), version, environmentId: id, policyVersion: version, allowedOrigins: origins, redirectAllowlist: redirects, product: nullable(en('WORK', 'CLUB')) }))
+add('PlatformLoginClientPage', obj({ items: arr(ref('PlatformLoginClient')), nextCursor: nullable(str(1, 2048)) }))
+add('LoginClientCreateRequest', obj({ clientId: id, clientType: en('WEB', 'MACOS', 'CLI'), environmentId: id, allowedOrigins: origins, redirectAllowlist: redirects, product: en('WORK', 'CLUB') }, ['clientId', 'clientType', 'environmentId', 'allowedOrigins', 'redirectAllowlist']))
+add('LoginClientUpdateRequest', obj({ status: en('ACTIVE', 'DISABLED'), allowedOrigins: origins, redirectAllowlist: redirects, expectedPolicyVersion: version, ...expected }))
+add('PlatformUser', obj({ userId: id, displayName: name, status: en('ACTIVE', 'DISABLED'), version }))
+add('PlatformUserPage', obj({ items: arr(ref('PlatformUser')), nextCursor: nullable(str(1, 2048)) }))
+add('UserStatusRequest', obj({ status: en('ACTIVE', 'DISABLED'), ...expected, reason }))
+add('PlatformPermission', obj({ userId: id, capability: ref('PlatformCapability'), status: en('ACTIVE', 'REVOKED'), version }))
+add('PlatformPermissionPage', obj({ items: arr(ref('PlatformPermission')), nextCursor: nullable(str(1, 2048)) }))
+add('PlatformPermissionRequest', obj({ enabled: bool, expectedVersion: nullable(version), reason }))
+add('SelfTenantCreateRequest', obj({ name }))
+add('TenantCreationPolicyView', obj({ mode: en('SELF_SERVICE', 'PLATFORM_ONLY') }))
 add('PlatformVersionRequest', obj({ ...expected, reason }))
 add('RoleUpdateRequest', obj({ role: en('ADMIN', 'MEMBER'), ...expected }))
 add(
@@ -624,7 +649,7 @@ add(
       state: literal('AUTHENTICATED'),
       user: ref('UserView'),
       session: ref('SessionView'),
-      capabilities: arr(ref('PlatformCapability'), 7),
+      capabilities: arr(ref('PlatformCapability'), 14),
     }),
     obj({ state: literal('OFFLINE_CACHED'), user: ref('UserView') }),
   ),
@@ -1136,7 +1161,24 @@ ep(
   'revoke',
   true,
 )
+for (const [method, path, operation, input, output, permission] of [
+  ['get', '/platform/users', 'listPlatformUsers', undefined, 'PlatformUserPage', 'USER_READ'],
+  ['get', '/platform/users/{userId}', 'getPlatformUser', undefined, 'PlatformUser', 'USER_READ'],
+  ['patch', '/platform/users/{userId}/status', 'setPlatformUserStatus', 'UserStatusRequest', 'PlatformUser', 'USER_STATUS'],
+  ['get', '/platform/users/{userId}/permissions', 'listPlatformPermissions', undefined, 'PlatformPermissionPage', 'PLATFORM_PERMISSION_WRITE'],
+  ['patch', '/platform/users/{userId}/permissions/{capability}', 'setPlatformPermission', 'PlatformPermissionRequest', 'PlatformPermission', 'PLATFORM_PERMISSION_WRITE'],
+  ['get', '/platform/applications', 'listApplications', undefined, 'PlatformApplicationPage', 'APPLICATION_READ'],
+  ['get', '/platform/applications/{applicationId}', 'getApplication', undefined, 'PlatformApplication', 'APPLICATION_READ'],
+  ['post', '/platform/applications', 'createApplication', 'ApplicationCreateRequest', 'PlatformApplication', 'APPLICATION_WRITE'],
+  ['patch', '/platform/applications/{applicationId}', 'updateApplication', 'ApplicationUpdateRequest', 'PlatformApplication', 'APPLICATION_WRITE'],
+  ['get', '/platform/applications/{applicationId}/clients', 'listLoginClients', undefined, 'PlatformLoginClientPage', 'CLIENT_READ'],
+  ['post', '/platform/applications/{applicationId}/clients', 'createLoginClient', 'LoginClientCreateRequest', 'PlatformLoginClient', 'CLIENT_WRITE'],
+  ['get', '/platform/clients/{clientId}', 'getLoginClient', undefined, 'PlatformLoginClient', 'CLIENT_READ'],
+  ['patch', '/platform/clients/{clientId}', 'updateLoginClient', 'LoginClientUpdateRequest', 'PlatformLoginClient', 'CLIENT_WRITE'],
+] as const) ep('API-10', method, path, operation, input, output, 'platform:' + permission, method !== 'get')
 ep('API-05', 'get', '/tenants', 'listMyTenants', undefined, 'MyTenantsPage')
+ep('API-05', 'get', '/tenant-creation-policy', 'getTenantCreationPolicy', undefined, 'TenantCreationPolicyView')
+ep('API-05', 'post', '/tenants', 'createMyTenant', 'SelfTenantCreateRequest', 'TenantView', 'session', true)
 ep('API-05', 'get', '/tenants/{tenantId}', 'getTenant', undefined, 'TenantView')
 ep(
   'API-05',
@@ -1604,7 +1646,7 @@ ep(
 )
 // Fixed non-secret mappings are copied by identifier, not implemented as a wildcard proxy.
 for (const central of [...endpoints].filter((e) =>
-  ['API-05', 'API-06', 'API-07'].includes(e.group),
+  ['API-05', 'API-06', 'API-07', 'API-10'].includes(e.group),
 )) {
   const path = central.path === '/users/me/subscriptions' ? '/subscriptions' : central.path
   ep(
@@ -1621,7 +1663,7 @@ for (const central of [...endpoints].filter((e) =>
 }
 
 const policy = {
-  contractVersion: '1.1.0',
+  contractVersion: '1.2.0',
   implementationStatus: 'CONTRACT_ONLY',
   policyProfile: 'unified-account-v2',
   defaults: {
@@ -1790,6 +1832,14 @@ const policy = {
     },
   ],
   roleRules: {
+    tenantCreation: {
+      configuration: 'TENANT_CREATION_POLICY',
+      default: 'SELF_SERVICE',
+      modes: ['SELF_SERVICE', 'PLATFORM_ONLY'],
+      selfServiceOwner: 'CURRENT_AUTHENTICATED_USER',
+      platformCreation: 'TENANT_CREATE',
+      changesExistingMembership: false,
+    },
     tenantDisabled: 'DENY_MEMBER_READ_AND_WRITE_EXCEPT_MINIMAL_MY_TENANTS',
     platformAuthority: 'INDEPENDENT_OF_TENANT_ROLE',
     OWNER: [
@@ -1920,19 +1970,11 @@ const policy = {
     refreshUnknownOutcome: 'NO_REPLAY_REAUTHENTICATE',
     revokedProofMayReadSameLogoutResultOnly: true,
   },
-  migrationRules: {
-    preserveData: true,
+  identityRules: {
     automaticEmailMerge: false,
-    raiseEmailVerification: false,
-    reuseWorkClubOldSessions: false,
-    revokeOtherProductLegacySessions: false,
-    legacyTeamAutoAdoption: false,
+    unverifiedEmailMayAuthenticate: false,
+    productSessionsIndependent: true,
   },
-  legacyGuards: [
-    'MANAGED_CLIENT_CANNOT_USE_LEGACY_USER_GRANT',
-    'MANAGED_TENANT_SAME_POLICY_ON_ALL_VERSIONS',
-    'NO_IMPLICIT_TEAM_ADOPTION',
-  ],
   portSchemas: [
     'SmsDelivery',
     'MailDelivery',
@@ -2043,7 +2085,7 @@ const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Molis Unified Account',
-    version: '1.1.0',
+    version: '1.2.0',
     description:
       'AUTH-01 executable contract. Endpoints are not implemented by this artifact. Product paths are adapter operation mappings; Work management uses its action gateway.',
   },
@@ -2201,6 +2243,8 @@ fixture('activity-background-kind', 'ActivityRequest', false, {
   kind: 'REFRESH',
 })
 fixture('scope-user-injection', 'Scope', false, { kind: 'PERSONAL', userId: 'victim' })
+fixture('self-tenant-owner-injection', 'SelfTenantCreateRequest', false, { name: 'Example', ownerUserId: 'another_user' })
+fixture('tenant-creation-unknown-policy', 'TenantCreationPolicyView', false, { mode: 'UNKNOWN' })
 fixture('scope-personal-tenant-injection', 'Scope', false, {
   kind: 'PERSONAL',
   tenantId: 'tenant_example',
@@ -2358,7 +2402,7 @@ const outputs = {
   'schemas.json': schemas,
   'openapi.json': openapi,
   'policy.json': policy,
-  'fixtures.json': { contractVersion: '1.1.0', syntheticOnly: true, fixtures },
+  'fixtures.json': { contractVersion: '1.2.0', syntheticOnly: true, fixtures },
 }
 const check = process.argv.includes('--check')
 let stale = false

@@ -42,7 +42,12 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
         assert.equal(response.status, 401, method + ' ' + path)
       }
     }
-    for (const table of ['auth_user', 'auth_transaction', 'auth_space', 'auth_managed_tenant']) {
+    for (const table of [
+      'auth_user',
+      'auth_product_transaction',
+      'auth_space',
+      'auth_managed_tenant',
+    ]) {
       assert.equal((await proxy.env.DB.prepare(`SELECT count(*) n FROM ${table}`).first()).n, 0)
     }
   } finally {
@@ -80,7 +85,7 @@ test('UAS-40: runtime itself rejects production mock, even when deployment check
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
     })
     try {
-      const response = await proxy.fetch(new Request(origin + '/api/v1/health'))
+      const response = await proxy.fetch(new Request(origin + '/api/v2/health'))
       assert.equal(response.status, 503)
       assert.equal((await response.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')
     } finally {

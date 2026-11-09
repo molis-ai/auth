@@ -262,8 +262,7 @@ async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<V
     Ok(json!({"verificationProof":proof,"expiresAt":iso(&json!(expires))}))
 }
 pub(crate) fn new_user(a: &Auth, id: &str, n: i64) -> Result<Vec<D1PreparedStatement>> {
-    let space = uuid();
-    Ok(vec![a.s.statement("INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Molis 用户','ACTIVE',?,?)",vec![id.into(),n.into(),n.into()])?,a.s.statement("INSERT INTO auth_space(id,name,space_type,status,personal_user_id,created_at,updated_at) VALUES (?,'个人空间','PERSONAL','ACTIVE',?,?,?)",vec![space.clone().into(),id.into(),n.into(),n.into()])?,a.s.statement("INSERT INTO auth_membership VALUES (?,?,'OWNER',?)",vec![space.into(),id.into(),n.into()])?])
+    Ok(vec![a.s.statement("INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Molis 用户','ACTIVE',?,?)",vec![id.into(),n.into(),n.into()])?])
 }
 async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {

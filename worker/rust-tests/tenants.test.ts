@@ -239,15 +239,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           ).n,
           1,
         )
-        assert.equal(
-          (
-            await db
-              .prepare('SELECT count(*) n FROM auth_membership WHERE space_id=?')
-              .bind(alpha.tenantId)
-              .first()
-          ).n,
-          0,
-        )
         assert.equal((await db.prepare('SELECT count(*) n FROM billing_subscription').first()).n, 0)
         assert.equal(
           (await call('/platform/tenants', { ...body, name: 'different' }, platform, key)).error

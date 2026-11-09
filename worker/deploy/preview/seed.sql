@@ -1,8 +1,8 @@
--- Environment-specific system records only. Never creates users or passwords.
-INSERT OR IGNORE INTO auth_application(id,name,is_console)
-VALUES ('00000000-0000-4000-8000-000000000001','Molis Auth Console',1);
-INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-VALUES ('00000000-0000-4000-8000-000000000002','molis-auth-console','00000000-0000-4000-8000-000000000001','WEB','["account","profile"]','["https://auth-preview.adeptify.me/console/callback"]')
-ON CONFLICT(id) DO UPDATE SET redirects=excluded.redirects
-WHERE auth_client.client_id='molis-auth-console'
-AND auth_client.application_id='00000000-0000-4000-8000-000000000001';
+-- Current environment client only. No accounts, administrator grants or credentials.
+INSERT OR IGNORE INTO auth_environment(id,kind,auth_origin,delivery_mode,provider_mode,created_at,updated_at)
+VALUES ('auth-preview','TEST','https://auth-preview.adeptify.me','LIVE','LIVE',0,0);
+INSERT OR IGNORE INTO auth_application(id,name,is_console) VALUES ('auth-preview-app','Molis Auth',1);
+INSERT OR IGNORE INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
+VALUES ('auth-preview-client','molis-auth-web-preview','auth-preview-app','WEB','["account","profile"]','["https://auth-preview.adeptify.me/account/callback"]');
+INSERT OR IGNORE INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
+VALUES ('molis-auth-web-preview','unified-account-v2','auth-preview','["https://auth-preview.adeptify.me"]',0,0);

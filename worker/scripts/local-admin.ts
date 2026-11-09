@@ -1,5 +1,6 @@
 import { getPlatformProxy } from 'wrangler'
 import { localCredential } from './local-credential.mjs'
+import { bootstrapPlatform } from './platform-bootstrap.mjs'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
@@ -29,8 +30,7 @@ try {
     )
   const password = process.env.LOCAL_ADMIN_PASSWORD ?? randomBytes(24).toString('base64url'),
     credential = await localCredential(address, password),
-    now = Date.now(),
-    space = crypto.randomUUID()
+    now = Date.now()
   await proxy.env.DB.batch([
     s.statement(
       "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'本地管理员','ACTIVE',?,?)",
@@ -39,22 +39,17 @@ try {
       now,
     ),
     s.statement(
-      'INSERT INTO auth_user_email(id,user_id,canonical_email,created_at) VALUES (?,?,?,?)',
+      'INSERT INTO auth_user_email(id,user_id,canonical_email,created_at,verified_at) VALUES (?,?,?,?,?)',
       crypto.randomUUID(),
       id,
       credential.email,
       now,
+      now,
     ),
     s.statement('INSERT INTO auth_local_credential VALUES (?,?,?)', id, credential.encoded, now),
-    s.statement(
-      "INSERT INTO auth_space(id,name,space_type,status,personal_user_id,created_at,updated_at) VALUES (?,'个人空间','PERSONAL','ACTIVE',?,?,?)",
-      space,
-      id,
-      now,
-      now,
-    ),
-    s.statement("INSERT INTO auth_membership VALUES (?,?,'OWNER',?)", space, id, now),
+    s.statement('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)', id, now),
   ])
+  await bootstrapPlatform(proxy.env.DB, id)
   console.log('Local administrator created:', address)
   if (!process.env.LOCAL_ADMIN_PASSWORD) console.log('Generated password (shown once):', password)
 } finally {
