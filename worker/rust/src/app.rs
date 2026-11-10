@@ -139,6 +139,17 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     let pages = ["/", "/login", "/console"];
     let page = pages.contains(&path);
     ensure(page || path.starts_with("/auth-ui/"), 404, "NOT_FOUND")?;
+    // Documents use the configured origin before cookies or login forms are created.
+    // API writes retain their strict Origin and CSRF checks.
+    if page && url.origin().ascii_serialization() != a.origin {
+        let mut canonical = Request::new(&a.origin, Method::Get)?.url()?;
+        canonical.set_path(path);
+        canonical.set_query(url.query());
+        let mut response = Response::empty()?.with_status(302);
+        response.headers_mut().set("Location", canonical.as_str())?;
+        response.headers_mut().set("Cache-Control", "no-store")?;
+        return Ok(response);
+    }
     let mut target = url.clone();
     target.set_path(if page { "/index.html" } else { &path[8..] });
     target.set_query(None);

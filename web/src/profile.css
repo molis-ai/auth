@@ -1,0 +1,55 @@
+.v2-console .profile-page { min-height:calc(100svh - 125px); }
+.profile-identity { display:flex; flex-direction:column; align-items:center; text-align:center; padding:54px 16px 42px; }
+.v2-console .profile-portrait { display:grid; place-items:center; position:relative; width:112px; height:112px; padding:0; border:0; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:42px; flex-shrink:0; }
+.profile-portrait > img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+.v2-console .profile-identity h2 { margin:20px 0 10px; font-size:28px; overflow-wrap:anywhere; }
+.v2-console .profile-identity .profile-email { margin:0; font-size:14px; font-weight:400; line-height:20px; color:#929395; overflow-wrap:anywhere; }
+@media(max-width:760px) {
+ .profile-identity { padding:36px 0; }
+ .v2-console .profile-portrait { width:88px; height:88px; font-size:32px; }
+ .v2-console .profile-identity h2 { font-size:24px; }
+}
+
+.sidebar-bottom .account-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+
+.v2-console .profile-page button.profile-avatar-trigger { padding:0; border:0; border-radius:50%; background:var(--accent-soft); color:var(--accent); }
+.profile-avatar-pencil { position:absolute; top:0; right:0; display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:#646464; color:white; opacity:0; transition:opacity 120ms; }
+.profile-avatar-pencil svg { width:22px; height:22px; stroke-width:1.6; }
+.profile-avatar-trigger:hover .profile-avatar-pencil, .profile-avatar-trigger:focus-visible .profile-avatar-pencil, .profile-avatar-trigger.selected .profile-avatar-pencil { opacity:1; }
+.v2-console .profile-page button.profile-avatar-trigger.selected, .v2-console .profile-page button.profile-avatar-trigger:focus-visible { outline:2px solid #3981ff; outline-offset:0; }
+@media(hover:none) { .profile-avatar-pencil { opacity:1; } }
+
+.profile-page input.profile-direct-file[hidden] { display:none !important; }
+.v2-console dialog.avatar-crop-dialog { position:fixed; inset:0; margin:auto; width:min(520px,calc(100vw - 32px)); max-width:520px; height:min(584px,calc(100dvh - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:20px; border:1px solid #ededed; border-radius:24px; background:#fdfbfb; color:var(--ink); box-shadow:0 3px 9px #0000000d; }
+.avatar-crop-dialog::backdrop { background:#0002; }
+.avatar-crop-dialog header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.v2-console .avatar-crop-dialog header h2 { margin:0; font-size:20px; }
+.v2-console .avatar-crop-dialog header button { border:0; background:transparent; color:var(--muted); font-size:20px; padding:0; width:24px; min-height:32px; }
+.avatar-crop-dialog[open] { display:flex; flex-direction:column; }
+.avatar-crop-content { position:relative; padding:0; flex:1; min-height:0; }
+.avatar-crop-stage { display:block; position:absolute; top:60px; left:50%; transform:translateX(-50%); width:min(100%,440px); margin:0; touch-action:none; cursor:grab; user-select:none; }
+.avatar-crop-stage:active { cursor:grabbing; }
+.avatar-zoom { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:16px; width:min(100%,280px); margin:0; }
+.v2-console .avatar-zoom input[type=range] { appearance:auto; flex:1; min-width:0; width:0; padding:0; margin:0; min-height:20px; height:20px; border:0; accent-color:var(--primary); }
+.v2-console .avatar-zoom button { border:0; padding:4px; background:transparent; font-size:16px; min-height:32px; color:#929292; }
+.v2-console .avatar-crop-dialog footer { display:flex; justify-content:flex-end; gap:16px; padding:16px 0 0; margin:0; }
+.v2-console .avatar-crop-dialog footer button { border:0; border-radius:10px; background:transparent; font-size:14px; min-height:32px; padding:4px 10px; color:#8a8a8a; }
+.v2-console .avatar-crop-dialog footer .avatar-crop-save { background:var(--primary); color:white; padding:4px 16px; min-width:62px; }
+@media(max-height:600px) { .avatar-crop-stage { top:12px; width:min(100%,calc((100dvh - 240px)*1.5)); } .avatar-zoom { bottom:8px; } }
+.v2-console .avatar-zoom input[type=range] { appearance:none; background:transparent; }
+.avatar-zoom input[type=range]::-webkit-slider-runnable-track { height:2px; background:#ededed; border-radius:2px; }
+.avatar-zoom input[type=range]::-webkit-slider-thumb { appearance:none; width:20px; height:20px; margin-top:-9px; border:1px solid #dedee2; border-radius:50%; background:white; box-shadow:0 1px 3px #0001; cursor:ew-resize; }
+.avatar-zoom input[type=range]::-moz-range-track { height:2px; background:#ededed; }
+.avatar-zoom input[type=range]::-moz-range-thumb { width:20px; height:20px; border:1px solid #dedee2; border-radius:50%; background:white; cursor:ew-resize; }
+
+.v2-console .profile-identity .profile-inline-name { max-width:100%; margin:10px 0; font-size:24px; font-weight:500; line-height:30px; padding:1px 8px; border-radius:8px; }
+.profile-inline-name > [role=button] { cursor:pointer; outline:none; }
+.profile-inline-name { transition:background 120ms,box-shadow 120ms; }
+.profile-inline-name:not(.is-editing):hover, .profile-inline-name:not(.is-editing):focus-within { background:#f1f2f2; box-shadow:none; }
+.profile-inline-name.is-editing { background:#f1f2f2; }
+.profile-inline-name.is-editing:focus-within { outline:1px solid #3981ff; outline-offset:0; }
+.profile-name-field { display:inline-block; position:relative; max-width:100%; min-width:1em; vertical-align:top; }
+.profile-name-field > span { display:block; visibility:hidden; white-space:pre; overflow:hidden; }
+.v2-console .profile-name-field input { position:absolute; inset:0; width:100%; height:100%; min-height:0; min-width:0; padding:0; margin:0; border:0; border-radius:0; outline:none; box-shadow:none; background:transparent; color:inherit; font:inherit; line-height:inherit; text-align:center; }
+.v2-console .profile-name-status { margin:-6px 0 10px; color:#777; font-size:14px; }
+.v2-console .profile-name-error { color:#b42318; }

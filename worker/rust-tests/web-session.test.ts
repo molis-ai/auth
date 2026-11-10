@@ -190,17 +190,17 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       assert.equal(ok(await call(path, { step: 'COMPLETE' })).operationReady, true)
       return tx.handle
     }
-    const reauth = await verifyPhone('BIND_METHOD', { method: 'EMAIL' })
+    const reauth = await verifyPhone('BIND_METHOD', { method: 'PHONE' })
     const bind = ok(
       await call('/api/account/auth/transactions', {
         purpose: 'BIND',
-        method: 'EMAIL_CODE',
+        method: 'PHONE_OTP',
         reauthHandle: reauth,
       }),
     )
     const bindPath = '/api/account/auth/transactions/' + bind.handle + '/submit'
     const emailChallenge = ok(
-      await call(bindPath, { step: 'REQUEST_CHALLENGE', address: 'bff@example.test' }),
+      await call(bindPath, { step: 'REQUEST_CHALLENGE', address: '+8613800000889' }),
     )
     const emailCode = await db
       .prepare(
@@ -225,6 +225,24 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       }),
     )
     assert.equal(bound.loginMethods.length, 2)
+    // A managed email is provisioned by the administrator, never by this self-service BFF.
+    assert.equal(
+      (
+        await call('/api/account/reauthentications', {
+          method: 'PHONE_OTP',
+          operation: 'BIND_METHOD',
+          target: { method: 'EMAIL' },
+          useSession: true,
+        })
+      ).status,
+      403,
+    )
+    await db
+      .prepare(
+        'INSERT INTO auth_user_email(id,user_id,canonical_email,created_at,verified_at) VALUES (?,?,?,?,?)',
+      )
+      .bind(crypto.randomUUID(), view.user.userId, 'bff@example.test', Date.now(), Date.now())
+      .run()
     const passwordHandle = await verifyPhone('CHANGE_PASSWORD', { kind: 'PASSWORD' })
     view = ok(await call('/api/account/session'))
     ok(
@@ -294,10 +312,16 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       (await call('/api/account/arbitrary-proxy', { url: 'https://evil.example' })).status,
       404,
     )
-    assert.equal(
-      ok(await call('/api/account/logout', { scope: 'CURRENT_LOGIN' })).localCleared,
-      true,
-    )
+    // AUTH-CYCLE-03: clearing the BFF must also revoke its central login.
+    const logout = ok(await call('/api/account/logout', { scope: 'CURRENT_LOGIN' }))
+    assert.equal(logout.localCleared, true)
+    assert.equal(logout.remoteRevocation, 'CONFIRMED')
+    const revoked = await db
+      .prepare('SELECT revoked_at FROM auth_login_session WHERE id=?')
+      .bind(done.account.session.loginSessionId)
+      .first()
+    assert.ok(revoked.revoked_at)
+
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
     assert.equal((await call(path + '/submit', { step: 'COMPLETE' })).status, 404)
     for (const provider of ['google', 'github']) {

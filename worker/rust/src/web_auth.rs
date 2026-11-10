@@ -121,6 +121,9 @@ pub async fn route(
         let mut input = json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"purpose":purpose,"method":b["method"],"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))});
         if reauth {
             input.as_object_mut().expect("request").remove("purpose");
+            if let Some(reuse) = b.get("useSession") {
+                input["useSession"] = reuse.clone();
+            }
             input["operation"] = b["operation"].clone();
             input["target"] = b["target"].clone();
             t["operation"] = b["operation"].clone();
@@ -196,6 +199,7 @@ pub async fn route(
                 None,
             )
             .await?;
+        t["status"] = reply["status"].clone();
         t["id"] = reply["transactionId"].clone();
         t["nextStep"] = reply["nextStep"].clone();
         t["expiresAt"] = reply["expiresAt"].clone();

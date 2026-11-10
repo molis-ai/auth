@@ -7,6 +7,7 @@ const props = defineProps<{ client: AccountClient; capabilities: string[] }>();
 interface User {
   userId: string;
   displayName: string;
+  email: string | null;
   status: string;
   version: number;
 }
@@ -15,6 +16,7 @@ interface Grant {
   status: string;
   version: number;
 }
+const emailDraft = ref('');
 const users = ref<User[]>([]),
   selected = ref<User>(),
   grants = ref<Grant[]>([]),
@@ -68,13 +70,18 @@ async function load() {
   if (active) users.value = data;
 }
 async function select(u: User) {
-  const data = await list<Grant>(
+  const data = props.capabilities.includes('PLATFORM_PERMISSION_WRITE') ? await list<Grant>(
     "/platform/users/" + u.userId + "/permissions",
-  );
+  ) : [];
   if (active) {
-    selected.value = u;
+    selected.value = u; emailDraft.value = u.email ?? '';
     grants.value = data;
   }
+}
+async function changeEmail() {
+  const u = selected.value!;
+  await props.client.request('/platform/users/'+u.userId+'/email',{email:emailDraft.value.trim(),expectedVersion:u.version,reason:reason.value},'PATCH',crypto.randomUUID());
+  await load(); selected.value=undefined; emailDraft.value=''; reason.value='';
 }
 async function status(u: User) {
   if (!reason.value.trim()) throw Error("请填写操作原因");
@@ -133,7 +140,7 @@ onMounted(() => void run(load));
       </button>
     </div>
     <template v-if="selected"
-      ><h2>{{ selected.displayName }} 的平台权限</h2>
+      ><form v-if="props.capabilities.includes('USER_EMAIL_WRITE')" @submit.prevent="run(changeEmail)"><h2>维护邮箱</h2><p>修改后，该用户在所有产品和设备上的登录都会失效。请先核实邮箱归属。</p><label>邮箱<input v-model="emailDraft" type="email" required maxlength="254" /></label><button :disabled="busy || !reason.trim() || !emailDraft.trim()">保存邮箱并撤销登录</button></form><h2>{{ selected.displayName }} 的平台权限</h2>
       <div v-for="capability in capabilities" :key="capability" class="v2-row">
         <span
           >{{ capability }} ·

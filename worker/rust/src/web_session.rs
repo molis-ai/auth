@@ -323,7 +323,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         } else {
             "/api/v2/sessions/current/logout"
         };
-        session.data["tokens"] = saved.clone();
+        // Logout uses the saved refresh proof only; bearer plus refresh proof is rejected.
         let revoked=session.call(op,Method::Post,Some(json!({"refreshProof":{"clientId":session.client()?,"refreshToken":saved["refreshToken"]}})),None,Some(&key)).await.is_ok();
         session.data["tokens"] = Value::Null;
         Ok(

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { hash, secret } from './fixtures.ts'
+import { hash, secret, challenge } from './fixtures.ts'
 import { bootstrapPlatform } from '../scripts/platform-bootstrap.mjs'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
@@ -241,7 +241,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     )
     assert.equal(meResponse.status, 200)
     const me = await meResponse.json()
-    assert.ok(validateNamed('MeView', me.data))
+    assert.ok(validateNamed('MeView', me.data),JSON.stringify(me.data))
     assert.equal(me.data.platformCapabilities.length, initialized.capabilities.length)
 
     assert.ok(initialized.capabilities.includes('APPLICATION_WRITE'))
@@ -310,6 +310,31 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       'PlatformUser',
     )
     assert.equal(started.version, 2)
+    // Admin-managed email: deny missing permission, check uniqueness/version, revoke sessions and audit.
+    await statement("UPDATE auth_platform_permission SET status='REVOKED',revoked_at=1 WHERE user_id='admin' AND permission='USER_EMAIL_WRITE'").run()
+    const changeEmail={email:'target-new@example.test',expectedVersion:started.version,reason:'Verified owner correction'}
+    assert.equal((await call('/users/target/email',changeEmail,'PATCH')).status,403)
+    await statement("UPDATE auth_platform_permission SET status='ACTIVE',revoked_at=NULL WHERE user_id='admin' AND permission='USER_EMAIL_WRITE'").run()
+    await statement("INSERT INTO auth_user_email VALUES ('occupied','admin','occupied@example.test',?,?)",n,n).run()
+    assert.equal((await call('/users/target/email',{...changeEmail,email:'occupied@example.test'},'PATCH')).status,409)
+    assert.equal((await call('/users/target/email',{...changeEmail,expectedVersion:0},'PATCH')).status,409)
+    await statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq) VALUES ('target-live','target','molis-work-unified-local',?,?,?,1,1)",n,n,n+7776000000).run()
+    const emailUpdated=ok(await call('/users/target/email',changeEmail,'PATCH'),'PlatformUser')
+    assert.equal(emailUpdated.email,changeEmail.email)
+    assert.ok((await db.prepare("SELECT revoked_at FROM auth_login_session WHERE id='target-live'").first()).revoked_at)
+    assert.equal((await db.prepare("SELECT canonical_email FROM auth_user_email WHERE user_id='target'").first()).canonical_email,changeEmail.email)
+    const audit=await db.prepare("SELECT change_summary FROM auth_audit_event WHERE action='user.email' AND outcome='SUCCESS'").first()
+    assert.equal(JSON.parse(audit.change_summary).targetId,'target')
+    assert.equal(JSON.parse(audit.change_summary).reason,changeEmail.reason)
+    const deniedEmail = async (body:unknown, path='/api/v2/users/me/reauthentications') => {
+      const r=await p.fetch(new Request(origin+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(body)}))
+      assert.equal(r.status,403,await r.text())
+    }
+    const base={clientId:'molis-work-unified-local',method:'PHONE_OTP',redirectUri:'http://127.0.0.1:4207/account/callback',state:secret(),codeChallenge:challenge(secret()),codeChallengeMethod:'S256',initiatorChallenge:challenge(secret())}
+    await deniedEmail({...base,operation:'BIND_METHOD',target:{method:'EMAIL'}})
+    await deniedEmail({...base,operation:'REPLACE_METHOD',target:{bindingId:'occupied'}})
+    await deniedEmail({...base,operation:'UNLINK_METHOD',target:{bindingId:'occupied'}})
+    await deniedEmail({...base,purpose:'BIND',method:'EMAIL_CODE'},'/api/v2/auth/transactions')
     // V2C-01: an authenticated operator cannot resurrect retired service administration.
     const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n
     assert.equal((await call('/applications/' + app.applicationId + '/services')).status, 404)

@@ -1,14 +1,15 @@
 //! V2 user availability and explicit platform grants.
 use crate::{
     http::*,
+    security::uuid,
     tenant_protocol as protocol,
     tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
 use worker::Method;
-const USERS: &str = "SELECT u.*,s.account_version version,CAST(s.account_version AS TEXT) stamp FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
+const USERS: &str = "SELECT u.*,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,s.account_version version,CAST(s.account_version AS TEXT) stamp FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
 fn user_view(r: &Value) -> Value {
-    json!({"userId":r["id"],"displayName":r["display_name"],"status":r["status"],"version":r["version"]})
+    json!({"userId":r["id"],"displayName":r["display_name"],"email":r["email"],"status":r["status"],"version":r["version"]})
 }
 fn permission_view(r: &Value) -> Value {
     json!({"userId":r["user_id"],"capability":r["permission"],"status":r["status"],"version":r["version"]})
@@ -22,6 +23,10 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         (["platform", "users", u], Method::Get) => {
             id = (*u).into();
             ("user.get", None)
+        }
+        (["platform", "users", u, "email"], Method::Patch) => {
+            id = (*u).into();
+            ("user.email", Some("UserEmailRequest"))
         }
         (["platform", "users", u, "status"], Method::Patch) => {
             id = (*u).into();
@@ -59,6 +64,7 @@ pub fn permission(a: &Action) -> &'static str {
     match a.op {
         "user.list" | "user.get" => "USER_READ",
         "user.status" => "USER_STATUS",
+        "user.email" => "USER_EMAIL_WRITE",
         "permission.list" | "permission.set" => "PLATFORM_PERMISSION_WRITE",
         _ => unreachable!("only current user and permission operations reach this owner"),
     }
@@ -97,6 +103,49 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
     let n = now();
     let mut row = c.record.clone();
     let mut w = vec![];
+    if a.op == "user.email" {
+        ensure(
+            b["expectedVersion"] == row["version"],
+            409,
+            "VERSION_CONFLICT",
+        )?;
+        let target = email(&b["email"])?;
+        ensure(
+            s.a.s
+                .one(
+                    "SELECT id FROM auth_user_email WHERE canonical_email=? AND user_id<>?",
+                    vec![target.clone().into(), a.id.clone().into()],
+                )
+                .await?
+                .is_null(),
+            409,
+            "IDENTITY_IN_USE",
+        )?;
+        w.push(s.a.s.guard(
+            "NOT EXISTS(SELECT 1 FROM auth_user_email WHERE canonical_email=? AND user_id<>?)",
+            vec![target.clone().into(), a.id.clone().into()],
+        )?);
+        w.push(s.a.s.statement(
+            "DELETE FROM auth_user_email WHERE user_id=?",
+            vec![a.id.clone().into()],
+        )?);
+        w.push(s.a.s.statement(
+            "INSERT INTO auth_user_email VALUES (?,?,?,?,?)",
+            vec![
+                uuid().into(),
+                a.id.clone().into(),
+                target.clone().into(),
+                n.into(),
+                n.into(),
+            ],
+        )?);
+        w.extend(crate::account_management::revoke_password(
+            s.a, &a.id, None,
+        )?);
+        row["email"] = target.into();
+        row["version"] = (number(&row, "version") + 1).into();
+        return Ok(Change::new(user_view(&row), w));
+    }
     if a.op == "user.status" {
         ensure(
             b["expectedVersion"] == row["version"],

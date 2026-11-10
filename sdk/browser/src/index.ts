@@ -4,6 +4,7 @@ export interface AccountView {
   user?: {
     userId: string;
     displayName: string;
+    email?: string | null;
     avatarUrl: string | null;
     version: number;
   };
@@ -59,8 +60,16 @@ export class AccountClient {
       throw new AuthError("INVALID_CONFIGURATION");
     this.transport = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
-  session(): Promise<AccountView> {
-    return this.request("/session");
+  async session(): Promise<AccountView> {
+    const generation = this.generation;
+    for (let attempt = 0; ; attempt++) {
+      if (generation !== this.generation || this.closed) throw new AuthError("CANCELLED");
+      try { return await this.request<AccountView>("/session"); }
+      catch (error) {
+        if (!(error instanceof AuthError) || error.code !== "VERSION_CONFLICT" || attempt >= 3) throw error;
+        await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+      }
+    }
   }
   request<T>(
     path: string,
@@ -99,13 +108,18 @@ export class AccountClient {
     // Logout fences in-flight responses and reaches the server without waiting for old work.
     if (!this.csrf)
       await this.send("/session", undefined, "GET", this.generation);
-    return this.send(
-      "/logout",
-      { scope: all ? "ALL_MOLIS_PRODUCTS" : "CURRENT_LOGIN" },
-      "POST",
-      this.generation,
-      crypto.randomUUID(),
-    );
+    const generation = this.generation, key = crypto.randomUUID();
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.send<{localCleared:boolean;remoteRevocation:"CONFIRMED"|"UNCONFIRMED"}>(
+          "/logout", { scope: all ? "ALL_MOLIS_PRODUCTS" : "CURRENT_LOGIN" }, "POST", generation, key,
+        );
+      } catch (error) {
+        if (!(error instanceof AuthError) || error.code !== "VERSION_CONFLICT" || attempt >= 3) throw error;
+        // Another tab may finish a profile save while logout reads the current session.
+        // Keep the original generation so a superseded logout cannot affect a new account.
+      }
+    }
   }
   close(): void {
     this.closed = true;

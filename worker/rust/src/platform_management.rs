@@ -333,6 +333,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             let target = change.result["clientId"]
                 .as_str()
                 .or(change.result["applicationId"].as_str())
+                .or(change.result["userId"].as_str())
                 .unwrap_or_default();
             w.push(a.s.audit(
                 action.op,

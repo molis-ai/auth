@@ -232,14 +232,41 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         password,
       )
       const newIdentityProof = await identity(actor, method, value)
-      return ok(
-        await call(
-          '/users/me/login-methods/bind',
-          { operationProof, newIdentityProof, expectedVersion: (await me(actor)).user.version },
-          actor,
-        ),
+      const body = {
+        operationProof,
+        newIdentityProof,
+        expectedVersion: (await me(actor)).user.version,
+      }
+      assert.equal(
+        (
+          await call(
+            '/users/me/login-methods/bind',
+            { ...body, operationProof: newIdentityProof },
+            actor,
+          )
+        ).status,
+        401,
+      )
+      assert.equal(
+        (
+          await call(
+            '/users/me/login-methods/bind',
+            { ...body, newIdentityProof: operationProof },
+            actor,
+          )
+        ).status,
+        401,
+      )
+      const key = secret()
+      const bound = ok(
+        await call('/users/me/login-methods/bind', body, actor, undefined, key),
         'LoginMethodsView',
       )
+      assert.deepEqual(
+        ok(await call('/users/me/login-methods/bind', body, actor, undefined, key)),
+        bound,
+      )
+      return bound
     }
     let a = await phoneLogin('+8613800000011')
     const otherDevice = await phoneLogin('+8613800000011', true)
@@ -341,71 +368,54 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       },
     )
     await suite.test(
-      'UAS-06/07/08: verified email alone is not usable; profile edits preserve proofs; last usable method stays',
+      'UAS-06/07/08: managed email rejects self binding; profile edits preserve proofs; last usable method stays',
       async () => {
-        const operationProof = await reauth(a, 'BIND_METHOD', { method: 'EMAIL' })
-        const newIdentityProof = await identity(a, 'EMAIL_CODE', 'alice@example.test')
+        const before = await me(a)
+        const attempt = {
+          redirectUri: 'http://127.0.0.1:4207/account/callback',
+          state: secret(),
+          codeChallenge: challenge(secret()),
+          codeChallengeMethod: 'S256',
+          initiatorChallenge: challenge(secret()),
+          clientId: a.session.clientId,
+          operation: 'BIND_METHOD',
+          target: { method: 'EMAIL' },
+          method: 'PHONE_OTP',
+          useSession: true,
+        }
+        // Email maintenance belongs to the administrator. No self-service transaction or email is created.
+        const rejected = await call('/users/me/reauthentications', attempt, a)
+        assert.equal(rejected.status, 403)
         assert.equal((await db.prepare('SELECT count(*) n FROM auth_user_email').first()).n, 0)
+        assert.equal((await me(a)).user.version, before.user.version)
+        // Fixture represents an administrator-provisioned email; admin API/version/revocation is tested in platform-management.
+        emailBinding = crypto.randomUUID()
+        await db
+          .prepare(
+            'INSERT INTO auth_user_email(id,user_id,canonical_email,created_at,verified_at) VALUES (?,?,?,?,?)',
+          )
+          .bind(emailBinding, before.user.userId, 'alice@example.test', Date.now(), Date.now())
+          .run()
+        const email = (await me(a)).loginMethods.find((x: any) => x.type === 'EMAIL')
+        assert.equal(email.verified, true)
+        assert.equal(email.usableForLogin, false)
+        const unlinkProof = await reauth(a, 'UNLINK_METHOD', { bindingId: phoneBinding })
         const profile = ok(
           await call(
             '/users/me/profile',
-            { displayName: 'Alice', expectedVersion: (await me(a)).user.version },
+            { displayName: 'Alice', expectedVersion: before.user.version },
             a,
             undefined,
             secret(),
             'PATCH',
           ),
         )
-        const body = { operationProof, newIdentityProof, expectedVersion: profile.version }
-        assert.equal(
-          (
-            await call(
-              '/users/me/login-methods/bind',
-              { ...body, operationProof: newIdentityProof },
-              a,
-            )
-          ).status,
-          401,
-        )
-        assert.equal(
-          (
-            await call(
-              '/users/me/login-methods/bind',
-              { ...body, newIdentityProof: operationProof },
-              a,
-            )
-          ).status,
-          401,
-        )
-        const key = secret()
-        const bound = ok(
-          await call('/users/me/login-methods/bind', body, a, undefined, key),
-          'LoginMethodsView',
-        )
-        emailBinding = bound.loginMethods.find((x: any) => x.type === 'EMAIL').bindingId
-        assert.equal(bound.loginMethods.find((x: any) => x.type === 'EMAIL').verified, true)
-        assert.equal(bound.loginMethods.find((x: any) => x.type === 'EMAIL').usableForLogin, false)
-        assert.deepEqual(
-          ok(await call('/users/me/login-methods/bind', body, a, undefined, key)),
-          bound,
-        )
-        assert.equal(
-          (
-            await call(
-              '/users/me/login-methods/bind',
-              { ...body, expectedVersion: bound.version },
-              a,
-            )
-          ).status,
-          401,
-        )
-        const unlinkProof = await reauth(a, 'UNLINK_METHOD', { bindingId: phoneBinding })
-        const rejected = await call(
+        const unlink = await call(
           '/users/me/login-methods/' + phoneBinding + '/unlink',
-          { operationProof: unlinkProof, expectedVersion: bound.version },
+          { operationProof: unlinkProof, expectedVersion: profile.version },
           a,
         )
-        assert.equal(rejected.error.code, 'LAST_LOGIN_METHOD')
+        assert.equal(unlink.error.code, 'LAST_LOGIN_METHOD')
         assert.equal((await me(a)).loginMethods.length, 2)
       },
     )
@@ -568,46 +578,44 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         const operationProof = await reauth(
           a,
           'REPLACE_METHOD',
-          { bindingId: emailBinding },
+          { bindingId: phoneBinding },
           'EMAIL_PASSWORD',
           'alice@example.test',
           password,
         )
-        const newIdentityProof = await identity(
-          a,
-          'EMAIL_CODE',
-          'new-alice@example.test',
-          emailBinding,
-        )
+        const newIdentityProof = await identity(a, 'PHONE_OTP', '+8613800000018', phoneBinding)
         const result = ok(
           await call(
-            '/users/me/login-methods/' + emailBinding + '/replace',
+            '/users/me/login-methods/' + phoneBinding + '/replace',
             { operationProof, newIdentityProof, expectedVersion: (await me(a)).user.version },
             a,
           ),
           'LoginMethodsView',
         )
-        assert.ok(!result.loginMethods.some((x: any) => x.bindingId === emailBinding))
-        emailBinding = result.loginMethods.find((x: any) => x.type === 'EMAIL').bindingId
-        const old = await begin('LOGIN', 'EMAIL_PASSWORD')
+        assert.ok(!result.loginMethods.some((x: any) => x.bindingId === phoneBinding))
+        phoneBinding = result.loginMethods.find((x: any) => x.type === 'PHONE').bindingId
+        const old = await begin('REAUTH', 'PHONE_OTP', a, {
+          operation: 'CHANGE_PASSWORD',
+          target: { kind: 'PASSWORD' },
+        })
         assert.equal(
           (
             await call(
-              old.path + '/password',
-              { email: 'alice@example.test', password },
-              undefined,
+              old.path + '/challenges',
+              { channel: 'SMS', address: '+8613800000011' },
+              a,
               old.proof,
             )
           ).status,
           401,
         )
-        await passwordLogin('new-alice@example.test', password)
+        await passwordLogin('alice@example.test', password)
         const unlink = await reauth(
           a,
           'UNLINK_METHOD',
           { bindingId: phoneBinding },
           'EMAIL_PASSWORD',
-          'new-alice@example.test',
+          'alice@example.test',
           password,
         )
         const removed = ok(
@@ -683,18 +691,29 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
     await suite.test(
       'UAS-06/07: replacement conflict preserves the old binding; identity edits reject unfinished logins',
       async () => {
-        await bind(b, 'EMAIL_CODE', 'taken@example.test', 'PHONE_OTP', '+8613800000012')
+        await bind(b, 'PHONE_OTP', '+8613800000016', 'PHONE_OTP', '+8613800000012')
+        await bind(a, 'PHONE_OTP', '+8613800000017', 'GOOGLE', '')
+        const replacementBinding = (
+          await db
+            .prepare("SELECT id FROM auth_user_phone WHERE canonical_phone='+8613800000017'")
+            .first()
+        ).id
         const operationProof = await reauth(
           a,
           'REPLACE_METHOD',
-          { bindingId: emailBinding },
+          { bindingId: replacementBinding },
           'GOOGLE',
           '',
         )
-        const newIdentityProof = await identity(a, 'EMAIL_CODE', 'taken@example.test', emailBinding)
+        const newIdentityProof = await identity(
+          a,
+          'PHONE_OTP',
+          '+8613800000016',
+          replacementBinding,
+        )
         const before = await me(a)
         const conflict = await call(
-          '/users/me/login-methods/' + emailBinding + '/replace',
+          '/users/me/login-methods/' + replacementBinding + '/replace',
           { operationProof, newIdentityProof, expectedVersion: before.user.version },
           a,
         )
@@ -705,13 +724,13 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         ok(
           await call(
             login.path + '/password',
-            { email: 'new-alice@example.test', password },
+            { email: 'alice@example.test', password },
             undefined,
             login.proof,
           ),
         )
         const code = (await complete(login)).code
-        await bind(a, 'EMAIL_CODE', 'second@example.test', 'GOOGLE', '')
+        await bind(a, 'PHONE_OTP', '+8613800000015', 'GOOGLE', '')
         assert.equal(
           (
             await call('/auth/token', {
@@ -775,7 +794,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
     await suite.test(
       'UAS-26/41 V2U-01: independent V2 clients share versions and identity-proof revocation',
       async () => {
-        peer = await passwordLogin('new-alice@example.test', password, true)
+        peer = await passwordLogin('alice@example.test', password, true)
         const before = await me(a)
         ok(
           await call(
@@ -810,7 +829,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
             "INSERT INTO auth_mock_provider_account(id,environment_id,provider,subject,label) VALUES ('peer-extra','unified-local','GOOGLE','peer-extra-subject','Extra identity fixture')",
           )
           .run()
-        await bind(a, 'GOOGLE', 'peer-extra', 'EMAIL_PASSWORD', 'new-alice@example.test', password)
+        await bind(a, 'GOOGLE', 'peer-extra', 'EMAIL_PASSWORD', 'alice@example.test', password)
         const extra = await db
           .prepare("SELECT id FROM auth_external_identity WHERE subject='peer-extra-subject'")
           .first()
@@ -826,7 +845,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           'UNLINK_METHOD',
           { bindingId: extra.id },
           'EMAIL_PASSWORD',
-          'new-alice@example.test',
+          'alice@example.test',
           password,
         )
         ok(
@@ -850,16 +869,16 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           ).status,
           401,
         )
-        peer = await passwordLogin('new-alice@example.test', password, true)
+        peer = await passwordLogin('alice@example.test', password, true)
       },
     )
     await suite.test(
       'UAS-26/41: identity edits invalidate old reset proofs; reset revokes all sessions and pending proofs/codes',
       async () => {
         const resetOld = await begin('PASSWORD_RESET', 'EMAIL_CODE')
-        await verify(resetOld, 'new-alice@example.test')
+        await verify(resetOld, 'alice@example.test')
         const oldProof = (await complete(resetOld)).resetProof
-        await bind(a, 'EMAIL_CODE', 'spare@example.test', 'GITHUB', '')
+        await bind(a, 'PHONE_OTP', '+8613800000021', 'GITHUB', '')
         assert.equal(
           (
             await call(
@@ -875,7 +894,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         ok(
           await call(
             pending.path + '/password',
-            { email: 'new-alice@example.test', password },
+            { email: 'alice@example.test', password },
             undefined,
             pending.proof,
           ),
@@ -888,9 +907,9 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           'GOOGLE',
           '',
         )
-        const other = await passwordLogin('new-alice@example.test', password, true)
+        const other = await passwordLogin('alice@example.test', password, true)
         const reset = await begin('PASSWORD_RESET', 'EMAIL_CODE')
-        await verify(reset, 'new-alice@example.test')
+        await verify(reset, 'alice@example.test')
         const resetProof = (await complete(reset)).resetProof
         password = 'Fixture-Jupiter-Eight-94'
         const body = { transactionId: reset.id, resetProof, newPassword: password }
@@ -932,7 +951,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
           ).status,
           409,
         )
-        a = await passwordLogin('new-alice@example.test', password)
+        a = await passwordLogin('alice@example.test', password)
         assert.equal(
           (
             await call(

@@ -173,3 +173,90 @@ Work 6 个账号/安全/合同文件与 3 个专用 headless 文件已通过，�
 追加清理的 Work 完整回归独立记录在 `work-v2-retire-full-{1,2,3}.log`；专用 headless 3 文件预先以其要求的 151 引擎通过，其余 1,876 文件以专用 Chrome 156 分为 626/625/625，三个退出码为 1/0/1。每个文件只计一次，复验不累加文件数。冻结源码摘要 `c8cdb75584ab2207f1a1d02a11c91461d2da616e1ab36f50fad2317f529e1f61` 在完成后复核一致；期间只更新 docs/specs，无源码漂移。当前汇总为 `/private/tmp/work-auth-v1-retire-final-verification.json`，不使用首轮汇总充作修改后证据。
 
 本地测试只使用隔离数据与受控外部 mock；未操作已有库、真实 Home、云端资源或其他人的主检出。未提交、推送、部署。
+
+
+## 12. 登录入口视觉与功能合并（2026-11-10）
+
+按用户决定恢复 `40126f1` 的浅色双列登录视觉，保留当前文案，匿名访问直接显示表单。登录后仍使用现行 V2 账号、租户、订阅及平台管理页面。没有恢复 V1 协议或服务票据。
+
+- ENTRY-01：直接显示登录表单；恢复中英文切换、密码可见切换、记住邮箱；1440/1024/390 宽度无横向溢出。
+- ENTRY-02：邮箱注册、密码登录、找回密码、手机验证码走现行 V2 BFF。显式退出清除记住的邮箱，语言偏好保留；不在浏览器存储密码或令牌。
+- ENTRY-03：Google/GitHub 授权入口使用现行提供方回跳。原版 Apple 仅为不可用占位，仍禁用，没有宣称已接入。
+
+验收见 `web/scripts/v2-browser.test.mjs` 同编号断言。前端构建、两项展示层测试、真实隔离 Auth/D1/Chrome 浏览器流程及 diff 检查通过；邮箱、短信与外部提供方采用本地模拟，不代表 LIVE 服务验收。既有租户、资料、再次验证、绑定/改密、应用/客户端、用户/授权、中央撤销与退出断言全部保留并通过。本次未跑全量回归，未推送或提交 PR。
+
+本地证据：`/private/tmp/auth-entry-browser-final3.log`、`/private/tmp/auth-entry-build-final2.log`、`/private/tmp/auth-entry-unit.log`；截图 `/private/tmp/auth-entry-evidence-final/`。
+
+
+### 登录后工作台视觉恢复
+
+用户要求按原版 demo 的整体风格组织现行功能。CONSOLE-01：桌面固定浅灰侧栏，租户与应用采用可搜索列表和详情分栏；手机导航位于内容上方，无横向页面溢出或导航遮挡。登录页同时恢复占位提示式输入框、紧凑表单与原版留白；新增 V2 登录方法保留。搜索词在退出及会话失效时清空。没有恢复旧 Team 合同、虚构审计/邮件菜单或新增后端接口。
+
+`web/scripts/v2-browser.test.mjs` 的 CONSOLE-01 断言与 1440/1024/390 截图覆盖布局；原“页头始终在内容上方”断言按明确的新侧栏设计改为桌面左右、手机上下互不遮挡。原有功能断言保留，浏览器流程通过，证据 `/private/tmp/auth-console-style-browser-final.log`、`/private/tmp/auth-console-style-evidence/`。前端构建及展示层 2 项测试通过；未进行全量回归或提交 PR。
+
+
+## 13. Auth 快速切换专项（2026-11-10）
+
+用户反馈退出/重登与直接进入管理页，要求专项验证。复现并修复两处实际问题：其他标签页在退出后仍显示旧账号界面；BFF 撤销中央会话时同时发送 Bearer 与 refresh proof，被中央接口拒绝而返回 UNCONFIRMED。前者现在通过同源会话变更通知销毁旧客户端、清空账号状态并重新校验；恢复历史页面时不展示旧快照。后者只使用保存的 refresh proof 撤销，仍先清空 BFF 凭据。账号资料、选择项、邀请、订阅、密码及表单草稿统一清空。新增“切换账号”入口复用完整退出流程。
+
+- AUTH-CYCLE-01：匿名直接访问管理入口保持匿名；有效 Cookie 刷新可恢复原账号；退出同步清空其他标签页。
+- AUTH-CYCLE-02：20 轮 A/B 交替，每次登录/退出或切换连点四次，核对服务端 userId、中央会话撤销、页面草稿与缓存隔离、刷新后仍退出。
+- AUTH-CYCLE-03：真实 BFF 单测同时断言 localCleared、remoteRevocation=CONFIRMED 以及中央登录会话 revoked_at。修复前明确失败，修复后通过。
+- AUTH-CYCLE-04：历史返回、迟到会话读取、退出网络请求失败不虚报成功，恢复后重试可撤销。
+- AUTH-CYCLE-05：全部设备退出与全新无 Cookie 浏览器上下文直接访问。
+- AUTH-CYCLE-06：多标签页并发读取引发 VERSION_CONFLICT 时，SDK 仅对 session 读取最多重试三次；写入不重试；关闭/换代阻止继续重试。
+
+执行入口为 `AUTH_ACCOUNT_CYCLES=1 npm run test:browser`（还需既有 MOLIS_WORK_SOURCE 与测试 Chrome 配置）。断言在 `web/scripts/account-cycles.mjs`、`worker/rust-tests/web-session.test.ts`、SDK 测试中。浏览器功能循环在各次登录前清理隔离夹具的限流桶，专门验证生命周期，不据此宣称真实限流压力已通过。所有账号、数据库、Cookie、浏览器 profile 均为隔离测试数据；不清除用户正在使用的真实浏览器会话。
+
+截图本身无法证明匿名越权：有效 Cookie 自动恢复属于正常行为；无 Cookie 或已确认退出的页面不能恢复认证。此前 localhost 自动跳转到 127.0.0.1 时，可能恢复该来源先前已有的会话，不能据截图认定用户具体命中了哪个路径。
+
+
+最终证据：两次独立浏览器运行均通过，日志 `/private/tmp/auth-cycles-final4.log` 和 `/private/tmp/auth-cycles-repeat.log`，每次 20 轮 A/B 交替，合计 40 轮；每个提交按钮连续触发四次。全部 AUTH-CYCLE-01/02/04/05 场景及既有账号浏览器流程通过。真实 BFF 撤销测试修复前 `/private/tmp/auth-cycles-revoke-unit-before.log` 明确返回 UNCONFIRMED，修复后 `/private/tmp/auth-cycles-revoke-unit-after.log` 通过。SDK 3 项（含 AUTH-CYCLE-06）、Web 2 项、前端及 Rust 构建、diff 检查通过。全量回归仍留到 PR 前，不以本专项代替。
+
+测试过程保留原失败日志：`auth-cycles-before.log` 复现旧标签页残留；`auth-cycles-revoke-before.log` 的初版“所有中央会话都应撤销”断言对 CURRENT_LOGIN 范围过宽，最终改为精确核对本次登录 ID，并以独立 BFF 单测证明产品缺陷；背景标签页的 animation-frame 自动化超时已通过输入前显式前置目标页解决；导航切换仅重试 CDP 上下文销毁，原状态断言保留；夹具直接读取会话的 409 冲突被明确识别并有界等待，没有忽略其他错误。
+
+
+## 14. 个人资料展示与右侧编辑（2026-11-10）
+
+按用户展示图保留现行账号内容：头像、昵称、账号 ID 与切换/退出操作。展示页右上角打开编辑，桌面为右侧 440px 原生 modal dialog，手机全宽；头像点击菜单上传或移除，文件读取/解码后仅更新草稿，保存才 PATCH profile。关闭未保存修改须明确放弃；取消原生文件选择不改变草稿；换号/退出卸载面板、作废迟到文件读取与请求结果。沿用 PNG/100 KB 合同，没有增加统计、作品、分享或隐私功能。
+
+PROFILE-01：展示/编辑分离，1440/390 无页面横向溢出，抽屉贴右、圆形头像、取消与放弃还原已保存昵称。PROFILE-02：头像大小校验、选图预览不提前写库、保存与移除写库、取消移除保留原头像。测试 `web/scripts/profile-editor-checks.mjs` 由现有浏览器入口执行；`account-cycles.mjs` 现在在编辑抽屉留有草稿时从另一标签页退出，证明清理不依赖用户先关抽屉。
+
+构建、Web 2 项测试、最终浏览器功能流程通过：`/private/tmp/auth-profile-build-final.log`、`/private/tmp/auth-profile-final.log`；截图 `/private/tmp/auth-profile-final/`。此前 `/private/tmp/auth-profile-browser.log` 还通过 20 轮打开编辑草稿后的 A/B 切换。没有跑全量回归。
+
+参考边界：工具明确禁止访问 Codex 应用，未绕过该限制；当前只有用户提供的展示截图，没有编辑/头像弹层截图。因此右侧展开与头像菜单按已知需求实现，不能声称已逐项核对 Codex 交互一致。
+
+
+PROFILE-03（用户补图并确认）：展示页头像悬停显示右上角灰底铅笔，点击蓝色描边并直接打开系统文件选择，不先打开侧栏/菜单；选择文件后才打开右侧草稿预览，取消选图不改资料。触屏显示入口，键盘焦点可见。`profile-editor-checks.mjs` 验证点击时抽屉未开、蓝色描边、供给文件后才打开预览且尚未写入展示头像；最终浏览器通过 `/private/tmp/auth-avatar-hover-browser.log`，截图 `/private/tmp/auth-avatar-hover-evidence/profile-avatar-selected.png`。
+
+
+PROFILE-04（用户补充裁剪弹窗图，取代上一段“选图后打开右侧预览”）：展示页头像直接选文件后打开居中“调整您的图片”弹窗，圆形可见范围、范围外淡化、指针拖动和方向键调整、减/加与缩放滑杆、关闭/取消/保存。展示页入口保存直接提交头像；资料编辑面板中的选图共用裁剪器，确认裁剪后先更新该面板草稿，保留整体取消语义。来源支持 PNG/JPG/WebP（10 MB 内），导出为至多 256×256、100 KB 内 PNG，沿用现有后端合同。没有放宽 CSP：预览使用现有允许的 data 图片。
+
+`web/scripts/profile-editor-checks.mjs` 验证取消不提前改图、真实指针拖动改变裁剪位置、缩放、JPG→PNG、输出尺寸/字节限制、直接保存不打开资料侧栏。最终 `/private/tmp/auth-avatar-crop-final2.log` 全部通过，构建 `/private/tmp/auth-avatar-crop-build-final.log`，截图 `/private/tmp/auth-avatar-crop-final2/`（桌面/手机已查看），Web 2 项通过。未跑全量回归。
+
+
+PROFILE-04 视觉补正（以用户后补的完整窗口参考为准）：桌面弹窗缩为 520×584，中央裁剪圆直径 220，标题 20px；两侧图片虚影使用弧形轮廓、横向淡出及轮廓外模糊，取代原椭圆径向光晕。保存按钮 62×32、10px 圆角；弹窗 24px 圆角。手机保留视口约束。构建日志 `/private/tmp/auth-crop-reference-build.log`；浏览器验证与桌面、手机、横向图片截图见 `/private/tmp/auth-crop-reference-final.log`、`/private/tmp/auth-crop-reference-final/`。本次仅验证相关交互，不跑全量回归。
+
+PROFILE-05：展示页昵称双击原位编辑，Enter/失焦保存、Esc 取消；中文输入组合期间 Enter 不提交。保存期间输入只读、浅灰圆角底和“正在保存...”提示，成功恢复文字，失败保留草稿；空昵称拒绝提交。沿用 profile PATCH/version 和会话失效处理，组件卸载后不刷新其他账号。浏览器专项验证包含取消、空值、Enter/失焦、700ms 网络延迟下保存提示以及实际数据库结果。证据 `/private/tmp/auth-inline-name-final.log` 和 `/private/tmp/auth-inline-name-final/profile-name-saving.png`；构建 `/private/tmp/auth-inline-name-build.log`，未跑全量回归。
+
+用户确认移除右上角编辑及资料侧栏：只保留昵称原位编辑、头像文件选择与裁剪直接保存；删除侧栏草稿、菜单、样式和相关旧入口用例，裁剪取消/验证/拖动/导出断言迁到直接入口。跨标签页未保存昵称隔离测试改为原位输入。该测试发现失焦自动保存与另一标签页退出竞争导致 VERSION_CONFLICT；SDK 退出仅对此错误最多重试三次，沿用同一 generation 和幂等键，其他错误保留原处理。证据 `/private/tmp/auth-no-drawer-final.log`，SDK `/private/tmp/auth-no-drawer-sdk.log`。
+
+账号安全二级目录：默认“登录方式”，邮箱/手机/Google/GitHub 按行显示绑定状态与操作；“登录密码”承载密码设置修改；“登录会话”承载全产品设备退出及确认。切换二级目录取消当前验证事务，退出清理选中状态。浏览器证据 `/private/tmp/auth-security-tabs.log`、`/private/tmp/auth-security-tabs/security-1440.png`（另含 1024、390 布局）。
+
+2026-11-10 邮箱改由管理员维护（用户批准）：普通用户邮箱只读，自助 BIND/REPLACE/UNLINK 邮箱在事务创建与最终提交均拒绝；注册验证与密码找回保留。新增 USER_EMAIL_WRITE 独立平台权限及 PATCH /platform/users/{userId}/email；管理员填写邮箱和操作原因，原子检查目标版本、邮箱唯一性，替换邮箱并撤销目标账号全部会话，平台审计记录操作者、目标账号和原因。既有管理员须由权限管理者显式授予新权限，不自动提升现有账号权限。
+
+专项验证：`/private/tmp/auth-admin-email-test.log`（权限拒绝、邮箱冲突、版本冲突、成功更新、会话撤销、审计、自助邮箱操作拒绝）、`/private/tmp/auth-admin-email-contract-check.log`、`/private/tmp/auth-admin-email-browser.log`（只读界面、管理员真实保存、注册登录、密码修改）。未跑全量。提 PR 前待同步 `worker/rust-tests/account-management.test.ts` 中以邮箱自助绑定/替换为前提的旧连续场景：迁移到管理员维护邮箱的前置条件，保留证明隔离、最后可用方式、并发与未完成登录失效的断言；本轮新增专项已验证新政策，不能把旧场景当作通过。
+
+
+### 2026-11-10 会话授权与栏内绑定（按用户最新决定）
+
+- AUTH-SESSION：绑定/换绑在对应登录方式栏内展开，取消或完成后收起。当前登录会话有效即可办理，不再以近期验证窗口要求二次输入密码或验证码。
+- 页面请求 `useSession` 授权，后端仍签发操作及目标限定的一次性证明并校验有效会话、用户、会话修订、身份版本、撤销状态；新手机号验证码及第三方账号授权继续保留。操作授权失败只重试或取消，不退回二次登录表单。
+- `0013_recent_identity_verification.sql` 已应用的验证时间字段不再作为上述业务入口的门槛。登录会话本身过期、撤销仍拒绝执行；不放宽邮箱管理员维护策略。
+- 定向验证：`worker/rust-tests/recent-verification.test.ts` 覆盖登录超过原 5 分钟窗口仍可办理、跨用户及跨操作拒绝、会话过期和退出后拒绝；浏览器覆盖栏内取消、旧验证时间不触发二次登录、真实短信绑定及完成收起、密码修改。未跑全量回归。
+
+## 2026-11-10 PR 收尾
+
+本轮补齐登录/退出/切换账号、跨标签会话失效、个人资料与头像交互、账号安全分组、管理员维护邮箱及 dev 自动初始化。普通用户的邮箱自助绑定/换绑/解绑在服务端拒绝；手机号与外部身份仍要求验证新身份，当前有效登录可签发限定操作的短时证明。
+
+提交前将旧邮箱自助维护测试改为管理员预置邮箱与明确拒绝断言，身份换绑、冲突、旧登录/重设证明撤销改用仍可自行维护的手机号验证；保留证明不可互换和幂等重试断言。管理员邮箱写入、授权、版本及撤销由 platform-management 测试覆盖。Auth 全套包含合同 8、Rust 16、Worker 114、Web 2、SDK 3 项；真实浏览器覆盖页面流程及 20 轮 A/B 登录退出和跨标签隔离。所有外部投递均为测试替身，不代表短信/邮件真实送达。云端部署不在本次 PR 授权范围。

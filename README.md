@@ -46,3 +46,13 @@ npm run contracts:check
 真实页面专项在构建 Auth 与 Work 后运行 `MOLIS_WORK_SOURCE=/absolute/path/to/molis-work npm run test:browser`。它借用 Work 的公开 Chrome test-kit 和机器测试槽，创建临时 D1、随机端口与独立浏览器 profile，验证注册登录、租户创建、资料、再次验证、绑定邮箱、改密、会话撤销后重新登录及退出；投递明确为 mock。截图默认写临时目录，可用 `AUTH_BROWSER_EVIDENCE_DIR` 指定。该命令不访问已有浏览器或数据库，不计为 LIVE 供应商验收。
 
 [接入手册](docs/unified-account/integration-guide.md) · [统一方案](docs/unified-account/v2-consolidation.md) · [部署](docs/cloudflare-deployment.md)
+
+## 本地 dev 联调（换电脑）
+
+两仓库统一使用 Node 24.15.x，Work 使用 pnpm 11.9.0。首次 Auth 执行 `npm run setup`（需联网安装依赖和 Rust 工具链），以后执行 `npm run dev`。
+
+Dev 固定监听 `http://127.0.0.1:8787`，自动构建、迁移本地 D1、登记 Auth 和 Work 客户端、生成本机 session 加密密钥，并初始化普通测试账号 `preview@example.test`，初始密码 `Molis-dev-2026!`。该公开测试密码仅用于 LOCAL/MOCK；重复启动不重置密码、不覆盖已有账号，不授予管理员权限。数据库保存在 worker/.wrangler，密钥在忽略入库的 worker/.dev.vars。
+
+Work 在其仓库执行依赖安装和构建后运行 `pnpm dev`，固定端口 4207。端口冲突会报错，不自动杀进程。所有地址由仓库预设，不依赖作者机器路径。
+
+环境映射：dev 使用 worker/wrangler.jsonc；test 使用现有 worker/deploy/staging 配置（统一账号 unified-staging，短信/邮件 MOCK，OAuth LIVE）；prod 使用 worker/deploy/production（LIVE）。test/prod 不运行 dev 初始化、不创建公开测试账号；密钥通过部署 secret 管理。prod 的 Work 客户端登记脚本为 worker/deploy/production/work-client.sql，需要部署人员显式应用；本次没有修改云端资源。外部邮件、短信和 OAuth 的真实可用性仍取决于对应渠道资源，不由本地启动完成。

@@ -57,6 +57,7 @@ try {
   proxy = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
+      PROVIDER_STATE_KEY: randomBytes(32).toString("base64url"),
       AUTH_WEB_CLIENT_ID: "molis-auth-web-local",
       AUTH_WEB_SESSION_KEY: randomBytes(32).toString("base64url"),
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
@@ -83,6 +84,14 @@ try {
     },
   );
   await initializeLocalRuntime(proxy);
+  // ENTRY-04: an alias document redirects before login; cross-origin writes remain denied.
+  const alias = origin.replace('127.0.0.1', 'localhost');
+  const aliasPage = await proxy.fetch(new Request(alias + '/login'));
+  assert.equal(aliasPage.status, 302);
+  assert.equal(aliasPage.headers.get('Location'), origin + '/login');
+  const aliasWrite = await proxy.fetch(new Request(alias + '/api/account/auth/transactions', {method:'POST', headers:{Origin:alias,'Content-Type':'application/json'},body:'{}'}));
+  assert.equal(aliasWrite.status, 403);
+
   const db = proxy.env.DB;
   await db
     .prepare("UPDATE auth_environment SET auth_origin=?")
@@ -106,11 +115,14 @@ try {
     "document.querySelector('main')?.textContent.includes('登录')",
   );
   const click = async (text) => {
+    if(text==='设置或修改密码') await click('登录密码');
+    if(text.startsWith('绑定') && text !== '绑定') await click('登录方式');
+    if(['退出登录','切换账号'].includes(text)) await page.click('[aria-label="账号菜单"]');
     await page.wait(
-      `Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled)`,
+      `Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled&&b.getClientRects().length)`,
     );
     await page.evaluate(
-      `{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled);if(!b)throw Error('Missing '+${JSON.stringify(text)});document.querySelectorAll('[data-qa-click]').forEach(b=>b.removeAttribute('data-qa-click'));b.dataset.qaClick='';}`,
+      `{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled&&b.getClientRects().length);if(!b)throw Error('Missing '+${JSON.stringify(text)});document.querySelectorAll('[data-qa-click]').forEach(b=>b.removeAttribute('data-qa-click'));b.dataset.qaClick='';}`,
     );
     await page.click("[data-qa-click]");
   };
@@ -123,18 +135,31 @@ try {
   const clickRow = async (marker, text) => {
     const match = `Array.from(document.querySelectorAll('.v2-row')).find(r=>r.textContent.includes(${JSON.stringify(marker)}))`;
     await page.wait(
-      `Array.from((${match})?.querySelectorAll('button')??[]).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled)`,
+      `Array.from((${match})?.querySelectorAll('button')??[]).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled&&b.getClientRects().length)`,
     );
     await page.evaluate(
-      `{const row=${match};const button=Array.from(row.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled);document.querySelectorAll('[data-qa-click]').forEach(e=>e.removeAttribute('data-qa-click'));button.dataset.qaClick='';}`,
+      `{const row=${match};const button=Array.from(row.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled&&b.getClientRects().length);document.querySelectorAll('[data-qa-click]').forEach(e=>e.removeAttribute('data-qa-click'));button.dataset.qaClick='';}`,
     );
     await page.click("[data-qa-click]");
   };
-  await click("登录");
-  await page.wait("Boolean(document.querySelector('form select'))");
-  await page.evaluate(
-    "{const s=document.querySelector('form select');s.value='PHONE_OTP';s.dispatchEvent(new Event('change',{bubbles:true}));}",
-  );
+  // ENTRY-01: the original visual composition opens directly on the V2 form.
+  await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]')) && !document.querySelector('button[type=submit]').disabled");
+  for (const width of [1440,1024,390]) {
+    await page.viewport(width,900);
+    assert.ok(await page.evaluate('document.documentElement.scrollWidth<=innerWidth'));
+    await page.screenshot(join(evidence,'entry-zh-'+width+'.png'));
+  }
+  await page.viewport(1440,900);
+  await click('English');
+  await page.wait("document.documentElement.lang==='en' && document.body.textContent.includes('One account.') && document.body.textContent.includes('All your work.')");
+  await page.screenshot(join(evidence,'entry-en-1440.png'));
+  await click('简体中文');
+  await page.fill('input[autocomplete=current-password]', 'synthetic-visibility-check');
+  await page.click('[aria-label="显示密码"]');
+  assert.equal(await page.evaluate("document.querySelector('input[autocomplete=current-password]').type"),'text');
+  await page.click('[aria-label="隐藏密码"]');
+  assert.equal(await page.evaluate("document.querySelector('input[autocomplete=current-password]').type"),'password');
+  await click('手机验证码');
   await page.fill("input[type=tel]", "13800000999");
   await click("继续");
   await page.wait(
@@ -165,16 +190,30 @@ try {
     1,
   );
   console.log("PASS browser self-service tenant");
+  // CONSOLE-01: original sidebar and list/detail composition at desktop and phone widths.
+  await click("QA 自助租户");
+  await page.wait("Boolean(document.querySelector('.detail-heading'))");
+  for (const width of [1440, 1024, 390]) {
+    await page.command('Emulation.setDeviceMetricsOverride', {width, height:900, deviceScaleFactor:1, mobile:false});
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+    await page.screenshot(join(evidence, 'tenants-'+width+'.png'));
+  }
+  await page.command('Emulation.setDeviceMetricsOverride', {width:1440, height:900, deviceScaleFactor:1, mobile:false});
+
   await click("个人资料");
+  await page.click('.profile-inline-name [role="button"]');
   await page.fill('input[maxlength="80"]', "QA 昵称");
-  await click("保存资料");
+  await page.evaluate("document.querySelector('input[aria-label=修改昵称]').blur()");
   await page.wait(
     "document.querySelector('header')?.textContent.includes('QA 昵称')",
   );
   console.log("PASS browser profile update");
+  const {profileEditorChecks}=await import('./profile-editor-checks.mjs');
+  await profileEditorChecks({page,click,db,evidence,root});
+
   await click("账号安全");
   await page.wait(
-    "document.querySelector('main')?.textContent.includes('PHONE')",
+    "document.querySelector('main')?.textContent.includes('手机号')",
   );
   for (const width of [1440, 1024, 390]) {
     await page.viewport(width, 900);
@@ -184,18 +223,19 @@ try {
     );
     assert.ok(
       await page.evaluate(
-        "document.querySelector('header').getBoundingClientRect().bottom<=document.querySelector('main').getBoundingClientRect().top",
+        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>760 ? nav.right<=main.left : nav.bottom<=main.top})()",
       ),
-      "the account header stays above the current page at every width",
+      "CONSOLE-01 navigation stays beside desktop content and above mobile content without overlap",
     );
     await page.screenshot(join(evidence, "security-" + width + ".png"));
   }
   const verifyCurrentPhone = async () => {
     await db.prepare("UPDATE auth_rate_bucket SET expires_at=0").run();
-    await page.wait("Boolean(document.querySelector('.v2-form select'))");
-    await page.evaluate(
-      "{const s=document.querySelector('.v2-form select');s.value='PHONE_OTP';s.dispatchEvent(new Event('change',{bubbles:true}));}",
-    );
+    if(await page.evaluate("Boolean(document.querySelector('.auth-entry'))")) await click('手机验证码');
+    else {
+      await page.wait("Boolean(document.querySelector('.v2-form select'))");
+      await page.evaluate("{const s=document.querySelector('.v2-form select');s.value='PHONE_OTP';s.dispatchEvent(new Event('change',{bubbles:true}));}");
+    }
     await page.fill("input[type=tel]", "13800000999");
     await click("继续");
     await page.wait(
@@ -209,33 +249,42 @@ try {
     await page.fill("input[autocomplete=one-time-code]", code.credential);
     await click("验证");
   };
-  await click("绑定邮箱");
-  await verifyCurrentPhone();
-  await page.wait(
-    "Boolean(document.querySelector('.v2-form input[type=email]'))",
-  );
-  await page.fill("input[type=email]", "qa-browser@example.test");
-  await click("继续");
-  await page.wait(
-    "Boolean(document.querySelector('input[autocomplete=one-time-code]'))",
-  );
-  const emailCode = await db
-    .prepare(
-      "SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind("qa-browser@example.test")
-    .first();
-  await page.fill("input[autocomplete=one-time-code]", emailCode.credential);
-  await click("验证");
-  await page.wait(
-    "!document.querySelector('.v2-form')&&document.querySelector('main')?.textContent.includes('EMAIL')",
-  );
-  console.log("PASS browser reauth and bind email");
+  assert.equal(await page.evaluate("[...document.querySelectorAll('.security-method:first-of-type button:not(.security-info-trigger)')].length"),0);
+  assert.ok(await page.evaluate("document.querySelector('main').textContent.includes('邮箱由管理员维护')"));
+  const infoStyle=await page.evaluate("(()=>{const e=document.querySelector('.security-info-trigger'),s=getComputedStyle(e);return {height:e.getBoundingClientRect().height,border:s.borderTopWidth,background:s.backgroundColor};})()");
+  assert.deepEqual(infoStyle,{height:20,border:'0px',background:'rgba(0, 0, 0, 0)'});
+  await page.click('.security-info-trigger');
+  await page.screenshot(join(evidence,'email-tooltip.png'));
+  console.log('PASS admin-managed email is read-only for account owner');
+  // AUTH-RECENT: a fresh login skips old-identity prompts; all phone UI stays in its row.
+  await page.evaluate("[...document.querySelectorAll('.security-method')].find(e=>e.querySelector('h3')?.textContent==='手机号').querySelector('button').click()");
+  await page.wait("Boolean(document.querySelector('.security-editor input[type=tel]')) && !document.querySelector('.security-editor input[type=password]')");
+  assert.equal(await page.evaluate("document.querySelector('.security-editor').closest('.security-method').querySelector('h3').textContent"),'手机号');
+  for (const width of [1440,390]) {
+    await page.viewport(width,900);
+    const edges = await page.evaluate("[document.querySelector('.phone-number input'), ...document.querySelectorAll('.phone-binding-line > button')].map(e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};})");
+    assert.equal(edges.length,3);
+    for(const edge of edges) {
+      assert.equal(edge.height,40,'phone input and buttons are 40px high');
+      assert.ok(Math.abs(edge.top-edges[0].top)<0.5 && Math.abs(edge.bottom-edges[0].bottom)<0.5,'phone controls share top and bottom edges');
+    }
+    await page.screenshot(join(evidence,'phone-controls-'+width+'.png'));
+  }
+  await page.screenshot(join(evidence,'phone-inline-recent.png'));
+  const verifiedBefore=(await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t;
+  await click('取消');
+  await page.wait("!document.querySelector('.security-editor')");
+  assert.equal((await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t,verifiedBefore,'reuse must not renew recent-auth time');
   await click("设置或修改密码");
-  await verifyCurrentPhone();
-  await page.wait(
-    "Boolean(document.querySelector('input[autocomplete=new-password]'))",
-  );
+  await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('input[autocomplete=current-password]'))"),false);
+  await click('取消');
+  await page.wait("!document.querySelector('.security-editor')");
+  await db.prepare('UPDATE auth_login_session SET identity_verified_at=?').bind(Date.now()-300001).run();
+  await click("设置或修改密码");
+  await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('input[autocomplete=current-password]'))"),false,'old verification timestamp must not trigger a second login');
+  console.log('PASS active session skips second login, inline phone form and cancellation');
   await page.fill(
     "input[autocomplete=new-password]",
     "Synthetic-Browser-Jupiter-94",
@@ -397,7 +446,7 @@ try {
   }
   await click("QA 目标用户");
   await page.wait(
-    "document.querySelector('main h2')?.textContent.includes('QA 目标用户')",
+    "document.querySelector('main')?.textContent.includes('QA 目标用户 的平台权限')",
   );
   for (const [button, status] of [
     ["授予", "ACTIVE"],
@@ -419,6 +468,12 @@ try {
       status,
     );
   }
+  await fillLabel('操作原因','核实归属后维护测试邮箱');
+  await fillLabel('邮箱','qa-admin-maintained@example.test');
+  await click('保存邮箱并撤销登录');
+  await page.wait("!document.querySelector('main input[type=email]')");
+  assert.equal((await db.prepare("SELECT canonical_email FROM auth_user_email WHERE user_id='qa-v2-target'").first()).canonical_email,'qa-admin-maintained@example.test');
+  console.log('PASS browser administrator maintains email');
   for (const width of [1440, 1024, 390]) {
     await page.viewport(width, 900);
     await page.evaluate("scrollTo(0,0)");
@@ -427,7 +482,7 @@ try {
     );
     assert.ok(
       await page.evaluate(
-        "document.querySelector('header').getBoundingClientRect().bottom<=document.querySelector('main').getBoundingClientRect().top",
+        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>760 ? nav.right<=main.left : nav.bottom<=main.top})()",
       ),
       "the platform header stays above the current page at every width",
     );
@@ -436,16 +491,16 @@ try {
   console.log("PASS browser user status and explicit platform grant/revoke");
   assert.deepEqual(
     await page.evaluate(
-      "({local:localStorage.length,session:sessionStorage.length})",
+      "({local:Object.keys(localStorage),session:sessionStorage.length})",
     ),
-    { local: 0, session: 0 },
+    { local: ['molis.auth.locale'], session: 0 },
   );
   await db.prepare("UPDATE auth_login_session SET revoked_at=1").run();
   await click("租户");
   await page.wait(
     "!document.querySelector('.console-tabs')&&document.body.textContent.includes('登录已过期')",
   );
-  await click("登录");
+  await page.wait("Boolean(document.querySelector('.auth-entry input'))");
   await verifyCurrentPhone();
   await page.wait("Boolean(document.querySelector('.console-tabs'))");
   assert.equal(
@@ -459,7 +514,94 @@ try {
   );
   await click("退出登录");
   await page.wait("!document.querySelector('.console-tabs')");
+  await page.wait("document.querySelector('.account-toast')?.textContent==='已退出登录'");
+  assert.equal(await page.evaluate("[...document.querySelectorAll('.auth-entry .notice')].some(e=>e.textContent.includes('已退出登录'))"),false,'logout feedback must not occupy the form');
+  await page.screenshot(join(evidence,'logout-toast.png'));
+  await page.wait("!document.querySelector('.account-toast')");
   console.log("PASS browser logout and no token storage");
+  // ENTRY-02: email registration, remember-email opt-in, reset and logout cleanup use the same V2 client.
+  await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]'))");
+  await click('邮箱注册');
+  await page.fill('input[type=email]', 'entry-union@example.test');
+  await click('继续');
+  await page.wait("Boolean(document.querySelector('input[autocomplete=one-time-code]'))");
+  const entryCode=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('entry-union@example.test').first();
+  await page.fill('input[autocomplete=one-time-code]',entryCode.credential);await click('验证');
+  await page.wait("document.querySelectorAll('input[autocomplete=new-password]').length===2");
+  await fillLabel('密码','Synthetic-Entry-Password-49');await fillLabel('确认密码','Synthetic-Entry-Password-49');await click('完成注册');
+  await page.wait("Boolean(document.querySelector('.console-tabs'))");
+  await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]'))");
+  await page.fill('input[type=email]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-49');
+  await page.click('input[type=checkbox]');await click('登录');await page.wait("Boolean(document.querySelector('.console-tabs'))");
+  assert.equal(await page.evaluate("localStorage.getItem('molis.auth.remembered-email')"),'entry-union@example.test');
+  assert.equal(await page.evaluate("document.querySelector('.profile-email')?.textContent"),'entry-union@example.test');
+  assert.equal(await page.evaluate("document.querySelector('.account-menu-email')?.textContent"),'entry-union@example.test');
+  await page.screenshot(join(evidence,'sidebar-email.png'));
+  await click('账号安全'); await click('绑定手机');
+  await page.wait("Boolean(document.querySelector('.security-editor input[type=tel]'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.security-editor input[type=password]'))"),false);
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.security-editor input[autocomplete=one-time-code]'))"),false,'OTP stays hidden until sent');
+  await page.fill('.security-editor input[type=tel]','13800000889'); await click('获取验证码');
+  await page.wait("Boolean(document.querySelector('.phone-code input'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.phone-number input'))"),false,'phone input collapses after delivery');
+  assert.ok(await page.evaluate("document.querySelector('.phone-delivery').textContent.includes('138****0889')"));
+  await click('更换号码');
+  await page.wait("Boolean(document.querySelector('.phone-number input')) && !document.querySelector('.phone-code input')");
+  await page.fill('.security-editor input[type=tel]','13800000888'); await click('获取验证码');
+  await page.wait("Boolean(document.querySelector('.security-editor input[autocomplete=one-time-code]'))");
+  const bindCode=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('+8613800000888').first();
+  for(const width of [1440,390]) {
+    await page.viewport(width,900);
+    const edges=await page.evaluate("[document.querySelector('.phone-code input'),...document.querySelectorAll('.phone-binding-line > button')].map(e=>{const r=e.getBoundingClientRect();return {top:r.top,height:r.height};})");
+    for(const r of edges) { assert.equal(r.height,40); assert.ok(Math.abs(r.top-edges[0].top)<0.5); }
+    if(width===1440) assert.ok(await page.evaluate("(()=>{const a=document.querySelector('.nav-caption'),b=document.querySelector('.security-nav h1');return getComputedStyle(b).textAlign==='left' && Math.abs(a.getBoundingClientRect().left-document.querySelector('.workspace-sidebar').getBoundingClientRect().left-(b.getBoundingClientRect().left+parseFloat(getComputedStyle(b).paddingLeft)-document.querySelector('.security-nav').getBoundingClientRect().left))<1;})()"));
+    await page.screenshot(join(evidence,'phone-verification-'+width+'.png'));
+  }
+  await page.screenshot(join(evidence,'phone-binding-code.png'));
+  await page.fill('.security-editor input[autocomplete=one-time-code]',bindCode.credential); await click('绑定');
+  await page.wait("!document.querySelector('.security-editor') && document.querySelector('main').textContent.includes('0888')");
+  assert.equal((await db.prepare('SELECT e.canonical_email email FROM auth_user_phone p JOIN auth_user_email e ON e.user_id=p.user_id WHERE p.canonical_phone=?').bind('+8613800000888').first()).email,'entry-union@example.test');
+  console.log('PASS inline phone binding verifies new phone and collapses after save');
+
+  await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]'))");
+  assert.equal(await page.evaluate("localStorage.getItem('molis.auth.remembered-email')"),null,'explicit logout clears remembered account data');
+  await db.prepare('UPDATE auth_rate_bucket SET expires_at=0').run();
+  await click('找回密码');await page.fill('input[type=email]','entry-union@example.test');await click('继续');
+  await page.wait("Boolean(document.querySelector('input[autocomplete=one-time-code]'))");
+  const resetCode=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('entry-union@example.test').first();
+  await page.fill('input[autocomplete=one-time-code]',resetCode.credential);await click('验证');
+  await page.wait("Boolean(document.querySelector('.reset-form'))");
+  await fillLabel('新密码','Synthetic-Entry-Password-50');await fillLabel('确认新密码','Synthetic-Entry-Password-50');await click('重设密码');
+  await page.wait("Boolean(document.querySelector('input[autocomplete=current-password]'))");
+  assert.ok(await page.evaluate("[...document.querySelectorAll('.entry-footer button')].every(b=>!b.disabled)"),'reset completion releases the entry navigation');
+  await page.fill('input[type=email]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-50');await click('登录');
+  await page.wait("Boolean(document.querySelector('.console-tabs'))");
+  await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]'))");
+  console.log('PASS ENTRY-01/02 original visual entry, locale, password visibility, email signup/login/reset and account preference cleanup');
+  // ENTRY-03: both supported external buttons finish through real mock-provider callbacks.
+  for(const sql of readFileSync(root+'/worker/mock-provider-local-seed.sql','utf8').replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  for(const provider of ['Google','GitHub']) {
+    const known=new Set((await browser.command('Target.getTargets')).targetInfos.map(t=>t.targetId));
+    await click(provider);
+    let target;
+    for(let i=0;i<100;i++) {
+      target=(await browser.command('Target.getTargets')).targetInfos.find(t=>t.type==='page'&&!known.has(t.targetId)&&t.url.includes('/auth/mock/'));
+      if(target)break;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    assert.ok(target,provider+' authorization popup opens');
+    const popup=await browser.page(target.targetId);await popup.viewport(800,700);await popup.command('Page.bringToFront');
+    await popup.wait("Boolean(document.querySelector('button[value=SUCCESS]'))");await popup.click('button[value=SUCCESS]');
+    await page.wait("Boolean(document.querySelector('.console-tabs'))");await page.command('Page.bringToFront');
+    await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[type=email]'))");
+  }
+  console.log('PASS ENTRY-03 Google/GitHub callbacks through the restored entry');
+
+
+  if(process.env.AUTH_ACCOUNT_CYCLES === '1') {
+    const {accountCycles}=await import('./account-cycles.mjs');
+    await accountCycles({page,browser,db,origin});
+  }
   console.log("Evidence: " + evidence);
 } catch (e) {
   if (page) {

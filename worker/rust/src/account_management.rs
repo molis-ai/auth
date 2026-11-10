@@ -17,9 +17,9 @@ async fn security(a: &Auth, user: &str) -> Result<Value> {
     .await
 }
 async fn user_view(a: &Auth, user: &str) -> Result<Value> {
-    let u=a.s.one("SELECT u.*,s.account_version FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=?",vec![user.into()]).await?;
+    let u=a.s.one("SELECT u.*,s.account_version,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=?",vec![user.into()]).await?;
     Ok(
-        json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"avatarUrl":u["avatar_data"],"version":u["account_version"]}),
+        json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]}),
     )
 }
 async fn password_enabled(a: &Auth, user: &str) -> Result<bool> {
@@ -222,7 +222,8 @@ async fn mutation(
     }
     let mut list = methods(a, &user, c).await?;
     if op != "bind" {
-        sensitive::binding(a, &user, id).await?;
+        let existing = sensitive::binding(a, &user, id).await?;
+        ensure(existing["type"] != "EMAIL", 403, "FORBIDDEN")?;
         list.retain(|m| m["bindingId"] != id);
     }
     if op == "unlink" {
@@ -236,6 +237,7 @@ async fn mutation(
             "FORBIDDEN",
         )?;
         let identity = parsed(&new, "verified_identity")?;
+        ensure(identity["type"] != "EMAIL", 403, "FORBIDDEN")?;
         writes.push(operation(
             a,
             &p,

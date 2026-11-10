@@ -80,6 +80,7 @@ add(
     issuer: url,
     userId: id,
     displayName: name,
+    email: nullable(email),
     avatarUrl: nullable(union(url, pngDataUrl)),
     version,
   }),
@@ -123,6 +124,7 @@ add(
     'CLIENT_WRITE',
     'USER_READ',
     'USER_STATUS',
+    'USER_EMAIL_WRITE',
     'PLATFORM_PERMISSION_WRITE',
   ),
 )
@@ -133,7 +135,7 @@ add(
     loginMethods: arr(ref('LoginMethod'), 20),
     passwordEnabled: bool,
     session: ref('SessionView'),
-    platformCapabilities: arr(ref('PlatformCapability'), 14),
+    platformCapabilities: arr(ref('PlatformCapability'), 15),
   }),
 )
 add(
@@ -177,7 +179,8 @@ for (const method of methods)
         purpose: literal('REAUTH'),
         method: literal(method),
         ...operation,
-      }),
+        useSession: bool,
+      }, [...Object.keys(transactionBase), "purpose", "method", ...Object.keys(operation)]),
     )
 for (const method of identityMethods) {
   transactionVariants.push(
@@ -200,7 +203,7 @@ add(
   'ReauthenticationRequest',
   union(
     ...methods.flatMap((method) =>
-      operations.map((op) => obj({ ...transactionBase, method: literal(method), ...op })),
+      operations.map((op) => obj({ ...transactionBase, method: literal(method), ...op, useSession: bool }, Object.keys({ ...transactionBase, method: literal(method), ...op }))),
     ),
   ),
 )
@@ -222,8 +225,8 @@ add(
   'TransactionCreated',
   obj({
     transactionId: id,
-    status: literal('PENDING'),
-    nextStep: en('REQUEST_CHALLENGE', 'PASSWORD_LOGIN', 'START_PROVIDER'),
+    status: en('PENDING', 'VERIFIED'),
+    nextStep: en('REQUEST_CHALLENGE', 'PASSWORD_LOGIN', 'START_PROVIDER', 'COMPLETE'),
     expiresAt: time,
   }),
 )
@@ -372,8 +375,9 @@ add('PlatformLoginClient', obj({ clientId: id, applicationId: id, clientType: en
 add('PlatformLoginClientPage', obj({ items: arr(ref('PlatformLoginClient')), nextCursor: nullable(str(1, 2048)) }))
 add('LoginClientCreateRequest', obj({ clientId: id, clientType: en('WEB', 'MACOS', 'CLI'), environmentId: id, allowedOrigins: origins, redirectAllowlist: redirects, product: en('WORK', 'CLUB') }, ['clientId', 'clientType', 'environmentId', 'allowedOrigins', 'redirectAllowlist']))
 add('LoginClientUpdateRequest', obj({ status: en('ACTIVE', 'DISABLED'), allowedOrigins: origins, redirectAllowlist: redirects, expectedPolicyVersion: version, ...expected }))
-add('PlatformUser', obj({ userId: id, displayName: name, status: en('ACTIVE', 'DISABLED'), version }))
+add('PlatformUser', obj({ userId: id, displayName: name, email: nullable(str(3,254,{format:'email'})), status: en('ACTIVE', 'DISABLED'), version }))
 add('PlatformUserPage', obj({ items: arr(ref('PlatformUser')), nextCursor: nullable(str(1, 2048)) }))
+add('UserEmailRequest', obj({ email:str(3,254,{format:'email'}), ...expected, reason }))
 add('UserStatusRequest', obj({ status: en('ACTIVE', 'DISABLED'), ...expected, reason }))
 add('PlatformPermission', obj({ userId: id, capability: ref('PlatformCapability'), status: en('ACTIVE', 'REVOKED'), version }))
 add('PlatformPermissionPage', obj({ items: arr(ref('PlatformPermission')), nextCursor: nullable(str(1, 2048)) }))
@@ -649,7 +653,7 @@ add(
       state: literal('AUTHENTICATED'),
       user: ref('UserView'),
       session: ref('SessionView'),
-      capabilities: arr(ref('PlatformCapability'), 14),
+      capabilities: arr(ref('PlatformCapability'), 15),
     }),
     obj({ state: literal('OFFLINE_CACHED'), user: ref('UserView') }),
   ),
@@ -696,7 +700,7 @@ add('ProductTransactionRequest', union(...productVariants))
 add(
   'ProductReauthenticationRequest',
   union(
-    ...methods.flatMap((method) => operations.map((op) => obj({ method: literal(method), ...op }))),
+    ...methods.flatMap((method) => operations.map((op) => obj({ method: literal(method), ...op, useSession: bool }, ["method", ...Object.keys(op)]))),
   ),
 )
 add(
@@ -1164,6 +1168,7 @@ ep(
 for (const [method, path, operation, input, output, permission] of [
   ['get', '/platform/users', 'listPlatformUsers', undefined, 'PlatformUserPage', 'USER_READ'],
   ['get', '/platform/users/{userId}', 'getPlatformUser', undefined, 'PlatformUser', 'USER_READ'],
+  ['patch', '/platform/users/{userId}/email', 'setPlatformUserEmail', 'UserEmailRequest', 'PlatformUser', 'USER_EMAIL_WRITE'],
   ['patch', '/platform/users/{userId}/status', 'setPlatformUserStatus', 'UserStatusRequest', 'PlatformUser', 'USER_STATUS'],
   ['get', '/platform/users/{userId}/permissions', 'listPlatformPermissions', undefined, 'PlatformPermissionPage', 'PLATFORM_PERMISSION_WRITE'],
   ['patch', '/platform/users/{userId}/permissions/{capability}', 'setPlatformPermission', 'PlatformPermissionRequest', 'PlatformPermission', 'PLATFORM_PERMISSION_WRITE'],

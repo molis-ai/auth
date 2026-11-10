@@ -5,18 +5,32 @@ import {
   AuthError,
   type AccountView,
 } from "../../sdk/browser/src/index.ts";
-import AuthenticationPanel from "./AuthenticationPanel.vue";
+import AccountSecurityEditor from "./AccountSecurityEditor.vue";
+import AuthEntry from "./AuthEntry.vue";
+import AccountProfile from "./AccountProfile.vue";
+import { entryText } from "./entry-copy.ts";
+import { entryLanguage, rememberEmail } from "./entry-preferences.ts";
 import PlatformUsers from "./PlatformUsers.vue";
 import PlatformClients from "./PlatformClients.vue";
 import { accountErrorMessage } from "./errors.ts";
 import logo from "./assets/molis-logo.png";
+const toast = ref("");
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+function clearToast() { clearTimeout(toastTimer); toast.value = ""; }
+function showToast(text: string) {
+  clearToast();
+  toast.value = entryText(entryLanguage(), text);
+  toastTimer = setTimeout(clearToast, 3000);
+}
+const securityTab = ref('methods');
+async function selectSecurityTab(value: string) { await run(async () => { await cancelSecurity(); securityTab.value = value; }); }
+const logoutDialog = ref<HTMLDialogElement>();
+const tenantSearch = ref(""), applicationSearch = ref("");
 const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
   message = ref(""),
-  page = ref("account"),
-  loginMode = ref("LOGIN"),
-  loginOpen = ref(false);
+  page = ref("account");
 interface Tenant {
   tenantId: string;
   name: string;
@@ -60,8 +74,7 @@ const tenants = ref<Tenant[]>([]),
       version: number;
     }[]
   >([]);
-const avatar = ref<string | null>(null),
-  transfers = ref<
+const transfers = ref<
     {
       transferId: string;
       tenantId: string;
@@ -71,8 +84,7 @@ const avatar = ref<string | null>(null),
       version: number;
     }[]
   >([]);
-const name = ref(""),
-  inviteTarget = ref(""),
+const inviteTarget = ref(""),
   creationMode = ref(""),
   tenantName = ref(""),
   newApplicationName = ref(""),
@@ -92,8 +104,7 @@ const securityAction = ref(""),
   reauth = ref(""),
   newIdentity = ref(false),
   newPassword = ref(""),
-  confirmPassword = ref(""),
-  resetHandle = ref("");
+  confirmPassword = ref("");
 function can(capability: string) {
   return account.value?.capabilities?.includes(capability);
 }
@@ -108,12 +119,8 @@ async function run(task: () => Promise<void>) {
       e instanceof AuthError &&
       ["SESSION_EXPIRED", "SESSION_REVOKED", "LOGIN_REQUIRED"].includes(e.code)
     ) {
+      clearAccount();
       account.value = { state: "EXPIRED" };
-      page.value = "account";
-      securityAction.value = "";
-      reauth.value = "";
-      newPassword.value = "";
-      confirmPassword.value = "";
     }
     message.value = accountErrorMessage(e);
   } finally {
@@ -141,9 +148,6 @@ async function list<T>(path: string): Promise<T[]> {
 async function refresh() {
   account.value = await client.session();
   if (account.value.state === "AUTHENTICATED") {
-    name.value = account.value.user!.displayName;
-    avatar.value = account.value.user!.avatarUrl;
-    loginOpen.value = false;
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
       kind: "OPEN",
@@ -153,6 +157,7 @@ async function refresh() {
 async function navigate(target: string) {
   await cancelSecurity();
   page.value = target;
+  if (target === 'security') securityTab.value = 'methods';
   selectedTenant.value = undefined;
   selectedApplication.value = undefined;
   securityAction.value = "";
@@ -176,42 +181,10 @@ async function navigate(target: string) {
       subscriptions.value = await list("/subscriptions");
   });
 }
-async function loggedIn(value: { handle: string; account?: unknown }) {
-  if (loginMode.value === "PASSWORD_RESET" && !value.account) {
-    resetHandle.value = value.handle;
-    loginOpen.value = false;
-    return;
-  }
+async function loggedIn() {
+  clearToast();
   await run(refresh);
-}
-async function chooseAvatar(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  if (file.type !== "image/png" || file.size > 100000) {
-    message.value = "请选择小于 100 KB 的 PNG 图片";
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    avatar.value = String(reader.result);
-  };
-  reader.readAsDataURL(file);
-}
-async function saveProfile() {
-  await run(async () => {
-    await client.request(
-      "/profile",
-      {
-        displayName: name.value,
-        avatarDataUrl: avatar.value,
-        expectedVersion: account.value!.user!.version,
-      },
-      "PATCH",
-      crypto.randomUUID(),
-    );
-    await refresh();
-    message.value = "资料已更新";
-  });
+  if (account.value?.state === 'AUTHENTICATED') sessionChanges?.postMessage('changed');
 }
 async function selectTenant(t: Tenant) {
   selectedTenant.value = t;
@@ -312,109 +285,82 @@ async function finishSecurity(identityHandle?: string) {
 async function logout(all = false) {
   await run(async () => {
     const result = await client.logout(all);
-    account.value = { state: "ANONYMOUS" };
-    tenants.value = [];
-    members.value = [];
-    methods.value = [];
-    applications.value = [];
-    securityAction.value = "";
-    message.value =
-      result.remoteRevocation === "CONFIRMED"
-        ? "已退出登录"
-        : "本机已退出，远端撤销尚未确认";
+    clearAccount();
+    rememberEmail("");
+    sessionChanges?.postMessage('changed');
+    if (result.remoteRevocation === "CONFIRMED") {
+      message.value = "";
+      showToast("已退出登录");
+    } else message.value = "本机已退出，远端撤销尚未确认";
   });
 }
-onMounted(() => void run(refresh));
-onBeforeUnmount(() => client.close());
+function clearAccount() {
+  account.value = { state: 'ANONYMOUS' };
+  page.value = 'account'; securityTab.value = 'methods';
+  tenantSearch.value = ''; applicationSearch.value = '';
+  tenants.value = []; selectedTenant.value = undefined; members.value = [];
+  applications.value = []; selectedApplication.value = undefined; methods.value = [];
+  invitations.value = []; transfers.value = []; subscriptions.value = [];
+  inviteTarget.value = ''; creationMode.value = ''; tenantName.value = '';
+  newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
+  securityAction.value = ''; binding.value = undefined; reauth.value = '';
+  newIdentity.value = false; newPassword.value = ''; confirmPassword.value = '';
+}
+const sessionChanges = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('molis.auth.session');
+let replacing = false, checking = false;
+function replaceSession() {
+  if (replacing) return;
+  replacing = true;
+  client.close();
+  clearAccount();
+  document.getElementById('app')?.setAttribute('inert', '');
+  location.replace('/login');
+}
+if (sessionChanges) sessionChanges.onmessage = () => replaceSession();
+async function checkSession() {
+  if (busy.value || checking || replacing || document.visibilityState !== 'visible') return;
+  checking = true;
+  try {
+    const current = await client.session();
+    if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) replaceSession();
+  } catch (error) {
+    if (error instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
+  } finally { checking = false; }
+}
+function pageRestored(event: PageTransitionEvent) { if (event.persisted) replaceSession(); }
+function pageLeaving() {
+  client.close();
+  clearAccount();
+  const root = document.getElementById('app');
+  if (root) root.style.visibility = 'hidden';
+}
+onMounted(() => {
+  void run(refresh);
+  window.addEventListener('focus', checkSession);
+  document.addEventListener('visibilitychange', checkSession);
+  window.addEventListener('pageshow', pageRestored);
+  window.addEventListener('pagehide', pageLeaving);
+});
+onBeforeUnmount(() => {
+  clearToast();
+  client.close(); sessionChanges?.close();
+  window.removeEventListener('focus', checkSession);
+  document.removeEventListener('visibilitychange', checkSession);
+  window.removeEventListener('pageshow', pageRestored);
+  window.removeEventListener('pagehide', pageLeaving);
+});
 </script>
 <template>
-  <div class="console-shell v2-console">
-    <header class="console-header">
-      <a href="/" class="v2-brand"
-        ><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark"
-          >molis 账号</strong
-        ></a
-      ><span v-if="account?.user">{{ account.user.displayName }}</span>
-    </header>
-    <p v-if="message" role="status" aria-live="polite" class="console-card">
-      {{ message }}
-    </p>
-    <main v-if="account?.state !== 'AUTHENTICATED'">
-      <section class="console-heading">
-        <div>
-          <h1>一个账号，连接你的工作</h1>
-          <p>登录 Molis 账号，管理个人资料、租户与订阅。</p>
-        </div>
-      </section>
-      <nav class="console-actions">
-        <button
-          :disabled="busy"
-          @click="
-            loginMode = 'LOGIN';
-            loginOpen = true;
-          "
-        >
-          登录</button
-        ><button
-          :disabled="busy"
-          @click="
-            loginMode = 'EMAIL_SIGNUP';
-            loginOpen = true;
-          "
-        >
-          邮箱注册</button
-        ><button
-          :disabled="busy"
-          @click="
-            loginMode = 'PASSWORD_RESET';
-            loginOpen = true;
-          "
-        >
-          找回密码
-        </button>
-      </nav>
-      <AuthenticationPanel
-        v-if="loginOpen"
-        :key="loginMode"
-        :client="client"
-        :purpose="loginMode"
-        @complete="loggedIn"
-        @cancel="loginOpen = false"
-      />
-      <form
-        v-if="resetHandle"
-        class="console-card"
-        @submit.prevent="
-          run(async () => {
-            if (newPassword !== confirmPassword) throw Error('两次密码不一致');
-            await client.request('/password/reset', {
-              resetHandle,
-              newPassword,
-            });
-            newPassword = '';
-            confirmPassword = '';
-            resetHandle = '';
-            message = '密码已重设，请登录';
-          })
-        "
-      >
-        <label
-          >新密码<input
-            v-model="newPassword"
-            type="password"
-            autocomplete="new-password"
-            required /></label
-        ><label
-          >确认新密码<input
-            v-model="confirmPassword"
-            type="password"
-            autocomplete="new-password"
-            required /></label
-        ><button :disabled="busy">重设密码</button>
-      </form>
-    </main>
-    <main v-else>
-      <nav class="console-tabs">
+  <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite">{{ toast }}</div></Teleport>
+  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" :message="message" @complete="loggedIn" />
+  <div v-else class="console-shell v2-console">
+    <aside class="workspace-sidebar">
+      <header class="sidebar-brand-row">
+        <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">molis AI</strong></a>
+        <span class="sidebar-current-user">{{ account.user?.displayName }}</span>
+      </header>
+      <p class="nav-caption">工作台</p>
+      <nav class="console-tabs" aria-label="账号管理">
         <button
           v-for="[id, label] in [
             ['account', '个人资料'],
@@ -427,169 +373,56 @@ onBeforeUnmount(() => client.close());
           :disabled="busy"
           @click="navigate(id)"
         >
-          {{ label }}</button
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path :d="id === 'tenants' ? 'M4 10h16M10 10v10' : id === 'security' ? 'M9 11V9a3 3 0 0 1 6 0v2M9 11h6v5H9z' : id === 'subscriptions' ? 'M8 9h8M8 13h8M8 17h5' : 'M8 17c0-5 8-5 8 0M12 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4'"/></svg>{{ label }}</button
         ><button
           v-if="can('USER_READ')"
+          :aria-current="page === 'users' ? 'page' : undefined"
           :disabled="busy"
           @click="navigate('users')"
         >
-          用户与权限</button
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5"/></svg>用户与权限</button
         ><button
           v-if="can('APPLICATION_READ')"
+          :aria-current="page === 'applications' ? 'page' : undefined"
           :disabled="busy"
           @click="navigate('applications')"
         >
-          应用管理
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>应用管理
         </button>
       </nav>
-      <section v-if="page === 'account'" class="console-card">
-        <h1>个人资料</h1>
-        <form @submit.prevent="saveProfile">
-          <label>昵称<input v-model="name" maxlength="80" required /></label
-          ><label
-            >头像（PNG，100 KB 内）<input
-              type="file"
-              accept="image/png"
-              @change="chooseAvatar" /></label
-          ><img
-            v-if="avatar"
-            :src="avatar"
-            width="64"
-            height="64"
-            alt="头像预览"
-          /><button v-if="avatar" type="button" @click="avatar = null">
-            移除头像</button
-          ><button :disabled="busy">保存资料</button>
-        </form>
-        <div class="console-actions">
-          <button :disabled="busy" @click="logout()">退出登录</button
-          ><button :disabled="busy" @click="logout(true)">
-            退出所有产品和设备
-          </button>
+      <div class="sidebar-bottom">      <button type="button" class="account-menu-trigger" popovertarget="account-menu" aria-label="账号菜单"><span class="account-avatar"><img v-if="account.user?.avatarUrl" :src="account.user.avatarUrl" alt=""><template v-else>{{ account.user?.displayName?.slice(0,1) || 'M' }}</template></span><span class="account-menu-identity"><span class="account-menu-name" :title="account.user?.displayName">{{ account.user?.displayName }}</span><span v-if="account.user?.email" class="account-menu-email" :title="account.user.email">{{ account.user.email }}</span></span><svg class="account-menu-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg></button><div id="account-menu" popover class="account-menu"><button :disabled="busy" @click="logout()">切换账号</button><button :disabled="busy" @click="logout()">退出登录</button></div></div>
+    </aside>
+    <div class="workspace-body">
+    <main>
+      <p v-if="message" role="status" aria-live="polite" class="console-feedback">{{ message }}</p>
+      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); message = accountErrorMessage(error); }">
+      </AccountProfile>
+      <section v-if="page === 'security'" class="console-card security-page">
+        <div class="collection-layout security-layout">
+          <nav class="collection-list security-nav" aria-label="账号安全分类">
+            <h1>账号安全</h1>
+            <button v-for="[id,label] in [['methods','登录方式'],['password','登录密码'],['sessions','登录会话']]" :key="id" :aria-current="securityTab === id ? 'page' : undefined" :disabled="busy" @click="selectSecurityTab(id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/><path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/><path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/></svg>{{ label }}</button>
+          </nav>
+          <div class="collection-detail">
+            <section v-if="securityTab === 'sessions'" class="session-actions"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
+            <dialog ref="logoutDialog" class="logout-confirm"><h2>退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
+            <section v-if="securityTab === 'password'"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
+            <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
+              <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method">
+                <h3>{{ label }}<span v-if="type === 'EMAIL'" class="security-info"><button type="button" class="security-info-trigger" aria-label="邮箱维护说明" aria-describedby="email-management-tip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="4.8" r=".6" fill="currentColor" stroke="none"/></svg></button><span id="email-management-tip" role="tooltip" class="security-info-tip">邮箱由管理员维护，如需修改请联系管理员。</span></span></h3>
+                <div v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="v2-row"><span>{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('REPLACE_METHOD',m)">换绑</button><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button></div>
+                <div v-if="!methods.some(item => item.type === type) && !(securityAction && binding?.type === type)" class="v2-row"><span>未绑定</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button></div>
+                <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+              </div>
+            </section>
+<AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+          </div>
         </div>
       </section>
-      <section v-if="page === 'security'" class="console-card">
-        <h1>账号安全</h1>
-        <div v-for="m in methods" :key="m.bindingId" class="v2-row">
-          <span>{{ m.type }} · {{ m.maskedLabel }}</span
-          ><button :disabled="busy" @click="verify('REPLACE_METHOD', m)">
-            换绑</button
-          ><button :disabled="busy" @click="verify('UNLINK_METHOD', m)">
-            解绑
-          </button>
-        </div>
-        <div class="console-actions">
-          <button :disabled="busy" @click="verify('CHANGE_PASSWORD')">
-            设置或修改密码</button
-          ><button
-            :disabled="busy"
-            @click="
-              verify('BIND_METHOD', {
-                bindingId: '',
-                type: 'EMAIL',
-                maskedLabel: '',
-                verified: false,
-                usableForLogin: false,
-              })
-            "
-          >
-            绑定邮箱</button
-          ><button
-            :disabled="busy"
-            @click="
-              verify('BIND_METHOD', {
-                bindingId: '',
-                type: 'PHONE',
-                maskedLabel: '',
-                verified: false,
-                usableForLogin: false,
-              })
-            "
-          >
-            绑定手机</button
-          ><button
-            :disabled="busy"
-            @click="
-              verify('BIND_METHOD', {
-                bindingId: '',
-                type: 'GOOGLE',
-                maskedLabel: '',
-                verified: false,
-                usableForLogin: false,
-              })
-            "
-          >
-            绑定 Google</button
-          ><button
-            :disabled="busy"
-            @click="
-              verify('BIND_METHOD', {
-                bindingId: '',
-                type: 'GITHUB',
-                maskedLabel: '',
-                verified: false,
-                usableForLogin: false,
-              })
-            "
-          >
-            绑定 GitHub
-          </button>
-        </div>
-        <template v-if="securityAction"
-          ><h2>验证当前账号</h2>
-          <AuthenticationPanel
-            v-if="!reauth"
-            :key="
-              securityAction +
-              (binding?.bindingId ?? '') +
-              (binding?.type ?? '')
-            "
-            :client="client"
-            :operation="securityAction"
-            :target="target()"
-            @complete="verified"
-            @cancel="cancelSecurity"
-          /><AuthenticationPanel
-            v-else-if="newIdentity"
-            :key="reauth"
-            :client="client"
-            :purpose="securityAction === 'BIND_METHOD' ? 'BIND' : 'REPLACE'"
-            :parent="reauth"
-            :identity-type="binding?.type"
-            :binding-id="
-              securityAction === 'REPLACE_METHOD'
-                ? binding?.bindingId
-                : undefined
-            "
-            @complete="(v) => finishSecurity(v.handle)"
-            @cancel="cancelSecurity"
-          />
-          <form
-            v-else-if="securityAction === 'CHANGE_PASSWORD'"
-            @submit.prevent="
-              newPassword === confirmPassword
-                ? finishSecurity()
-                : (message = '两次密码不一致')
-            "
-          >
-            <label
-              >新密码<input
-                v-model="newPassword"
-                type="password"
-                autocomplete="new-password"
-                required /></label
-            ><label
-              >确认密码<input
-                v-model="confirmPassword"
-                type="password"
-                autocomplete="new-password"
-                required /></label
-            ><button :disabled="busy">确认修改密码</button>
-          </form></template
-        >
-      </section>
-      <section v-if="page === 'tenants'" class="console-card">
+      <section v-if="page === 'tenants'" class="console-card collection-page">
         <h1>我的租户</h1>
+        <div class="collection-layout"><aside class="collection-list" aria-label="租户列表">
+        <input v-model="tenantSearch" type="search" aria-label="搜索租户" placeholder="搜索租户" />
         <form
           v-if="creationMode === 'SELF_SERVICE'"
           @submit.prevent="createTenant"
@@ -602,13 +435,17 @@ onBeforeUnmount(() => client.close());
           ><button :disabled="busy">创建租户</button>
         </form>
         <p v-else>租户由平台创建并分配。</p>
-        <div v-for="t in tenants" :key="t.tenantId" class="v2-row">
+        <div v-for="t in tenants.filter(t => t.name.toLowerCase().includes(tenantSearch.toLowerCase()))" :key="t.tenantId" class="v2-row collection-item" :class="{ selected: selectedTenant?.tenantId === t.tenantId }">
           <button :disabled="busy" @click="run(() => selectTenant(t))">
             {{ t.name }}</button
           ><span>{{ t.myRole }} · {{ t.status }}</span>
         </div>
-        <template v-if="selectedTenant"
-          ><h2>{{ selectedTenant.name }}</h2>
+        <p v-if="!tenants.length" class="console-muted">还没有租户，可在这里创建或接受邀请。</p>
+        </aside><div class="collection-detail">
+        <p v-if="!selectedTenant" class="collection-empty">选择一个租户，查看成员与管理设置</p>
+        <template v-if="selectedTenant">
+          <div class="detail-heading"><span class="detail-avatar">{{ selectedTenant.name.slice(0,1) }}</span><div><h2>{{ selectedTenant.name }}</h2><p>{{ selectedTenant.myRole }} · {{ members.length }} 位成员</p></div></div>
+          <h3 class="detail-section-title">成员</h3>
           <button
             v-if="selectedTenant.myRole !== 'OWNER'"
             :disabled="busy"
@@ -782,6 +619,7 @@ onBeforeUnmount(() => client.close());
             拒绝
           </button>
         </div>
+        </div></div>
       </section>
       <section v-if="page === 'subscriptions'" class="console-card">
         <h1>个人订阅</h1>
@@ -801,8 +639,10 @@ onBeforeUnmount(() => client.close());
         :client="client"
         :capabilities="account.capabilities ?? []"
       />
-      <section v-if="page === 'applications'" class="console-card">
+      <section v-if="page === 'applications'" class="console-card collection-page">
         <h1>应用管理</h1>
+        <div class="collection-layout"><aside class="collection-list" aria-label="应用列表">
+        <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用" />
         <form
           v-if="can('APPLICATION_WRITE')"
           @submit.prevent="
@@ -823,13 +663,15 @@ onBeforeUnmount(() => client.close());
               maxlength="80" /></label
           ><button :disabled="busy">创建应用</button>
         </form>
-        <div v-for="a in applications" :key="a.applicationId" class="v2-row">
+        <div v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))" :key="a.applicationId" class="v2-row collection-item" :class="{ selected: selectedApplication?.applicationId === a.applicationId }">
           <button :disabled="busy" @click="run(() => openApplication(a))">
             {{ a.name }}</button
           ><span>{{ a.status }}</span>
         </div>
-        <template v-if="selectedApplication"
-          ><h2>{{ selectedApplication.name }}</h2>
+        </aside><div class="collection-detail">
+        <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
+        <template v-if="selectedApplication">
+          <div class="detail-heading"><span class="detail-avatar">{{ selectedApplication.name.slice(0,1) }}</span><div><h2>{{ selectedApplication.name }}</h2><p>{{ selectedApplication.status }}</p></div></div>
           <form
             v-if="can('APPLICATION_WRITE')"
             @submit.prevent="
@@ -869,9 +711,10 @@ onBeforeUnmount(() => client.close());
             :capabilities="account.capabilities ?? []"
           />
         </template>
+        </div></div>
       </section>
     </main>
-    <footer class="console-muted">Molis · 统一账号</footer>
+    </div>
   </div>
 </template>
 <style>
