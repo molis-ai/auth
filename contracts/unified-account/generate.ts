@@ -363,6 +363,12 @@ add(
     version,
   }),
 )
+// Member directory details are only exposed through tenant-authorized list reads.
+add('TenantMember', obj({
+  ...(defs.Membership.properties as Record<string, Schema>),
+  displayName: str(0, 120),
+  email: nullable(str(3, 254, { format: 'email' })),
+}))
 add('TenantUpdateRequest', obj({ name, ...expected }))
 add('TenantCreateRequest', obj({ name, ownerUserId: id, reason }))
 add('PlatformApplication', obj({ applicationId: id, name, status: en('ACTIVE', 'DISABLED'), version }))
@@ -633,7 +639,7 @@ for (const item of [
   'Assignment',
   'AuditEvent',
 ]) {
-  add(`${item}Page`, obj({ items: arr(ref(item)), nextCursor: nullable(str(1, 2048)) }))
+  add(`${item}Page`, obj({ items: arr(ref(item === 'Membership' ? 'TenantMember' : item)), nextCursor: nullable(str(1, 2048)) }))
 }
 add(
   'MyTenantsPage',

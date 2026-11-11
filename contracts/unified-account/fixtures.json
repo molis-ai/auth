@@ -1902,6 +1902,27 @@
       "value": null
     },
     {
+      "name": "TenantMember:minimal-valid",
+      "schema": "TenantMember",
+      "valid": true,
+      "value": {
+        "membershipId": "xxxxxxxx",
+        "tenantId": "xxxxxxxx",
+        "userId": "xxxxxxxx",
+        "role": "OWNER",
+        "status": "ACTIVE",
+        "version": 1,
+        "displayName": "xxxxxxxx",
+        "email": "sample@example.invalid"
+      }
+    },
+    {
+      "name": "TenantMember:wrong-root-type",
+      "schema": "TenantMember",
+      "valid": false,
+      "value": null
+    },
+    {
       "name": "TenantUpdateRequest:minimal-valid",
       "schema": "TenantUpdateRequest",
       "valid": true,

@@ -3819,6 +3819,63 @@
       ],
       "additionalProperties": false
     },
+    "TenantMember": {
+      "type": "object",
+      "properties": {
+        "membershipId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/Id"
+        },
+        "userId": {
+          "$ref": "#/$defs/Id"
+        },
+        "role": {
+          "$ref": "#/$defs/TenantRole"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "LEFT",
+            "REMOVED"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/Version"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "email": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 254,
+              "format": "email"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "membershipId",
+        "tenantId",
+        "userId",
+        "role",
+        "status",
+        "version",
+        "displayName",
+        "email"
+      ],
+      "additionalProperties": false
+    },
     "TenantUpdateRequest": {
       "type": "object",
       "properties": {
@@ -5705,7 +5762,7 @@
         "items": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Membership"
+            "$ref": "#/$defs/TenantMember"
           },
           "minItems": 0,
           "maxItems": 100

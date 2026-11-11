@@ -1,0 +1,27 @@
+/* Shared feedback for Auth collections: only actual controls advertise clickability. */
+.v2-console .collection-item,
+.v2-console .v2-row,
+.v2-console tbody tr { transition:background-color 140ms ease, box-shadow 140ms ease; }
+@media (hover:hover) {
+ .v2-console .collection-item:has(button:not(:disabled)):hover,
+ .v2-console button.collection-item:not(:disabled):hover { background:#eceef4; box-shadow:0 2px 7px #19191b12; }
+ .v2-console .collection-item.selected:hover { background:#e1e6f6; }
+ .v2-console .v2-row:not(.collection-item):hover,
+ .v2-console tbody tr:has(td:not(.tm-empty)):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
+}
+.v2-console .collection-item:focus-within { box-shadow:0 0 0 2px #5068b740; }
+.v2-console .v2-row:focus-within,
+.v2-console tbody tr:focus-within { background:#eceef4; }
+.v2-console button.collection-item:not(:disabled),
+.v2-console .collection-item button:not(:disabled) { cursor:pointer; }
+@media(prefers-reduced-motion:reduce) {
+ .v2-console .collection-item,.v2-console .v2-row,.v2-console tbody tr { transition:none; }
+}
+/* Tenant navigation states never paint into the fixed gap between items. */
+.v2-console .tenant-page .tenant-directory .tenant-choice { box-shadow:none; }
+.v2-console .tenant-page .tenant-directory .tenant-choice.selected { background:var(--accent-soft); }
+@media(hover:hover) {
+ .v2-console .tenant-page .tenant-directory .tenant-choice:not(:disabled):hover { background:#eceef4; box-shadow:inset 0 0 0 1px #19191b0a; }
+ .v2-console .tenant-page .tenant-directory .tenant-choice.selected:not(:disabled):hover { background:#e1e6f6; box-shadow:none; }
+}
+.v2-console .tenant-page .tenant-directory .tenant-choice:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

@@ -56,6 +56,12 @@ impl Change {
 pub(crate) fn member_view(m: &Value) -> Value {
     json!({"membershipId":m["id"],"tenantId":m["tenant_id"],"userId":m["user_id"],"role":m["role"],"status":m["status"],"version":m["version"]})
 }
+fn directory_member_view(m: &Value) -> Value {
+    let mut result = member_view(m);
+    result["displayName"] = m["display_name"].clone();
+    result["email"] = m["email"].clone();
+    result
+}
 pub(crate) fn tenant_view(t: &Value) -> Value {
     json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"myRole":t["role"],"membershipId":t["membership_id"],"version":t["version"]})
 }
@@ -228,7 +234,7 @@ impl Service<'_> {
                 let mut r=protocol::page(self,action,ctx,"SELECT t.space_id id,s.name,t.status,t.version,m.id membership_id,m.role,printf('%d:%d',t.version,m.version) stamp FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id JOIN auth_tenant_membership m ON m.tenant_id=t.space_id WHERE m.user_id=? AND m.status='ACTIVE'",vec![self.user()],tenant_view).await?;
                 r["personalScope"]=json!({"kind":"PERSONAL"});Ok(r)
             }
-            "member.list"=>protocol::page(self,action,ctx,"SELECT m.*,CAST(m.version AS TEXT) stamp FROM auth_tenant_membership m WHERE m.tenant_id=? AND m.status='ACTIVE'",vec![ctx.tenant["id"].clone()],member_view).await,
+            "member.list"=>protocol::page(self,action,ctx,"SELECT m.*,u.display_name,(SELECT e.canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL ORDER BY e.created_at,e.id LIMIT 1) email,CAST(m.version AS TEXT) stamp FROM auth_tenant_membership m JOIN auth_user u ON u.id=m.user_id WHERE m.tenant_id=? AND m.status='ACTIVE'",vec![ctx.tenant["id"].clone()],directory_member_view).await,
             "invitation.list-mine"|"invitation.list-tenant"=>self.invitation_list(action,ctx).await,
             "transfer.list"=>self.transfer_list(action,ctx).await,
             _=>Err(Failure{status:501,code:"UNIFIED_ACCOUNT_NOT_IMPLEMENTED"}),
