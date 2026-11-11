@@ -18,7 +18,9 @@
   },
   "vars": {
     "AUTH_ORIGIN": "http://127.0.0.1:8787",
-    "PLATFORM_ADMIN_IDS": "826b9c2a-f24a-4ca6-a747-411a5579b643",
+    "AUTH_WEB_CLIENT_ID": "molis-auth-web-local",
+    "UNIFIED_ACCOUNT_CONFIG": "{\"environmentId\":\"unified-local\",\"kind\":\"LOCAL\",\"authOrigin\":\"http://127.0.0.1:8787\",\"deliveryMode\":\"MOCK\",\"providerMode\":\"MOCK\"}",
+    "TENANT_CREATION_POLICY": "SELF_SERVICE",
   },
   "triggers": { "crons": ["0 * * * *"] },
   "d1_databases": [

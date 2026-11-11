@@ -1,6 +1,6 @@
--- Additive foundation for unified-account-v2. Existing users, credentials, sessions,
--- spaces and memberships remain untouched. No legacy TEAM is automatically managed.
--- All stored times remain UTC epoch milliseconds, as in migrations 0001-0004.
+-- Current unified-account-v2 schema for a fresh database.
+-- Shared user/client/tenant identity tables are created by the preceding files.
+-- All stored times are UTC epoch milliseconds.
 -- Aggregate transitions use guarded D1 batches in their owning domain. This migration
 -- supplies constraints and history, not authentication or subscription endpoints.
 
@@ -25,8 +25,8 @@ CREATE TABLE auth_environment (
 );
 
 -- client_id is the public, unique auth_client.client_id, not auth_client.id.
--- Absence of a policy row preserves the pre-existing client policy. Redirects remain
--- owned by auth_client.redirects and must be validated together with this environment.
+-- A registered V2 policy is required. Redirects are owned by auth_client.redirects
+-- and are validated together with this environment.
 CREATE TABLE auth_client_policy (
  client_id TEXT PRIMARY KEY NOT NULL REFERENCES auth_client(client_id),
  policy_profile TEXT NOT NULL CHECK(policy_profile='unified-account-v2'),
@@ -79,7 +79,7 @@ CREATE TABLE auth_user_phone (
 );
 CREATE INDEX ix_user_phone_user ON auth_user_phone(user_id);
 
--- V2 tokens never refer to auth_authentication or implicitly import a v1 session.
+-- Every access and refresh token belongs to an explicit V2 login session.
 CREATE TABLE auth_login_session (
  id TEXT PRIMARY KEY NOT NULL,
  user_id TEXT NOT NULL REFERENCES auth_user(id),
@@ -213,7 +213,7 @@ CREATE INDEX ix_identity_proof_expiry ON auth_identity_proof(expires_at);
 CREATE INDEX ix_identity_proof_transaction ON auth_identity_proof(transaction_id,kind);
 
 -- A managed tenant extends a TEAM explicitly. Its lifecycle and membership owner
--- is the v2 domain. v1 auth_membership remains only the non-managed-space model.
+-- is the current tenant domain; it has exactly one membership lifecycle.
 CREATE UNIQUE INDEX uk_space_id_type ON auth_space(id,space_type);
 CREATE TABLE auth_managed_tenant (
  space_id TEXT PRIMARY KEY NOT NULL REFERENCES auth_space(id),

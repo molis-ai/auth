@@ -1,259 +1,771 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { ElButton, ElCheckbox, ElInput } from 'element-plus'
-import 'element-plus/es/components/button/style/css'
-import 'element-plus/es/components/checkbox/style/css'
-import 'element-plus/es/components/input/style/css'
-import { api, ApiError, checkedCallback, checkedHandoff, takeFragment, isDirectLoginEntry, rememberEmail, type AuthProvider, type Configuration, type View } from './protocol'
-import { AuthError, type AuthOptions } from '../../sdk/browser/src/index.ts'
-import { prepareLoginTransaction } from './login-transaction'
-import { checkedConsole, ConsoleError } from './console-api'
-import { checkedProviderUrl, enabledProviders, saveProviderAttempt, takeProviderAttempt } from './provider'
-import { copy } from './copy'
-import { authFeedback } from './auth-feedback'
-import AuthErrorNotice from './AuthErrorNotice.vue'
-import { CompletionFlow, rememberCompletion, takeCompletion, type ConfirmationAccount } from './completion'
-import ProviderMailbox from './ProviderMailbox.vue'
-import molisLogo from './assets/molis-logo.png'
-
-type Mode = 'login' | 'provider' | 'provider-mailbox' | 'register' | 'forgot-password' | 'verify-email' | 'complete'
-const path = location.pathname.split('/').filter(Boolean).at(-1) ?? 'login'
-const initialMode: Mode = ['login', 'provider', 'provider-mailbox', 'register', 'forgot-password', 'verify-email', 'complete'].includes(path) ? path as Mode : 'login'
-const directLoginEntry = isDirectLoginEntry(location) || (initialMode === 'register' && !location.search && !location.hash)
-const fragment = takeFragment(location, history, initialMode)
-const mode = ref<Mode>(initialMode), language = ref<'zh-CN' | 'en'>(navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
-const t = computed(() => copy[language.value])
-const transaction = ref(fragment?.transaction ?? ''), view = ref<View>(), configuration = ref<Configuration>()
-const directReady = ref(false)
-let directOptions: AuthOptions | undefined
-const selectedProvider = fragment?.provider as AuthProvider | undefined, providers = ref<AuthProvider[]>([])
-const email = ref(''), password = ref(''), confirmPassword = ref(''), remember = ref(false), challenge = ref('')
-const busy = ref(true), terminal = ref(false), verified = ref(false), resetDone = ref(false), error = ref<ApiError>()
-const confirmationAccount = ref<ConfirmationAccount>()
-let completion: CompletionFlow | undefined
-try {
-  email.value = localStorage.getItem('molis.auth.remembered-email') ?? ''; remember.value = !!email.value
-  const saved = localStorage.getItem('molis.auth.locale'); if (saved === 'en' || saved === 'zh-CN') language.value = saved
-} catch { /* Optional only. */ }
-watch(language, value => { document.documentElement.lang = value; try { localStorage.setItem('molis.auth.locale', value) } catch { /* Optional only. */ } }, { immediate: true })
-const title = computed(() => mode.value === 'register' ? t.value.register : mode.value === 'forgot-password' ? t.value.reset : mode.value === 'verify-email' ? t.value.verify : mode.value === 'complete' ? t.value.complete : mode.value === 'provider' ? t.value.providerTitle : t.value.login)
-const feedback = computed(() => error.value ? authFeedback(error.value, language.value, mode.value) : undefined)
-watch([email, password, confirmPassword], (next, previous) => {
-  const field = feedback.value?.field
-  if (!field) return
-  const index = { email: 0, password: 1, 'confirm-password': 2 }[field]
-  if (next[index] !== previous[index]) error.value = undefined
-})
-const entryReady = computed(() => !!view.value || (directReady.value && (mode.value === 'login' || mode.value === 'register')))
-const actionable = computed(() => entryReady.value && !busy.value && !terminal.value)
-const externalLogin = computed(() => !!view.value && (view.value.context.clientId !== configuration.value?.console?.clientId || view.value.context.redirectUri !== configuration.value?.console?.redirectUri))
-function switchMode(next: Mode) {
-  mode.value = next; password.value = ''; confirmPassword.value = ''; challenge.value = ''; error.value = undefined
-  history.replaceState(null, '', '/' + next)
+import { onMounted, onBeforeUnmount, ref } from "vue";
+import {
+  AccountClient,
+  AuthError,
+  type AccountView,
+} from "../../sdk/browser/src/index.ts";
+import AccountSecurityEditor from "./AccountSecurityEditor.vue";
+import AuthEntry from "./AuthEntry.vue";
+import AccountProfile from "./AccountProfile.vue";
+import { entryText } from "./entry-copy.ts";
+import { entryLanguage, rememberEmail } from "./entry-preferences.ts";
+import PlatformUsers from "./PlatformUsers.vue";
+import PlatformClients from "./PlatformClients.vue";
+import { accountErrorMessage } from "./errors.ts";
+import logo from "./assets/molis-logo.png";
+const toast = ref("");
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+function clearToast() { clearTimeout(toastTimer); toast.value = ""; }
+function showToast(text: string) {
+  clearToast();
+  toast.value = entryText(entryLanguage(), text);
+  toastTimer = setTimeout(clearToast, 3000);
 }
-function fail(cause: unknown) {
-  error.value = cause instanceof ApiError ? cause : cause instanceof AuthError || cause instanceof ConsoleError ? new ApiError(cause.code, cause.requestId) : new ApiError('INVALID_RESPONSE')
-  if (authFeedback(error.value, language.value, mode.value).terminal) terminal.value = true
+const securityTab = ref('methods');
+async function selectSecurityTab(value: string) { await run(async () => { await cancelSecurity(); securityTab.value = value; }); }
+const logoutDialog = ref<HTMLDialogElement>();
+const tenantSearch = ref(""), applicationSearch = ref("");
+const client = new AccountClient(),
+  account = ref<AccountView>(),
+  busy = ref(false),
+  message = ref(""),
+  page = ref("account");
+interface Tenant {
+  tenantId: string;
+  name: string;
+  status: string;
+  myRole: string;
+  membershipId: string;
+  version: number;
 }
-async function prepareTransaction() {
-  const ready = await prepareLoginTransaction(directOptions, { transaction: transaction.value, view: view.value })
-  transaction.value = ready.transaction; view.value = ready.view
+interface Application {
+  applicationId: string;
+  name: string;
+  status: string;
+  version: number;
 }
-async function handoff(url: string) { location.replace(checkedHandoff(url, transaction.value, location.origin)) }
-async function startProvider(provider: AuthProvider) {
-  if (!actionable.value || !providers.value.includes(provider)) return
-  busy.value = true; error.value = undefined; password.value = ''
+interface Method {
+  bindingId: string;
+  type: string;
+  maskedLabel: string;
+  verified: boolean;
+  usableForLogin: boolean;
+}
+interface Member {
+  membershipId: string;
+  userId: string;
+  role: string;
+  status: string;
+  version: number;
+}
+const tenants = ref<Tenant[]>([]),
+  selectedTenant = ref<Tenant>(),
+  members = ref<Member[]>([]),
+  applications = ref<Application[]>([]),
+  selectedApplication = ref<Application>(),
+  methods = ref<Method[]>([]),
+  invitations = ref<
+    {
+      invitationId: string;
+      tenantId: string;
+      targetSummary: string;
+      status: string;
+      version: number;
+    }[]
+  >([]);
+const transfers = ref<
+    {
+      transferId: string;
+      tenantId: string;
+      fromMembershipId: string;
+      toMembershipId: string;
+      status: string;
+      version: number;
+    }[]
+  >([]);
+const inviteTarget = ref(""),
+  creationMode = ref(""),
+  tenantName = ref(""),
+  newApplicationName = ref(""),
+  appName = ref(""),
+  appStatus = ref("ACTIVE"),
+  subscriptions = ref<
+    {
+      subscriptionId: string;
+      status: string;
+      startsAt: string;
+      expiresAt: string;
+      planId: string;
+    }[]
+  >([]);
+const securityAction = ref(""),
+  binding = ref<Method>(),
+  reauth = ref(""),
+  newIdentity = ref(false),
+  newPassword = ref(""),
+  confirmPassword = ref("");
+function can(capability: string) {
+  return account.value?.capabilities?.includes(capability);
+}
+async function run(task: () => Promise<void>) {
+  if (busy.value) return;
+  busy.value = true;
+  message.value = "";
   try {
-    await prepareTransaction()
-    saveProviderAttempt(sessionStorage, view.value!.context, provider)
-    const result = await api<{ authorizationUrl: string }>('/providers/' + provider + '/start', transaction.value, {})
-    const destination = checkedProviderUrl(result.authorizationUrl, provider, location.origin)
-    rememberCompletion(sessionStorage, view.value!.context)
-    location.replace(destination)
-  } catch (cause) { terminal.value = true; fail(cause) }
-  finally { busy.value = false }
-}
-async function finish() {
-  if (!actionable.value || !completion || !confirmationAccount.value) return
-  busy.value = true; error.value = undefined
-  try { location.replace(checkedCallback(await completion.finish(true), view.value!.context)) }
-  catch (cause) { terminal.value = true; fail(cause) }
-  finally { busy.value = false }
-}
-async function cancelCompletion() {
-  if (!actionable.value || !completion) return
-  busy.value = true; error.value = undefined
-  try { await completion.cancel(); error.value = new ApiError('LOGIN_CANCELLED') }
-  catch (cause) { fail(cause) }
-  finally { confirmationAccount.value = undefined; terminal.value = true; busy.value = false }
-}
-async function submit() {
-  if (!actionable.value) return
-  busy.value = true; error.value = undefined
-  try {
-    if (mode.value !== 'login' && mode.value !== 'register') throw new ApiError('EMAIL_FLOW_UNAVAILABLE')
-    if (mode.value === 'register' && password.value !== confirmPassword.value) throw new ApiError('PASSWORD_MISMATCH')
-    await prepareTransaction()
-    if (mode.value === 'login') {
-      try { rememberEmail(localStorage, remember.value, email.value) } catch { /* Storage denial must not prevent login. */ }
-      const result = await api<{ continueUrl: string }>('/transactions/password', transaction.value, { email: email.value, password: password.value })
-      rememberCompletion(sessionStorage, view.value!.context)
-      await handoff(result.continueUrl)
-    } else if (mode.value === 'register') {
-      const result = await api<{ continueUrl: string }>('/transactions/signup', transaction.value,
-        { email: email.value, password: password.value, confirmPassword: confirmPassword.value })
-      rememberCompletion(sessionStorage, view.value!.context)
-      await handoff(result.continueUrl)
-    } else { throw new ApiError('EMAIL_FLOW_UNAVAILABLE') }
-
-  } catch (cause) { fail(cause) }
-  finally { if(mode.value !== 'register' || terminal.value) { password.value = ''; confirmPassword.value = '' }; busy.value = false }
-}
-async function confirmEmail() {
-  if (!fragment?.challenge || !fragment.token || busy.value || verified.value) return
-  busy.value = true; error.value = undefined
-  try { await api('/mailbox/verify', undefined, { challenge: fragment.challenge, secret: fragment.token, confirmed: true }); verified.value = true }
-  catch (cause) { fail(cause) }
-  finally { busy.value = false }
-}
-async function restart() {
-  if (busy.value) return
-  const nextMode = mode.value === 'register' ? 'register' : 'login'
-  if (directReady.value) {
-    transaction.value = ''; view.value = undefined
-    terminal.value = false; resetDone.value = false; switchMode(nextMode)
-    return
+    await task();
+  } catch (e) {
+    if (
+      e instanceof AuthError &&
+      ["SESSION_EXPIRED", "SESSION_REVOKED", "LOGIN_REQUIRED"].includes(e.code)
+    ) {
+      clearAccount();
+      account.value = { state: "EXPIRED" };
+    }
+    message.value = accountErrorMessage(e);
+  } finally {
+    busy.value = false;
   }
-  if (!view.value) return
-  busy.value = true; error.value = undefined
-  try {
-    const c = view.value.context
-    const result = await api<{ transaction: string }>('/transactions', undefined, { clientId: c.clientId, redirectUri: c.redirectUri,
-      codeChallenge: c.challenge, codeChallengeMethod: 'S256', state: c.state, scopes: c.scopes, forceLogin: true })
-    transaction.value = result.transaction
-    view.value = await api<View>('/transactions/context', transaction.value)
-    terminal.value = false; resetDone.value = false; switchMode(nextMode)
-  } catch (cause) { fail(cause) } finally { busy.value = false }
 }
-async function goToLogin() {
-  if (busy.value) return
-  if (terminal.value) { await restart(); if (terminal.value) return }
-  switchMode('login')
+async function list<T>(path: string): Promise<T[]> {
+  const result: T[] = [];
+  let cursor: string | null = null;
+  const seen = new Set<string>();
+  do {
+    const page: { items: T[]; nextCursor: string | null } =
+      await client.request<{ items: T[]; nextCursor: string | null }>(
+        path +
+          "?limit=100" +
+          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+      );
+    result.push(...page.items);
+    cursor = page.nextCursor;
+    if (cursor && seen.has(cursor)) throw Error("分页状态发生变化，请刷新");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return result;
 }
-onMounted(async () => {
+async function refresh() {
+  account.value = await client.session();
+  if (account.value.state === "AUTHENTICATED") {
+    await client.request("/activity", {
+      eventId: crypto.randomUUID(),
+      kind: "OPEN",
+    });
+  }
+}
+async function navigate(target: string) {
+  await cancelSecurity();
+  page.value = target;
+  if (target === 'security') securityTab.value = 'methods';
+  selectedTenant.value = undefined;
+  selectedApplication.value = undefined;
+  securityAction.value = "";
+  await run(async () => {
+    if (target === "security") {
+      const data = await client.request<{ loginMethods: Method[] }>(
+        "/login-methods",
+      );
+      methods.value = data.loginMethods;
+    } else if (target === "tenants") {
+      const policy = await client.request<{ mode: string }>(
+        "/tenant-creation-policy",
+      );
+      creationMode.value = policy.mode;
+      tenants.value = await list("/tenants");
+      invitations.value = await list("/invitations");
+      transfers.value = await list("/ownership-transfers");
+    } else if (target === "applications")
+      applications.value = await list("/platform/applications");
+    else if (target === "subscriptions")
+      subscriptions.value = await list("/subscriptions");
+  });
+}
+async function loggedIn() {
+  clearToast();
+  await run(refresh);
+  if (account.value?.state === 'AUTHENTICATED') sessionChanges?.postMessage('changed');
+}
+async function selectTenant(t: Tenant) {
+  selectedTenant.value = t;
+  members.value = [];
+  if (t.status === "ACTIVE")
+    members.value = await list("/tenants/" + t.tenantId + "/members");
+}
+async function mutate(
+  path: string,
+  body: unknown,
+  after: () => Promise<void>,
+  method = "POST",
+) {
+  await run(async () => {
+    await client.request(path, body, method, crypto.randomUUID());
+    await after();
+    message.value = "已完成";
+  });
+}
+async function createTenant() {
+  await mutate("/tenants", { name: tenantName.value }, async () => {
+    tenants.value = await list("/tenants");
+    tenantName.value = "";
+  });
+}
+async function openApplication(a: Application) {
+  selectedApplication.value = a;
+  appName.value = a.name;
+  appStatus.value = a.status;
+}
+async function verify(operation: string, item?: Method) {
+  await cancelSecurity();
+  binding.value = item;
+  securityAction.value = operation;
+  reauth.value = "";
+  newIdentity.value = false;
+}
+function target(): Record<string, string> {
+  return securityAction.value === "CHANGE_PASSWORD"
+    ? { kind: "PASSWORD" }
+    : securityAction.value === "BIND_METHOD"
+      ? { method: binding.value?.type ?? "EMAIL" }
+      : { bindingId: binding.value!.bindingId };
+}
+async function cancelSecurity() {
+  const handle = reauth.value;
+  reauth.value = "";
+  securityAction.value = "";
+  newIdentity.value = false;
+  newPassword.value = "";
+  confirmPassword.value = "";
+  if (handle)
+    await client
+      .request("/auth/transactions/" + handle + "/cancel", {})
+      .catch(() => undefined);
+}
+async function verified(value: { handle: string }) {
+  reauth.value = value.handle;
+  if (
+    securityAction.value === "BIND_METHOD" ||
+    securityAction.value === "REPLACE_METHOD"
+  )
+    newIdentity.value = true;
+  else if (securityAction.value === "UNLINK_METHOD") await finishSecurity();
+}
+async function finishSecurity(identityHandle?: string) {
+  const operation = securityAction.value;
+  const path =
+    operation === "CHANGE_PASSWORD"
+      ? "/password/change"
+      : operation === "BIND_METHOD"
+        ? "/login-methods/bind"
+        : "/login-methods/" +
+          binding.value!.bindingId +
+          "/" +
+          (operation === "REPLACE_METHOD" ? "replace" : "unlink");
+  await mutate(
+    path,
+    {
+      reauthHandle: reauth.value,
+      expectedVersion: account.value!.user!.version,
+      ...(identityHandle ? { identityHandle } : {}),
+      ...(operation === "CHANGE_PASSWORD"
+        ? { newPassword: newPassword.value }
+        : {}),
+    },
+    async () => {
+      newPassword.value = "";
+      confirmPassword.value = "";
+      securityAction.value = "";
+      await refresh();
+      methods.value = (
+        await client.request<{ loginMethods: Method[] }>("/login-methods")
+      ).loginMethods;
+    },
+  );
+}
+async function logout(all = false) {
+  await run(async () => {
+    const result = await client.logout(all);
+    clearAccount();
+    rememberEmail("");
+    sessionChanges?.postMessage('changed');
+    if (result.remoteRevocation === "CONFIRMED") {
+      message.value = "";
+      showToast("已退出登录");
+    } else message.value = "本机已退出，远端撤销尚未确认";
+  });
+}
+function clearAccount() {
+  account.value = { state: 'ANONYMOUS' };
+  page.value = 'account'; securityTab.value = 'methods';
+  tenantSearch.value = ''; applicationSearch.value = '';
+  tenants.value = []; selectedTenant.value = undefined; members.value = [];
+  applications.value = []; selectedApplication.value = undefined; methods.value = [];
+  invitations.value = []; transfers.value = []; subscriptions.value = [];
+  inviteTarget.value = ''; creationMode.value = ''; tenantName.value = '';
+  newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
+  securityAction.value = ''; binding.value = undefined; reauth.value = '';
+  newIdentity.value = false; newPassword.value = ''; confirmPassword.value = '';
+}
+const sessionChanges = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('molis.auth.session');
+let replacing = false, checking = false;
+function replaceSession() {
+  if (replacing) return;
+  replacing = true;
+  client.close();
+  clearAccount();
+  document.getElementById('app')?.setAttribute('inert', '');
+  location.replace('/login');
+}
+if (sessionChanges) sessionChanges.onmessage = () => replaceSession();
+async function checkSession() {
+  if (busy.value || checking || replacing || document.visibilityState !== 'visible') return;
+  checking = true;
   try {
-    configuration.value = await api<Configuration>('/ui-configuration')
-    if (configuration.value.authOrigin !== location.origin) throw new ApiError('AUTH_ORIGIN_REQUIRED')
-    providers.value = enabledProviders(configuration.value)
-    if (mode.value === 'forgot-password') return
-    if (mode.value === 'provider-mailbox') return
-    if (mode.value === 'verify-email') return // Never automatically POST an email confirmation.
-    if ((mode.value === 'login' || mode.value === 'register') && !transaction.value) {
-      const previous = takeProviderAttempt(sessionStorage)
-      if (previous) { view.value = { context: previous, status: 'FAILED' }; terminal.value = true }
-      if (fragment?.['provider-error'] || previous) {
-        terminal.value = true; throw new ApiError(fragment?.['provider-error'] ?? 'PROVIDER_INTERRUPTED')
-      }
-      if (!directLoginEntry) { terminal.value = true; throw new ApiError('INVALID_TRANSACTION') }
-      const options = checkedConsole({ authOrigin: configuration.value.authOrigin, console: configuration.value.console! }, location.origin)
-      if (!options) throw new ApiError('CONSOLE_NOT_ENABLED')
-      // Render the form now; create the console transaction only on submit/provider selection.
-      directOptions = options; directReady.value = true
-      return
-    }
-    if (mode.value === 'complete') { try { takeProviderAttempt(sessionStorage) } catch { /* Non-secret restart hint must not block a verified callback. */ } }
-    if (!transaction.value) return
-    view.value = await api<View>('/transactions/context', transaction.value)
-    if (mode.value === 'complete') {
-      if (view.value.status !== 'AUTHENTICATED') { terminal.value = true; throw new ApiError('INVALID_TRANSACTION') }
-      completion = new CompletionFlow(transaction.value)
-      try {
-        const continueAutomatically = takeCompletion(sessionStorage, view.value.context)
-        confirmationAccount.value = await completion.prepare()
-        if (continueAutomatically) {
-          location.replace(checkedCallback(await completion.finish(true), view.value.context))
-          return
-        }
-      }
-      catch (cause) { terminal.value = true; throw cause }
-      return
-    }
-    if (view.value.status !== 'READY') { terminal.value = true; throw new ApiError('INVALID_TRANSACTION') }
-    if (mode.value === 'provider' && (!selectedProvider || !providers.value.includes(selectedProvider))) throw new ApiError('PROVIDER_NOT_ENABLED')
-    if (mode.value === 'login' && view.value.context.clientType === 'WEB' && !view.value.context.forceLogin) {
-      try {
-        const result = await api<{ continueUrl: string }>('/transactions/restore', transaction.value, {})
-        if (!externalLogin.value) rememberCompletion(sessionStorage, view.value.context)
-        await handoff(result.continueUrl)
-      }
-      catch (cause) { if (!(cause instanceof ApiError) || !['LOGIN_REQUIRED', 'FULL_LOGIN_REQUIRED'].includes(cause.code)) throw cause }
-    }
-  } catch (cause) { fail(cause) } finally { busy.value = false }
-})
+    const current = await client.session();
+    if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) replaceSession();
+  } catch (error) {
+    if (error instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
+  } finally { checking = false; }
+}
+function pageRestored(event: PageTransitionEvent) { if (event.persisted) replaceSession(); }
+function pageLeaving() {
+  client.close();
+  clearAccount();
+  const root = document.getElementById('app');
+  if (root) root.style.visibility = 'hidden';
+}
+onMounted(() => {
+  void run(refresh);
+  window.addEventListener('focus', checkSession);
+  document.addEventListener('visibilitychange', checkSession);
+  window.addEventListener('pageshow', pageRestored);
+  window.addEventListener('pagehide', pageLeaving);
+});
+onBeforeUnmount(() => {
+  clearToast();
+  client.close(); sessionChanges?.close();
+  window.removeEventListener('focus', checkSession);
+  document.removeEventListener('visibilitychange', checkSession);
+  window.removeEventListener('pageshow', pageRestored);
+  window.removeEventListener('pagehide', pageLeaving);
+});
 </script>
-
 <template>
-  <div class="shell auth-entry" :class="{ 'confirmation-entry': mode === 'complete' }">
-    <header class="topbar"><a class="wordmark" href="/" aria-label="molis AI"><img class="brand-logo" :src="molisLogo" alt="" width="32" height="32" /><span class="brand-name">molis<span class="brand-ai">AI</span></span></a>
-      <button class="language" type="button" @click="language = language === 'en' ? 'zh-CN' : 'en'">{{ language === 'en' ? '简体中文' : 'English' }}</button></header>
-    <main class="layout">
-      <section class="story"><div class="brand-note"><h1>{{ t.brandStatement }}</h1><p class="intro">{{ t.brandCaption }}</p></div>
+  <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite">{{ toast }}</div></Teleport>
+  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" :message="message" @complete="loggedIn" />
+  <div v-else class="console-shell v2-console">
+    <aside class="workspace-sidebar">
+      <header class="sidebar-brand-row">
+        <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">molis AI</strong></a>
+        <span class="sidebar-current-user">{{ account.user?.displayName }}</span>
+      </header>
+      <p class="nav-caption">工作台</p>
+      <nav class="console-tabs" aria-label="账号管理">
+        <button
+          v-for="[id, label] in [
+            ['account', '个人资料'],
+            ['security', '账号安全'],
+            ['tenants', '租户'],
+            ['subscriptions', '订阅'],
+          ]"
+          :key="id"
+          :aria-current="page === id ? 'page' : undefined"
+          :disabled="busy"
+          @click="navigate(id)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path :d="id === 'tenants' ? 'M4 10h16M10 10v10' : id === 'security' ? 'M9 11V9a3 3 0 0 1 6 0v2M9 11h6v5H9z' : id === 'subscriptions' ? 'M8 9h8M8 13h8M8 17h5' : 'M8 17c0-5 8-5 8 0M12 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4'"/></svg>{{ label }}</button
+        ><button
+          v-if="can('USER_READ')"
+          :aria-current="page === 'users' ? 'page' : undefined"
+          :disabled="busy"
+          @click="navigate('users')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5"/></svg>用户与权限</button
+        ><button
+          v-if="can('APPLICATION_READ')"
+          :aria-current="page === 'applications' ? 'page' : undefined"
+          :disabled="busy"
+          @click="navigate('applications')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>应用管理
+        </button>
+      </nav>
+      <div class="sidebar-bottom">      <button type="button" class="account-menu-trigger" popovertarget="account-menu" aria-label="账号菜单"><span class="account-avatar"><img v-if="account.user?.avatarUrl" :src="account.user.avatarUrl" alt=""><template v-else>{{ account.user?.displayName?.slice(0,1) || 'M' }}</template></span><span class="account-menu-identity"><span class="account-menu-name" :title="account.user?.displayName">{{ account.user?.displayName }}</span><span v-if="account.user?.email" class="account-menu-email" :title="account.user.email">{{ account.user.email }}</span></span><svg class="account-menu-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg></button><div id="account-menu" popover class="account-menu"><button :disabled="busy" @click="logout()">切换账号</button><button :disabled="busy" @click="logout()">退出登录</button></div></div>
+    </aside>
+    <div class="workspace-body">
+    <main>
+      <p v-if="message" role="status" aria-live="polite" class="console-feedback">{{ message }}</p>
+      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); message = accountErrorMessage(error); }">
+      </AccountProfile>
+      <section v-if="page === 'security'" class="console-card security-page">
+        <div class="collection-layout security-layout">
+          <nav class="collection-list security-nav" aria-label="账号安全分类">
+            <h1>账号安全</h1>
+            <button v-for="[id,label] in [['methods','登录方式'],['password','登录密码'],['sessions','登录会话']]" :key="id" :aria-current="securityTab === id ? 'page' : undefined" :disabled="busy" @click="selectSecurityTab(id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/><path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/><path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/></svg>{{ label }}</button>
+          </nav>
+          <div class="collection-detail">
+            <section v-if="securityTab === 'sessions'" class="session-actions"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
+            <dialog ref="logoutDialog" class="logout-confirm"><h2>退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
+            <section v-if="securityTab === 'password'"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
+            <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
+              <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method">
+                <h3>{{ label }}<span v-if="type === 'EMAIL'" class="security-info"><button type="button" class="security-info-trigger" aria-label="邮箱维护说明" aria-describedby="email-management-tip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="4.8" r=".6" fill="currentColor" stroke="none"/></svg></button><span id="email-management-tip" role="tooltip" class="security-info-tip">邮箱由管理员维护，如需修改请联系管理员。</span></span></h3>
+                <div v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="v2-row"><span>{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('REPLACE_METHOD',m)">换绑</button><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button></div>
+                <div v-if="!methods.some(item => item.type === type) && !(securityAction && binding?.type === type)" class="v2-row"><span>未绑定</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button></div>
+                <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+              </div>
+            </section>
+<AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+          </div>
+        </div>
       </section>
-      <section class="panel" :aria-busy="busy">
-        <div v-if="mode === 'login'" class="login-methods" role="group" :aria-label="t.loginMethods">
-          <button type="button" class="login-method current" aria-current="true">{{ t.accountLogin }}</button>
-          <button v-for="provider in (['google', 'apple'] as const)" :key="provider" type="button" class="login-method" :disabled="!actionable || !providers.includes(provider)" @click="startProvider(provider)">
-            <span>{{ provider === 'google' ? 'Google' : 'Apple' }}</span><small v-if="!providers.includes(provider)">{{ t.notAvailable }}</small>
+      <section v-if="page === 'tenants'" class="console-card collection-page">
+        <h1>我的租户</h1>
+        <div class="collection-layout"><aside class="collection-list" aria-label="租户列表">
+        <input v-model="tenantSearch" type="search" aria-label="搜索租户" placeholder="搜索租户" />
+        <form
+          v-if="creationMode === 'SELF_SERVICE'"
+          @submit.prevent="createTenant"
+        >
+          <label
+            >租户名称<input
+              v-model="tenantName"
+              maxlength="80"
+              required /></label
+          ><button :disabled="busy">创建租户</button>
+        </form>
+        <p v-else>租户由平台创建并分配。</p>
+        <div v-for="t in tenants.filter(t => t.name.toLowerCase().includes(tenantSearch.toLowerCase()))" :key="t.tenantId" class="v2-row collection-item" :class="{ selected: selectedTenant?.tenantId === t.tenantId }">
+          <button :disabled="busy" @click="run(() => selectTenant(t))">
+            {{ t.name }}</button
+          ><span>{{ t.myRole }} · {{ t.status }}</span>
+        </div>
+        <p v-if="!tenants.length" class="console-muted">还没有租户，可在这里创建或接受邀请。</p>
+        </aside><div class="collection-detail">
+        <p v-if="!selectedTenant" class="collection-empty">选择一个租户，查看成员与管理设置</p>
+        <template v-if="selectedTenant">
+          <div class="detail-heading"><span class="detail-avatar">{{ selectedTenant.name.slice(0,1) }}</span><div><h2>{{ selectedTenant.name }}</h2><p>{{ selectedTenant.myRole }} · {{ members.length }} 位成员</p></div></div>
+          <h3 class="detail-section-title">成员</h3>
+          <button
+            v-if="selectedTenant.myRole !== 'OWNER'"
+            :disabled="busy"
+            @click="
+              mutate(
+                '/tenants/' + selectedTenant!.tenantId + '/leave',
+                {
+                  expectedVersion: members.find(
+                    (m) => m.membershipId === selectedTenant!.membershipId,
+                  )?.version,
+                },
+                async () => {
+                  selectedTenant = undefined;
+                  tenants = await list('/tenants');
+                },
+              )
+            "
+          >
+            退出租户
+          </button>
+          <div v-for="m in members" :key="m.membershipId" class="v2-row">
+            <span>{{ m.userId }} · {{ m.role }}</span
+            ><button
+              v-if="selectedTenant.myRole === 'OWNER' && m.role !== 'OWNER'"
+              :disabled="busy"
+              @click="
+                mutate(
+                  '/tenants/' +
+                    selectedTenant!.tenantId +
+                    '/ownership-transfers',
+                  {
+                    targetMembershipId: m.membershipId,
+                    expectedVersion: selectedTenant!.version,
+                  },
+                  async () => {
+                    transfers = await list('/ownership-transfers');
+                  },
+                )
+              "
+            >
+              交接所有权</button
+            ><button
+              v-if="selectedTenant.myRole === 'OWNER' && m.role !== 'OWNER'"
+              :disabled="busy"
+              @click="
+                mutate(
+                  '/tenants/' +
+                    selectedTenant!.tenantId +
+                    '/members/' +
+                    m.membershipId +
+                    '/role',
+                  {
+                    role: m.role === 'ADMIN' ? 'MEMBER' : 'ADMIN',
+                    expectedVersion: m.version,
+                  },
+                  () => selectTenant(selectedTenant!),
+                  'PATCH',
+                )
+              "
+            >
+              {{ m.role === "ADMIN" ? "设为成员" : "设为管理员" }}</button
+            ><button
+              v-if="
+                ['OWNER', 'ADMIN'].includes(selectedTenant.myRole) &&
+                m.role === 'MEMBER'
+              "
+              :disabled="busy"
+              @click="
+                mutate(
+                  '/tenants/' +
+                    selectedTenant!.tenantId +
+                    '/members/' +
+                    m.membershipId +
+                    '/remove',
+                  { expectedVersion: m.version },
+                  () => selectTenant(selectedTenant!),
+                )
+              "
+            >
+              移除
+            </button>
+          </div>
+          <form
+            v-if="
+              ['OWNER', 'ADMIN'].includes(selectedTenant.myRole) &&
+              selectedTenant.status === 'ACTIVE'
+            "
+            @submit.prevent="
+              mutate(
+                '/tenants/' + selectedTenant!.tenantId + '/invitations',
+                { target: { kind: 'USER', value: inviteTarget } },
+                async () => {
+                  inviteTarget = '';
+                  message = '邀请已发送';
+                },
+              )
+            "
+          >
+            <label>受邀账号 ID<input v-model="inviteTarget" required /></label
+            ><button :disabled="busy">发送邀请</button>
+          </form></template
+        >
+        <div
+          v-for="t in transfers.filter((t) => t.status === 'PENDING')"
+          :key="t.transferId"
+          class="v2-row"
+        >
+          <span>租户 {{ t.tenantId }} 所有权交接</span
+          ><button
+            :disabled="busy"
+            @click="
+              mutate(
+                '/ownership-transfers/' +
+                  t.transferId +
+                  (tenants.find((x) => x.tenantId === t.tenantId)
+                    ?.membershipId === t.toMembershipId
+                    ? '/accept'
+                    : '/cancel'),
+                { expectedVersion: t.version },
+                async () => {
+                  transfers = await list('/ownership-transfers');
+                  tenants = await list('/tenants');
+                  selectedTenant = undefined;
+                },
+              )
+            "
+          >
+            {{
+              tenants.find((x) => x.tenantId === t.tenantId)?.membershipId ===
+              t.toMembershipId
+                ? "接受交接"
+                : "取消交接"
+            }}
           </button>
         </div>
-        <div v-if="mode === 'login'" class="login-welcome"><p>{{ t.description }}</p></div>
-        <div class="entry-content">
-        <div v-if="mode !== 'login' && !(mode === 'complete' && busy)" class="panel-heading"><h2>{{ title }}</h2><p v-if="mode === 'register'">{{ t.registerDescription }}</p><p v-else-if="mode === 'verify-email'">{{ t.verifyDescription }}</p></div>
-        <p v-if="externalLogin && (mode === 'login' || mode === 'complete')" class="helper">{{ t.returnToApplication }}</p>
-        <AuthErrorNotice v-if="error" :error="error" :language="language" :mode="mode" message-id="auth-error-message" />
-        <div v-if="resetDone" class="notice success" role="status">{{ t.resetDone }}</div>
-        <ProviderMailbox v-if="mode === 'provider-mailbox'" :transaction="transaction" :continuation="fragment?.continuation ?? ''" :language="language" :providers="providers" />
-        <template v-else-if="mode === 'verify-email'">
-          <p v-if="configuration && !configuration.mailboxEnabled" class="empty-message">{{ t.mailUnavailable }}</p>
-          <div v-if="verified" class="notice success" role="status">{{ t.confirmed }}</div>
-          <p v-else-if="!fragment" class="empty-message">{{ t.invalidLink }}</p>
-          <ElButton v-else class="primary" type="primary" :loading="busy" :disabled="terminal || !configuration?.mailboxEnabled" @click="confirmEmail">{{ t.confirm }}</ElButton>
-        </template>
-        <template v-else-if="mode === 'forgot-password'"><p class="empty-message">{{ language === 'en' ? 'Password recovery is currently unavailable.' : '暂不支持找回密码。' }}</p><a href="/login">{{ t.login }}</a></template>
-        <template v-else-if="!entryReady"><p class="empty-message" role="status"><template v-if="busy">{{ t.checking }}</template><template v-else><span v-if="!error">{{ t.noTransaction }}</span><a class="login-recovery-link" href="/login">{{ t.signInAgain }}</a></template></p></template>
-        <template v-else-if="mode === 'complete' && busy"><p class="empty-message" role="status">{{ t.checking }}</p></template>
-        <template v-else-if="terminal"><p v-if="!resetDone && !error" class="empty-message">{{ t.restartHint }}</p><ElButton class="primary" type="primary" :loading="busy" @click="restart">{{ mode === 'register' ? t.restartRegister : t.restart }}</ElButton></template>
-        <template v-else-if="mode === 'complete' && confirmationAccount">
-          <p class="empty-message">{{ t.confirmAccountNotice }}</p>
-          <div class="confirmation-account"><strong v-for="address in confirmationAccount.emails" :key="address">{{ address }}</strong></div>
-          <ElButton class="primary" type="primary" :loading="busy" :disabled="!actionable" @click="finish">{{ t.confirmAccount }}</ElButton>
-          <div class="switch-mode"><button class="text-button" :disabled="busy" @click="cancelCompletion">{{ t.cancelAccount }}</button></div>
-        </template>
-        <template v-else-if="mode === 'provider'">
-          <p class="empty-message">{{ t.providerNotice }}</p>
-          <ElButton v-if="selectedProvider" class="primary" type="primary" :loading="busy" :disabled="!actionable || !providers.includes(selectedProvider)" @click="startProvider(selectedProvider)">{{ selectedProvider === 'google' ? t.google : t.apple }}</ElButton>
-          <div class="switch-mode"><button class="text-button" :disabled="busy" @click="switchMode('login')">{{ t.otherMethod }}</button></div>
-        </template>
-        <template v-else-if="mode !== 'complete'">
-          <form @submit.prevent="submit">
-            <label class="field" :class="{ 'login-field': mode === 'login', 'field-error': feedback?.field === 'email' }" for="email"><span :class="{ 'visually-hidden': mode === 'login' }">{{ mode === 'login' ? t.loginIdentifier : t.email }}</span><ElInput id="email" :aria-invalid="feedback?.field === 'email' || undefined" :aria-describedby="feedback?.field === 'email' ? 'auth-error-message' : undefined" v-model="email" :type="mode === 'login' ? 'text' : 'email'" autocomplete="username" required :maxlength="254" :disabled="busy" :placeholder="mode === 'login' ? t.loginIdentifier : 'you@example.com'" /></label>
-            <label v-if="mode === 'login' || mode === 'register'" class="field" :class="{ 'login-field': mode === 'login', 'field-error': feedback?.field === 'password' }" for="password"><span :class="{ 'visually-hidden': mode === 'login' }">{{ t.password }}</span><ElInput id="password" :aria-invalid="feedback?.field === 'password' || undefined" :aria-describedby="feedback?.field === 'password' ? 'auth-error-message' : undefined" v-model="password" type="password" :placeholder="mode === 'login' ? t.password : undefined" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" required show-password :maxlength="512" :disabled="busy" /></label>
-            <label v-if="mode === 'register'" class="field" :class="{ 'field-error': feedback?.field === 'confirm-password' }" for="confirm-password"><span>{{ language === 'en' ? 'Confirm password' : '确认密码' }}</span><ElInput id="confirm-password" :aria-invalid="feedback?.field === 'confirm-password' || undefined" :aria-describedby="feedback?.field === 'confirm-password' ? 'auth-error-message' : undefined" v-model="confirmPassword" type="password" autocomplete="new-password" required show-password :maxlength="512" :disabled="busy" /></label>
-            <p v-if="mode === 'register'" class="field-hint">{{ t.passwordHint }}</p>
-            <ElButton class="primary" type="primary" native-type="submit" :loading="busy" :disabled="!actionable">{{ mode === 'login' ? t.submit : t.finishRegister }}</ElButton>
+        <h2 v-if="invitations.some((i) => i.status === 'PENDING')">
+          收到的邀请
+        </h2>
+        <div
+          v-for="i in invitations.filter((i) => i.status === 'PENDING')"
+          :key="i.invitationId"
+          class="v2-row"
+        >
+          <span>{{ i.targetSummary }}</span
+          ><button
+            :disabled="busy"
+            @click="
+              mutate(
+                '/invitations/' + i.invitationId + '/accept',
+                { expectedVersion: i.version },
+                async () => {
+                  tenants = await list('/tenants');
+                  invitations = await list('/invitations');
+                },
+              )
+            "
+          >
+            加入</button
+          ><button
+            :disabled="busy"
+            @click="
+              mutate(
+                '/invitations/' + i.invitationId + '/decline',
+                { expectedVersion: i.version },
+                async () => {
+                  invitations = await list('/invitations');
+                },
+              )
+            "
+          >
+            拒绝
+          </button>
+        </div>
+        </div></div>
+      </section>
+      <section v-if="page === 'subscriptions'" class="console-card">
+        <h1>个人订阅</h1>
+        <p v-if="!subscriptions.length">暂无订阅。</p>
+        <article
+          v-for="s in subscriptions"
+          :key="s.subscriptionId"
+          class="v2-row"
+        >
+          <strong>{{ s.planId }}</strong
+          ><span>{{ s.status }}</span
+          ><span>{{ s.startsAt }} — {{ s.expiresAt }}</span>
+        </article>
+      </section>
+      <PlatformUsers
+        v-if="page === 'users'"
+        :client="client"
+        :capabilities="account.capabilities ?? []"
+      />
+      <section v-if="page === 'applications'" class="console-card collection-page">
+        <h1>应用管理</h1>
+        <div class="collection-layout"><aside class="collection-list" aria-label="应用列表">
+        <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用" />
+        <form
+          v-if="can('APPLICATION_WRITE')"
+          @submit.prevent="
+            mutate(
+              '/platform/applications',
+              { name: newApplicationName },
+              async () => {
+                applications = await list('/platform/applications');
+                newApplicationName = '';
+              },
+            )
+          "
+        >
+          <label
+            >应用名称<input
+              v-model="newApplicationName"
+              required
+              maxlength="80" /></label
+          ><button :disabled="busy">创建应用</button>
+        </form>
+        <div v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))" :key="a.applicationId" class="v2-row collection-item" :class="{ selected: selectedApplication?.applicationId === a.applicationId }">
+          <button :disabled="busy" @click="run(() => openApplication(a))">
+            {{ a.name }}</button
+          ><span>{{ a.status }}</span>
+        </div>
+        </aside><div class="collection-detail">
+        <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
+        <template v-if="selectedApplication">
+          <div class="detail-heading"><span class="detail-avatar">{{ selectedApplication.name.slice(0,1) }}</span><div><h2>{{ selectedApplication.name }}</h2><p>{{ selectedApplication.status }}</p></div></div>
+          <form
+            v-if="can('APPLICATION_WRITE')"
+            @submit.prevent="
+              mutate(
+                '/platform/applications/' + selectedApplication!.applicationId,
+                {
+                  name: appName,
+                  status: appStatus,
+                  expectedVersion: selectedApplication!.version,
+                },
+                async () => {
+                  applications = await list('/platform/applications');
+                  await openApplication(
+                    applications.find(
+                      (a) =>
+                        a.applicationId === selectedApplication!.applicationId,
+                    )!,
+                  );
+                },
+                'PATCH',
+              )
+            "
+          >
+            <label>名称<input v-model="appName" required /></label
+            ><label
+              >应用状态<select v-model="appStatus" aria-label="应用状态">
+                <option>ACTIVE</option>
+                <option>DISABLED</option>
+              </select></label
+            ><button :disabled="busy">保存应用</button>
           </form>
+          <PlatformClients
+            v-if="can('CLIENT_READ') || can('CLIENT_WRITE')"
+            :key="selectedApplication.applicationId"
+            :application-id="selectedApplication.applicationId"
+            :client="client"
+            :capabilities="account.capabilities ?? []"
+          />
         </template>
-        <button v-if="feedback?.goToLogin" class="text-button" type="button" :disabled="busy" @click="goToLogin">{{ t.goToLogin }}</button>
-        </div>
-        <div v-if="mode === 'login' && entryReady && !terminal" class="entry-footer">
-          <ElCheckbox v-model="remember" :disabled="busy">{{ t.remember }}</ElCheckbox>
-          <button class="text-button" type="button" :disabled="busy" @click="switchMode('register')">{{ t.register }}</button>
-        </div>
+        </div></div>
       </section>
     </main>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.field-error :deep(.el-input__wrapper) { box-shadow: 0 0 0 1px #b34c35 inset; }
+<style>
+.console-shell.v2-console {
+  display: block;
+  min-height: 100svh;
+}
+.v2-console,
+.v2-console * {
+  box-sizing: border-box;
+}
+.v2-console > .console-header {
+  flex-wrap: wrap;
+}
+.v2-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+.v2-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.console-shell button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 40px;
+}
+.console-shell button:hover {
+  background: var(--accent-soft);
+}
+.console-shell button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.v2-form {
+  max-width: 520px;
+}
+.console-tabs {
+  flex-wrap: wrap;
+}
+.console-shell footer {
+  margin-top: 30px;
+}
 </style>

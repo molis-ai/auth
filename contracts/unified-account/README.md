@@ -1,6 +1,6 @@
 # 统一账号可执行合同
 
-状态：AUTH-01 合同与结构校验已实现；本目录不实现登录、租户、订阅或权益服务。业务语义来自 [API-01 至 API-09](../../docs/unified-account/api-contracts.md)，产品决定来自[需求文档](../../docs/unified-account/requirements.md)。OpenAPI 每个操作均标记 `CONTRACT_ONLY`，不能用合同存在代替运行中的接口验收。
+状态：AUTH-01 合同与结构校验已实现；本目录不实现登录、租户、订阅或权益服务。业务语义来自 [API-01 至 API-10](../../docs/unified-account/api-contracts.md)，产品决定来自[需求文档](../../docs/unified-account/requirements.md)。OpenAPI 每个操作均标记 `CONTRACT_ONLY`，不能用合同存在代替运行中的接口验收。
 
 运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/unified-account/delivery.md)。
 
@@ -61,5 +61,7 @@ TTL、重发/尝试次数、分页和限流初始值集中于 `policy.defaults`�
 
 ## 变更记录
 
+- 1.2.0 开发增量：API-10 增加应用与 V2 登录客户端的列表、读取、创建、修改；分别要求 APPLICATION_READ/WRITE、CLIENT_READ/WRITE。客户端与策略版本同时检查；允许登记无产品映射的 Auth 自身客户端，Work/Club 映射显式指定。服务端会话、权限、域记录、审计与幂等回执原子提交；这不表示页面、SDK 或全部 V1 替换已完成。
+- 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [V2 收敛方案](../../docs/unified-account/v2-consolidation.md)。
 - 1.1.0（2026-11-05）：新增平台订阅库存只读接口 `GET /api/v2/platform/subscriptions/{subscriptionId}/seat-pools` 及对应产品映射。要求 `SUBSCRIPTION_READ`，不要求平台人员属于租户，租户停用时仍允许平台读取；个人订阅返回空列表，分页限定当前账号/Client/订阅。席位分配仍只允许租户管理者，未增加迁移或支付。
 - 1.0.0（2026-11-04）：覆盖 API-01..09；固定中央与产品 DTO、四类完成材料、认证用途联合、平台/租户权限、订阅与席位结构、mock 端口、迁移记录、工程默认值和两语言共用正反夹具。交付的是可执行合同，不是完整统一账号业务实现。

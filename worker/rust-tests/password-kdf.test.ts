@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { pbkdf2Sync } from 'node:crypto'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret } from './fixtures.ts'
+import { secret, challenge } from './fixtures.ts'
 
 test('private Durable Object derives 600k SHA-256 correctly and rejects custom parameters', async () => {
   const proxy = await getRustProxy({ AUTH_ORIGIN: 'http://127.0.0.1:8787' })
@@ -54,9 +54,23 @@ test('private Durable Object derives 600k SHA-256 correctly and rejects custom p
 
 test('missing KDF fails closed without creating accounts or authenticating a transaction', async () => {
   const origin = 'http://127.0.0.1:8787'
-  const proxy = await getRustProxy({ AUTH_ORIGIN: origin }, undefined, undefined, {
-    passwordKdf: false,
-  })
+  const proxy = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    undefined,
+    undefined,
+    {
+      passwordKdf: false,
+    },
+  )
   try {
     await initializeLocalRuntime(proxy)
     const before = await proxy.env.DB.prepare('SELECT count(*) n FROM auth_user').first()
@@ -67,39 +81,36 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
           headers: {
             Origin: origin,
             'Content-Type': 'application/json',
-            ...(transaction ? { 'X-Auth-Transaction': transaction } : {}),
+            ...(transaction ? { 'X-Auth-Initiator-Proof': transaction } : {}),
           },
           body: JSON.stringify(body),
         }),
       )
     }
-    const flow = await post('/api/v1/auth/transactions', {
-      clientId: 'molis-auth-console',
-      redirectUri: origin + '/console/callback',
+    const proof = secret()
+    const flow = await post('/api/v2/auth/transactions', {
+      clientId: 'molis-auth-web-local',
+      redirectUri: origin + '/account/callback',
       codeChallenge: secret(),
       codeChallengeMethod: 'S256',
       state: secret(),
-      scopes: ['account'],
+      purpose: 'LOGIN',
+      method: 'EMAIL_PASSWORD',
+      initiatorChallenge: challenge(proof),
     })
     const { data } = await flow.json()
     const password = 'unique-test-password-with-entropy'
-    const signup = await post(
-      '/api/v1/auth/transactions/signup',
-      { email: 'failure@example.test', password, confirmPassword: password },
-      data.transaction,
-    )
-    assert.equal(signup.status, 503)
-    assert.equal((await signup.json()).error.code, 'AUTH_UNAVAILABLE')
-    assert.deepEqual(await proxy.env.DB.prepare('SELECT count(*) n FROM auth_user').first(), before)
     const login = await post(
-      '/api/v1/auth/transactions/password',
+      '/api/v2/auth/transactions/' + data.transactionId + '/password',
       { email: 'failure@example.test', password },
-      data.transaction,
+      proof,
     )
     assert.equal(login.status, 503)
     assert.equal((await login.json()).error.code, 'AUTH_UNAVAILABLE')
-    const transaction = await proxy.env.DB.prepare('SELECT status FROM auth_transaction').first()
-    assert.equal(transaction!.status, 'READY')
+    const transaction = await proxy.env.DB.prepare(
+      'SELECT status FROM auth_product_transaction',
+    ).first()
+    assert.equal(transaction!.status, 'PENDING')
   } finally {
     await proxy.dispose()
   }

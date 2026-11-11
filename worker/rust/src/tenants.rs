@@ -1,4 +1,4 @@
-//! AUTH-07 managed tenants; separate from the preserved v1 TEAM domain.
+//! AUTH-07 managed tenants, membership roles, and platform authorization.
 use crate::{
     http::*, identity::Auth, login_sessions, security::uuid, sensitive_transactions::shape,
     tenant_protocol as protocol,
@@ -159,7 +159,15 @@ impl Service<'_> {
                     ctx.guards.push(self.tenant_guard(&ctx.tenant, false)?);
                 }
             }
-            "tenant.list" | "invitation.list-mine" | "transfer.list" => {}
+            "tenant.self-create" => {
+                ensure(
+                    crate::tenant_creation::policy(&self.a.env)? == "SELF_SERVICE",
+                    403,
+                    "FORBIDDEN",
+                )?;
+            }
+            "tenant.creation-policy" | "tenant.list" | "invitation.list-mine" | "transfer.list" => {
+            }
             "invitation.accept" | "invitation.decline" => {
                 self.invitation_context(&mut ctx, &action.id).await?
             }
@@ -212,6 +220,7 @@ impl Service<'_> {
     }
     async fn read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
         match action.op {
+            "tenant.creation-policy" => Ok(json!({"mode":crate::tenant_creation::policy(&self.a.env)?})),
             "tenant.get"=>{let mut t=ctx.tenant.clone();t["role"]=ctx.member["role"].clone();t["membership_id"]=ctx.member["id"].clone();Ok(tenant_view(&t))},
             "tenant.platform-get"=>Ok(platform_view(&ctx.tenant)),
             "tenant.platform-list"=>protocol::page(self,action,ctx,TENANTS,vec![],platform_view).await,
@@ -227,13 +236,19 @@ impl Service<'_> {
     }
     async fn change(&self, action: &Action, ctx: &Context, b: &Value) -> Result<Change> {
         match action.op {
-            "tenant.create" => {
+            "tenant.create" | "tenant.self-create" => {
+                // A self-service request cannot choose another account as owner.
+                let owner_id = if action.op == "tenant.self-create" {
+                    self.user()
+                } else {
+                    b["ownerUserId"].clone()
+                };
                 let owner = self
                     .a
                     .s
                     .one(
                         "SELECT id FROM auth_user WHERE id=? AND status='ACTIVE'",
-                        vec![b["ownerUserId"].clone()],
+                        vec![owner_id],
                     )
                     .await?;
                 ensure(!owner.is_null(), 404, "NOT_FOUND")?;
@@ -245,8 +260,14 @@ impl Service<'_> {
                     code: "INVALID_REQUEST",
                 })?;
                 let mut result = json!({"id":id,"name":name,"status":"ACTIVE","version":0,"owner_user_id":owner["id"]});
-                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",vec![id.clone().into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.into(),id.into(),owner["id"].clone(),n.into()])?];
-                result = platform_view(&result);
+                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",vec![id.clone().into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.clone().into(),id.into(),owner["id"].clone(),n.into()])?];
+                result = if action.op == "tenant.self-create" {
+                    result["role"] = "OWNER".into();
+                    result["membership_id"] = member.into();
+                    tenant_view(&result)
+                } else {
+                    platform_view(&result)
+                };
                 Ok(Change {
                     result,
                     writes,
@@ -333,6 +354,8 @@ fn action(path: &str, method: Method) -> Result<Action> {
     let mut tenant = String::new();
     let mut id = String::new();
     let (op, schema) = match (&p[2..], method) {
+        (["tenant-creation-policy"], Method::Get) => ("tenant.creation-policy", None),
+        (["tenants"], Method::Post) => ("tenant.self-create", Some("SelfTenantCreateRequest")),
         (["tenants"], Method::Get) => ("tenant.list", None),
         (["platform", "tenants"], Method::Get) => ("tenant.platform-list", None),
         (["platform", "tenants"], Method::Post) => ("tenant.create", Some("TenantCreateRequest")),

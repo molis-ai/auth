@@ -55,17 +55,22 @@ export function validateDeployment(
   require(offline || db.database_id !== zero, '请先创建云端 D1，并填写真实 database_id')
   require(db.database_id === zero ||
     db.database_id !== other.d1_databases?.[0]?.database_id, '预览和正式环境不能共用 D1')
-  const admins = config.vars.PLATFORM_ADMIN_IDS
-  require(typeof admins === 'string' &&
-    admins
-      .split(',')
-      .every(
-        (id: string) => !id.trim() || uuid.test(id.trim()),
-      ), '超管白名单必须填写用户 UUID，不是邮箱')
-  require(!admins.includes('826b9c2a-f24a-4ca6-a747-411a5579b643'), '不能复用本地开发超管 ID')
+  require(config.vars.PLATFORM_ADMIN_IDS ===
+    undefined, '不再使用本地开发或部署的超管白名单；使用 V2 平台权限初始化')
+  require(typeof config.vars.AUTH_WEB_CLIENT_ID === 'string' &&
+    config.vars.AUTH_WEB_CLIENT_ID.length > 0, '缺少 V2 Auth 浏览器客户端')
+  require(['SELF_SERVICE', 'PLATFORM_ONLY'].includes(
+    config.vars.TENANT_CREATION_POLICY,
+  ), '租户创建策略无效')
   require(Object.keys(config.vars).every((k) =>
-    ['AUTH_ORIGIN', 'PLATFORM_ADMIN_IDS', 'UNIFIED_ACCOUNT_CONFIG'].includes(k),
+    [
+      'AUTH_ORIGIN',
+      'AUTH_WEB_CLIENT_ID',
+      'TENANT_CREATION_POLICY',
+      'UNIFIED_ACCOUNT_CONFIG',
+    ].includes(k),
   ), '敏感配置请使用 Wrangler secret put，不要写入 vars')
+  require(typeof config.vars.UNIFIED_ACCOUNT_CONFIG === 'string', '缺少统一账号环境')
   if (config.vars.UNIFIED_ACCOUNT_CONFIG !== undefined) {
     const unified = validateUnifiedConfiguration(
       JSON.parse(config.vars.UNIFIED_ACCOUNT_CONFIG),
@@ -74,7 +79,7 @@ export function validateDeployment(
     require(unified.kind ===
       (environment === 'production' ? 'PRODUCTION' : 'TEST'), '统一账号环境与部署环境不一致')
   }
-  require(seed.includes('https://' + host + '/console/callback') &&
+  require(seed.includes('https://' + host + '/account/callback') &&
     !/localhost|127\.0\.0\.1/.test(seed), '初始化回调地址不正确')
 }
 

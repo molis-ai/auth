@@ -2,58 +2,44 @@
 
 ## 请求流向
 
-浏览器 → Workers JS/WASM 加载器 → `rust/src/lib.rs` → `app.rs` → 业务模块 → `store.rs` → D1。
+产品 Host/BFF → Workers JS/WASM 加载器 → `worker/rust/src/lib.rs` → `app.rs` → 领域模块 → `store.rs` → D1。
 
-Vue 和 Browser SDK 不变，不导入服务端实现、不接触 D1 绑定或服务端密钥。Wrangler 的本地、预览、正式入口均为 `rust/build/index.js`，由 worker-build 生成，加载同目录的 WASM。Cloudflare 不运行原生 Rust 二进制。
+Auth 自身的 Vue 页面 → 同源 `/api/account` BFF → 当前 `/api/v2` 处理器。页面使用 HttpOnly Cookie 与 CSRF，不导入服务端实现、不接触 D1、中央 Token 或服务端证明。Work 的安装身份与 Home 管理共用 Host 内的 V2 会话；业务内容仍归 Work 的原 owner。
+
+Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由 worker-build 生成并加载同目录 WASM。Cloudflare 不运行原生 Rust 二进制。
 
 ## 模块职责
 
 | 模块 | 职责 |
 | --- | --- |
-| lib | fetch 入口、过期临时数据定时清理 |
-| app | HTTP 方法、路由、CORS、安全响应头、静态资源 |
-| identity | 请求上下文、登录事务、密码登录注册、根会话恢复、确认与授权码 |
-| tokens | code exchange、Access/Refresh Token、轮换重放撤销、请求身份 |
-| account | 个人资料、头像、关联方式、个人会话、安全日志 |
-| teams | 团队资料、成员角色、邀请、分页搜索、团队审计 |
-| platform | 超管、应用、客户端、服务凭证、用户状态、权限矩阵 |
-| federation | OIDC 浏览器绑定、nonce/签名/时间校验、明确绑定外部身份 |
-| authorization | 应用绑定鉴权、角色规则、资源约束、空间与动作查询 |
-| store | 参数化 D1、原子 batch、写入守卫、分页和审计写入 |
-| http | 输入校验、表单解析、错误码、Cookie、时间转换 |
-| security | 兼容密码编码、密码策略、头像实际解码与清洗 |
-| runtime/*.js | Web Crypto、随机数、受限外部 HTTP 请求桥接，不包含业务授权决策 |
+| lib / app / identity / http | fetch 入口、过期临时数据清理、路由、安全响应头、请求上下文、限流及输入处理 |
+| unified_contracts / unified_policy | 现行结构、环境、客户端与精确来源/回调登记；不读取旧协议策略 |
+| login_sessions | 登录会话、换码、刷新轮换、活动、范围化退出与撤销 |
+| registration / delivery / external_login | 邮箱手机验证、投递适配与 Google/GitHub 授权 |
+| account_management / sensitive_transactions | 资料、再次验证、绑定/换绑/解绑、密码及安全撤销 |
+| tenants / tenant_protocol / tenant_invitations / tenant_membership / tenant_transfers | 租户、三角色、邀请、交接与启停；成员退出通过同一事务释放席位 |
+| tenant_creation | SELF_SERVICE / PLATFORM_ONLY 受信部署策略；自行创建的所有者固定为当前用户 |
+| platform_management / platform_accounts | 应用/客户端、用户状态、明确的平台能力授予/回收与审计；不是旧权限矩阵 |
+| billing / billing_catalog / billing_subscriptions / billing_seats / entitlements | 套餐、订阅、库存、分配历史及按真实成员/来源判定权益 |
+| web_session / web_auth | Auth 同源 Cookie/CSRF、加密 BFF 会话、认证事务与敏感证明；中央写入绑定 BFF revision |
+| store | 参数化 D1、原子 batch、最终写入守卫与审计 |
+| security / runtime/*.js | 现行密码策略与 PBKDF2、头像实际解码清洗、Web Crypto 和受限外部 HTTP；JS 桥接不决定业务授权 |
 
-## Work / Club v2 模块
+中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因租户 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、独立 Team 与权限矩阵实现已删除。
 
-现有 Vue 与浏览器 SDK 仍服务 v1；Work Host 和 Club BFF 使用 `/api/v2` 的独立产品会话。API、证据和交付边界见[统一账号说明](unified-account/integration-guide.md)及[交付矩阵](unified-account/acceptance-matrix.md)。
+## 会话与安全
 
-| 模块 | 职责 |
-| --- | --- |
-| unified_contracts / unified_policy | 冻结结构校验、环境、客户端登记与 v1/v2 边界 |
-| login_sessions | 独立会话、换码、刷新、活动、范围化退出与撤销 |
-| registration / delivery / external_login | 邮箱手机验证、投递适配与 Google/GitHub mock 授权 |
-| account_management / sensitive_transactions | 资料、再次验证、绑定/换绑/解绑、密码与安全撤销 |
-| tenants / tenant_protocol / tenant_invitations / tenant_membership / tenant_transfers | 受管租户、角色、邀请、交接、启停；成员退出通过同一事务释放席位 |
-| billing / billing_catalog / billing_subscriptions / billing_seats / entitlements | 套餐、订阅、库存、分配历史、审计及按真实成员/来源判定权益 |
-
-上述中央事实仍在同一 D1，通过领域函数和原子 batch 协作。Host/BFF 只保存自身会话与展示缓存；旧 TEAM、登录 auth_grant 不充当新租户或商业席位。v2 平台能力从独立授权记录取得，不因拥有旧 Console 管理权限或租户 OWNER 身份自动获得。
-
-## 安全与数据兼容
-
-- 继续使用现有 D1 SQL 迁移，不重新建库或重置用户。
-- 保持 URL、JSON、错误码、PKCE、Cookie 名称与令牌存储格式；密码继续 PBKDF2-SHA256 600,000 次，由 Workers 原生 Web Crypto 执行。
-- Access Token、Refresh Token、授权码和一次性状态只保存摘要；刷新轮换与重放撤销由 D1 原子写入守卫保护。
-- 平台超管跨团队查看不等于拥有团队成员写权限；现有边界不因换语言放宽。
-- 头像由 Rust PNG 解码再编码，不信任 data URL 声称的格式。
-- OIDC 不因邮箱相同自动合并账号；外部请求不跟随重定向，有超时与响应大小限制。
+- 浏览器 SDK 现行导出 `AccountClient`，只调用固定同源 BFF，不自动重放写操作。Auth Vue 使用该 SDK；Work 保留满足本机边界的 Host 请求助手。
+- BFF Cookie 只保存随机引用；`auth_web_session` 的 Token 和临时证明使用稳定的 `AUTH_WEB_SESSION_KEY` 加密并绑定记录 ID。写入要求 Origin/CSRF；退出提高 revision 并先清持久恢复材料，迟到的中央提交与会话保存拒绝。
+- 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
+- 密码使用 PBKDF2-SHA256 600,000 次，由 Workers Web Crypto 执行。无旧密码编码读取或用户映射兼容。
+- 头像实际解码再编码；外部身份不按同邮箱自动合并。外部请求不跟随任意重定向，带超时与大小限制。
+- SQL 文件只创建现行 V2 所需表；V1 会话、授权、成员、邀请及服务表已移除，BFF 表由 `0012_web_sessions.sql` 创建。本次只验证全新临时库，不对已有实验库升级或清理；本地体验须使用独立空库。
 
 ## 构建与验证
 
-`npm run setup` 安装 Rust 1.96.0、wasm32-unknown-unknown、worker-build 0.8.6。不会改变已有 Rust 默认工具链；worker-build 安装在忽略的 `worker/rust/.tools/`。首次编译需要网络，后续使用 Cargo 缓存。Cargo.lock 纳入版本管理。
+`npm run setup` 安装固定 Rust 1.96.0、wasm32-unknown-unknown 与 worker-build 0.8.6；不改变已有默认工具链。worker-build 位于忽略的 `worker/rust/.tools/`，Cargo.lock 纳入版本管理。
 
-`npm test` 包括 Rust 单元测试、真实 WASM + workerd + 隔离 D1 集成测试、历史密码格式兼容测试，以及前端和 SDK 回归。`test:e2e` 和 `test:smoke` 仅接受本地回环地址；E2E 会创建明确标识的测试账号和团队。
+`npm test` 包括可执行合同、Rust 单元、真实 WASM + workerd + 隔离 D1、Web 与 SDK 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归范围变更](unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](unified-account/v2-consolidation.md)。
 
-旧 `worker/src/` TS 后端和专属测试已删除。后端行为测试位于 `worker/rust-tests/`，直接执行编译出的 WASM。本地超管脚本通过隔离的 Rust 注册处理器校验邮箱、密码并生成密码哈希，不再维护另一套 TS 认证逻辑。仍保留的 TS 文件用于 Vue、浏览器 SDK、开发脚本及测试，不是部署的后端。
-
-本地/打包通过不等于线上 CPU 配额验证通过。发布前需在独立预览 D1 测试登录、刷新、邀请、头像、跨应用鉴权，并保留上一版本用于回滚；本次迁移没有修改数据库结构。
+`npm run build` 构建页面和 SDK，并对 Worker 执行 dry-run。它不部署，也不证明 LIVE 邮件、短信、提供方、线上 CPU 配额或真实环境初始化已验收。正式环境配置与授权步骤见[部署说明](cloudflare-deployment.md)。

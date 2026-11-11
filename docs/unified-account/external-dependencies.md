@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | T03-SMS | `+86` 手机验证码注册、登录、绑定、换绑和再次验证 | 已选阿里云短信。申请材料草稿和 API 映射已准备。控制台要求登录，企业账号及已有资源待核对。Auth 仍走 mock | 企业管理员登录后查资质、签名和模板，按缺项提交。报备后在授权测试号码验证 | 阿里云企业账号管理员申请，Auth 接适配器 |
 | T03-MAIL | 邮箱验证码注册、密码找回和邮箱证明 | 已在 GoDaddy 的 Titan Webmail 核实 `support@molis.ai` 为 Pro Light。专用发件邮箱、账号级 SMTP 设置和实际外发额度待核。管理员后台要求单独登录。Cloudflare Email Sending 暂缓，Auth 仍走 mock | 确认专用发件邮箱及 SMTP 认证方式，从隔离 Auth Worker 试投并检查认证、时延和限流。Resend 保留为事务邮件 API 备选 | 邮箱管理员准备资源，Auth 接适配器 |
-| T03-GOOGLE | Google 登录、绑定、换绑和再次验证 | Auth v2 只支持模拟授权和换码。v1 Google 实现可作参考。用户正在确认 Google Cloud 项目 | 选定项目后配置授权页、隔离 Web 客户端及精确 Auth 回调 | Google 项目管理员登记，Auth 接适配器 |
+| T03-GOOGLE | Google 登录、绑定、换绑和再次验证 | Auth v2 只支持模拟授权和换码。已删除的 v1 Google 实现仅可从 Git 历史参考。用户正在确认 Google Cloud 项目 | 选定项目后配置授权页、隔离 Web 客户端及精确 Auth 回调 | Google 项目管理员登记，Auth 接适配器 |
 | T03-GITHUB | GitHub 登录、绑定、换绑和再次验证 | `molis-ai` 组织已登记 staging 应用 #4002147 和生产应用 #4002664。三端 staging 真实登录、Club 再次验证及重复绑定拒绝通过，绑定和换绑成功路径的夹具测试通过 | [Auth #3](https://github.com/molis-ai/auth/pull/3) 已合入 `main`（`99c28b3`）。生产待确认，先对齐仓库域名和产品客户端，再按验收及回滚方案发布。[生产配置与发布门槛](#github-生产上线准备) | `molis-ai` 组织管理员负责应用，Auth 及 Work、Club 发布负责人负责接入 |
 | T03-ENV | 供应商回调、Work/Club 回跳及密钥注入 | Cloudflare 已分别绑定 `auth-staging.molis.ai` 与 `club-staging.molis.ai` 到独立 staging Worker。两个 Worker 各使用专用 D1 | 已验两个域名可达；Work 网页实测使用 `http://127.0.0.1:44207`，Tauri 分发包使用 `http://127.0.0.1:4173`，两者使用独立 Auth 客户端 | Cloudflare 管理员与 Auth、Work、Club 联调负责人 |
 
@@ -18,7 +18,7 @@
 
 现行 v2 投递与验证见 [delivery.rs](../../worker/rust/src/delivery.rs) 和 [registration.rs](../../worker/rust/src/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](../history/mail-delivery.md)
 
-GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/external_login.rs) · [v1 federation.rs](../../worker/rust/src/federation.rs) · [account_management.rs](../../worker/rust/src/account_management.rs) · [unified_policy.rs](../../worker/rust/src/unified_policy.rs)
+GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/external_login.rs) · [account_management.rs](../../worker/rust/src/account_management.rs) · [unified_policy.rs](../../worker/rust/src/unified_policy.rs)
 
 租户定向邀请使用同样的投递渠道，但走独立的通知路径。若随本批启用真实邀请，补相应通知模板及验收，单独跟踪。[邀请投递](../../worker/rust/src/delivery.rs)
 

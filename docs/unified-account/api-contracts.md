@@ -2,7 +2,7 @@
 
 状态：2026-11-04，AUTH-01 已生成可执行合同，AUTH-02 已实现存储与策略边界，AUTH-03 已实现换码、会话、刷新及退出接口；AUTH-04 已实现邮箱/手机认证事务与 mock 投递；AUTH-05 已实现 Google/GitHub mock 授权、浏览器绑定与回调；AUTH-06 已实现资料、登录方式及密码管理；AUTH-07 已实现租户、邀请、角色、交接与平台启停；AUTH-08 已实现目录发布、订阅生命周期、容量维护及商业审计；AUTH-09 已实现席位分配、回收、换绑和历史查询；AUTH-10 已实现退出/移除与席位释放原子联动及在线权益判定。产品规则以[需求文档](requirements.md)的 C-01 至 C-40 为准；本文件给出技术方案，供三个仓库按[开发任务](development-tasks.md)实现和评审。路径、字段和工程默认值已在 [AUTH-01 合同包](../../contracts/unified-account/README.md)固化为 OpenAPI、JSON Schema 与合同夹具；实际交付与未完成项见开发任务实施记录。
 
-AUTH-12 已汇总[验收矩阵](acceptance-matrix.md)、[固定版本与交付记录](delivery.md)及[Host/BFF 接入说明](integration-guide.md)。合同保持 1.1.0，运行证据不由合同中的 CONTRACT_ONLY 标记推导。
+AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
 ## 1 边界与版本
 
@@ -17,12 +17,13 @@ AUTH-12 已汇总[验收矩阵](acceptance-matrix.md)、[固定版本与交付�
 | API-05 | 租户、成员、邀请、所有权和平台权限 | Auth |
 | API-06 | 套餐、订阅、库存与席位分配 | Auth 商业模块 |
 | API-07 | 当前用户的权益查询与判定 | Auth 商业模块 |
-| API-08 | 产品页面到 BFF/Host 的安全适配 | Club、Work |
-| API-09 | 外部 mock、环境和存量切换 | Auth 主导；三端协作 |
+| API-08 | 产品页面到 BFF/Host 的安全适配 | Auth 页面、Work；Club 接入另行核对 |
+| API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
+| API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
 
-当前 `/api/v1/auth/transactions/*`、`/oauth2/token`、账号及空间接口的实现可复用，但不能直接照搬行为。依据见 [路由](../../worker/rust/src/app.rs)、[身份](../../worker/rust/src/identity.rs)、[令牌](../../worker/rust/src/tokens.rs)、[账号](../../worker/rust/src/account.rs)、[团队](../../worker/rust/src/teams.rs)。现有根会话退出、共享 activity、自由创建 TEAM 和仅 Auth 同源的完成流程不符合新合同。
+当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/login_sessions.rs)、[资料与安全](../../worker/rust/src/account_management.rs)和[租户](../../worker/rust/src/tenants.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、Team 和权限矩阵实现已删除，不保留别名或失败降级。
 
-Work/Club 新客户端由后台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。旧路由也必须检查该策略；已纳管租户无论经哪个入口访问，都执行同一平台/租户权限守卫。未盘点的旧 TEAM 不自动成为本方案租户，纳管须有明确映射和平台授权。保留其他产品旧接口不意味着允许借旧接口创建或修改新租户。
+V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 V2 用户与租户，不读取或自动转换旧 TEAM。
 
 ## 2 API-01 通用约定
 
@@ -159,6 +160,8 @@ AUTH-06 的资料及绑定管理共用 UserView.version；资料更新只推进�
 | 方法与路径 | 请求/返回 | 权限及条件 |
 | --- | --- | --- |
 | GET `/tenants` | 当前用户 TenantView 列表及个人 Scope | 仅本人加入的租户；停用租户仅必要摘要 |
+| GET `/tenant-creation-policy` | `{mode:SELF_SERVICE/PLATFORM_ONLY}` | 当前 V2 登录；策略来自受信部署配置，不接受页面覆盖 |
+| POST `/tenants` | `{name}` → TenantView | SELF_SERVICE 模式；所有者固定为当前登录用户，原子建立唯一 OWNER，要求 Idempotency-Key；不赠送订阅或席位 |
 | GET `/tenants/{tenantId}` | TenantView、允许的管理操作 | 正常租户当前成员；平台查看走平台接口 |
 | PATCH `/tenants/{tenantId}` | `name,expectedVersion` → TenantView | OWNER/ADMIN |
 | POST `/platform/tenants` | `name,ownerUserId,reason` → PlatformTenantView | 平台权限；指定现有有效账号，原子建立唯一 OWNER |
@@ -353,8 +356,21 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 ## 11 切换与合同交付
 
-旧账号按 C-14/C-35 保留并重新登录。P0 盘点身份、验证状态、密码格式、供应商稳定标识、旧 TEAM 与业务外键；凭据格式和冲突事实未查明前，不承诺批量复制密码或自动合并同邮箱。Work/Club 停止接受旧会话的切换不能撤销其他产品会话；旧密码接续与旧会话接受是两件事。
+2026-11-08 决定按上线前直接替换执行：新环境注册 V2 用户，不保留旧账号、密码编码、Team、Cookie、Token、SDK 别名或协议回退。历史盘点与双栈演练不再是当前交付条件，也不授权本次清空真实库。当前两个仓库的基线、实现与验证见 [V2 整合方案](v2-consolidation.md)。
 
-AUTH-01 的落地交付应包含：OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、权限矩阵、版本与幂等约定、脱敏夹具和变更记录。Rust 与两端 TypeScript 使用同一合同样本校验；禁止三个仓库分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
+合同交付包含 OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、平台能力与租户角色、版本与幂等约定、脱敏夹具和变更记录。Rust 与消费端 TypeScript 使用同一合同样本校验，禁止分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
 
 合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需证明拒绝、失败和竞态，而不只是页面成功；商业链路需用实际持久化数据证明权限与功能并集。实现拆分及完整覆盖见[开发任务](development-tasks.md)。
+
+## 12 API-10 当前平台管理
+
+合同开发版 1.2.0 的请求/响应形状以[可执行合同](../../contracts/unified-account/README.md)为准。平台能力来自明确授权；请求字段、租户角色或旧 Console 管理员身份不能代替权限。
+
+| 方法与路径 | 能力与并发条件 |
+| --- | --- |
+| GET/POST `/platform/applications`；GET/PATCH `/platform/applications/{applicationId}` | APPLICATION_READ / APPLICATION_WRITE；创建与修改带幂等键，修改核对 expectedVersion |
+| GET/POST `/platform/applications/{applicationId}/clients`；GET/PATCH `/platform/clients/{clientId}` | CLIENT_READ / CLIENT_WRITE；写入带幂等键，修改同时核对客户端与策略版本；来源、精确回调、环境及可选产品登记原子提交 |
+| GET `/platform/users`、`/platform/users/{userId}`；PATCH `/platform/users/{userId}/status` | USER_READ / USER_STATUS；禁止停用自身或最后一位平台授权管理员；停用提高安全版本并使旧会话与证明失效 |
+| GET `/platform/users/{userId}/permissions`；PATCH `/platform/users/{userId}/permissions/{capability}` | PLATFORM_PERMISSION_WRITE；显式授予/回收，核对 expectedVersion；拒绝移除最后有效管理员 |
+
+各次提交与幂等结果读取重新检查当前操作者、会话、客户端和能力；撤权后的旧请求不能借回执继续访问。授权、领域事实、审计与回执使用同一个原子 batch。首位人员只允许通过受控初始化建立，本地工具不是生产授权流程。

@@ -1,86 +1,58 @@
 # Molis Auth
 
-统一账号、团队与权限服务。后端为 **Rust → WebAssembly → Cloudflare Workers / D1**；前端仍为 Vue，浏览器 SDK 仍为 TypeScript。不需要 Java、MySQL、Redis 或 Docker。
+统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，Vue 管理界面，以及面向同源 Host/BFF 的浏览器 SDK。中央 API 只使用 `/api/v2`；Auth 自己的页面使用 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
 
-Work 与 Club 的统一账号、租户成员、订阅席位及权益服务已完成各阶段实现，AUTH-12 已汇总[验收矩阵](docs/unified-account/acceptance-matrix.md)、[版本及交付记录](docs/unified-account/delivery.md)。本轮仅合成数据与外部 mock：39 项需求在注明的隔离范围通过，3 项部分完成；两端帮助和共享资源合同夹具已补齐，真实存量接续等待办保留。T-01 已整理三仓库本地提交并集成核对时的主线，验证进度和准确版本见交付记录；功能分支尚未合入主线或发布。真实支付、业务付费拦截与共享内容后续推进。
+## 当前模型
 
-接口字段、权限及状态机见[接口合同](docs/unified-account/api-contracts.md)；三个仓库的任务、依赖与验收见[开发任务](docs/unified-account/development-tasks.md)。可执行定义见[合同包](contracts/unified-account/README.md)。外部发送和第三方登录当前使用隔离 mock；Host/BFF、v1 SDK 使用边界和管理步骤见[接入说明](docs/unified-account/integration-guide.md)。旧账号保留与真实迁移待办见[迁移方案](docs/unified-account/account-migration-plan.md)。
+- 用户、已验证邮箱/手机、Google/GitHub 身份、密码与账号安全版本由 Auth 持有。
+- 每个产品独立登录会话；刷新轮换、当前登录退出、所有产品退出均使用 V2。
+- 租户使用 OWNER / ADMIN / MEMBER，与平台权限独立。`TENANT_CREATION_POLICY=SELF_SERVICE` 默认允许登录用户创建并成为所有者；`PLATFORM_ONLY` 关闭自助创建，平台仍须独立的 `TENANT_CREATE` 权限。
+- 应用、登录客户端、用户可用状态、平台权限管理均有明确的平台能力、版本与幂等键，不使用部署环境里的超管用户白名单。
+- 订阅、套餐、租户席位与权益继续使用现有 V2 商业模型。创建租户不附送付费权限。
 
-下一阶段按[实施计划的后续执行指引](docs/unified-account/implementation-plan.md#11-后续执行指引)接续：先集成收尾，再推进受控管理工具及有前置条件的真实环境接入；状态仍以交付台账为准。
+V1 API、OAuth2 用户授权入口、Team/VIEWER、按应用角色排列的权限矩阵、Apple 登录、浏览器持有 Token 的 SDK 及双栈迁移工具已退出当前实现。不支持旧客户端或旧会话恢复。历史 SQL 编号与设计材料保留为历史记录，不作为另一套运行时读取或授权路径。
 
-## 启动
+## 本地开发
 
-安装 Node.js 22.18+，在仓库根目录执行（首次 setup 会下载固定版本 Rust 工具链和构建工具，需要联网）：
+要求 Node 22.18+、npm、Rust/WASM 构建工具（安装方式见 worker/scripts/rust-setup.mjs）。
 
 ```sh
 npm run setup
 npm run dev
 ```
 
-访问 **http://127.0.0.1:8787/login**。同一服务提供前端静态文件和后端接口。
-本地数据库位于 `worker/.wrangler/`；启动不会连接线上 D1，也不会清空已存在的本地数据。
-前端修改后重新启动，Rust 后端修改后自动编译、重载。完整登录验收使用 8787，不是独立 Vite 的 5173。
+`npm run dev` 只为当前检出的本地环境生成未入库的 `worker/.dev.vars` 会话加密密钥，然后构建页面、应用本地迁移和无用户种子，再启动 `http://127.0.0.1:8787`。不会连接远端 D1。MOCK 只能在明确配置的隔离环境使用；GitHub LIVE 适配沿用主线实现；Google LIVE、真实邮件和短信按外部依赖验收推进。配置或服务失败不会回退到 MOCK。本轮回归使用隔离投递和提供方夹具，不代替正式环境实测。
 
-开发管理员初始化：`npm run admin`。默认账号 `admin@example.com`，新建时生成一次性展示的随机密码，也可通过 `LOCAL_ADMIN_PASSWORD` 环境变量指定。已有账号不会被覆盖。
-
-## Cloudflare 部署
-
-预览和正式环境已提供独立配置及初始化脚本，云端数据库 ID 需要创建后填写。完整步骤见 [部署手册](docs/cloudflare-deployment.md)。
+首次管理员可以先通过 V2 注册，再运行：
 
 ```sh
-npm run cloudflare -- preview check
-npm run build:web
-npm run cloudflare -- preview dry-run  # 仅打包，不发布
+node worker/scripts/bootstrap-platform.ts <registered-v2-user-id>
 ```
 
-本地开发仍使用 `npm run dev`，不连接线上数据库。
+此命令只操作本地 Wrangler D1，只允许在权限表完全为空时初始化一次。`npm run admin` 使用隔离的真实 V2 邮箱注册验证密码策略，再创建一个本地管理员；已有账号和凭据不会被覆盖。不要对已经投入使用的环境随意重建数据库。
 
-## 目录说明
+Work 的本地客户端登记在 `worker/unified-account-local-seed.sql`，需要明确在本地数据库执行，再使用 Work 的 `MOLIS_WORK_ACCOUNT_CONFIG`。Auth 和 Work 必须使用同一版 `contracts/unified-account`；当前未发布合同的来源记录不能冒充已发布提交。
 
-```text
-web/                    Vue 前端（只负责页面和接口调用）
-worker/
-  rust/
-    src/lib.rs          Worker 入口与定时清理
-    src/app.rs          HTTP 路由、安全响应头、静态资源
-    src/identity.rs     登录事务、根会话、授权码
-    src/tokens.rs       令牌签发、刷新、撤销、请求身份
-    src/account.rs     个人资料、登录方式、会话、安全记录
-    src/teams.rs       团队、成员、邀请、审计
-    src/platform.rs    平台管理与应用权限矩阵
-    src/authorization.rs 服务端鉴权
-    src/federation.rs  Google / Apple OIDC
-    src/store.rs       D1 查询、分页与原子写入守卫
-    src/security.rs    密码策略与头像解码清洗
-    src/runtime/       Workers 原生 Web Crypto / fetch 的轻量桥接
-  migrations/           D1 数据库迁移
-  rust-tests/           真实 WASM + 隔离 D1 集成测试
-  tests/                数据库结构及部署约束测试
-  scripts/              本地管理、端到端与冒烟检查
-sdk/browser/            TypeScript 浏览器 SDK
-docs/architecture.md    当前模块职责与依赖规则
-docs/history/           历史设计资料，不作为当前启动/部署说明
-```
-
-## 验证与构建
+## 验证
 
 ```sh
-npm test                # 后端、前端、浏览器 SDK 测试
-npm run build           # 前端 + SDK + Workers dry-run 打包，不部署
-npm run format:check    # 后端代码格式检查
-npm run test:e2e        # 需要本地服务运行；生成模拟账号和团队
-npm --prefix worker run test:smoke
-# 存量迁移专项：先构建 WASM，再用临时 SQLite / D1 验证
-npm --prefix worker run build:rust
-npm --prefix worker run test:migration
-# 只生成合成数据；目录必须不存在，不读写真实数据库
-npm run account:migration -- rehearse /private/tmp/auth11-example
+npm test
+npm run build
+npm run contracts:check
 ```
 
-新增后端代码统一使用 `npm run format` 格式化。
+`npm test` 包含合同校验、Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束、Web 和 SDK 用例。测试只创建临时数据。旧测试的职责迁移见 [V2 回归范围](docs/unified-account/v2-test-transition.md)。
 
-## 上线边界
+真实页面专项在构建 Auth 与 Work 后运行 `MOLIS_WORK_SOURCE=/absolute/path/to/molis-work npm run test:browser`。它借用 Work 的公开 Chrome test-kit 和机器测试槽，创建临时 D1、随机端口与独立浏览器 profile，验证注册登录、租户创建、资料、再次验证、绑定邮箱、改密、会话撤销后重新登录及退出；投递明确为 mock。截图默认写临时目录，可用 `AUTH_BROWSER_EVIDENCE_DIR` 指定。该命令不访问已有浏览器或数据库，不计为 LIVE 供应商验收。
 
-本次 Rust 改造不自动发布线上，不修改远程 D1。沿用原 D1 表结构、PBKDF2 密码格式和 API；已有 TS 版本的数据不需要因语言切换重新注册。真实 Cloudflare 免费 CPU/额度、Google/Apple 正式凭证仍需在预览环境验证，不能用本地耗时替代线上验证。
-原 Vue / v1 流程没有验证和找回邮件；统一账号 v2 已提供邮箱验证、找回及无邮箱登录方式，外部发送和 Google/GitHub 仍使用 mock。旧账号的验证状态与第三方凭据不会自动升级，接续边界见 AUTH-11 方案。
-部署前检查清单和本地功能说明见 [worker/README.md](worker/README.md)。
+[接入手册](docs/unified-account/integration-guide.md) · [统一方案](docs/unified-account/v2-consolidation.md) · [部署](docs/cloudflare-deployment.md)
+
+## 本地 dev 联调（换电脑）
+
+两仓库统一使用 Node 24.15.x，Work 使用 pnpm 11.9.0。首次 Auth 执行 `npm run setup`（需联网安装依赖和 Rust 工具链），以后执行 `npm run dev`。
+
+Dev 固定监听 `http://127.0.0.1:8787`，自动构建、迁移本地 D1、登记 Auth 和 Work 客户端、生成本机 session 加密密钥，并初始化普通测试账号 `preview@example.test`，初始密码 `Molis-dev-2026!`。该公开测试密码仅用于 LOCAL/MOCK；重复启动不重置密码、不覆盖已有账号，不授予管理员权限。数据库保存在 worker/.wrangler，密钥在忽略入库的 worker/.dev.vars。
+
+Work 在其仓库执行依赖安装和构建后运行 `pnpm dev`，固定端口 4207。端口冲突会报错，不自动杀进程。所有地址由仓库预设，不依赖作者机器路径。
+
+环境映射：dev 使用 worker/wrangler.jsonc；test 使用现有 worker/deploy/staging 配置（统一账号 unified-staging，短信/邮件 MOCK，OAuth LIVE）；prod 使用 worker/deploy/production（LIVE）。test/prod 不运行 dev 初始化、不创建公开测试账号；密钥通过部署 secret 管理。prod 的 Work 客户端登记脚本为 worker/deploy/production/work-client.sql，需要部署人员显式应用；本次没有修改云端资源。外部邮件、短信和 OAuth 的真实可用性仍取决于对应渠道资源，不由本地启动完成。

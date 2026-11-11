@@ -11,7 +11,7 @@ const localSeed = readFileSync(
   'utf8',
 )
 
-function database(migrate = true) {
+function database() {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
   for (const name of readdirSync(directory)
@@ -19,12 +19,9 @@ function database(migrate = true) {
     .sort()) {
     db.exec(readFileSync(new URL(name, directory), 'utf8'))
   }
-  if (migrate) {
-    db.exec(migration)
-    // Current opt-in seed also registers product identities; keep the foundation
-    // schema tests on 0005 and add only the independent product registry.
-    db.exec(readFileSync(new URL('0011_entitlement_client_product.sql', directory), 'utf8'))
-  }
+  db.exec(migration)
+  // These domain-constraint tests also use the independent product registry.
+  db.exec(readFileSync(new URL('0011_entitlement_client_product.sql', directory), 'utf8'))
   return db
 }
 
@@ -112,69 +109,6 @@ function assign(
     VALUES (?,?,'standard',?,?,?,'ASSIGNED',100)`,
   ).run(id, sub, tenantId, membership, user)
 }
-
-test('UAS-27/28/29/30/34: additive migration preserves every old row and does not enroll users, TEAMs or clients', () => {
-  const db = database(false)
-  try {
-    seedUsers(db)
-    db.exec(`
-      INSERT INTO auth_user_email VALUES ('email-u','u','unverified@example.test',NULL,0),('email-v','v','verified@example.test',77,0);
-      INSERT INTO auth_local_credential VALUES ('u','synthetic-hash-fixture',0);
-      INSERT INTO auth_external_identity VALUES ('external','u','GOOGLE','https://provider.example.test','subject',0);
-      INSERT INTO auth_space(id,name,space_type,status,personal_user_id,created_at,updated_at)
-        VALUES ('personal','Personal','PERSONAL','ACTIVE','u',0,0),('old-team','Old team','TEAM','ACTIVE',NULL,0,0);
-      INSERT INTO auth_membership VALUES ('old-team','u','OWNER',0),('old-team','v','VIEWER',0);
-      INSERT INTO auth_application(id,name) VALUES ('old-app','Old app');
-      INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-        VALUES ('old-internal','old-public','old-app','WEB','["account"]','["https://old.example.test/callback"]');
-      INSERT INTO auth_authentication VALUES ('old-root','u','old-cookie-hash',1,2,NULL);
-      INSERT INTO auth_grant VALUES ('old-grant','old-root','old-public','["account"]',1,NULL);
-      INSERT INTO auth_access_token VALUES ('old-access-hash','old-grant',9000);
-      INSERT INTO auth_refresh_token VALUES ('old-refresh-hash','old-grant',9000,NULL);
-      INSERT INTO auth_transaction VALUES ('old-transaction','{}','READY',9000,'old-root','proof-hash','browser-hash');
-      INSERT INTO auth_code VALUES ('old-code','old-public','https://old.example.test/callback','challenge','["account"]','old-root',9000,NULL);
-      INSERT INTO auth_invitation VALUES ('old-invite','old-team','verified@example.test','v','u','PENDING',0,9000);
-      INSERT INTO auth_one_use VALUES ('one-use','OLD_PURPOSE','binding','{}',9000);
-      INSERT INTO auth_rate_bucket VALUES ('bucket',1,9000);
-      INSERT INTO auth_service VALUES ('service','service-public','old-app','Service','ACTIVE','credential-id','secret-digest-fixture');
-      INSERT INTO auth_service_token VALUES ('service-token-hash','service','credential-id',9000);
-      INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,request_id,occurred_at)
-        VALUES ('old-audit','old.action','SUCCESS','u','old-request',0);
-    `)
-    const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all()
-      .map((row) => String(row.name))
-    const before = tables.map((name) => [
-      name,
-      db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
-    ])
-    db.exec(migration)
-    assert.deepEqual(
-      tables.map((name) => [name, db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all()]),
-      before,
-    )
-    for (const table of [
-      'auth_client_policy',
-      'auth_platform_permission',
-      'auth_managed_tenant',
-      'auth_tenant_membership',
-      'auth_login_session',
-      'auth_user_security',
-      'billing_subscription',
-    ]) {
-      assert.equal(scalar(db, `SELECT count(*) AS value FROM ${table}`), 0)
-    }
-    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
-    // Existing positional inserts remain valid: no old table was rebuilt or widened.
-    db.exec("INSERT INTO auth_membership VALUES ('old-team','w','MEMBER',5)")
-    db.exec("INSERT INTO auth_access_token VALUES ('another-old-hash','old-grant',10000)")
-  } finally {
-    db.close()
-  }
-})
 
 test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrites registrations or grants access', () => {
   const db = database()
@@ -493,7 +427,6 @@ test('UAS-12/13/16/34/42: managed tenants retain membership incarnations and enf
     tenant(db, 'a', 'u')
     tenant(db, 'b', 'v')
     member(db, 'a-member', 'a', 'w')
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_membership'), 0)
     assert.throws(() => member(db, 'extra-owner', 'a', 'v', 'OWNER'), /UNIQUE constraint/)
     assert.throws(() => member(db, 'viewer', 'a', 'v', 'VIEWER'), /CHECK constraint/)
     assert.throws(() => member(db, 'duplicate-member', 'a', 'w'), /UNIQUE constraint/)

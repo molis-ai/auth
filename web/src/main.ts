@@ -1,8 +1,10 @@
-import { createApp } from 'vue'
-import App from './App.vue'
-import Console from './Console.vue'
-import './style.css'
-import './calm.css'
-import './auth-entry.css'
+import { createApp } from "vue";
+import App from "./App.vue";
+import "./calm.css";
+import "./console.css";
+import "./auth-entry.css";
+createApp(App).mount("#app");
 
-createApp(location.pathname === '/console' || location.pathname === '/console/callback' ? Console : App).mount('#app')
+import "./workspace-console.css";
+
+import "./profile.css";

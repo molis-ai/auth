@@ -51,6 +51,27 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
         )
         .await?;
     }
+    if b["purpose"] == "BIND" || b["purpose"] == "REPLACE" {
+        ensure(b["method"] != "EMAIL_CODE", 403, "FORBIDDEN")?;
+    }
+    if b["purpose"] == "REAUTH" && b["operation"] == "BIND_METHOD" {
+        ensure(b["target"]["method"] != "EMAIL", 403, "FORBIDDEN")?;
+    }
+    if b["purpose"] == "REPLACE"
+        || (b["purpose"] == "REAUTH"
+            && (b["operation"] == "REPLACE_METHOD" || b["operation"] == "UNLINK_METHOD"))
+    {
+        let id = if b["purpose"] == "REPLACE" {
+            text(b, "bindingId")
+        } else {
+            text(&b["target"], "bindingId")
+        };
+        ensure(
+            binding(a, &text(&s, "user_id"), &id).await?["type"] != "EMAIL",
+            403,
+            "FORBIDDEN",
+        )?;
+    }
     a.rate_ip("v2-sensitive-start", 60).await?;
     let us =
         a.s.one(
@@ -60,16 +81,38 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
         .await?;
     let id = uuid();
     let n = now();
+    let use_session = b["purpose"] == "REAUTH" && b["useSession"] == true;
     a.s.batch(vec![login_sessions::client_guard(a,&c)?,login_sessions::active_guard(a,&s)?,
         a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
         a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?,
         a.s.statement("INSERT INTO auth_product_transaction(id,client_id,environment_id,purpose,method,initiator_hash,redirect_uri,product_state,product_state_hash,pkce_challenge,user_id,login_session_id,user_epoch,session_revision,identity_version,operation,target,binding_id,created_seq,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT MAX(seq) FROM auth_security_sequence),?,?)",vec![id.clone().into(),s["client_id"].clone(),c["environment_id"].clone(),b["purpose"].clone(),b["method"].clone(),b["initiatorChallenge"].clone(),b["redirectUri"].clone(),b["state"].clone(),hash(&text(b,"state")).into(),b["codeChallenge"].clone(),s["user_id"].clone(),s["id"].clone(),s["user_epoch"].clone(),s["session_revision"].clone(),us["identity_version"].clone(),b["operation"].clone(),b.get("target").map(|x|Value::String(x.to_string())).unwrap_or(Value::Null),b["bindingId"].clone(),n.into(),(n+600000).into()])?],"VERSION_CONFLICT").await?;
+    if use_session {
+        // Session authorization remains operation-scoped; no second identity challenge.
+        let identity = json!({"type":"SESSION","sessionId":s["id"]});
+        a.s.batch(vec![login_sessions::client_guard(a,&c)?,login_sessions::active_guard(a,&s)?,
+            owner_guard(a,&text(&s,"user_id"),&identity)?,
+            a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
+            a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',verified_identity=? WHERE id=? AND status='PENDING'",vec![identity.to_string().into(),id.clone().into()])?
+        ],"VERSION_CONFLICT").await?;
+        return Ok(
+            json!({"transactionId":id,"status":"VERIFIED","expiresAt":iso(&json!(n+600000)),"nextStep":"COMPLETE"}),
+        );
+    }
     Ok(
         json!({"transactionId":id,"status":"PENDING","expiresAt":iso(&json!(n+600000)),"nextStep":match text(b,"method").as_str(){"EMAIL_PASSWORD"=>"PASSWORD_LOGIN","GOOGLE"|"GITHUB"=>"START_PROVIDER",_=>"REQUEST_CHALLENGE"}}),
     )
 }
 pub fn owner_guard(a: &Auth, user: &str, identity: &Value) -> Result<D1PreparedStatement> {
     let (sql, args) = match text(identity, "type").as_str() {
+        "SESSION" => (
+            "EXISTS(SELECT 1 FROM auth_login_session WHERE id=? AND user_id=? AND revoked_at IS NULL AND last_active_at+2592000000>? AND absolute_expires_at>?)",
+            vec![
+                identity["sessionId"].clone(),
+                user.into(),
+                now().into(),
+                now().into(),
+            ],
+        ),
         "EMAIL" => (
             "EXISTS(SELECT 1 FROM auth_user_email e JOIN auth_local_credential c ON c.user_id=e.user_id WHERE e.user_id=? AND e.canonical_email=? AND e.verified_at IS NOT NULL)",
             vec![user.into(), identity["target"].clone()],
@@ -105,6 +148,10 @@ pub async fn verified(
     let mut writes = vec![guard(a, t, n, "PENDING")?];
     if t["purpose"] == "REAUTH" {
         writes.push(owner_guard(a, &text(t, "user_id"), identity)?);
+        writes.push(a.s.statement(
+            "UPDATE auth_login_session SET identity_verified_at=? WHERE id=?",
+            vec![n.into(), t["login_session_id"].clone()],
+        )?);
     }
     writes.push(a.s.statement(
         "UPDATE auth_product_transaction SET status='VERIFIED',verified_identity=? WHERE id=?",

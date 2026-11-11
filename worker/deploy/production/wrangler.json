@@ -2,7 +2,9 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "molis-auth-production",
   "main": "../../rust/build/index.js",
-  "build": { "command": "node scripts/rust-build.mjs" },
+  "build": {
+    "command": "node scripts/rust-build.mjs"
+  },
   "compatibility_date": "2026-09-19",
   "workers_dev": true,
   "preview_urls": false,
@@ -15,10 +17,14 @@
   },
   "vars": {
     "AUTH_ORIGIN": "https://molis-auth-production.sparkling-silence-0a49.workers.dev",
-    "PLATFORM_ADMIN_IDS": "7cb468c7-9817-4ac8-912c-ff662abad5ee"
+    "AUTH_WEB_CLIENT_ID": "molis-auth-web-production",
+    "TENANT_CREATION_POLICY": "SELF_SERVICE",
+    "UNIFIED_ACCOUNT_CONFIG": "{\"environmentId\":\"auth-production\",\"kind\":\"PRODUCTION\",\"authOrigin\":\"https://molis-auth-production.sparkling-silence-0a49.workers.dev\",\"deliveryMode\":\"LIVE\",\"providerMode\":\"LIVE\"}"
   },
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": [
+      "0 * * * *"
+    ]
   },
   "d1_databases": [
     {
@@ -29,7 +35,19 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "PASSWORD_KDF", "class_name": "PasswordKdf" }]
+    "bindings": [
+      {
+        "name": "PASSWORD_KDF",
+        "class_name": "PasswordKdf"
+      }
+    ]
   },
-  "migrations": [{ "tag": "password-kdf-v1", "new_sqlite_classes": ["PasswordKdf"] }]
+  "migrations": [
+    {
+      "tag": "password-kdf-v1",
+      "new_sqlite_classes": [
+        "PasswordKdf"
+      ]
+    }
+  ]
 }

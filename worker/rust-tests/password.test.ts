@@ -5,7 +5,7 @@ import { localCredential } from '../scripts/local-credential.mjs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { secret, challenge } from './fixtures.ts'
 
-test('local admin bootstrap uses Rust policy and compatible password encoding', async () => {
+test('local admin bootstrap uses current Rust policy and password encoding', async () => {
   const password = 'migration-test-密码-e\u0301'
   const result = await localCredential(' Admin@Example.com ', password)
   assert.equal(result.email, 'admin@example.com')
@@ -19,13 +19,22 @@ test('local admin bootstrap uses Rust policy and compatible password encoding', 
     'sha256',
   )
   assert.deepEqual(bytes.subarray(16), derived)
-  await assert.rejects(localCredential('invalid-email', password), /INVALID_EMAIL/)
-  await assert.rejects(localCredential('admin@example.com', 'password123'), /PASSWORD_BLOCKED/)
+  await assert.rejects(localCredential('invalid-email', password), /INVALID_REQUEST/)
+  await assert.rejects(localCredential('admin@example.com', 'password123'), /INVALID_REQUEST/)
 })
 
-test('Rust authenticates deployed JDK/TS password records', async () => {
+test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong password', async () => {
   const origin = 'http://127.0.0.1:8787'
-  const proxy = await getRustProxy({ AUTH_ORIGIN: origin })
+  const proxy = await getRustProxy({
+    AUTH_ORIGIN: origin,
+    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+      environmentId: 'unified-local',
+      kind: 'LOCAL',
+      authOrigin: origin,
+      deliveryMode: 'MOCK',
+      providerMode: 'MOCK',
+    }),
+  })
   try {
     await initializeLocalRuntime(proxy)
     const db = proxy.env.DB
@@ -34,12 +43,12 @@ test('Rust authenticates deployed JDK/TS password records', async () => {
       '{pbkdf2-sha256-600k-v1}000102030405060708090a0b0c0d0e0f08acf49901aaf21cdef94f9532bb327863e74f577a312f971f4e7098044612fe'
     await db.batch([
       db.prepare(
-        "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES ('legacy','Legacy','ACTIVE',0,0)",
+        "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES ('vector','Vector','ACTIVE',0,0)",
       ),
       db.prepare(
-        "INSERT INTO auth_user_email(id,user_id,canonical_email,created_at) VALUES ('email','legacy','legacy@example.test',0)",
+        "INSERT INTO auth_user_email(id,user_id,canonical_email,created_at) VALUES ('email','vector','vector@example.test',0)",
       ),
-      db.prepare("INSERT INTO auth_local_credential VALUES ('legacy',?,0)").bind(encoded),
+      db.prepare("INSERT INTO auth_local_credential VALUES ('vector',?,0)").bind(encoded),
     ])
     async function post(path: string, body: unknown, transaction?: string) {
       return proxy.fetch(
@@ -48,29 +57,34 @@ test('Rust authenticates deployed JDK/TS password records', async () => {
           headers: {
             Origin: origin,
             'Content-Type': 'application/json',
-            ...(transaction ? { 'X-Auth-Transaction': transaction } : {}),
+            ...(transaction ? { 'X-Auth-Initiator-Proof': transaction } : {}),
           },
           body: JSON.stringify(body),
         }),
       )
     }
+    await db.prepare('UPDATE auth_user_email SET verified_at=0').run()
+    await db.prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('vector',0)").run()
     for (const [password, expected] of [
       ['migration-test-密码-e\u0301', 200],
       ['wrong-password', 401],
     ] as const) {
-      const response = await post('/api/v1/auth/transactions', {
-        clientId: 'molis-auth-console',
-        redirectUri: origin + '/console/callback',
+      const proof = secret()
+      const response = await post('/api/v2/auth/transactions', {
+        clientId: 'molis-auth-web-local',
+        redirectUri: origin + '/account/callback',
         codeChallenge: challenge(secret()),
         codeChallengeMethod: 'S256',
         state: secret(),
-        scopes: ['account'],
+        purpose: 'LOGIN',
+        method: 'EMAIL_PASSWORD',
+        initiatorChallenge: challenge(proof),
       })
       const { data } = await response.json()
       const login = await post(
-        '/api/v1/auth/transactions/password',
-        { email: 'legacy@example.test', password },
-        data.transaction,
+        '/api/v2/auth/transactions/' + data.transactionId + '/password',
+        { email: 'vector@example.test', password },
+        proof,
       )
       assert.equal(login.status, expected, await login.text())
     }
