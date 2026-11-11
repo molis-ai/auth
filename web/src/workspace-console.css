@@ -6,7 +6,7 @@
 .v2-console .console-tabs { margin:0; border:0; display:grid; gap:2px; }
 .v2-console .workspace-sidebar nav button { border:0; border-radius:8px; padding:8px 10px; min-height:38px; color:#44444d; font-weight:400; background:transparent; }
 .v2-console .workspace-sidebar nav button[aria-current] { background:#e1e1e6; color:var(--ink); }
-.v2-console .workspace-sidebar nav button:hover { background:#e8e8ec; }
+.v2-console .workspace-sidebar nav button:enabled:hover { background:#e8e8ec; }
 .v2-console .sidebar-bottom { gap:0; padding-top:8px; min-width:0; }
 .v2-console .account-avatar { width:32px; height:32px; font-size:16px; border-radius:50%; }
 .v2-console .workspace-body main { max-width:none; padding:30px 36px; min-height:calc(100svh - 70px); }
@@ -65,7 +65,7 @@
 .v2-console .account-menu-trigger { anchor-name:--account-menu-trigger; display:grid; grid-template-columns:32px minmax(0,1fr) 12px; align-items:center; width:100%; min-width:0; gap:8px; border:0; border-radius:8px; background:transparent; text-align:left; padding:8px 4px; }
 .v2-console .account-menu { position:fixed; position-anchor:--account-menu-trigger; inset:auto; left:anchor(left); bottom:calc(anchor(top) + 6px); margin:0; width:anchor-size(width); box-sizing:border-box; padding:6px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 8px 30px #0002; }
 .v2-console .account-menu button { display:block; width:100%; text-align:left; border:0; background:transparent; }
-.v2-console .account-menu button:hover { background:var(--accent-soft); }
+.v2-console .account-menu button:enabled:hover { background:var(--accent-soft); }
 .session-actions { margin:24px 0; padding-bottom:24px; border-bottom:1px solid var(--line); }
 .v2-console .logout-confirm { max-width:calc(100vw - 32px); padding:24px; border:1px solid var(--line); border-radius:16px; background:var(--surface); color:var(--ink); }
 .logout-confirm::backdrop { background:#0003; }
@@ -82,7 +82,7 @@
 .v2-console .security-nav button { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#44444d; font-size:14px; line-height:20px; font-weight:400; text-align:left; }
 .security-nav button svg { width:18px; height:18px; flex-shrink:0; stroke-width:1.6; }
 .v2-console .security-nav button[aria-current] { background:#e1e1e6; color:var(--ink); }
-.v2-console .security-nav button:hover { background:#e8e8ec; }
+.v2-console .security-nav button:enabled:hover { background:#e8e8ec; }
 .v2-console .security-layout .collection-detail > section > h2 { margin:0 0 20px; font-size:18px; font-weight:500; }
 .security-method { padding:16px 0; border-bottom:1px solid var(--line); }
 .v2-console .security-method h3 { margin:0 0 8px; font-size:14px; font-weight:500; }
@@ -132,7 +132,7 @@
 .security-editor:has(.phone-binding) { max-width:520px; }
 .v2-console .console-card .phone-binding-line > button { box-sizing:border-box; height:40px; min-height:40px; padding:0 14px; border:1px solid #dedee4; border-radius:8px; font-size:14px; font-weight:400; line-height:20px; box-shadow:none; }
 .v2-console .console-card .phone-binding-line > button:not(.phone-bind-cancel) { background:var(--accent-soft); border-color:#cbd2ef; color:var(--accent); }
-.v2-console .console-card .phone-binding-line > button:hover:not(:disabled) { background:#e5e8f3; border-color:#aeb8dc; }
+.v2-console .console-card .phone-binding-line > button:enabled:hover:not(:disabled) { background:#e5e8f3; border-color:#aeb8dc; }
 .v2-console .console-card .phone-number input::placeholder { color:#94949d; }
 .v2-console .console-card .phone-number input:focus, .v2-console .console-card .phone-code input:focus { outline:none; border-color:#5269bd40; }
 

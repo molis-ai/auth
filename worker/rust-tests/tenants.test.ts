@@ -262,6 +262,19 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         )
       },
     )
+    await suite.test('member directory exposes names and verified email only inside the tenant', async () => {
+      await db.prepare('UPDATE auth_user SET display_name=? WHERE id=?').bind('林小雨', owner.userId).run()
+      let row = (await members(alpha.tenantId))[0]
+      assert.equal(row.displayName, '林小雨')
+      assert.equal(row.email, null)
+      await db.prepare('INSERT INTO auth_user_email(id,user_id,canonical_email,created_at) VALUES (?,?,?,?)').bind('directory-email', owner.userId, 'directory@example.test', Date.now()).run()
+      row = (await members(alpha.tenantId))[0]
+      assert.equal(row.email, null)
+      await db.prepare('UPDATE auth_user_email SET verified_at=? WHERE id=?').bind(Date.now(), 'directory-email').run()
+      assert.equal((await members(alpha.tenantId))[0].email, 'directory@example.test')
+      assert.equal((await call('/tenants/' + alpha.tenantId + '/members', undefined, outsider)).status, 404)
+      assert.equal((await call('/tenants/' + alpha.tenantId + '/members', undefined, platform)).status, 404)
+    })
     await suite.test(
       'UAS-13/28: directed invitations require current verified identity; mock notifications do not grant membership',
       async () => {

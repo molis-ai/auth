@@ -1,0 +1,35 @@
+/* Shared interaction feedback for both sign-in and authenticated Auth screens.
+   Paint-only changes preserve layout, selected states and control dimensions. */
+#app :is(.auth-entry, .v2-console) :is(button, a[href], [role=button], select, input[type=checkbox]) {
+ transition:background-color 140ms ease, background-image 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+@media(hover:hover) {
+ #app :is(.auth-entry, .v2-console) :is(button, a[href], [role=button]):not(:disabled):not([aria-disabled=true]):not(.tenant-choice):hover {
+  background-image:linear-gradient(#8080801a,#8080801a);
+  filter:brightness(.96);
+  cursor:pointer;
+ }
+ #app :is(.auth-entry, .v2-console) :is(select,input[type=checkbox]):not(:disabled):hover { box-shadow:inset 0 0 0 1px #5068b74d; cursor:pointer; }
+ #app .v2-console dialog header button:not(:disabled):hover,
+ #app .v2-console dialog button[aria-label^="关闭"]:not(:disabled):hover {
+  background-color:#e9e9ed;
+  color:var(--ink);
+  box-shadow:inset 0 0 0 1px #19191b12;
+ }
+ #app .v2-console :is(tbody tr:has(td:not(.tm-empty)), .v2-row:not(.collection-item)):not([inert]):hover {
+  background-color:#efeff2;
+  box-shadow:inset 0 0 0 1px #19191b08;
+ }
+}
+#app :is(.auth-entry, .v2-console) :is(button,a[href],[role=button],select,input[type=checkbox]):focus-visible {
+ outline:2px solid var(--accent);
+ outline-offset:-2px;
+}
+#app :is(.auth-entry, .v2-console) :is(button,[role=button]):is(:disabled,[aria-disabled=true]) {
+ cursor:default;
+ filter:none;
+ background-image:none;
+}
+@media(prefers-reduced-motion:reduce) {
+ #app :is(.auth-entry,.v2-console) :is(button,a[href],[role=button],select,input[type=checkbox]) { transition:none; }
+}

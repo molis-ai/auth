@@ -180,10 +180,11 @@ try {
   await page.wait(
     "document.querySelector('main')?.textContent.includes('创建租户')",
   );
-  await page.fill("form input", "QA 自助租户");
-  await click("创建租户");
+  await click("＋ 创建租户");
+  await page.fill("#tenant-create-name", "QA 自助租户");
+  await click("创建");
   await page.wait(
-    "document.querySelector('main')?.textContent.includes('QA 自助租户')&&[...document.querySelectorAll('button')].some(b=>b.textContent==='QA 自助租户')",
+    "document.querySelector('.tm-heading h2')?.textContent==='QA 自助租户'",
   );
   assert.equal(
     (await db.prepare("SELECT count(*) n FROM auth_managed_tenant").first()).n,
@@ -191,8 +192,7 @@ try {
   );
   console.log("PASS browser self-service tenant");
   // CONSOLE-01: original sidebar and list/detail composition at desktop and phone widths.
-  await click("QA 自助租户");
-  await page.wait("Boolean(document.querySelector('.detail-heading'))");
+  await page.wait("Boolean(document.querySelector('.tm-heading'))");
   for (const width of [1440, 1024, 390]) {
     await page.command('Emulation.setDeviceMetricsOverride', {width, height:900, deviceScaleFactor:1, mobile:false});
     assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
