@@ -78,6 +78,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         cookie = set.split(';')[0]
       }
       csrf = r.headers.get('X-CSRF-Token') || csrf
+      if (r.headers.get('Content-Type')?.includes('text/html')) {
+        return { status: r.status, html: await r.text(), csp: r.headers.get('Content-Security-Policy') }
+      }
       const value = await r.json()
       return { status: r.status, ...value }
     }
@@ -385,10 +388,14 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         .bind(tx.handle)
         .first()
       assert.equal(central.status, 'VERIFIED')
-      assert.equal(
-        ok(await call(callback.pathname + callback.search, undefined, navigation)).status,
-        'VERIFIED',
-      )
+      const callbackPage = await call(callback.pathname + callback.search, undefined, navigation)
+      assert.equal(callbackPage.status, 200)
+      assert.match(callbackPage.html, /授权已完成/)
+      assert.match(callbackPage.html, /window\.close\(\)/)
+      const nonce = callbackPage.html.match(/script nonce="([^"]+)"/)![1]
+      assert.ok(callbackPage.csp.includes("script-src 'nonce-" + nonce + "'"))
+      assert.doesNotMatch(callbackPage.html, /requestId|accessToken|refreshToken/)
+
       const first = ok(await call('/api/account/auth/transactions/' + tx.handle))
       assert.equal(first.account.state, 'AUTHENTICATED')
       assert.equal(
@@ -429,6 +436,8 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         ok(await call('/api/account/logout', { scope: 'CURRENT_LOGIN' })).localCleared,
         true,
       )
+      assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
+      assert.equal((await call('/api/account/login-methods')).status, 401)
     }
   } finally {
     await p.dispose()

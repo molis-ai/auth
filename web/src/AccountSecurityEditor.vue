@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import type { AccountClient } from '../../sdk/browser/src/index.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
-defineProps<{client: AccountClient; securityAction: string; reauth: string; newIdentity: boolean; binding?: {bindingId:string;type:string}; target: Record<string,string>; busy:boolean}>();
+defineProps<{client: AccountClient; authorizationPopup?: Window | null; securityAction: string; reauth: string; newIdentity: boolean; binding?: {bindingId:string;type:string}; target: Record<string,string>; busy:boolean}>();
 const newPassword = defineModel<string>('newPassword', {default:''});
 const confirmPassword = defineModel<string>('confirmPassword', {default:''});
 const error = ref('');
@@ -28,14 +28,10 @@ const emit = defineEmits<{verified:[value:{handle:string}]; cancel:[]; finish:[h
             :key="reauth"
             :client="client"
             :blocked="busy"
-            :purpose="securityAction === 'BIND_METHOD' ? 'BIND' : 'REPLACE'"
+            purpose="BIND"
             :parent="reauth"
+            :authorization-popup="authorizationPopup"
             :identity-type="binding?.type"
-            :binding-id="
-              securityAction === 'REPLACE_METHOD'
-                ? binding?.bindingId
-                : undefined
-            "
             @complete="(v) => emit('finish', v.handle)"
             @cancel="emit('cancel')"
           />

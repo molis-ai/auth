@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from "vue";
+import { onMounted, onBeforeUnmount, ref, shallowRef } from "vue";
 import {
   AccountClient,
   AuthError,
@@ -21,7 +21,7 @@ function clearToast() { clearTimeout(toastTimer); toast.value = ""; }
 function showToast(text: string) {
   clearToast();
   toast.value = entryText(entryLanguage(), text);
-  toastTimer = setTimeout(clearToast, 3000);
+  toastTimer = setTimeout(clearToast, 5000);
 }
 const securityTab = ref('methods');
 async function selectSecurityTab(value: string) { await run(async () => { await cancelSecurity(); securityTab.value = value; }); }
@@ -31,7 +31,6 @@ const tenantSearch = ref(""), applicationSearch = ref("");
 const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
-  message = ref(""),
   page = ref("account");
 interface Tenant {
   tenantId: string;
@@ -114,7 +113,7 @@ function can(capability: string) {
 async function run(task: () => Promise<void>) {
   if (busy.value) return;
   busy.value = true;
-  message.value = "";
+  clearToast();
   try {
     await task();
   } catch (e) {
@@ -125,7 +124,7 @@ async function run(task: () => Promise<void>) {
       clearAccount();
       account.value = { state: "EXPIRED" };
     }
-    message.value = accountErrorMessage(e);
+    showToast(accountErrorMessage(e));
   } finally {
     busy.value = false;
   }
@@ -151,6 +150,7 @@ async function list<T>(path: string): Promise<T[]> {
 async function refresh() {
   account.value = await client.session();
   if (account.value.state === "AUTHENTICATED") {
+    methods.value = (await client.request<{ loginMethods: Method[] }>("/login-methods")).loginMethods;
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
       kind: "OPEN",
@@ -205,15 +205,15 @@ async function mutate(
   await run(async () => {
     await client.request(path, body, method, crypto.randomUUID());
     await after();
-    message.value = "已完成";
+    showToast("已完成");
   });
 }
 function openTenantCreate() {
-  tenantName.value = ''; message.value = '';
+  tenantName.value = ''; clearToast();
   tenantCreateDialog.value?.showModal();
 }
 function closeTenantCreate() {
-  if (!busy.value) { tenantCreateDialog.value?.close(); tenantName.value = ''; message.value = ''; }
+  if (!busy.value) { tenantCreateDialog.value?.close(); tenantName.value = ''; clearToast(); }
 }
 async function createTenant() {
   const name = tenantName.value.trim();
@@ -232,8 +232,12 @@ async function openApplication(a: Application) {
   appName.value = a.name;
   appStatus.value = a.status;
 }
+const authorizationPopup = shallowRef<Window | null>(null);
 async function verify(operation: string, item?: Method) {
+  const reserved = operation === 'BIND_METHOD' && ['GOOGLE','GITHUB'].includes(item?.type ?? '') ? window.open('about:blank', '_blank') : null;
+  if (reserved) reserved.opener = null;
   await cancelSecurity();
+  authorizationPopup.value = reserved;
   binding.value = item;
   securityAction.value = operation;
   reauth.value = "";
@@ -247,6 +251,8 @@ function target(): Record<string, string> {
       : { bindingId: binding.value!.bindingId };
 }
 async function cancelSecurity() {
+  authorizationPopup.value?.close();
+  authorizationPopup.value = null;
   const handle = reauth.value;
   reauth.value = "";
   securityAction.value = "";
@@ -260,10 +266,7 @@ async function cancelSecurity() {
 }
 async function verified(value: { handle: string }) {
   reauth.value = value.handle;
-  if (
-    securityAction.value === "BIND_METHOD" ||
-    securityAction.value === "REPLACE_METHOD"
-  )
+  if (securityAction.value === "BIND_METHOD")
     newIdentity.value = true;
   else if (securityAction.value === "UNLINK_METHOD") await finishSecurity();
 }
@@ -277,7 +280,7 @@ async function finishSecurity(identityHandle?: string) {
         : "/login-methods/" +
           binding.value!.bindingId +
           "/" +
-          (operation === "REPLACE_METHOD" ? "replace" : "unlink");
+          "unlink";
   await mutate(
     path,
     {
@@ -306,9 +309,9 @@ async function logout(all = false) {
     rememberEmail("");
     sessionChanges?.postMessage('changed');
     if (result.remoteRevocation === "CONFIRMED") {
-      message.value = "";
+      clearToast();
       showToast("已退出登录");
-    } else message.value = "本机已退出，远端撤销尚未确认";
+    } else showToast("本机已退出，远端撤销尚未确认");
   });
 }
 function clearAccount() {
@@ -368,8 +371,8 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite">{{ toast }}</div></Teleport>
-  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" :message="message" @complete="loggedIn" />
+  <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
+  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @complete="loggedIn" />
   <div v-else class="console-shell v2-console">
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
@@ -411,8 +414,7 @@ onBeforeUnmount(() => {
     </aside>
     <div class="workspace-body">
     <main>
-      <p v-if="message" role="status" aria-live="polite" class="console-feedback">{{ message }}</p>
-      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); message = accountErrorMessage(error); }">
+      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); showToast(accountErrorMessage(error)); }">
       </AccountProfile>
       <section v-if="page === 'security'" class="console-card security-page">
         <div class="collection-layout security-layout">
@@ -425,14 +427,30 @@ onBeforeUnmount(() => {
             <dialog ref="logoutDialog" class="logout-confirm"><h2>退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
             <section v-if="securityTab === 'password'"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
             <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
-              <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method">
+              <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method" :class="{ 'is-editing-phone': type === 'PHONE' && binding?.type === 'PHONE' && securityAction === 'BIND_METHOD' }">
+                <div class="security-method-info">
                 <h3>{{ label }}<span v-if="type === 'EMAIL'" class="security-info"><button type="button" class="security-info-trigger" aria-label="邮箱维护说明" aria-describedby="email-management-tip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="4.8" r=".6" fill="currentColor" stroke="none"/></svg></button><span id="email-management-tip" role="tooltip" class="security-info-tip">邮箱由管理员维护，如需修改请联系管理员。</span></span></h3>
-                <div v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="v2-row"><span>{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('REPLACE_METHOD',m)">换绑</button><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button></div>
-                <div v-if="!methods.some(item => item.type === type) && !(securityAction && binding?.type === type)" class="v2-row"><span>未绑定</span><button v-if="type !== 'EMAIL' && !(securityAction && binding?.type === type)" :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button></div>
-                <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+                  <p v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="security-method-account">{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</p>
+                  <p v-if="!methods.some(item => item.type === type)" class="security-method-account">-</p>
+                </div>
+                <div class="security-method-controls">
+                <template v-if="!(securityAction && binding?.type === type)">
+                  <div v-for="m in methods.filter(item => item.type === type && type !== 'EMAIL')" :key="m.bindingId" class="security-method-actions">
+                    <button :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button>
+                  </div>
+                  <div v-if="type !== 'EMAIL' && !methods.some(item => item.type === type)" class="security-method-actions">
+                    <button :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button>
+                  </div>
+                </template>
+                  <span class="security-method-status" :class="{ 'is-bound': methods.some(item => item.type === type) }" role="status">
+                    <span class="security-status-dot" aria-hidden="true"></span>
+                    {{ methods.some(item => item.type === type) ? '已绑定' : '未绑定' }}
+                  </span>
+                </div>
+                <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
               </div>
             </section>
-<AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+<AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
           </div>
         </div>
       </section>
@@ -448,7 +466,6 @@ onBeforeUnmount(() => {
             <label for="tenant-create-name">租户名称</label>
             <input id="tenant-create-name" v-model="tenantName" maxlength="80" required autofocus autocomplete="off" :disabled="busy" placeholder="例如：产品研发团队" />
             <p>创建后，你将成为该租户的所有者，可以邀请成员加入。</p>
-            <p v-if="message" role="alert">{{ message }}</p>
             <footer><button type="button" :disabled="busy" @click="closeTenantCreate">取消</button><button type="submit" :disabled="busy || !tenantName.trim()">{{ busy ? '正在创建…' : '创建' }}</button></footer>
           </form>
         </dialog>

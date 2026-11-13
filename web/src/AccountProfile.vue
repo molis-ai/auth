@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { AccountClient, AuthError, type AccountView } from '../../sdk/browser/src/index.ts';
 import AvatarCropper from './AvatarCropper.vue';
 import { accountErrorMessage } from './errors.ts';
-const props = defineProps<{ user: NonNullable<AccountView['user']>; client: AccountClient; onSaved: () => Promise<void> }>();
+const props = defineProps<{ user: NonNullable<AccountView['user']>; githubAccount?: string; client: AccountClient; onSaved: () => Promise<void> }>();
 const emit = defineEmits<{ expired: [error: AuthError] }>();
 const profilePicker = ref<HTMLInputElement>();
 const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(null);
@@ -23,7 +23,7 @@ async function saveName() {
   if (value === props.user.displayName) { cancelName(); return; }
   nameSaving.value = true; nameError.value = '';
   try {
-    await props.client.request('/profile', {displayName:value,avatarDataUrl:props.user.avatarUrl,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
+    await props.client.request('/profile', {displayName:value,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
     if (!active) return;
     await props.onSaved();
     if (active) editingName.value = false;
@@ -58,7 +58,7 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
 <template>
   <section class="console-card profile-page">
     <h1>个人资料</h1>
-    <div class="profile-identity"><button type="button" class="profile-portrait profile-avatar-trigger" :class="{ selected: avatarSelected }" aria-label="编辑头像" @click="pickProfileAvatar" @blur="avatarSelected=false"><img v-if="user.avatarUrl" :src="user.avatarUrl" alt="头像"><span v-else>{{ user.displayName.slice(0,1) || 'M' }}</span><span class="profile-avatar-pencil"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z"/></svg></span></button><h2 class="profile-inline-name" :class="{ 'is-editing': editingName }"><span v-if="!editingName" tabindex="0" role="button" aria-label="修改昵称" @click="editName" @keydown.enter.prevent="editName" @keydown.space.prevent="editName">{{ user.displayName }}</span><span v-else class="profile-name-field"><span aria-hidden="true">{{ inlineName || '昵称' }}</span><input ref="nameInput" v-model="inlineName" aria-label="修改昵称" maxlength="80" autocomplete="nickname" :readonly="nameSaving" :aria-busy="nameSaving" @blur="saveName" @keydown="nameKey"></span></h2><p v-if="nameSaving" class="profile-name-status" role="status">正在保存...</p><p v-else-if="nameError" class="profile-name-status profile-name-error" role="alert">{{ nameError }}</p><p v-if="user.email" class="profile-email">{{ user.email }}</p></div>
+    <div class="profile-identity"><button type="button" class="profile-portrait profile-avatar-trigger" :class="{ selected: avatarSelected }" aria-label="编辑头像" @click="pickProfileAvatar" @blur="avatarSelected=false"><img v-if="user.avatarUrl" :src="user.avatarUrl" alt="头像"><span v-else>{{ user.displayName.slice(0,1) || 'M' }}</span><span class="profile-avatar-pencil"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z"/></svg></span></button><h2 class="profile-inline-name" :class="{ 'is-editing': editingName }"><span v-if="!editingName" tabindex="0" role="button" aria-label="修改昵称" @click="editName" @keydown.enter.prevent="editName" @keydown.space.prevent="editName">{{ user.displayName }}</span><span v-else class="profile-name-field"><span aria-hidden="true">{{ inlineName || '昵称' }}</span><input ref="nameInput" v-model="inlineName" aria-label="修改昵称" maxlength="80" autocomplete="nickname" :readonly="nameSaving" :aria-busy="nameSaving" @blur="saveName" @keydown="nameKey"></span></h2><p v-if="nameSaving" class="profile-name-status" role="status">正在保存...</p><p v-else-if="nameError" class="profile-name-status profile-name-error" role="alert">{{ nameError }}</p><p v-if="githubAccount" class="profile-email">GitHub · {{ githubAccount }}</p><p v-if="user.email" class="profile-email">{{ user.email }}</p></div>
     <input ref="profilePicker" class="profile-direct-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="选择新的头像" hidden @change="chooseFromProfile">
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>
     <AvatarCropper v-if="cropFile" :file="cropFile" :apply="applyCrop" @close="cropFile=null" />

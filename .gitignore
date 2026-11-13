@@ -11,6 +11,7 @@ coverage/
 .wrangler/
 .dev.vars
 .dev.vars.*
+!worker/.dev.vars.example
 .env
 .env.*
 !.env.example

@@ -379,7 +379,30 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     };
     persisted?;
     released?;
-    let mut response = json_response(json!({"data":result?,"requestId":a.request_id}), 200)?;
+    let mut response = if path == "/account/callback" {
+        let (message, status) = match &result {
+            Ok(value) if value["status"] == "VERIFIED" => (
+                "授权已完成，请返回原页面继续。此窗口将由原页面自动关闭。",
+                200,
+            ),
+            Ok(_) => ("授权已取消，请返回原页面重试。", 200),
+            Err(failure) => (
+                "暂时无法完成授权，请返回原页面重新发起登录。",
+                failure.status,
+            ),
+        };
+        let nonce = secret();
+        let mut page = Response::from_html(format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Molis · 账号授权</title><body><script nonce=\"{nonce}\">window.close();</script><main><h1>Molis 账号授权</h1><p>{message}</p><a href=\"/\">返回 Molis</a></main></body></html>"))?.with_status(status);
+        page.headers_mut().set(
+            "Content-Security-Policy",
+            &format!("default-src 'none'; script-src 'nonce-{nonce}'; frame-ancestors 'none'; base-uri 'none'"),
+        )?;
+        page.headers_mut().set("Cache-Control", "no-store")?;
+        page.headers_mut().set("Referrer-Policy", "no-referrer")?;
+        page
+    } else {
+        json_response(json!({"data":result?,"requestId":a.request_id}), 200)?
+    };
     response
         .headers_mut()
         .set("X-CSRF-Token", &csrf(&key, &browser_id))?;

@@ -5,7 +5,7 @@ import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.m
 import { secret, challenge } from './fixtures.ts'
 
 test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
-  const origin = 'https://auth-staging.molis.ai'
+  const origin = process.env.GITHUB_TEST_ORIGIN || 'https://auth-staging.molis.ai'
   const callback = origin + '/api/v2/auth/external/github/callback'
   const issuer = 'https://github.com/login/oauth'
   const key = secret()
@@ -48,13 +48,22 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
       const subject = token && tokens.get(token)
       assert.ok(subject)
       tokens.delete(token)
-      return Response.json({ id: subject, email: null, login: 'synthetic-github' })
+      return Response.json({
+        id: subject,
+        email: 'public@example.test',
+        login: 'synthetic-github',
+        name: 'GitHub Test User',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1234567?v=4',
+      })
     },
   )
   try {
     await initializeLocalRuntime(p, false)
     const db = p.env.DB
-    const seed = readFileSync(new URL('../deploy/staging/seed.sql', import.meta.url), 'utf8')
+    const seed = readFileSync(
+      new URL('../deploy/staging/seed.sql', import.meta.url),
+      'utf8',
+    ).replaceAll('https://auth-staging.molis.ai', origin)
     for (const sql of seed
       .replace(/^--[^\n]*$/gm, '')
       .split(';')
@@ -137,11 +146,17 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
       const entry = await p.fetch(new Request((await opened.json()).data.browserStartUrl))
       assert.equal(entry.status, 303)
       const cookie = entry.headers.get('Set-Cookie')!.split(';')[0]
-      assert.match(entry.headers.get('Set-Cookie')!, /HttpOnly; SameSite=Lax; Max-Age=600; Secure/)
+      assert.match(entry.headers.get('Set-Cookie')!, /HttpOnly; SameSite=Lax; Max-Age=600/)
+      assert.equal(
+        entry.headers.get('Set-Cookie')!.includes('; Secure'),
+        origin.startsWith('https:'),
+      )
       const location = new URL(entry.headers.get('Location')!)
       assert.equal(location.origin + location.pathname, 'https://github.com/login/oauth/authorize')
       assert.equal(location.searchParams.get('redirect_uri'), callback)
       assert.equal(location.searchParams.get('code_challenge_method'), 'S256')
+      assert.equal(location.searchParams.get('prompt'), 'select_account')
+      assert.equal(location.searchParams.has('login_hint'), false)
       assert.equal(location.searchParams.get('client_id'), 'github-test-client')
       const code = secret()
       codes.set(code, { challenge: location.searchParams.get('code_challenge')!, subject })
@@ -191,6 +206,10 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
       assert.equal(loginMethods.length, 1)
       assert.equal(loginMethods[0].type, 'GITHUB')
       assert.equal(loginMethods[0].usableForLogin, true)
+      assert.equal(loginMethods[0].maskedLabel, '@synthetic-github')
+      assert.equal(user.displayName, 'GitHub Test User')
+      assert.equal(user.avatarUrl, 'https://avatars.githubusercontent.com/u/1234567?v=4')
+      assert.equal(user.email, null)
       return { userId: user.userId, accessToken }
     }
     async function sendCallback(flow: Flow) {
@@ -210,9 +229,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
     assert.equal(exchanges, 0)
     const wrongIssuer = new URL(work.url)
     wrongIssuer.searchParams.set('iss', 'https://other.example.test/oauth')
-    const missingIssuer = new URL(work.url)
-    missingIssuer.searchParams.delete('iss')
-    for (const url of [wrongIssuer, missingIssuer]) {
+    for (const url of [wrongIssuer]) {
       const rejected = await p.fetch(new Request(url, { headers: { Cookie: work.cookie } }))
       assert.equal(rejected.status, 400)
       assert.equal(exchanges, 0)
@@ -225,6 +242,10 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
     assert.equal(fakePage.status, 503)
     assert.equal(exchanges, 0)
 
+    // GitHub's documented callback is code + state; issuer is optional but checked if present.
+    const withoutIssuer = new URL(work.url)
+    withoutIssuer.searchParams.delete('iss')
+    work.url = withoutIssuer.toString()
     const signedInUsers = []
     for (const flow of [work, (await start('club'))!]) {
       await verify(flow)
@@ -381,6 +402,60 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
           target: { method: 'GITHUB' },
         }))!
         assert.equal((await sendCallback(removed)).status, 409)
+      },
+    )
+    await suite.test(
+      'GitHub profile fills older accounts and preserves edited profiles',
+      async () => {
+        const { accessToken, userId } = signedInUsers[0]
+        const before = (await (await api('/users/me', undefined, undefined, accessToken)).json())
+          .data
+        const edited = await p.fetch(
+          new Request(origin + '/api/v2/users/me/profile', {
+            method: 'PATCH',
+            headers: {
+              Authorization: 'Bearer ' + accessToken,
+              'Content-Type': 'application/json',
+              'Idempotency-Key': secret(),
+            },
+            body: JSON.stringify({
+              displayName: 'My chosen name',
+              avatarDataUrl: null,
+              expectedVersion: before.user.version,
+            }),
+          }),
+        )
+        assert.equal(edited.status, 200)
+        await verify((await start('work'))!)
+        const after = (await (await api('/users/me', undefined, undefined, accessToken)).json())
+          .data
+        assert.equal(after.user.displayName, 'My chosen name')
+        assert.equal(after.user.avatarUrl, null)
+        assert.equal(
+          (
+            await db
+              .prepare('SELECT COUNT(*) n FROM auth_user_email WHERE user_id=?')
+              .bind(userId)
+              .first()
+          ).n,
+          0,
+        )
+        await db
+          .prepare(
+            "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES ('old-github','Molis 用户','ACTIVE',0,0)",
+          )
+          .run()
+        await db
+          .prepare(
+            "INSERT INTO auth_external_identity VALUES ('old-github-binding','old-github','GITHUB','https://github.com','777777',0)",
+          )
+          .run()
+        await verify((await start('work', 'github', 777777))!)
+        const old = await db
+          .prepare("SELECT display_name,avatar_data FROM auth_user WHERE id='old-github'")
+          .first()
+        assert.equal(old.display_name, 'GitHub Test User')
+        assert.equal(old.avatar_data, 'https://avatars.githubusercontent.com/u/1234567?v=4')
       },
     )
   } finally {

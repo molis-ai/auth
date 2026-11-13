@@ -28,7 +28,14 @@ impl Github {
     pub(crate) const AUTHORIZATION_ISSUER: &str = "https://github.com/login/oauth";
 
     pub(crate) fn configured(a: &Auth) -> Result<Self> {
-        ensure(a.origin.starts_with("https:"), 503, "UPSTREAM_UNAVAILABLE")?;
+        let url = Url::parse(&a.origin).map_err(|_| unavailable())?;
+        ensure(
+            url.scheme() == "https"
+                || (url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))),
+            503,
+            "UPSTREAM_UNAVAILABLE",
+        )?;
         let id = a
             .env
             .var("UNIFIED_GITHUB_CLIENT_ID")
@@ -40,7 +47,7 @@ impl Github {
             .map_err(|_| unavailable())?
             .to_string();
         ensure(
-            !id.is_empty() && !secret.is_empty(),
+            !id.is_empty() && id != "111" && !secret.is_empty() && secret != "222",
             503,
             "UPSTREAM_UNAVAILABLE",
         )?;
@@ -59,7 +66,8 @@ impl Github {
             .append_pair("redirect_uri", &self.redirect)
             .append_pair("state", state)
             .append_pair("code_challenge", &challenge(verifier))
-            .append_pair("code_challenge_method", "S256");
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("prompt", "select_account");
         Ok(url)
     }
 
@@ -77,6 +85,33 @@ impl Github {
             status: 401,
             code: "INVALID_CREDENTIALS",
         })?;
-        Ok(json!({"issuer":ISSUER,"subject":id.to_string()}))
+        let login = user["login"].as_str().filter(|v| {
+            !v.is_empty()
+                && v.len() <= 39
+                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+        let name = user["name"]
+            .as_str()
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && !v.chars().any(char::is_control))
+            .or(login)
+            .map(|v| v.chars().take(80).collect::<String>());
+        let avatar = user["avatar_url"]
+            .as_str()
+            .filter(|v| v.len() <= 2048)
+            .and_then(|v| {
+                let u = Url::parse(v).ok()?;
+                (u.scheme() == "https"
+                    && u.host_str() == Some("avatars.githubusercontent.com")
+                    && u.username().is_empty()
+                    && u.password().is_none()
+                    && u.port().is_none()
+                    && u.fragment().is_none())
+                .then(|| u.to_string())
+            });
+        // /user's public email has no verification assertion; do not turn it into trusted contact data.
+        Ok(
+            json!({"issuer":ISSUER,"subject":id.to_string(),"profile":{"name":name,"username":login,"email":null,"avatar":avatar}}),
+        )
     }
 }

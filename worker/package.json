@@ -10,7 +10,7 @@
     "build:rust": "node scripts/rust-build.mjs",
     "format": "node scripts/rust-check.mjs format && prettier --write tests scripts rust-tests rust/src/runtime *.json *.jsonc migrations/*.sql --ignore-unknown",
     "format:check": "node scripts/rust-check.mjs format:check && prettier --check tests scripts rust-tests rust/src/runtime *.json *.jsonc --ignore-unknown",
-    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8787",
+    "dev": "node scripts/dev-server.mjs",
     "db:migrate": "wrangler d1 migrations apply auth-local --local",
     "db:seed": "wrangler d1 execute auth-local --local --file local-seed.sql",
     "admin": "npm run build:rust && node scripts/local-admin.ts",
@@ -28,6 +28,7 @@
     "wrangler": "4.135.0",
     "miniflare": "5.20260918.0-alpha",
     "jose": "6.2.12",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "undici": "7.29.0"
   }
 }

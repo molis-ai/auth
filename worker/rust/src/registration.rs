@@ -168,17 +168,7 @@ async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Value> {
     let m = Message {
         id: &delivery,
         target: &target,
-        template: if t["purpose"] == "BIND" || t["purpose"] == "REPLACE" {
-            "IDENTITY_VERIFY"
-        } else if t["purpose"] == "REAUTH" {
-            "REAUTH"
-        } else if t["purpose"] == "EMAIL_SIGNUP" {
-            "EMAIL_SIGNUP"
-        } else if t["purpose"] == "PASSWORD_RESET" {
-            "PASSWORD_RESET"
-        } else {
-            "PHONE_LOGIN"
-        },
+        template: t["purpose"].as_str().unwrap_or("PHONE_LOGIN"),
         credential: &credential,
         expires,
     };
@@ -189,6 +179,25 @@ async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Value> {
     } else {
         true
     };
+    if c["delivery_mode"] == "LIVE" {
+        if channel == "SMS" {
+            writes.push(a.s.statement("UPDATE auth_verification_challenge SET verifier='ALIYUN',credential_hash='',delivery_status='PENDING' WHERE id=?",vec![id.clone().into()])?);
+        } else {
+            writes.push(a.s.statement(
+                "UPDATE auth_verification_challenge SET delivery_status='PENDING' WHERE id=?",
+                vec![id.clone().into()],
+            )?);
+        }
+        a.s.batch(writes, "VERSION_CONFLICT").await?;
+        if deliver {
+            crate::delivery::send_live(a, t, c, &channel, &id, &m).await?;
+        }
+        let completed = now();
+        a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,completed,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND invalidated_at IS NULL AND expires_at>?)",vec![id.clone().into(),completed.into()])?,a.s.statement("UPDATE auth_verification_challenge SET delivery_status='ACCEPTED' WHERE id=?",vec![id.clone().into()])?],"VERSION_CONFLICT").await?;
+        return Ok(
+            json!({"challengeId":id,"expiresAt":iso(&json!(expires)),"retryAfterSeconds":60}),
+        );
+    }
     if deliver {
         writes.push(if channel == "EMAIL" {
             MailSender::enqueue(a, c, &m)?
@@ -217,6 +226,7 @@ async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<V
         .await?;
     ensure(
         !q.is_null()
+            && q["delivery_status"] == "ACCEPTED"
             && q["consumed_at"].is_null()
             && q["invalidated_at"].is_null()
             && number(&q, "expires_at") > n
@@ -224,17 +234,35 @@ async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<V
         401,
         "INVALID_CREDENTIALS",
     )?;
-    if q["credential_hash"] != hash(&format!("{id}:{}", text(b, "credential"))) {
-        a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET attempts=MIN(attempts+1,max_attempts) WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL",vec![id.into()])?],"VERSION_CONFLICT").await?;
+    let matched = if q["verifier"] == "ALIYUN" {
+        ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
+        // Reserve an attempt before network I/O, including failed/uncertain requests.
+        a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",vec![id.into(),now().into()])?,a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?],"VERSION_CONFLICT").await?;
+        crate::sms_auth::verify(a, id, &text(&q, "canonical_target"), &text(b, "credential"))
+            .await?
+    } else {
+        ensure(
+            c["delivery_mode"] == "MOCK"
+                || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL"),
+            503,
+            "UPSTREAM_UNAVAILABLE",
+        )?;
+        q["credential_hash"] == hash(&format!("{id}:{}", text(b, "credential")))
+    };
+    if !matched {
+        if q["verifier"] != "ALIYUN" {
+            a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET attempts=MIN(attempts+1,max_attempts) WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL",vec![id.into()])?],"VERSION_CONFLICT").await?;
+        }
         return Err(Failure {
             status: 401,
             code: "INVALID_CREDENTIALS",
         });
     }
+    let n = now();
     let proof = secret();
     let expires = (n + CODE).min(number(t, "expires_at"));
     let target = text(&q, "canonical_target");
-    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
+    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND (attempts<max_attempts OR (verifier='ALIYUN' AND attempts=max_attempts)) AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
     if crate::sensitive_transactions::protected(t) {
         writes.extend(
             crate::sensitive_transactions::verified(
