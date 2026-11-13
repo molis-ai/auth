@@ -278,6 +278,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       'UAS-03/26: profile versioning, PNG cleaning/removal, platform view and idempotent retry',
       async () => {
         const initial = await me(a)
+        assert.equal(initial.loginMethods[0].maskedLabel, '+86 138****0011')
         phoneBinding = initial.loginMethods[0].bindingId
         await db
           .prepare(

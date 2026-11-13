@@ -1,0 +1,21 @@
+# Copy to .dev.vars; never commit real AccessKey credentials.
+ALIYUN_ACCESS_KEY_ID=
+ALIYUN_ACCESS_KEY_SECRET=
+ALIYUN_SMS_SIGN_NAME=恒创联众
+# SMS test allowlist uses +86 numbers; separate multiple entries with commas.
+ALIYUN_SMS_TEST_ALLOWLIST=
+ALIYUN_MAIL_ACCOUNT_NAME=no-reply@notify.molis.ai
+ALIYUN_MAIL_REGION=cn-hangzhou
+# Default npm run dev is MOCK. See docs/aliyun-sms.md for explicit LIVE configuration.
+
+# Google OAuth Web application (server-side only)
+UNIFIED_GOOGLE_CLIENT_ID=111
+UNIFIED_GOOGLE_CLIENT_SECRET=222
+
+# Local development outbound proxy; empty means direct. Restart dev after editing.
+# Example: http://127.0.0.1:7993 (use your own HTTP/mixed proxy port)
+AUTH_DEV_PROXY_URL=
+
+UNIFIED_GITHUB_CLIENT_ID=111
+
+UNIFIED_GITHUB_CLIENT_SECRET=222

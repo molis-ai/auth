@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AuthFlow, FlowCancelled } from "./auth-flow.ts";
 import { accountErrorMessage } from "./errors.ts";
 import { onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { entryText } from "./entry-copy.ts";
@@ -6,6 +7,7 @@ import { rememberedEmail, rememberEmail } from "./entry-preferences.ts";
 import { AccountClient } from "../../sdk/browser/src/index.ts";
 const props = defineProps<{
   client: AccountClient;
+  authorizationPopup?: Window | null;
   purpose?: string;
   operation?: string;
   target?: Record<string, string>;
@@ -48,16 +50,29 @@ const remember = ref(Boolean(address.value)), showPassword = ref(false), now = r
 const countdown = setInterval(() => { now.value = Date.now(); }, 1000);
 watch(busy, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
-function chooseMethod(value: string) {
-  if (busy.value || props.blocked || transaction.value) return;
-  if (method.value !== value) address.value = value === 'EMAIL_PASSWORD' ? rememberedEmail() : '';
-  method.value = value; failure.value = ''; password.value = ''; confirm.value = ''; showPassword.value = false;
-  if (['GOOGLE', 'GITHUB'].includes(value)) void submit();
+async function chooseMethod(value: string) {
+  if (busy.value || props.blocked || providerPending.value || method.value === value) return;
+  busy.value = true;
+  try {
+    await cancel();
+    if (!active) return;
+    retryAt.value = 0;
+    address.value = value === 'EMAIL_PASSWORD' ? rememberedEmail() : '';
+    method.value = value; failure.value = ''; password.value = ''; confirm.value = ''; showPassword.value = false;
+  } finally {
+    busy.value = false;
+  }
+  await nextTick();
+  if (active && ['GOOGLE', 'GITHUB'].includes(value)) void submit();
 }
-let active = true,
-  finished = false,
-  popup: Window | null = null,
-  timer: ReturnType<typeof setTimeout> | undefined;
+let active = true, finished = false;
+const flow = new AuthFlow();
+function request<T = Transaction>(path: string, body?: unknown): Promise<T> {
+  return flow.request(() => props.client.request<T>(path, body), async (value) => {
+    const handle = (value as { handle?: string })?.handle;
+    if (handle) await props.client.request('/auth/transactions/' + handle + '/cancel', {}).catch(() => undefined);
+  });
+}
 function clear() {
   password.value = "";
   confirm.value = "";
@@ -65,8 +80,7 @@ function clear() {
 }
 async function cancel() {
   providerPending.value = false;
-  clearTimeout(timer);
-  popup?.close();
+  flow.cancel();
   const old = transaction.value;
   transaction.value = undefined;
   challenge.value = "";
@@ -78,12 +92,13 @@ async function cancel() {
 }
 onBeforeUnmount(() => {
   active = false;
+  flow.dispose();
   clearInterval(countdown);
   void cancel();
 });
 async function complete() {
   const t = transaction.value!;
-  const result = await props.client.request<Transaction>(
+  const result = await request<Transaction>(
     "/auth/transactions/" + t.handle + "/submit",
     { step: "COMPLETE" },
   );
@@ -97,7 +112,7 @@ async function progress(value: Transaction) {
   transaction.value = { ...transaction.value, ...value };
   if (value.nextStep === "PHONE_LOGIN")
     await progress(
-      await props.client.request(
+      await request(
         "/auth/transactions/" + value.handle + "/submit",
         { step: "PHONE_LOGIN" },
       ),
@@ -113,9 +128,7 @@ async function submit() {
   }
   if (props.entry && method.value === 'EMAIL_PASSWORD') rememberEmail(remember.value ? address.value.trim() : '');
   if (["GOOGLE", "GITHUB"].includes(method.value) && !transaction.value) {
-    popup = window.open("about:blank", "_blank");
-    if (popup) popup.opener = null;
-    if (!popup) {
+    if (!flow.open(props.authorizationPopup)) {
       failure.value = "请允许打开授权窗口";
       return;
     }
@@ -133,7 +146,7 @@ async function submit() {
         ...(props.parent ? { reauthHandle: props.parent } : {}),
         ...(props.bindingId ? { bindingId: props.bindingId } : {}),
       };
-      transaction.value = await props.client.request<Transaction>(
+      transaction.value = await request<Transaction>(
         props.operation ? "/reauthentications" : "/auth/transactions",
         props.operation
           ? {
@@ -147,7 +160,7 @@ async function submit() {
     const t = transaction.value!,
       path = "/auth/transactions/" + t.handle + "/submit";
     if (challenge.value) {
-      const result = await props.client.request<Transaction>(path, {
+      const result = await request<Transaction>(path, {
         step: "VERIFY_CHALLENGE",
         challengeHandle: challenge.value,
         credential: code.value,
@@ -157,7 +170,7 @@ async function submit() {
       await progress(result);
     } else if (t.nextStep === "PASSWORD_LOGIN") {
       await progress(
-        await props.client.request(path, {
+        await request(path, {
           step: "PASSWORD_LOGIN",
           email: address.value.trim(),
           password: password.value,
@@ -166,14 +179,14 @@ async function submit() {
     } else if (t.nextStep === "EMAIL_SIGNUP") {
       if (password.value !== confirm.value) throw Error("两次密码不一致");
       await progress(
-        await props.client.request(path, {
+        await request(path, {
           step: "EMAIL_SIGNUP",
           email: address.value.trim(),
           password: password.value,
         }),
       );
     } else if (t.nextStep === "REQUEST_CHALLENGE") {
-      const result = await props.client.request<Transaction>(path, {
+      const result = await request<Transaction>(path, {
         step: "REQUEST_CHALLENGE",
         address:
           method.value === "PHONE_OTP"
@@ -184,24 +197,23 @@ async function submit() {
       retryAt.value = Date.now() + (result.retryAfterSeconds ?? 60) * 1000;
 
     } else if (t.nextStep === "START_PROVIDER") {
-      const result = await props.client.request<Transaction>(path, {
+      const result = await request<Transaction>(path, {
         step: "START_PROVIDER",
       });
       if (!result.browserStartUrl) throw Error("授权地址不可用");
       const url = new URL(result.browserStartUrl);
       if (url.origin !== location.origin) throw Error("授权地址不匹配");
-      if (!popup) throw Error("授权窗口不可用");
-      popup.location.replace(url.href);
+      flow.navigate(url.href);
       providerPending.value = true;
       const poll = async () => {
         if (!active || !transaction.value) return;
         try {
-          const status = await props.client.request<Transaction>(
+          const status = await request<Transaction>(
             "/auth/transactions/" + t.handle,
           );
           if (status.account || status.operationReady) {
             clear();
-            popup?.close();
+            flow.closeWindow();
             finished = true;
             emit("complete", { ...status, handle: t.handle });
             return;
@@ -209,20 +221,22 @@ async function submit() {
           if (
             status.status === "CANCELLED" ||
             status.status === "EXPIRED" ||
-            popup?.closed
+            flow.closed
           ) {
             await cancel();
             return;
           }
-          timer = setTimeout(() => void poll(), 1000);
+          flow.schedule(poll, 1000);
         } catch (error) {
+          if (error instanceof FlowCancelled) return;
           providerPending.value = false;
           failure.value = accountErrorMessage(error);
         }
       };
-      timer = setTimeout(() => void poll(), 500);
+      flow.schedule(poll, 500);
     }
   } catch (error) {
+    if (error instanceof FlowCancelled) return;
     failure.value = accountErrorMessage(error);
   } finally {
     busy.value = false;
@@ -242,13 +256,14 @@ async function resend() {
   if (!transaction.value || Date.now() < retryAt.value) return;
   busy.value = true;
   try {
-    const reply = await props.client.request<Transaction>(
+    const reply = await request<Transaction>(
       "/auth/transactions/" + transaction.value.handle + "/resend",
       {},
     );
     challenge.value = reply.challengeHandle ?? challenge.value;
     retryAt.value = Date.now() + (reply.retryAfterSeconds ?? 60) * 1000;
   } catch (e) {
+    if (e instanceof FlowCancelled) return;
     failure.value = accountErrorMessage(e);
   } finally {
     busy.value = false;
@@ -261,26 +276,31 @@ async function prepareOperation() {
   failure.value = "";
   busy.value = true;
   try {
-    const recent = await props.client.request<Transaction>("/reauthentications", {
+    const recent = await request<Transaction>("/reauthentications", {
       method: "EMAIL_PASSWORD", operation: props.operation, target: props.target, useSession: true,
     });
     if (!active) {
-      await props.client.request("/auth/transactions/" + recent.handle + "/cancel", {}).catch(() => undefined);
+      await request("/auth/transactions/" + recent.handle + "/cancel", {}).catch(() => undefined);
       return;
     }
     if (recent.nextStep === "COMPLETE") await progress(recent);
     else {
-      await props.client.request("/auth/transactions/" + recent.handle + "/cancel", {});
+      await request("/auth/transactions/" + recent.handle + "/cancel", {});
       throw Error("无法开始操作，请重试");
     }
   } catch (error) {
+    if (error instanceof FlowCancelled) return;
     if (active) failure.value = accountErrorMessage(error);
   } finally {
-    checkingSession.value = false;
+        checkingSession.value = false;
     busy.value = false;
   }
 }
-onMounted(() => { if (phoneBinding) phoneInput.value?.focus(); void prepareOperation(); });
+onMounted(() => {
+  if (phoneBinding) phoneInput.value?.focus();
+  if (['BIND', 'REPLACE'].includes(props.purpose ?? '') && ['GOOGLE', 'GITHUB'].includes(method.value)) void submit();
+  else void prepareOperation();
+});
 const purposeMethods = () =>
   props.identityType
     ? [
@@ -325,14 +345,15 @@ if (
   <form :class="entry ? 'entry-auth-form v2-form' : 'console-card v2-form'" :aria-busy="busy" @submit.prevent="submit">
     <template v-if="entry">
       <nav v-if="purpose === 'LOGIN'" class="login-methods" :aria-label="t('登录方式')">
-        <button type="button" class="login-method" :class="{current: !['GOOGLE','GITHUB'].includes(method)}" :aria-current="!['GOOGLE','GITHUB'].includes(method) ? 'true' : undefined" :disabled="busy || blocked || !!transaction" @click="chooseMethod('EMAIL_PASSWORD')">{{ t('账号登录') }}</button>
-        <button v-for="provider in ['GOOGLE','GITHUB']" :key="provider" type="button" class="login-method" :class="{current: method === provider}" :disabled="busy || blocked || !!transaction" @click="chooseMethod(provider)">{{ provider === 'GOOGLE' ? 'Google' : 'GitHub' }}</button>
+        <button type="button" class="login-method" :class="{current: !['GOOGLE','GITHUB'].includes(method)}" :aria-current="!['GOOGLE','GITHUB'].includes(method) ? 'true' : undefined" :disabled="busy || blocked || providerPending" @click="chooseMethod('EMAIL_PASSWORD')">{{ t('账号登录') }}</button>
+        <button v-for="provider in ['GOOGLE','GITHUB']" :key="provider" type="button" class="login-method" :class="{current: method === provider}" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">{{ provider === 'GOOGLE' ? 'Google' : 'GitHub' }}</button>
         <button type="button" class="login-method" disabled>Apple<small>{{ t('暂不可用') }}</small></button>
       </nav>
       <div class="login-welcome"><p v-if="purpose === 'LOGIN'">{{ t('欢迎使用 molis AI') }}</p><div v-else class="panel-heading"><h2>{{ t(purpose === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码') }}</h2><p>{{ t(purpose === 'EMAIL_SIGNUP' ? '输入邮箱，验证后设置密码。' : '验证邮箱后，重新设置你的密码。') }}</p></div></div>
     </template>
-    <p v-if="checkingSession" role="status">正在确认登录状态…</p>
-    <div v-else-if="operation"><p v-if="failure" role="alert" class="notice error">{{ failure }}</p><div class="console-actions"><button type="button" @click="prepareOperation">重试</button><button type="button" @click="emit('cancel')">取消</button></div></div>
+    <div v-if="checkingSession" class="session-check-placeholder" aria-busy="true"></div>
+    <div v-else-if="operation && failure"><p v-if="failure" role="alert" class="notice error">{{ failure }}</p><div class="console-actions"><button type="button" @click="prepareOperation">重试</button><button type="button" @click="emit('cancel')">取消</button></div></div>
+    <div v-else-if="operation" class="session-check-placeholder" aria-busy="true"></div>
     <div v-else-if="phoneBinding" class="phone-binding">
       <div v-if="challenge" class="phone-delivery">
         <span role="status">验证码已发送至 +86 {{ address.trim().slice(0,3) }}****{{ address.trim().slice(-4) }}</span>
@@ -354,7 +375,7 @@ if (
     <div v-else :class="{ 'entry-content': entry }">
       <label v-if="!entry && !identityType">登录方式<select v-model="method" :disabled="busy || !!transaction"><option v-for="[value,label] in purposeMethods()" :key="value" :value="value">{{ label }}</option></select></label>
       <div v-else-if="purpose === 'LOGIN' && !['GOOGLE','GITHUB'].includes(method)" class="account-methods" :aria-label="t('登录方式')">
-        <button v-for="[value,label] in [['EMAIL_PASSWORD','邮箱密码'],['PHONE_OTP','手机验证码']]" :key="value" type="button" class="text-button" :aria-pressed="method === value" :disabled="busy || blocked || !!transaction" @click="chooseMethod(value)">{{ t(label) }}</button>
+        <button v-for="[value,label] in [['EMAIL_PASSWORD','邮箱密码'],['PHONE_OTP','手机验证码']]" :key="value" type="button" class="text-button" :aria-pressed="method === value" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
       </div>
       <template v-if="!['GOOGLE', 'GITHUB'].includes(method)">
         <label class="field login-field"><span :class="{ 'visually-hidden': entry && purpose === 'LOGIN' }">{{ t(method === 'PHONE_OTP' ? '手机号（+86）' : '邮箱') }}</span><input v-model="address" :type="method === 'PHONE_OTP' ? 'tel' : 'email'" :autocomplete="method === 'PHONE_OTP' ? 'tel-national' : 'username'" :placeholder="method === 'PHONE_OTP' ? t('手机号（+86）') : t('邮箱')" :disabled="busy || blocked || !!challenge" required></label>

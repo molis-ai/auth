@@ -17,7 +17,7 @@ async fn security(a: &Auth, user: &str) -> Result<Value> {
     .await
 }
 async fn user_view(a: &Auth, user: &str) -> Result<Value> {
-    let u=a.s.one("SELECT u.*,s.account_version,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=?",vec![user.into()]).await?;
+    let u=a.s.one("SELECT u.*,s.account_version,COALESCE((SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),(SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=?",vec![user.into()]).await?;
     Ok(
         json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]}),
     )
@@ -42,17 +42,22 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
             target.chars().next().unwrap_or('*'),
             target.split('@').nth(1).unwrap_or("***")
         ),
-        "PHONE" => format!(
-            "+86 **** {}",
-            target
-                .chars()
-                .rev()
-                .take(4)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<String>()
-        ),
+        "PHONE" => {
+            let number = target.strip_prefix("+86").unwrap_or(&target);
+            format!(
+                "+86 {}****{}",
+                number.chars().take(3).collect::<String>(),
+                number.chars().skip(7).collect::<String>()
+            )
+        }
+        "GOOGLE" => row["provider_email"]
+            .as_str()
+            .unwrap_or("Google 账号")
+            .to_owned(),
+        "GITHUB" => row["provider_username"]
+            .as_str()
+            .map(|name| format!("@{name}"))
+            .unwrap_or_else(|| "GitHub 账号".to_owned()),
         _ => format!(
             "{kind} · …{}",
             target
@@ -67,7 +72,16 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
     };
     let usable = match kind.as_str() {
         "EMAIL" => verified && password,
-        "PHONE" => verified && c["delivery_mode"] == "MOCK",
+        "PHONE" => {
+            verified
+                && (c["delivery_mode"] == "MOCK"
+                    || (c["delivery_mode"] == "LIVE" && crate::sms_auth::configured(a)))
+        }
+        "GOOGLE" if c["provider_mode"] == "LIVE" => {
+            verified
+                && row["issuer"] == crate::google_login::ISSUER
+                && crate::google_login::Google::configured(a).is_ok()
+        }
         "GITHUB" if c["provider_mode"] == "LIVE" => {
             verified
                 && row["issuer"] == crate::github_login::ISSUER
@@ -86,7 +100,7 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
     json!({"bindingId":row["id"],"type":kind,"maskedLabel":masked.chars().take(254).collect::<String>(),"verified":verified,"usableForLogin":usable})
 }
 async fn methods(a: &Auth, user: &str, c: &Value) -> Result<Vec<Value>> {
-    let rows=a.s.all("SELECT id,'EMAIL' type,canonical_email target,verified_at,NULL issuer FROM auth_user_email WHERE user_id=? UNION ALL SELECT id,'PHONE',canonical_phone,verified_at,NULL FROM auth_user_phone WHERE user_id=? UNION ALL SELECT id,provider,subject,created_at,issuer FROM auth_external_identity WHERE user_id=? AND provider IN ('GOOGLE','GITHUB') ORDER BY type,id",vec![user.into(),user.into(),user.into()]).await?;
+    let rows=a.s.all("SELECT id,'EMAIL' type,canonical_email target,verified_at,NULL issuer,NULL provider_email,NULL provider_username FROM auth_user_email WHERE user_id=? UNION ALL SELECT id,'PHONE',canonical_phone,verified_at,NULL,NULL,NULL FROM auth_user_phone WHERE user_id=? UNION ALL SELECT x.id,x.provider,x.subject,x.created_at,x.issuer,p.email,p.username FROM auth_external_identity x LEFT JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=? AND x.provider IN ('GOOGLE','GITHUB') ORDER BY type,id",vec![user.into(),user.into(),user.into()]).await?;
     let password = password_enabled(a, user).await?;
     Ok(rows
         .iter()
@@ -196,7 +210,8 @@ async fn mutation(
             })?;
         }
         view["version"] = version.into();
-        let w=vec![a.s.statement("UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=? WHERE id=?",vec![view["displayName"].clone(),view["avatarUrl"].clone(),now().into(),user.clone().into()])?,a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?];
+        let mut w=vec![a.s.statement("UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=? WHERE id=?",vec![view["displayName"].clone(),view["avatarUrl"].clone(),now().into(),user.clone().into()])?,a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?];
+        w.push(a.s.statement("INSERT INTO auth_profile_customization(user_id,name_customized,avatar_customized) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET name_customized=MAX(name_customized,excluded.name_customized),avatar_customized=MAX(avatar_customized,excluded.avatar_customized)",vec![s["user_id"].clone(),json!(i64::from(b.get("displayName").is_some())),json!(i64::from(b.get("avatarDataUrl").is_some()))])?);
         return Ok((view, w));
     }
     let p = proof(a, s, us, &text(b, "operationProof"), "OPERATION").await?;
@@ -293,7 +308,10 @@ async fn mutation(
                 });
             }
         }
-        let row = json!({"id":binding_id,"type":identity["type"],"target":if identity.get("target").is_some(){identity["target"].clone()}else{identity["subject"].clone()},"issuer":identity["issuer"],"verified_at":n});
+        if matches!(text(&identity, "type").as_str(), "GOOGLE" | "GITHUB") {
+            writes.extend(crate::external_profile::save(a, &identity, &user)?);
+        }
+        let row = json!({"provider_username":identity["profile"]["username"],"provider_email":identity["profile"]["email"],"id":binding_id,"type":identity["type"],"target":if identity.get("target").is_some(){identity["target"].clone()}else{identity["subject"].clone()},"issuer":identity["issuer"],"verified_at":n});
         list.push(method_view(a, &row, c, password_enabled(a, &user).await?));
         writes.extend(consume(a, &new)?);
     }

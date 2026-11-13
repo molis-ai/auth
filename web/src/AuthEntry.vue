@@ -6,7 +6,7 @@ import { accountErrorMessage } from './errors.ts';
 import { entryText } from './entry-copy.ts';
 import { entryLanguage, saveEntryLanguage } from './entry-preferences.ts';
 import logo from './assets/molis-logo.png';
-defineProps<{ client: AccountClient; busy: boolean; message: string }>();
+defineProps<{ client: AccountClient; busy: boolean }>();
 const emit = defineEmits<{ complete: [] }>();
 const language = ref(entryLanguage()), mode = ref('LOGIN'), resetHandle = ref('');
 const panelBusy = ref(false);
@@ -40,7 +40,7 @@ async function resetPassword(client: AccountClient) {
     <main class="layout">
       <section class="story"><div class="brand-note"><h1>{{ t('一个账号，\n连接你的工作') }}</h1><p class="intro">{{ t('登录 Molis 账号，管理个人资料、租户与订阅。') }}</p></div></section>
       <section class="panel" :aria-label="t(mode === 'LOGIN' ? '登录' : mode === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码')">
-        <p v-if="message || notice" class="notice info" role="status">{{ t(notice || message) }}</p>
+        <p v-if="notice" class="notice info" role="status">{{ t(notice) }}</p>
         <AuthenticationPanel v-if="!resetHandle" :key="mode" :client="client" :purpose="mode" :entry="true" :language="language" :blocked="busy" @busy="panelBusy = $event" @complete="completed" @cancel="changeMode('LOGIN')" />
         <form v-else class="entry-content reset-form" @submit.prevent="resetPassword(client)">
           <div class="panel-heading"><h2>{{ t('重设密码') }}</h2></div>

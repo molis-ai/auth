@@ -1,6 +1,7 @@
-//! Browser-bound product authorization for isolated mock providers and live GitHub.
+//! Browser-bound product authorization for isolated mock providers and live Google/GitHub.
 use crate::{
     github_login::Github,
+    google_login::Google,
     http::*,
     identity::Auth,
     login_sessions::{client_guard, registered_client},
@@ -61,6 +62,10 @@ fn mock(c: &Value) -> Result<()> {
 fn check_provider(a: &Auth, c: &Value, p: &str) -> Result<()> {
     if c["provider_mode"] == "LIVE" && p == "github" {
         Github::configured(a)?;
+        return Ok(());
+    }
+    if c["provider_mode"] == "LIVE" && p == "google" {
+        Google::configured(a)?;
         return Ok(());
     }
     mock(c)
@@ -202,7 +207,15 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), &browser, 600));
     if c["provider_mode"] == "LIVE" {
-        let url = Github::configured(a)?.authorize_url(&state, &text(&ctx, "verifier"))?;
+        let url = if p == "google" {
+            Google::configured(a)?.authorize_url(
+                &state,
+                &text(&ctx, "verifier"),
+                &text(&ctx, "nonce"),
+            )?
+        } else {
+            Github::configured(a)?.authorize_url(&state, &text(&ctx, "verifier"))?
+        };
         return redirect(url.as_str());
     }
     redirect(&format!(
@@ -413,6 +426,13 @@ async fn commit_identity(
             "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
             vec![user.clone().into(), n.into()],
         )?);
+        writes.extend(crate::external_profile::save(a, identity, &user)?);
+        if identity.get("profile").is_some() {
+            writes.push(a.s.statement(
+                "UPDATE auth_user_security SET account_version=account_version+1 WHERE user_id=?",
+                vec![user.clone().into()],
+            )?);
+        }
         writes.push(boundary(a, t, &user, epoch)?);
         writes.push(a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![user.clone().into(),epoch.into(),t["id"].clone()])?);
         writes.push(a.s.audit(
@@ -443,15 +463,29 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
     let (t, c, ctx, browser) = flow(a, p, &state).await?;
     let live = c["provider_mode"] == "LIVE";
     if live {
-        ensure(
-            b["iss"] == Github::AUTHORIZATION_ISSUER,
-            400,
-            "INVALID_REQUEST",
-        )?;
-        // GitHub adds its issuer and may include diagnostics on an error.
-        // Validate the issuer before translating into the product contract.
+        if p == "github" && b.get("iss").is_some() {
+            ensure(
+                b["iss"] == Github::AUTHORIZATION_ISSUER,
+                400,
+                "INVALID_REQUEST",
+            )?;
+        } else if p == "google" && b.get("iss").is_some() {
+            ensure(
+                b["iss"] == crate::google_login::ISSUER,
+                400,
+                "INVALID_REQUEST",
+            )?;
+        }
+        // Validate an issuer when supplied. The provider-specific callback path,
+        // transaction method, state, browser cookie and PKCE also bind the provider.
         if let Some(fields) = b.as_object_mut() {
             fields.remove("iss");
+            if p == "google" {
+                // Google returns these informational fields; identity comes only from the signed ID token.
+                for name in ["scope", "authuser", "prompt", "hd"] {
+                    fields.remove(name);
+                }
+            }
             if fields.contains_key("error") {
                 fields.remove("error_description");
                 fields.remove("error_uri");
@@ -483,9 +517,15 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
         let binding = hash(&format!("{p}:{state}:{browser}"));
         let (identity, mock_code) = if live {
             (
-                Github::configured(a)?
-                    .exchange(&raw, &text(&ctx, "verifier"))
-                    .await?,
+                if p == "google" {
+                    Google::configured(a)?
+                        .exchange(&raw, &text(&ctx, "verifier"), &text(&ctx, "nonce"))
+                        .await?
+                } else {
+                    Github::configured(a)?
+                        .exchange(&raw, &text(&ctx, "verifier"))
+                        .await?
+                },
                 None,
             )
         } else {
@@ -505,7 +545,7 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
             )
         };
         // A concurrent first login can win the identity insert. Retry only the
-        // guarded local commit, keeping GitHub's one-time exchange out of the retry.
+        // guarded local commit, keeping the provider's one-time exchange out of the retry.
         match commit_identity(a, &t, &c, &identity, mock_code).await {
             Err(e) if e.code == "ALREADY_EXISTS" => {
                 commit_identity(a, &t, &c, &identity, mock_code).await?;

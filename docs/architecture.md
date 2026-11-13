@@ -15,7 +15,10 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | lib / app / identity / http | fetch 入口、过期临时数据清理、路由、安全响应头、请求上下文、限流及输入处理 |
 | unified_contracts / unified_policy | 现行结构、环境、客户端与精确来源/回调登记；不读取旧协议策略 |
 | login_sessions | 登录会话、换码、刷新轮换、活动、范围化退出与撤销 |
-| registration / delivery / external_login | 邮箱手机验证、投递适配与 Google/GitHub 授权 |
+| registration | 挑战生命周期、验证、事务及投递前后有效性守卫 |
+| delivery / mail_delivery / sms_auth | 统一投递路由、阿里云邮件和短信适配；LIVE 失败不回退 MOCK |
+| mail_templates | 注册、重置、绑定、更换、再次验证的邮件文案唯一来源 |
+| external_login / google_login / github_login / external_profile | 外部授权、提供方适配及资料同步；不按同邮箱合并身份 |
 | account_management / sensitive_transactions | 资料、再次验证、绑定/换绑/解绑、密码及安全撤销 |
 | tenants / tenant_protocol / tenant_invitations / tenant_membership / tenant_transfers | 租户、三角色、邀请、交接与启停；成员退出通过同一事务释放席位 |
 | tenant_creation | SELF_SERVICE / PLATFORM_ONLY 受信部署策略；自行创建的所有者固定为当前用户 |
@@ -43,3 +46,9 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 `npm test` 包括可执行合同、Rust 单元、真实 WASM + workerd + 隔离 D1、Web 与 SDK 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归范围变更](unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](unified-account/v2-consolidation.md)。
 
 `npm run build` 构建页面和 SDK，并对 Worker 执行 dry-run。它不部署，也不证明 LIVE 邮件、短信、提供方、线上 CPU 配额或真实环境初始化已验收。正式环境配置与授权步骤见[部署说明](cloudflare-deployment.md)。
+
+## 浏览器认证流程边界
+
+`web/src/auth-flow.ts` 统一拥有认证面板的请求代次、弹窗与轮询定时器。取消或卸载后，迟到成功和错误均不交付给页面；迟到创建的事务通过清理回调取消。界面只编排同源 BFF 请求，不实现供应商验证码规则。Work 通过自己的账号层调用 V2，不能导入 Auth 实现或自行发送短信、邮件。
+
+Auth 与 Work 的账号管理只提供绑定、解绑；更换账号按解绑后重新绑定完成。中央已有 REPLACE 协议尚未删除，删除需要连同公开合同及所有消费者另行核对，不能仅因界面移除就静默改变接口。

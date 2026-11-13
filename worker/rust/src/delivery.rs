@@ -1,4 +1,4 @@
-//! Delivery ports. Only the explicit LOCAL/TEST mock adapter is installed in AUTH-04.
+//! Delivery adapters own channel routing; transactions own challenge persistence and commit guards.
 use crate::{http::*, identity::Auth};
 use serde_json::Value;
 use worker::D1PreparedStatement;
@@ -71,4 +71,28 @@ pub(crate) fn invitation_notification(
             expires.into(),
         ],
     )
+}
+
+/// Remote delivery is performed only after the transaction has reserved a challenge.
+pub(crate) async fn send_live(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    channel: &str,
+    challenge: &str,
+    m: &Message<'_>,
+) -> Result<()> {
+    ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
+    match channel {
+        "EMAIL" => crate::mail_delivery::send(a, m).await,
+        "SMS" => {
+            let mut context = t.clone();
+            context["kind"] = c["kind"].clone();
+            crate::sms_auth::send(a, &context, challenge, m.target, m.expires).await
+        }
+        _ => Err(Failure {
+            status: 400,
+            code: "INVALID_REQUEST",
+        }),
+    }
 }
