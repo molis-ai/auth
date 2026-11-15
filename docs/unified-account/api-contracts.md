@@ -4,6 +4,46 @@
 
 AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
+## 当前登录入口与三端行为（2026-11-15）
+
+本节按当前 Auth、Work Host 和 Club BFF 的工作树实现记录。可执行请求/响应以
+`contracts/unified-account/generate.ts` 生成的 OpenAPI 和 JSON Schema 为准。
+本地工作树的合同同步不代表已合并或已部署。
+
+| 浏览器入口（POST） | 请求 | 中央 Auth 操作 | 成功数据 |
+| --- | --- | --- | --- |
+| `/api/account/auth/login/password` | `identifier,password` | `POST /api/v2/auth/login/password` | `{account:AccountView}` |
+| `/api/account/auth/verification-codes` | `purpose:"LOGIN",channel:"EMAIL"或"SMS",address` | `POST /api/v2/auth/verification-codes` | `verificationId,expiresAt,retryAfterSeconds` |
+| `/api/account/auth/login/code` | `verificationId,code` | `POST /api/v2/auth/login/code` | `{account:AccountView}` |
+
+这些入口均返回通用 `{data,requestId}` 包装。产品后端补齐可信客户端、回调和发起证明，
+浏览器持有的是产品端验证句柄。密码、邮箱码和手机码登录使用上表入口。
+验证码首次验证成功可创建账号，不要求设置密码。
+第三方登录、找回密码及敏感操作继续使用各自用途的认证事务。
+
+### 第三方登录的共同交互
+
+Auth、Club 和 Work 均在用户点击时打开独立授权窗口，原页面显示等待并保留事务。
+Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直接提示允许窗口。
+三端发起 `LOGIN + GOOGLE/GITHUB` 事务，提交 `START_PROVIDER`，
+授权窗口访问后端核验过的 `browserStartUrl`。
+
+原页面每秒查询 `GET /api/account/auth/transactions/{handle}`。
+返回固定 `ProductTransactionView`，包含 `handle,status,nextStep,expiresAt`。
+
+- `PENDING / WAIT_PROVIDER` 表示等待授权。
+- `VERIFIED / COMPLETE` 表示身份验证完成，产品后端尚需完成凭据交付。
+- `CONSUMED / NONE` 表示事务已完成。原页面再读 `GET /api/account/session`，确认
+  `AUTHENTICATED` 后才进入已登录页面并关闭授权窗口。
+- `CANCELLED / NONE` 或 `EXPIRED / NONE` 结束等待。关闭授权窗口也结束本次尝试并请求取消。
+- 网络错误停止本次轮询并展示错误，不把未确认结果显示为成功。
+  重新开始、页面卸载和取消隔离迟到的响应。
+
+回调的 `VERIFIED/CANCELLED/FAILED` 是提供方返回结果，必须由产品后端复核中央状态，
+不能直接由浏览器查询参数宣布登录成功。中央将取消及授权失败终结为 `CANCELLED`。
+回调窗口只显示流程结束提示，登录状态由原页面读取。各产品会话独立，
+“统一第三方登录”不等于为其他产品自动创建会话。
+
 ## 1 边界与版本
 
 中央接口使用 `/api/v2`。Auth 拥有身份、登录会话、资料、租户和成员；商业模块拥有套餐、订阅、席位和权益。首期商业模块已与 Auth 同仓库、同 D1，通过领域函数和事务协作，不跨模块散写表。Club BFF 和 Work Host 只持有本产品会话、短期事务与展示缓存，不拥有第二套商业事实。

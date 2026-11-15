@@ -164,7 +164,7 @@ const transactionBase = {
   initiatorChallenge: challenge,
 }
 const transactionVariants: Schema[] = []
-for (const method of methods)
+for (const method of [...methods, "ACCOUNT_PASSWORD", "EMAIL_CODE"])
   transactionVariants.push(
     obj({ ...transactionBase, purpose: literal('LOGIN'), method: literal(method) }),
   )
@@ -215,6 +215,7 @@ add(
     'PASSWORD_LOGIN',
     'EMAIL_SIGNUP',
     'PHONE_LOGIN',
+    'CODE_LOGIN',
     'START_PROVIDER',
     'WAIT_PROVIDER',
     'COMPLETE',
@@ -242,6 +243,7 @@ add(
         'PASSWORD_LOGIN',
         'EMAIL_SIGNUP',
         'PHONE_LOGIN',
+    'CODE_LOGIN',
         'START_PROVIDER',
         'WAIT_PROVIDER',
       ),
@@ -271,9 +273,19 @@ add(
 add('ChallengeCreated', obj({ challengeId: id, expiresAt: time, retryAfterSeconds: num(0, 3600) }))
 add('VerifyChallengeRequest', obj({ credential: str(6, 6, { pattern: '^[0-9]{6}$' }) }))
 add('VerificationResult', obj({ verificationProof: secret, expiresAt: time }))
-add('PasswordLoginRequest', obj({ email, password }))
+add('PasswordLoginRequest', union(obj({ email, password }), obj({ identifier: union(email, phone), password })))
 add('EmailSignupRequest', obj({ email, password: newPassword, verificationProof: secret }))
 add('PhoneLoginRequest', obj({ verificationProof: secret }))
+add('CodeLoginRequest', obj({ verificationProof: secret }))
+// Public login commands hide authentication orchestration from product pages.
+add('LoginContext', obj(transactionBase))
+add('LoginPasswordRequest', obj({ ...transactionBase, identifier: union(email, phone), password }))
+add('SendLoginVerificationRequest', union(...['EMAIL', 'SMS'].map(channel => obj({ ...transactionBase, purpose: literal('LOGIN'), channel: literal(channel), address: channel === 'EMAIL' ? email : phone }))))
+add('LoginVerification', obj({ verificationId: id, expiresAt: time, retryAfterSeconds: num(0, 3600) }))
+add('LoginCodeRequest', obj({ verificationId: id, code: str(6, 6, { pattern: '^[0-9]{6}$' }) }))
+add('LoginResult', obj({ kind: literal('LOGIN_CODE'), code: secret, state: str(16, 512), expiresAt: time }))
+add('ProductLoginPasswordRequest', obj({ identifier: union(email, phone), password }))
+add('ProductSendVerificationRequest', union(obj({ purpose: literal('LOGIN'), channel: literal('EMAIL'), address: email }), obj({ purpose: literal('LOGIN'), channel: literal('SMS'), address: phone })))
 add('VerifiedResult', obj({ status: literal('VERIFIED'), nextStep: literal('COMPLETE') }))
 add('ProviderStartResult', obj({ browserStartUrl: url }))
 add(
@@ -667,7 +679,7 @@ add(
 const returnTo = str(1, 2048, { format: 'local-path' })
 const productTxn = { returnTo }
 const productVariants: Schema[] = []
-for (const method of methods)
+for (const method of [...methods, "ACCOUNT_PASSWORD", "EMAIL_CODE"])
   productVariants.push(
     obj({ ...productTxn, purpose: literal('LOGIN'), method: literal(method) }, [
       'purpose',
@@ -721,6 +733,7 @@ add(
         'PASSWORD_LOGIN',
         'EMAIL_SIGNUP',
         'PHONE_LOGIN',
+    'CODE_LOGIN',
         'START_PROVIDER',
         'WAIT_PROVIDER',
       ),
@@ -750,7 +763,9 @@ add(
       credential: str(6, 6, { pattern: '^[0-9]{6}$' }),
     }),
     obj({ step: literal('PASSWORD_LOGIN'), email, password }),
+    obj({ step: literal('PASSWORD_LOGIN'), identifier: union(email, phone), password }),
     obj({ step: literal('EMAIL_SIGNUP'), email, password: newPassword }),
+    obj({ step: literal('CODE_LOGIN') }),
     ...['PHONE_LOGIN', 'START_PROVIDER', 'COMPLETE'].map((step) => obj({ step: literal(step) })),
   ),
 )
@@ -1025,6 +1040,9 @@ const ep = (
   idempotent = false,
   query?: string,
 ) => endpoints.push({ group, method, path, operationId, input, output, auth, idempotent, query })
+ep('API-02', 'post', '/auth/login/password', 'loginPassword', 'LoginPasswordRequest', 'LoginResult', 'initiator')
+ep('API-02', 'post', '/auth/verification-codes', 'sendLoginVerification', 'SendLoginVerificationRequest', 'LoginVerification', 'initiator')
+ep('API-02', 'post', '/auth/login/code', 'loginCode', 'LoginCodeRequest', 'LoginResult', 'initiator')
 ep(
   'API-02',
   'post',
@@ -1065,6 +1083,7 @@ for (const [suffix, operationId, input, output] of [
   ['password', 'verifyPassword', 'PasswordLoginRequest', 'VerifiedResult'],
   ['email-signup', 'signUpEmail', 'EmailSignupRequest', 'VerifiedResult'],
   ['phone', 'signInPhone', 'PhoneLoginRequest', 'VerifiedResult'],
+  ['code', 'signInCode', 'CodeLoginRequest', 'VerifiedResult'],
   ['complete', 'completeTransaction', 'Empty', 'TransactionCompleteResult'],
   ['cancel', 'cancelTransaction', 'Empty', 'TransactionCancelResult'],
 ])
@@ -1087,6 +1106,12 @@ for (const provider of ['google', 'github'])
     'ProviderStartResult',
     'initiator',
   )
+// Browser-bound handoff into Auth's own account management session.
+add('ManagementHandoffRequest', obj({ redirectUri: url, initiatorChallenge: secret }))
+add('ManagementHandoffApproval', obj({ handoffId: id, initiatorProof: secret }))
+add('ManagementHandoffView', obj({ handoffId: id, redirectUrl: url, expiresAt: time }))
+ep('API-02', 'post', '/auth/management-handoffs', 'createManagementHandoff', 'ManagementHandoffRequest', 'ManagementHandoffView')
+ep('API-02', 'post', '/auth/management-handoffs/approve', 'approveManagementHandoff', 'ManagementHandoffApproval', 'ManagementHandoffView')
 ep('API-02', 'post', '/auth/token', 'exchangeToken', 'TokenRequest', 'TokenSet', 'grant')
 ep('API-03', 'get', '/users/me', 'getMe', undefined, 'MeView')
 ep(
@@ -1525,6 +1550,10 @@ ep(
   'EntitlementCheckResult',
 )
 
+add('ProductLoginResult', obj({ account: ref('AccountView') }))
+ep('API-08', 'post', '/api/account/auth/login/password', 'productLoginPassword', 'ProductLoginPasswordRequest', 'ProductLoginResult', 'product')
+ep('API-08', 'post', '/api/account/auth/verification-codes', 'productSendLoginVerification', 'ProductSendVerificationRequest', 'LoginVerification', 'product')
+ep('API-08', 'post', '/api/account/auth/login/code', 'productLoginCode', 'LoginCodeRequest', 'ProductLoginResult', 'product')
 ep('API-08', 'get', '/api/account/session', 'productSession', undefined, 'AccountView', 'product')
 ep(
   'API-08',
@@ -1621,6 +1650,7 @@ ep(
   'LoginMethodsView',
   'product',
 )
+ep('API-08', 'get', '/api/account/me', 'product_getMe', undefined, 'MeView', 'product')
 for (const [path, operationId, input] of [
   ['bind', 'productBindMethod', 'ProductBindRequest'],
   ['{bindingId}/replace', 'productReplaceMethod', 'ProductBindRequest'],
@@ -1787,9 +1817,10 @@ const policy = {
     },
     {
       purpose: 'LOGIN',
-      methods: ['PHONE_OTP'],
-      verification: 'CHALLENGE_THEN_PHONE',
-      verifiedBy: 'phone',
+      methods: ['PHONE_OTP', 'EMAIL_CODE'],
+      verification: 'CHALLENGE_THEN_LOGIN_OR_INITIAL_PASSWORD',
+      verifiedBy: 'code',
+      initialPasswordRequired: true,
       completion: 'LOGIN_CODE',
       createsUser: true,
     },

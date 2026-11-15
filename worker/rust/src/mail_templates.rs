@@ -10,6 +10,11 @@ struct Template {
 }
 const TEMPLATES: &[Template] = &[
     Template {
+        purpose: "LOGIN",
+        title: "登录验证码",
+        introduction: "你正在登录 {brand}。未注册的邮箱将在验证成功后自动注册并登录。",
+    },
+    Template {
         purpose: "EMAIL_SIGNUP",
         title: "注册验证码",
         introduction: "你正在使用此邮箱注册 {brand} 账号。",
@@ -68,9 +73,10 @@ pub(crate) fn render(purpose: &str, code: &str, expires_at: i64, now: i64) -> Op
 mod tests {
     use super::*;
     #[test]
-    fn all_five_purposes_have_distinct_copy_and_shared_safety_text() {
+    fn all_purposes_have_distinct_copy_and_shared_safety_text() {
         let mut subjects = std::collections::HashSet::new();
         for purpose in [
+            "LOGIN",
             "EMAIL_SIGNUP",
             "PASSWORD_RESET",
             "BIND",

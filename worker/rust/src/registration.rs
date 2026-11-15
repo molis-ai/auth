@@ -80,7 +80,9 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     ensure(
         (b["purpose"] == "LOGIN"
             && (b["method"] == "EMAIL_PASSWORD"
+                || b["method"] == "ACCOUNT_PASSWORD"
                 || b["method"] == "PHONE_OTP"
+                || b["method"] == "EMAIL_CODE"
                 || b["method"] == "GOOGLE"
                 || b["method"] == "GITHUB"))
             || (b["purpose"] == "EMAIL_SIGNUP" && b["method"] == "EMAIL_CODE")
@@ -99,7 +101,7 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     let id = uuid();
     a.s.batch(vec![client_guard(a,&c)?,a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?,a.s.statement("INSERT INTO auth_product_transaction(id,client_id,environment_id,purpose,method,initiator_hash,redirect_uri,product_state,product_state_hash,pkce_challenge,created_seq,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,(SELECT MAX(seq) FROM auth_security_sequence),?,?)",vec![id.clone().into(),c["client_id"].clone(),c["environment_id"].clone(),b["purpose"].clone(),b["method"].clone(),b["initiatorChallenge"].clone(),b["redirectUri"].clone(),b["state"].clone(),hash(&text(b,"state")).into(),b["codeChallenge"].clone(),n.into(),(n+TX).into()])?],"VERSION_CONFLICT").await?;
     Ok(
-        json!({"transactionId":id,"status":"PENDING","nextStep":if b["method"]=="EMAIL_PASSWORD"{"PASSWORD_LOGIN"}else if b["method"]=="GOOGLE" || b["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},"expiresAt":iso(&json!(n+TX))}),
+        json!({"transactionId":id,"status":"PENDING","nextStep":if b["method"]=="EMAIL_PASSWORD" || b["method"]=="ACCOUNT_PASSWORD"{"PASSWORD_LOGIN"}else if b["method"]=="GOOGLE" || b["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},"expiresAt":iso(&json!(n+TX))}),
     )
 }
 fn otp() -> String {
@@ -110,7 +112,7 @@ fn otp() -> String {
         }
     }
 }
-async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Value> {
+pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Value> {
     shape("ChallengeRequest", b)?;
     ensure(
         (t["method"] == "EMAIL_CODE" && b["channel"] == "EMAIL")
@@ -214,7 +216,7 @@ async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Value> {
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(json!({"challengeId":id,"expiresAt":iso(&json!(expires)),"retryAfterSeconds":60}))
 }
-async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
+pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
     shape("VerifyChallengeRequest", b)?;
     a.rate_ip("v2-verify", 120).await?;
     let n = now();
@@ -262,6 +264,16 @@ async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<V
     let proof = secret();
     let expires = (n + CODE).min(number(t, "expires_at"));
     let target = text(&q, "canonical_target");
+    // Check ownership before revealing a conflict, and before asking for a password.
+    if t["purpose"] == "EMAIL_SIGNUP" {
+        let existing =
+            a.s.one(
+                "SELECT id FROM auth_user_email WHERE canonical_email=?",
+                vec![target.clone().into()],
+            )
+            .await?;
+        ensure(existing.is_null(), 409, "IDENTITY_IN_USE")?;
+    }
     let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND (attempts<max_attempts OR (verifier='ALIYUN' AND attempts=max_attempts)) AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
     if crate::sensitive_transactions::protected(t) {
         writes.extend(
@@ -292,7 +304,15 @@ async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<V
 pub(crate) fn new_user(a: &Auth, id: &str, n: i64) -> Result<Vec<D1PreparedStatement>> {
     Ok(vec![a.s.statement("INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Molis 用户','ACTIVE',?,?)",vec![id.into(),n.into(),n.into()])?])
 }
-async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result<Value> {
+async fn code_identity(a: &Auth, is_email: bool, target: &str) -> Result<Value> {
+    a.s.one(if is_email {
+        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_email p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_email=?"
+    } else {
+        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_phone=?"
+    }, vec![target.into()]).await
+}
+
+pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::identify(a, t, c, op, b).await;
     }
@@ -303,14 +323,31 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
     if op == "password" {
         shape("PasswordLoginRequest", b)?;
         ensure(
-            t["purpose"] == "LOGIN" && t["method"] == "EMAIL_PASSWORD",
+            t["purpose"] == "LOGIN"
+                && (t["method"] == "EMAIL_PASSWORD" || t["method"] == "ACCOUNT_PASSWORD"),
             400,
             "INVALID_REQUEST",
         )?;
-        let address = email(&b["email"])?;
+        let identifier = b.get("identifier").unwrap_or(&b["email"]);
+        let is_phone = identifier.as_str().is_some_and(|v| v.starts_with("+86"));
+        ensure(
+            !is_phone || t["method"] == "ACCOUNT_PASSWORD",
+            400,
+            "INVALID_REQUEST",
+        )?;
+        let address = if is_phone {
+            identifier.as_str().unwrap().to_owned()
+        } else {
+            email(identifier)?
+        };
         a.rate_ip("v2-password", 30).await?;
         a.rate("v2-password-target", &address, 10, 300000).await?;
-        let candidate=a.s.one("SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL",vec![address.clone().into()]).await?;
+        let query = if is_phone {
+            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
+        } else {
+            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL"
+        };
+        let candidate = a.s.one(query, vec![address.clone().into()]).await?;
         let encoded = candidate["password_hash"]
             .as_str()
             .map(str::to_owned)
@@ -324,12 +361,14 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
         user = text(&candidate, "id");
         epoch = number(&candidate, "session_epoch");
         writes.push(a.s.guard(
-            "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_email=? AND e.verified_at IS NOT NULL)",
+            if is_phone { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_phone e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_phone=? AND e.verified_at IS NOT NULL)" } else { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_email=? AND e.verified_at IS NOT NULL)" },
             vec![user.clone().into(), encoded.into(),address.into()],
         )?);
     } else {
         shape(
-            if op == "phone" {
+            if op == "code" {
+                "CodeLoginRequest"
+            } else if op == "phone" {
                 "PhoneLoginRequest"
             } else {
                 "EmailSignupRequest"
@@ -337,7 +376,9 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
             b,
         )?;
         ensure(
-            (op == "phone" && t["purpose"] == "LOGIN" && t["method"] == "PHONE_OTP")
+            ((op == "phone" || op == "code")
+                && t["purpose"] == "LOGIN"
+                && (t["method"] == "PHONE_OTP" || (op == "code" && t["method"] == "EMAIL_CODE")))
                 || (op == "email-signup"
                     && t["purpose"] == "EMAIL_SIGNUP"
                     && t["method"] == "EMAIL_CODE"),
@@ -388,14 +429,23 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
                 vec![user.clone().into(), encoded.into(), n.into()],
             )?);
         } else {
-            ensure(identity["channel"] == "SMS", 400, "INVALID_REQUEST")?;
-            let existing=a.s.one("SELECT p.user_id,us.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_phone=?",vec![target.clone().into()]).await?;
+            let is_email = t["method"] == "EMAIL_CODE";
+            ensure(
+                identity["channel"] == if is_email { "EMAIL" } else { "SMS" },
+                400,
+                "INVALID_REQUEST",
+            )?;
+            let existing = code_identity(a, is_email, &target).await?;
             if existing.is_null() {
                 user = uuid();
                 epoch = 0;
                 writes.extend(new_user(a, &user, n)?);
                 writes.push(a.s.statement(
-                    "INSERT INTO auth_user_phone VALUES (?,?,?,?,?)",
+                    if is_email {
+                        "INSERT INTO auth_user_email VALUES (?,?,?,?,?)"
+                    } else {
+                        "INSERT INTO auth_user_phone VALUES (?,?,?,?,?)"
+                    },
                     vec![
                         uuid().into(),
                         user.clone().into(),
@@ -409,7 +459,7 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
                 user = text(&existing, "user_id");
                 epoch = number(&existing, "session_epoch");
                 writes.push(a.s.guard(
-                    "EXISTS(SELECT 1 FROM auth_user_phone WHERE user_id=? AND canonical_phone=?)",
+                    if is_email { "EXISTS(SELECT 1 FROM auth_user_email WHERE user_id=? AND canonical_email=? AND verified_at IS NOT NULL)" } else { "EXISTS(SELECT 1 FROM auth_user_phone WHERE user_id=? AND canonical_phone=? AND verified_at IS NOT NULL)" },
                     vec![user.clone().into(), target.into()],
                 )?);
             }
@@ -444,7 +494,7 @@ async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(json!({"status":"VERIFIED","nextStep":"COMPLETE"}))
 }
-async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
+pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::complete(a, t, c).await;
     }
@@ -516,12 +566,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             } else {
                 text(&t, "status")
             };
-            let q=a.s.one("SELECT consumed_at FROM auth_verification_challenge WHERE transaction_id=? AND invalidated_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1",vec![t["id"].clone(),n.into()]).await?;
+            let q=a.s.one("SELECT consumed_at,canonical_target FROM auth_verification_challenge WHERE transaction_id=? AND invalidated_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1",vec![t["id"].clone(),n.into()]).await?;
             let next = if status == "VERIFIED" {
                 "COMPLETE"
             } else if status != "PENDING" {
                 "NONE"
-            } else if t["method"] == "EMAIL_PASSWORD" {
+            } else if t["method"] == "EMAIL_PASSWORD" || t["method"] == "ACCOUNT_PASSWORD" {
                 "PASSWORD_LOGIN"
             } else if t["method"] == "GOOGLE" || t["method"] == "GITHUB" {
                 if t["provider_state_hash"].is_null() {
@@ -533,8 +583,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 "REQUEST_CHALLENGE"
             } else if q["consumed_at"].is_null() {
                 "VERIFY_CHALLENGE"
-            } else if t["method"] == "PHONE_OTP" {
-                "PHONE_LOGIN"
+            } else if t["purpose"] == "LOGIN"
+                && (t["method"] == "PHONE_OTP" || t["method"] == "EMAIL_CODE")
+            {
+                "CODE_LOGIN"
             } else {
                 "EMAIL_SIGNUP"
             };
@@ -553,12 +605,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 }
                 ["challenges"] => send(a, &t, &c, &b).await?,
                 ["challenges", id, "verify"] => verify(a, &t, &c, id, &b).await?,
-                [op @ ("password" | "phone" | "email-signup")] => {
+                [op @ ("password" | "phone" | "code" | "email-signup")] => {
                     match identify(a, &t, &c, op, &b).await {
-                        Err(e) if *op == "phone" && e.code == "ALREADY_EXISTS" => {
-                            identify(a, &t, &c, op, &b).await?
-                        }
-                        Err(e) if *op == "email-signup" && e.code == "ALREADY_EXISTS" => {
+                        Err(e)
+                            if ["email-signup", "phone", "code"].contains(op)
+                                && e.code == "ALREADY_EXISTS" =>
+                        {
                             return Err(Failure {
                                 status: 409,
                                 code: "IDENTITY_IN_USE",

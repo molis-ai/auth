@@ -33,7 +33,7 @@ Rust 命令由仓库集成方统筹，遵循本机工具链与测试环境要求
 
 `CreateTransactionRequest` 按 purpose/method 及 operation/target 展开联合类型；未列组合拒绝。REAUTH 的目标：BIND_METHOD 用 `{method:EMAIL|PHONE|GOOGLE|GITHUB}`；REPLACE_METHOD/UNLINK_METHOD 用 `{bindingId}`；CHANGE_PASSWORD 用 `{kind:PASSWORD}`。REAUTH、BIND、REPLACE 必须有可信当前会话，OpenAPI 可选 Bearer 加 `x-session-required-purposes` 表达按 purpose 的条件，服务必须执行 `policy.authenticationFlows.requiresCurrentSession`。
 
-LOGIN/EMAIL_SIGNUP 只能完成为 LOGIN_CODE，REAUTH 为 OPERATION_PROOF，BIND/REPLACE 为 NEW_IDENTITY_PROOF，PASSWORD_RESET 为 RESET_PROOF。只有 LOGIN/PHONE_OTP 的 `/phone` 可以自动开户；signup 仅供 EMAIL_SIGNUP。验证码验证在 LOGIN/PHONE_OTP 和 EMAIL_SIGNUP 中留下待下一步消费的 verificationProof；其他挑战用途在成功后直接令事务 VERIFIED，complete 只签发其用途的证明。服务必须按 policy 的用途与当前事务检查，不能仅验证某个 proof 字符串形状。
+LOGIN/EMAIL_SIGNUP 只能完成为 LOGIN_CODE，REAUTH 为 OPERATION_PROOF，BIND/REPLACE 为 NEW_IDENTITY_PROOF，PASSWORD_RESET 为 RESET_PROOF。LOGIN/EMAIL_CODE 与 LOGIN/PHONE_OTP 共用验证码识别：已有身份直接登录，新身份在验证成功后原子创建用户及邮箱/手机绑定，不要求首次设置密码。密码可在账号管理中设置。signup 仅供显式 EMAIL_SIGNUP。验证码验证在这两种 LOGIN 和 EMAIL_SIGNUP 中留下待下一步消费的 verificationProof；其他挑战用途在成功后直接令事务 VERIFIED，complete 只签发其用途的证明。服务必须按 policy 的用途与当前事务检查，不能仅验证某个 proof 字符串形状。
 
 VERIFIED 只允许 COMPLETE；终态只能返回 NONE。产品 DTO 只暴露本地 handle、公开状态及用户视图，不能带中央 code/proof/token。Google/GitHub 的 provider state、nonce、PKCE 与产品 state/PKCE 分开；提供方 code/subject 保持其不透明字符串语义，不套本地 ID 或本地 token 的长度规则。Google/GitHub 无邮箱身份也可表达。
 
@@ -65,3 +65,45 @@ TTL、重发/尝试次数、分页和限流初始值集中于 `policy.defaults`�
 - 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [V2 收敛方案](../../docs/unified-account/v2-consolidation.md)。
 - 1.1.0（2026-11-05）：新增平台订阅库存只读接口 `GET /api/v2/platform/subscriptions/{subscriptionId}/seat-pools` 及对应产品映射。要求 `SUBSCRIPTION_READ`，不要求平台人员属于租户，租户停用时仍允许平台读取；个人订阅返回空列表，分页限定当前账号/Client/订阅。席位分配仍只允许租户管理者，未增加迁移或支付。
 - 1.0.0（2026-11-04）：覆盖 API-01..09；固定中央与产品 DTO、四类完成材料、认证用途联合、平台/租户权限、订阅与席位结构、mock 端口、迁移记录、工程默认值和两语言共用正反夹具。交付的是可执行合同，不是完整统一账号业务实现。
+
+## 多端个人资料读取
+
+Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`（`MeView`）。`user` 提供本人昵称、头像、邮箱及账号版本；`loginMethods` 提供服务端生成的展示标签；`passwordEnabled` 提供密码状态。产品侧只投影所需字段，不推导身份、不重新脱敏。登录方式操作的 `expectedVersion` 使用同一快照的 `user.version`（账号版本，不是内部 identity_version）。
+
+展示规则由 `worker/rust/src/account_management.rs` 的 `user_view` / `method_view` 维护：本人资料邮箱按 `user.email` 返回；EMAIL 登录方式标签隐藏邮箱本地部分，PHONE 标签遮中间四位；Google 返回邮箱、GitHub 返回用户名。消费者原样展示各自语义字段，不把隐藏后的标签作为登录或绑定输入。原始手机号和第三方 subject 不通过个人资料视图返回。会话令牌不属于个人资料，不能随此视图下发。
+
+### 账号管理免登录衔接
+
+`POST /api/v2/auth/management-handoffs` 由已登录产品 BFF 调用，提交已登记的 `redirectUri` 与浏览器发起凭证的 S256 challenge。返回 Auth `/account/handoff/start` 导航地址。Auth 设置独立 HttpOnly 浏览器凭证后返回产品的已登记回调（`handoff` 参数）；产品须校验其 HttpOnly 发起凭证并通过当前同一个产品会话调用 `POST /api/v2/auth/management-handoffs/approve`，随后导航到 Auth `/account/handoff/finish`。
+
+总有效期 60 秒。Auth 原子校验两端浏览器凭证、原登录会话 revision/有效性、客户端策略和一次性消费状态后建立自己的 Web 会话。访问令牌和刷新令牌只留服务端；目标固定为 Auth 根管理页。跳转保留原认证时间、最近身份验证时间和绝对过期时间，不授予新的敏感操作验证。替换旧 Auth Web cookie 时轮换会话引用。首次部署需应用 `0018_management_handoff.sql`。
+
+隔离验证：Club `scripts/test-account-live-login.mjs` 的 `CLUB-SSO-01` 覆盖同账号进入、缺失浏览器凭证、重放、过期、跨站发起和原会话失效拒绝；Auth `rust-tests/web-session.test.ts` 验证现有 Web 会话与 CSRF 不变量。
+
+## 简化登录入口
+
+产品登录调用 `POST /api/v2/auth/login/password`（邮箱或手机号 + 密码），或 `POST /api/v2/auth/verification-codes` 后调用 `POST /api/v2/auth/login/code`（`verificationId` + 六位验证码）。验证编号绑定发起方证明、客户端、用途与有效期，不能作为登录凭据。Auth 内部保留验证记录和一次性授权码；BFF/Host 私下交换会话，浏览器不接触 token。找回密码、第三方授权和绑定验证继续使用独立用途。
+
+## 当前产品登录接口
+
+2026-11-15 补齐已实现的三个产品入口：`productLoginPassword`、
+`productSendLoginVerification`、`productLoginCode`。密码与验证码登录成功统一返回
+`ProductLoginResult`。第三方事务查询统一返回 `ProductTransactionView`，
+成功后单独读取产品会话。交互和状态解释见 API 合同的“当前登录入口与三端行为”。
+`CONTRACT_ONLY` 是合同文件的元数据，不用作接口是否已实现的状态标记。
+
+## 三端共用合同的更新入口
+
+Auth 是合同唯一维护方。Work 和 Club 的六份合同文件只作为 Auth 的字节快照，
+包括 schemas、OpenAPI、policy、fixtures、validator-profile 和 validate.ts。
+在 Auth 修改 generate.ts 并生成后，从本目录运行：
+
+```sh
+node sync-products.mjs --work /path/to/molis-work --club /path/to/molis-club --write
+node sync-products.mjs --work /path/to/molis-work --club /path/to/molis-club
+```
+
+第一条同步两端六份原始文件、版本、摘要并重新生成消费端类型。
+第二条只检查：既校验消费端摘要和生成类型，也直接逐字节对照 Auth；
+即使消费端自行修改文件并重算摘要，也会被拒绝。源头生成文件过时同样拒绝。
+产品实现使用生成类型，例如 ProductLoginResult，不另写同义的公开响应结构。
