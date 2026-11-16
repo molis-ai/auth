@@ -1,0 +1,23 @@
+name: Build isolated Auth fixture
+description: Build pinned Auth WASM without production credentials or deployment
+inputs:
+  source:
+    description: Checked-out Auth directory
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Auth fixture tools
+      shell: bash
+      working-directory: ${{ inputs.source }}
+      run: npm --prefix worker ci && npm --prefix worker run setup:rust
+    - name: Build locked wasm-bindgen and Auth
+      shell: bash
+      working-directory: ${{ inputs.source }}
+      run: |
+        version=$(awk -F '"' '/^name = "wasm-bindgen"$/ { getline; print $2; exit }' worker/rust/Cargo.lock)
+        test -n "$version"
+        toolchain=$(node --input-type=module -e "import { installedToolchain } from './worker/scripts/rust-toolchain.mjs'; process.stdout.write(installedToolchain())")
+        cargo "+$toolchain" install --locked --version "=$version" --root "$RUNNER_TEMP/auth-wasm-tools" wasm-bindgen-cli
+        export WASM_BINDGEN_BIN="$RUNNER_TEMP/auth-wasm-tools/bin/wasm-bindgen"
+        npm --prefix worker run build:rust

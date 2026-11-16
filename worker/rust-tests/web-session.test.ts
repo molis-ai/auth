@@ -99,6 +99,16 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     )
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
     assert.ok(cookie && csrf)
+    // LOGIN-P1-04: the BFF binds client identity; capabilities expose no proofs or secrets.
+    const methods = ['ACCOUNT_PASSWORD', 'EMAIL_CODE', 'PHONE_OTP', 'GOOGLE', 'GITHUB']
+    assert.deepEqual(ok(await call('/api/account/auth/capabilities')).methods, methods)
+    assert.deepEqual(ok(await call('/api/v2/auth/capabilities?clientId=auth-web')).methods, methods)
+    assert.equal((await call('/api/v2/auth/capabilities?clientId=unknown')).status, 403)
+    assert.equal((await call('/api/v2/auth/capabilities?clientId=auth-web&clientId=other')).status, 400)
+    assert.equal((await call('/api/v2/auth/capabilities?clientId=auth-web', undefined, {Origin:'https://evil.example'})).status, 403)
+    await db.prepare("UPDATE auth_client SET status='DISABLED' WHERE client_id='auth-web'").run()
+    assert.equal((await call('/api/account/auth/capabilities')).status, 403)
+    await db.prepare("UPDATE auth_client SET status='ACTIVE' WHERE client_id='auth-web'").run()
     const anonymousCookie = cookie
     const anonymousCsrf = csrf
     assert.equal(
@@ -380,6 +390,12 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         .bind(tx.handle)
         .first()
       assert.equal(central.status, 'VERIFIED')
+      // LOGIN-P1-03: even after provider verification, reads cannot consume the proof or establish a login.
+      for (let i = 0; i < 2; i++) {
+        assert.equal(ok(await call('/api/account/auth/transactions/' + tx.handle)).status, 'PENDING')
+        assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
+        assert.equal((await db.prepare('SELECT status FROM auth_product_transaction WHERE id=?').bind(tx.handle).first()).status, 'VERIFIED')
+      }
       const callbackPage = await call(callback.pathname + callback.search, undefined, navigation)
       assert.equal(callbackPage.status, 200)
       assert.match(callbackPage.html, /授权已完成/)
@@ -395,6 +411,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       const first = { account: ok(await call('/api/account/session')) }
       assert.equal(first.account.state, 'AUTHENTICATED')
       assert.equal(ok(await call('/api/account/auth/transactions/' + tx.handle)).status, 'CONSUMED')
+      assert.equal(ok(await call('/api/account/session')).session.loginSessionId, first.account.session.loginSessionId)
+      // Replaying a bound callback must not issue a second central login.
+      assert.equal((await call(callback.pathname + callback.search, undefined, navigation)).status, 403)
       assert.equal(ok(await call('/api/account/session')).session.loginSessionId, first.account.session.loginSessionId)
       if (provider === 'google') {
         const row = await db.prepare('SELECT payload FROM auth_web_session').first()

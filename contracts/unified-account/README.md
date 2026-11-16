@@ -107,3 +107,7 @@ node sync-products.mjs --work /path/to/molis-work --club /path/to/molis-club
 第二条只检查：既校验消费端摘要和生成类型，也直接逐字节对照 Auth；
 即使消费端自行修改文件并重算摘要，也会被拒绝。源头生成文件过时同样拒绝。
 产品实现使用生成类型，例如 ProductLoginResult，不另写同义的公开响应结构。
+
+### 不可变来源验证
+
+先提交 Auth 合同，再以 `sync-products.mjs --write` 同步，脚本记录实际提交而不是移动分支。消费者 CI 从 `molis-ai/auth` 检出元数据中的 40 位 SHA，再运行该提交的 `verify-product.mjs work|club <消费者根目录>`。检查六份原件、摘要、版本及生成类型；即使同时篡改副本和摘要也不能通过源头比较。验证脚本的负向用例纳入 `npm run contracts:check`。

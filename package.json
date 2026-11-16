@@ -18,7 +18,7 @@
     "admin": "npm --prefix worker run admin",
     "test:password": "npm --prefix worker run test:password",
     "contracts:generate": "node contracts/unified-account/generate.ts",
-    "contracts:check": "node contracts/unified-account/generate.ts --check && node --test contracts/unified-account/validate.test.ts",
+    "contracts:check": "node contracts/unified-account/generate.ts --check && node --test contracts/unified-account/validate.test.ts && node --test contracts/unified-account/verify-product.test.mjs",
     "test:browser": "node web/scripts/v2-browser.test.mjs"
   }
 }

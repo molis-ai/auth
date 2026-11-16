@@ -4,7 +4,10 @@ name: Development checks
 # Production release/deployment remains a separate, explicitly authorized task.
 on:
   push:
-    branches-ignore: [main]
+    branches: [main, "codex/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

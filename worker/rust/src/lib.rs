@@ -15,6 +15,7 @@ mod http;
 mod identity;
 mod login_sessions;
 mod login_commands;
+mod login_capabilities;
 mod mail_delivery;
 mod mail_templates;
 mod management_handoff;

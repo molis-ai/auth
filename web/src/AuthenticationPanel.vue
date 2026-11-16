@@ -45,6 +45,9 @@ const method = ref("EMAIL_PASSWORD"),
   busy = ref(false),
   failure = ref(""),
   retryAt = ref(0);
+const methods = ref<string[]>([]);
+const loginFlow = (props.purpose ?? 'LOGIN') === 'LOGIN' && !props.operation;
+const available = (value: string) => !loginFlow || methods.value.includes(value === 'EMAIL_PASSWORD' ? 'ACCOUNT_PASSWORD' : value);
 const t = (text: string) => props.entry ? entryText(props.language, text) : text;
 const remember = ref(Boolean(address.value)), showPassword = ref(false), now = ref(Date.now()), providerPending = ref(false);
 const countdown = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -120,6 +123,7 @@ async function progress(value: Transaction) {
   else if (value.nextStep === "COMPLETE") await complete();
 }
 async function submit() {
+  if (!available(method.value)) return;
   if (busy.value || props.blocked || providerPending.value) return;
   if (phoneBinding && !challenge.value && !/^1[3-9]\d{9}$/.test(address.value.trim())) {
     failure.value = "请输入正确的 11 位手机号";
@@ -327,7 +331,12 @@ async function prepareOperation() {
     busy.value = false;
   }
 }
-onMounted(() => {
+onMounted(async () => {
+  if (loginFlow) {
+    try { methods.value = (await request<{methods:string[]}>('/auth/capabilities')).methods; }
+    catch (error) { if (active) failure.value = accountErrorMessage(error); return; }
+    if (!active) return;
+  }
   if (phoneBinding) phoneInput.value?.focus();
   if (['BIND', 'REPLACE'].includes(props.purpose ?? '') && ['GOOGLE', 'GITHUB'].includes(method.value)) void submit();
   else void prepareOperation();
@@ -401,7 +410,7 @@ if (
     <div v-else :class="{ 'entry-content': entry, 'entry-login-content': entry && purpose === 'LOGIN' }">
       <label v-if="!entry && !identityType">登录方式<select v-model="method" :disabled="busy || !!transaction"><option v-for="[value,label] in purposeMethods()" :key="value" :value="value">{{ label }}</option></select></label>
       <div v-else-if="purpose === 'LOGIN' && !['GOOGLE','GITHUB'].includes(method)" class="account-methods" :aria-label="t('登录方式')">
-        <button v-for="[value,label] in [['EMAIL_PASSWORD','账号密码'],['EMAIL_CODE','邮箱验证'],['PHONE_OTP','手机验证']]" :key="value" type="button" class="text-button" :aria-pressed="method === value" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
+        <button v-for="[value,label] in [['EMAIL_PASSWORD','账号密码'],['EMAIL_CODE','邮箱验证'],['PHONE_OTP','手机验证']]" :key="value" type="button" class="text-button" :aria-pressed="method === value" v-show="available(value)" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
       </div>
       <template v-if="!['GOOGLE', 'GITHUB'].includes(method)">
         <label class="field login-field"><span :class="{ 'visually-hidden': entry && purpose === 'LOGIN' }">{{ t(method === 'PHONE_OTP' ? '手机号（+86）' : method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? '邮箱或手机号' : '邮箱') }}</span><input v-model="address" :type="method === 'PHONE_OTP' ? 'tel' : method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? 'text' : 'email'" :autocomplete="method === 'PHONE_OTP' ? 'tel-national' : 'username'" :placeholder="entry && purpose === 'PASSWORD_RESET' ? undefined : method === 'PHONE_OTP' ? t('手机号（+86）') : t(method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? '邮箱或手机号' : '邮箱')" :disabled="busy || blocked || !!challenge" required></label>
@@ -416,14 +425,14 @@ if (
       <slot v-if="entry && purpose === 'LOGIN' && method === 'EMAIL_PASSWORD'" name="recovery" />
       <p v-if="failure" class="notice error" role="alert">{{ t(failure) }}</p>
       <div :class="entry ? 'entry-actions' : 'console-actions'">
-        <button type="submit" :class="{'entry-primary':entry}" :disabled="busy || blocked || providerPending">{{ t(providerPending ? '正在等待授权…' : busy ? '正在处理…' : challenge ? '验证' : transaction?.nextStep === 'EMAIL_SIGNUP' ? '完成注册' : entry && purpose === 'LOGIN' && method === 'EMAIL_PASSWORD' ? '登录' : entry && purpose === 'PASSWORD_RESET' ? '发送验证码' : '继续') }}</button>
+        <button type="submit" :class="{'entry-primary':entry}" :disabled="busy || blocked || providerPending || !available(method)">{{ t(providerPending ? '正在等待授权…' : busy ? '正在处理…' : challenge ? '验证' : transaction?.nextStep === 'EMAIL_SIGNUP' ? '完成注册' : entry && purpose === 'LOGIN' && method === 'EMAIL_PASSWORD' ? '登录' : entry && purpose === 'PASSWORD_RESET' ? '发送验证码' : '继续') }}</button>
         <button v-if="challenge" type="button" :class="{'text-button':entry}" :disabled="busy || blocked || now < retryAt" @click="resend">{{ t('重新发送') }}<span v-if="now < retryAt"> ({{ Math.ceil((retryAt-now)/1000) }}s)</span></button>
         <button v-if="!entry || transaction" type="button" :class="{'text-button':entry}" :disabled="busy || blocked" @click="cancel().then(() => entry && purpose === 'LOGIN' ? chooseMethod('EMAIL_PASSWORD') : emit('cancel'))">{{ t(entry ? '使用其他方式' : '取消') }}</button>
       </div>
       <label v-if="entry && purpose === 'LOGIN'" class="remember-email" :class="{ 'remember-placeholder': method !== 'EMAIL_PASSWORD' }" :aria-hidden="method !== 'EMAIL_PASSWORD'"><input v-model="remember" type="checkbox" :disabled="busy || blocked || method !== 'EMAIL_PASSWORD'">{{ t('记住邮箱') }}</label>
     </div>
     <div v-if="entry && purpose === 'LOGIN'" class="entry-social">
-      <button v-for="provider in ['GOOGLE','GITHUB']" :key="provider" type="button" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">{{ t(provider === 'GOOGLE' ? '使用 Google 登录' : '使用 GitHub 登录') }}</button>
+      <button v-for="provider in ['GOOGLE','GITHUB']" :key="provider" v-show="available(provider)" type="button" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">{{ t(provider === 'GOOGLE' ? '使用 Google 登录' : '使用 GitHub 登录') }}</button>
     </div>
   </form>
 </template>
