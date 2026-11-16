@@ -34,6 +34,7 @@ fn key(a: &Auth) -> Result<String> {
     ensure(token(&k), 503, "UPSTREAM_UNAVAILABLE")?;
     Ok(k)
 }
+pub(crate) fn configured(a: &Auth) -> bool { key(a).is_ok() }
 async fn sealed(a: &Auth, v: &Value) -> Result<String> {
     seal(&key(a)?, &v.to_string()).await.map_err(unavailable)
 }
