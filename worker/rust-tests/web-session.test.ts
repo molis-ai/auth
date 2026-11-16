@@ -93,6 +93,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       )
       return r.data
     }
+    assert.equal(ok(await call('/api/account/auth/capabilities')).methods.length, 5, 'capabilities bootstrap the anonymous browser before parent session loading')
     assert.equal(
       (await call('/api/account/session', undefined, { Origin: 'https://evil.example' })).status,
       403,

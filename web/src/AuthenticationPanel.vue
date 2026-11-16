@@ -51,7 +51,7 @@ const available = (value: string) => !loginFlow || methods.value.includes(value 
 const t = (text: string) => props.entry ? entryText(props.language, text) : text;
 const remember = ref(Boolean(address.value)), showPassword = ref(false), now = ref(Date.now()), providerPending = ref(false);
 const countdown = setInterval(() => { now.value = Date.now(); }, 1000);
-watch(busy, value => emit('busy', value));
+watch(() => busy.value || providerPending.value, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
 async function chooseMethod(value: string) {
   if (busy.value || props.blocked || providerPending.value || method.value === value) return;

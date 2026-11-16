@@ -327,6 +327,7 @@ function clearAccount() {
   newIdentity.value = false; newPassword.value = ''; confirmPassword.value = '';
 }
 const sessionChanges = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('molis.auth.session');
+const authenticating = ref(false);
 let replacing = false, checking = false;
 function replaceSession() {
   if (replacing) return;
@@ -338,10 +339,11 @@ function replaceSession() {
 }
 if (sessionChanges) sessionChanges.onmessage = () => replaceSession();
 async function checkSession() {
-  if (busy.value || checking || replacing || document.visibilityState !== 'visible') return;
+  if (busy.value || authenticating.value || checking || replacing || document.visibilityState !== 'visible') return;
   checking = true;
   try {
     const current = await client.session();
+    if (authenticating.value) return;
     if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) replaceSession();
   } catch (error) {
     if (error instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
@@ -372,7 +374,7 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
-  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @complete="loggedIn" />
+  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @authenticating="authenticating = $event" @complete="loggedIn" />
   <div v-else class="console-shell v2-console">
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">

@@ -230,7 +230,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     };
     if row.is_null() {
         ensure(
-            method == Method::Get && path == "/api/account/session",
+            method == Method::Get && matches!(path, "/api/account/session" | "/api/account/auth/capabilities"),
             401,
             "LOGIN_REQUIRED",
         )?;
