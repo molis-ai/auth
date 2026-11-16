@@ -208,7 +208,7 @@ try {
   await page.fill('input[maxlength="80"]', "QA 昵称");
   await page.evaluate("document.querySelector('input[aria-label=修改昵称]').blur()");
   await page.wait(
-    "document.querySelector('header')?.textContent.includes('QA 昵称')",
+    "document.querySelector('header')?.textContent.includes('QA 昵称') && !document.querySelector('input[aria-label=修改昵称]') && Boolean(document.querySelector('.profile-inline-name [role=button]'))",
   );
   console.log("PASS browser profile update");
   const {profileEditorChecks}=await import('./profile-editor-checks.mjs');
