@@ -20,6 +20,8 @@ test('switching after a throttled challenge cancels the transaction before chang
   assert.equal(method.value,'EMAIL_PASSWORD');assert.equal(address.value,'saved@example.test');
   assert.equal(failure.value,'');assert.equal(retryAt.value,0);assert.equal(busy.value,false);
   const buttons=source.split('\n').filter(line=>line.includes('@click="chooseMethod'));
-  assert.ok(buttons.length>=3);
+  assert.equal(buttons.length,2); // three account tabs and two social buttons, each rendered by its own loop
+  assert.match(buttons[0], /EMAIL_PASSWORD.*EMAIL_CODE.*PHONE_OTP/);
+  assert.match(buttons[1], /GOOGLE.*GITHUB/);
   for(const line of buttons)assert.doesNotMatch(line,/!!transaction/);
 });

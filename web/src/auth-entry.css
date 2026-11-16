@@ -68,6 +68,11 @@
 @media (max-height: 650px) and (min-width: 761px) {
   .auth-entry .panel { min-height: 0; }
 }
+/* Keep recovery steps at the login card's height, while allowing longer content to grow. */
+.auth-entry .login-panel { min-block-size: 512px; }
+@media (max-width: 760px) {
+  .auth-entry .login-panel { min-block-size: 504px; }
+}
 /* The original entry composition, with the V2 methods inside the same card. */
 body { margin: 0; }
 .auth-entry, .auth-entry * { box-sizing: border-box; }
@@ -75,7 +80,7 @@ body { margin: 0; }
 .auth-entry .topbar, .auth-entry .wordmark { display: flex; align-items: center; justify-content: space-between; }
 .auth-entry .wordmark { justify-content: flex-start; text-decoration: none; }
 .auth-entry .layout { display: grid; }
-.auth-entry .login-methods { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.auth-entry .login-methods { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .auth-entry .login-method { flex-direction: column; }
 .auth-entry .language, .auth-entry .text-button { border: 0; background: transparent; cursor: pointer; }
 .auth-entry .entry-auth-form { max-width: none; width: 100%; }
@@ -113,3 +118,40 @@ body { margin: 0; }
 .auth-entry .login-methods { min-height:44px; align-items:center; }
 .auth-entry .login-method { min-height:36px; flex-direction:row; gap:4px; }
 .auth-entry .login-method small { font-size:9px; }
+
+.auth-entry .entry-login-content{min-height:288px}
+.auth-entry .entry-login-content>.entry-actions{margin-top:auto}
+.auth-entry .remember-placeholder{visibility:hidden}
+.auth-entry .entry-social{display:grid;gap:8px;max-width:320px;margin:12px auto 0;padding-top:12px;border-top:1px solid var(--line)}
+.auth-entry .entry-social button{width:100%;min-height:36px;padding:6px 16px;border:1px solid var(--muted);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.auth-entry .entry-social button:disabled{opacity:.5;cursor:default}
+.auth-entry .entry-footer{justify-content:center;text-align:center}
+
+.auth-entry .entry-auth-form>.login-welcome{max-width:320px;margin:0 auto;padding:12px 0 24px;justify-content:flex-start}
+.auth-entry .entry-auth-form>.login-welcome>p{font-size:24px;font-weight:400;line-height:1.35;color:var(--ink)}
+.auth-entry .entry-social button:enabled:hover{border-color:var(--ink);background:var(--sidebar)}
+.auth-entry .entry-login-content>.login-field{margin-bottom:12px}
+.auth-entry .entry-login-content>.entry-footer{margin-top:0;padding-top:0}
+.auth-entry .entry-login-content>.remember-email{margin-top:10px}
+
+.auth-entry .account-methods button:enabled:hover{background:transparent;color:var(--ink);box-shadow:none}
+
+.auth-entry .recovery-panel { justify-content: center; }
+.auth-entry .recovery-panel .entry-content,
+.auth-entry .recovery-panel .entry-auth-form > .login-welcome {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+.auth-entry .recovery-panel .panel-heading {
+  margin: 0 0 24px;
+  text-align: start;
+}
+.auth-entry .recovery-panel .panel-heading h2 {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.auth-entry .recovery-panel .panel-heading p { line-height: 1.6; }
+.auth-entry .recovery-panel .field { margin-bottom: 16px; }
+.auth-entry .recovery-panel > .entry-footer { padding-top: 0; }

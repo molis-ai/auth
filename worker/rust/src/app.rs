@@ -77,6 +77,12 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     let path = url.path();
     let method = a.request.method();
 
+    if path.starts_with("/api/v2/auth/management-handoffs")
+        || path == "/account/handoff/start"
+        || path == "/account/handoff/finish"
+    {
+        return crate::management_handoff::route(a, path, method).await;
+    }
     if path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback" {
         return crate::web_session::route(a, path, method).await;
     }
@@ -118,6 +124,9 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
         }
         if path.starts_with("/api/v2/auth/external/") || path.starts_with("/api/v2/auth/mock/") {
             return crate::external_login::browser(a, path, method).await;
+        }
+        if matches!(path, "/api/v2/auth/login/password" | "/api/v2/auth/login/code" | "/api/v2/auth/verification-codes") {
+            return crate::login_commands::route(a, path, method).await;
         }
         if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
             return crate::registration::route(a, path, method).await;

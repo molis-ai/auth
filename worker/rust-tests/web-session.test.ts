@@ -111,29 +111,21 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       ).status,
       403,
     )
-    const t = ok(
-      await call('/api/account/auth/transactions', { purpose: 'LOGIN', method: 'PHONE_OTP' }),
-    )
-    const path = '/api/account/auth/transactions/' + t.handle
-    const sent = ok(
-      await call(path + '/submit', { step: 'REQUEST_CHALLENGE', address: '+8613800000888' }),
-    )
-    const code = await db
-      .prepare(
-        'SELECT m.credential FROM auth_mock_delivery m JOIN auth_verification_challenge c ON c.delivery_id=m.delivery_id WHERE c.id=?',
-      )
-      .bind(sent.challengeHandle)
-      .first()
-    const verified = ok(
-      await call(path + '/submit', {
-        step: 'VERIFY_CHALLENGE',
-        challengeHandle: sent.challengeHandle,
-        credential: code.credential,
-      }),
-    )
-    assert.equal(verified.nextStep, 'PHONE_LOGIN')
-    assert.equal(ok(await call(path + '/submit', { step: 'PHONE_LOGIN' })).nextStep, 'COMPLETE')
-    const done = ok(await call(path + '/submit', { step: 'COMPLETE' }))
+    const sent = ok(await call('/api/account/auth/verification-codes', {
+      purpose: 'LOGIN', channel: 'SMS', address: '+8613800000888',
+    }))
+    assert.equal(typeof sent.verificationId, 'string')
+    assert.equal(sent.challengeId, undefined)
+    const code = await db.prepare(
+      'SELECT m.credential FROM auth_mock_delivery m JOIN auth_verification_challenge c ON c.delivery_id=m.delivery_id WHERE c.id=?',
+    ).bind(sent.verificationId).first()
+    assert.equal((await call('/api/account/auth/login/code', {
+      verificationId: sent.verificationId, code: code.credential === '000000' ? '111111' : '000000',
+    })).status, 401)
+    const done = ok(await call('/api/account/auth/login/code', {
+      verificationId: sent.verificationId, code: code.credential,
+    }))
+    assert.equal((await db.prepare('SELECT count(*) n FROM auth_local_credential WHERE user_id=?').bind(done.account.user.userId).first()).n, 0)
     assert.equal(done.account.state, 'AUTHENTICATED')
     assert.ok(validateNamed('AccountView', done.account))
     assert.ok(cookie !== anonymousCookie, 'login rotates the opaque browser reference')
@@ -326,7 +318,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     assert.ok(revoked.revoked_at)
 
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
-    assert.equal((await call(path + '/submit', { step: 'COMPLETE' })).status, 404)
+    assert.equal((await call('/api/account/auth/login/code', { verificationId: sent.verificationId, code: code.credential })).status, 403)
     for (const provider of ['google', 'github']) {
       const tx = ok(
         await call('/api/account/auth/transactions', {
@@ -396,13 +388,14 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       assert.ok(callbackPage.csp.includes("script-src 'nonce-" + nonce + "'"))
       assert.doesNotMatch(callbackPage.html, /requestId|accessToken|refreshToken/)
 
-      const first = ok(await call('/api/account/auth/transactions/' + tx.handle))
+      const status = ok(await call('/api/account/auth/transactions/' + tx.handle))
+      assert.equal(status.status, 'CONSUMED')
+      assert.equal(status.nextStep, 'NONE')
+      assert.deepEqual(Object.keys(status).sort(), ['expiresAt', 'handle', 'nextStep', 'status'])
+      const first = { account: ok(await call('/api/account/session')) }
       assert.equal(first.account.state, 'AUTHENTICATED')
-      assert.equal(
-        ok(await call('/api/account/auth/transactions/' + tx.handle)).account.session
-          .loginSessionId,
-        first.account.session.loginSessionId,
-      )
+      assert.equal(ok(await call('/api/account/auth/transactions/' + tx.handle)).status, 'CONSUMED')
+      assert.equal(ok(await call('/api/account/session')).session.loginSessionId, first.account.session.loginSessionId)
       if (provider === 'google') {
         const row = await db.prepare('SELECT payload FROM auth_web_session').first()
         const tokens = JSON.parse(await authOpen(bffKey, row.payload)).data.tokens

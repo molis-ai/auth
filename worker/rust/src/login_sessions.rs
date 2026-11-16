@@ -122,7 +122,7 @@ pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
 pub(crate) fn active_guard(a: &Auth, s: &Value) -> Result<D1PreparedStatement> {
     a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_login_access_token t ON t.login_session_id=s.id WHERE s.id=? AND s.session_revision=? AND {LIVE} AND t.token_hash=? AND t.expires_at>? AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision)"),vec![s["id"].clone(),s["session_revision"].clone(),now().into(),now().into(),s["access_hash"].clone(),now().into()])
 }
-fn tokens(
+pub(crate) fn tokens(
     a: &Auth,
     s: &Value,
     n: i64,

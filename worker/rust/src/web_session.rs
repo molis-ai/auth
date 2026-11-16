@@ -11,7 +11,7 @@ use worker::{Method, Request, RequestInit, Response};
 #[wasm_bindgen(module = "/src/runtime/federation.js")]
 extern "C" {
     #[wasm_bindgen(catch,js_name=authSeal)]
-    async fn seal(key: &str, value: &str) -> std::result::Result<String, JsValue>;
+    pub(crate) async fn seal(key: &str, value: &str) -> std::result::Result<String, JsValue>;
     #[wasm_bindgen(catch,js_name=authOpen)]
     async fn open(key: &str, value: &str) -> std::result::Result<String, JsValue>;
 }
@@ -31,7 +31,7 @@ fn session_failure(failure: Failure) -> Failure {
         failure
     }
 }
-fn setting(a: &Auth, name: &str) -> Result<String> {
+pub(crate) fn setting(a: &Auth, name: &str) -> Result<String> {
     let value = a
         .env
         .secret(name)
@@ -315,6 +315,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let scope = text(&body, "scope");
         let saved = session.data["tokens"].take();
         session.data["transactions"] = json!({});
+        session.data["loginVerification"] = Value::Null;
         session.save().await?;
         let key = a.header("Idempotency-Key");
         ensure((16..=128).contains(&key.len()), 400, "INVALID_REQUEST")?;
@@ -343,6 +344,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         // A rejected central session cannot keep blocking a fresh login behind stale recovery material.
         session.data["tokens"] = Value::Null;
         session.data["transactions"] = json!({});
+        session.data["loginVerification"] = Value::Null;
         if session_read {
             result = Ok(json!({"state":"EXPIRED"}));
         }

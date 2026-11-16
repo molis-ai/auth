@@ -61,6 +61,9 @@ pub async fn route(
     method: Method,
     b: &mut Value,
 ) -> Result<Value> {
+    if matches!(path,"/api/account/auth/login/password" | "/api/account/auth/login/code" | "/api/account/auth/verification-codes") {
+        return login_command(s,path,method,b).await;
+    }
     if path == "/account/callback" {
         ensure(method == Method::Get, 400, "INVALID_REQUEST")?;
         let url = s.a.request.url()?;
@@ -241,11 +244,7 @@ pub async fn route(
   if parts.len()==5&&method==Method::Get {
    if matches!(t["method"].as_str(),Some("GOOGLE"|"GITHUB")){
      if t["nextStep"]=="WAIT_PROVIDER"{sync(s,&mut t).await?;}
-     if t["status"]=="VERIFIED"{return finish(s,&mut t).await;}
-     if t["status"]=="CONSUMED"{
-       if t["purpose"]=="LOGIN"{return Ok(json!({"account":s.view().await?}));}
-       return Ok(json!({"operationReady":!t["operationProof"].is_null()||!t["newIdentityProof"].is_null()}));
-     }
+     if t["status"]=="VERIFIED"{finish(s,&mut t).await?;}
    }
    return Ok(view(&t));
   }
@@ -257,8 +256,9 @@ pub async fn route(
   match step.as_str(){
    "REQUEST_CHALLENGE"=>{t["address"]=b["address"].clone();return send(s,&mut t).await;},
    "VERIFY_CHALLENGE"=>{ensure(b["challengeHandle"]==t["challenge"],403,"FORBIDDEN")?;let result=call(s,&t,&format!("/challenges/{}/verify",text(&t,"challenge")),Method::Post,Some(json!({"credential":b["credential"]}))).await?;t["verification"]=result["verificationProof"].clone();},
-   "PASSWORD_LOGIN"=>{call(s,&t,"/password",Method::Post,Some(json!({"email":b["email"],"password":b["password"]}))).await?;},
+   "PASSWORD_LOGIN"=>{call(s,&t,"/password",Method::Post,Some(if b.get("identifier").is_some(){json!({"identifier":b["identifier"],"password":b["password"]})}else{json!({"email":b["email"],"password":b["password"]})})).await?;},
    "EMAIL_SIGNUP"=>{ensure(text(b,"email").trim().to_lowercase()==text(&t,"address").trim().to_lowercase(),403,"FORBIDDEN")?;call(s,&t,"/email-signup",Method::Post,Some(json!({"email":b["email"],"password":b["password"],"verificationProof":t["verification"]}))).await?;t["verification"]=Value::Null;},
+   "CODE_LOGIN"=>{let body=json!({"verificationProof":t["verification"]});call(s,&t,"/code",Method::Post,Some(body)).await?;t["verification"]=Value::Null;},
    "PHONE_LOGIN"=>{call(s,&t,"/phone",Method::Post,Some(json!({"verificationProof":t["verification"]}))).await?;t["verification"]=Value::Null;},
    "START_PROVIDER"=>{let provider=text(&t,"method").to_lowercase();ensure(["google","github"].contains(&provider.as_str()),400,"INVALID_REQUEST")?;let result=call(s,&t,&format!("/providers/{provider}/start"),Method::Post,Some(json!({}))).await?;t["nextStep"]="WAIT_PROVIDER".into();return Ok(result);},
    "COMPLETE"=>return finish(s,&mut t).await,
@@ -274,11 +274,7 @@ async fn finish(s: &mut WebSession<'_>, t: &mut Value) -> Result<Value> {
     t["status"] = "CONSUMED".into();
     t["nextStep"] = "NONE".into();
     if result["kind"] == "LOGIN_CODE" {
-        ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
-        let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
-        shape("TokenSet", &tokens)?;
-        s.data["tokens"] = tokens;
-        return Ok(json!({"account":s.view().await?,"status":"CONSUMED"}));
+        return accept_login(s,t,&result).await;
     }
     for field in ["operationProof", "newIdentityProof", "resetProof"] {
         if !result[field].is_null() {
@@ -388,4 +384,39 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
         s.data["transactions"][identity]["newIdentityProof"] = Value::Null;
     }
     Ok(result)
+}
+
+async fn accept_login(s: &mut WebSession<'_>, t: &Value, result: &Value) -> Result<Value> {
+        ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
+        let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+        shape("TokenSet", &tokens)?;
+        s.data["tokens"] = tokens;
+        Ok(json!({"account":s.view().await?}))
+}
+async fn login_command(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -> Result<Value> {
+    ensure(method == Method::Post,405,"METHOD_NOT_ALLOWED")?;
+    ensure(s.data["tokens"].is_null(),409,"VERSION_CONFLICT")?;
+    if path.ends_with("/login/code") {
+        shape("LoginCodeRequest",b)?;
+        let t=s.data["loginVerification"].clone();
+        ensure(t.is_object() && t["verificationId"]==b["verificationId"],403,"FORBIDDEN")?;
+        let result=s.call("/api/v2/auth/login/code",Method::Post,Some(b.clone()),Some(&text(&t,"proof")),None).await?;
+        s.data["loginVerification"]=Value::Null;
+        return accept_login(s,&t,&result).await;
+    }
+    let sending=path.ends_with("/verification-codes");
+    shape(if sending {"ProductSendVerificationRequest"} else {"ProductLoginPasswordRequest"},b)?;
+    let mut t=json!({"proof":secret(),"verifier":secret(),"state":secret()});
+    let mut input=b.clone();
+    for (key,value) in json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))}).as_object().unwrap() {
+        input[key]=value.clone();
+    }
+    let result=s.call(if sending {"/api/v2/auth/verification-codes"} else {"/api/v2/auth/login/password"},Method::Post,Some(input),Some(&text(&t,"proof")),None).await?;
+    s.data["transactions"]=json!({});
+    s.data["loginVerification"]=Value::Null;
+    if sending {
+        t["verificationId"]=result["verificationId"].clone();
+        s.data["loginVerification"]=t;
+        Ok(result)
+    } else { accept_login(s,&t,&result).await }
 }
