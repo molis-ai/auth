@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch, onBeforeUnmount } from 'vue';
 import { AccountClient } from '../../sdk/browser/src/index.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
 import { accountErrorMessage } from './errors.ts';
@@ -7,10 +7,12 @@ import { entryText } from './entry-copy.ts';
 import { entryLanguage, saveEntryLanguage } from './entry-preferences.ts';
 import logo from './assets/molis-logo.png';
 defineProps<{ client: AccountClient; busy: boolean }>();
-const emit = defineEmits<{ complete: [] }>();
+const emit = defineEmits<{ complete: []; authenticating: [value: boolean] }>();
 const language = ref(entryLanguage()), mode = ref('LOGIN'), resetHandle = ref('');
 const panelBusy = ref(false);
 const password = ref(''), confirmation = ref(''), saving = ref(false), notice = ref('');
+watch(() => panelBusy.value || saving.value, value => emit('authenticating', value));
+onBeforeUnmount(() => emit('authenticating', false));
 const t = (text: string) => entryText(language.value, text);
 document.documentElement.lang = language.value;
 function toggleLanguage() { language.value = language.value === 'en' ? 'zh-CN' : 'en'; saveEntryLanguage(language.value); }

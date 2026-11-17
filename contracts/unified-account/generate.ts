@@ -1040,6 +1040,9 @@ const ep = (
   idempotent = false,
   query?: string,
 ) => endpoints.push({ group, method, path, operationId, input, output, auth, idempotent, query })
+add('LoginCapabilitiesQuery', obj({ clientId: id }))
+add('LoginCapabilities', obj({ methods: { ...arr(en('ACCOUNT_PASSWORD', 'EMAIL_CODE', 'PHONE_OTP', 'GOOGLE', 'GITHUB'), 5), uniqueItems: true } }))
+ep('API-02', 'get', '/auth/capabilities', 'getLoginCapabilities', undefined, 'LoginCapabilities', 'grant', false, 'LoginCapabilitiesQuery')
 ep('API-02', 'post', '/auth/login/password', 'loginPassword', 'LoginPasswordRequest', 'LoginResult', 'initiator')
 ep('API-02', 'post', '/auth/verification-codes', 'sendLoginVerification', 'SendLoginVerificationRequest', 'LoginVerification', 'initiator')
 ep('API-02', 'post', '/auth/login/code', 'loginCode', 'LoginCodeRequest', 'LoginResult', 'initiator')
@@ -1551,6 +1554,7 @@ ep(
 )
 
 add('ProductLoginResult', obj({ account: ref('AccountView') }))
+ep('API-08', 'get', '/api/account/auth/capabilities', 'productLoginCapabilities', undefined, 'LoginCapabilities', 'product')
 ep('API-08', 'post', '/api/account/auth/login/password', 'productLoginPassword', 'ProductLoginPasswordRequest', 'ProductLoginResult', 'product')
 ep('API-08', 'post', '/api/account/auth/verification-codes', 'productSendLoginVerification', 'ProductSendVerificationRequest', 'LoginVerification', 'product')
 ep('API-08', 'post', '/api/account/auth/login/code', 'productLoginCode', 'LoginCodeRequest', 'ProductLoginResult', 'product')
@@ -1704,7 +1708,7 @@ for (const central of [...endpoints].filter((e) =>
 }
 
 const policy = {
-  contractVersion: '1.2.0',
+  contractVersion: '1.3.0',
   implementationStatus: 'CONTRACT_ONLY',
   policyProfile: 'unified-account-v2',
   defaults: {
@@ -2075,6 +2079,7 @@ for (const e of endpoints) {
       in: 'query',
       schema: { type: 'string', enum: ['current', 'history'], default: 'current' },
     })
+  if (e.query === 'LoginCapabilitiesQuery') parameters.push({ name: 'clientId', in: 'query', required: true, schema: { $ref: './schemas.json#/$defs/Id' } })
   if (e.query === 'callback')
     for (const [key, schema] of Object.entries(
       defs.ProductCallbackQuery.properties as Record<string, Schema>,
@@ -2127,7 +2132,7 @@ const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Molis Unified Account',
-    version: '1.2.0',
+    version: '1.3.0',
     description:
       'AUTH-01 executable contract. Endpoints are not implemented by this artifact. Product paths are adapter operation mappings; Work management uses its action gateway.',
   },
@@ -2444,7 +2449,7 @@ const outputs = {
   'schemas.json': schemas,
   'openapi.json': openapi,
   'policy.json': policy,
-  'fixtures.json': { contractVersion: '1.2.0', syntheticOnly: true, fixtures },
+  'fixtures.json': { contractVersion: '1.3.0', syntheticOnly: true, fixtures },
 }
 const check = process.argv.includes('--check')
 let stale = false

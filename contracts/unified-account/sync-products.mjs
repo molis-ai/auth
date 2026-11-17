@@ -25,6 +25,9 @@ const files = ['schemas.json', 'openapi.json', 'policy.json', 'fixtures.json', '
 execFileSync(process.execPath, [resolve(source, 'generate.ts'), '--check'], { stdio: 'inherit' });
 const contents = new Map(files.map(name => [name, readFileSync(resolve(source, name))]));
 const hashes = Object.fromEntries([...contents].map(([name, bytes]) => [name, createHash('sha256').update(bytes).digest('hex')]));
+const repository = resolve(source, '../..');
+const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
+if (write) for (const [name, bytes] of contents) assert.ok(execFileSync('git', ['show', `${revision}:contracts/unified-account/${name}`], { cwd: repository }).equals(bytes), 'Commit the Auth contract before pinning consumers: ' + name);
 const version = JSON.parse(contents.get('policy.json').toString()).contractVersion;
 const targets = [
   { name: 'Work', root: options['--work'], directory: 'horizontal/account/src/upstream', manifest: 'provenance.json', hashes: 'sha256', version: 'version', generator: 'horizontal/account/scripts/check-contracts.mjs' },
@@ -37,6 +40,10 @@ for (const target of targets) {
   if (write) {
     mkdirSync(directory, { recursive: true });
     for (const [name, bytes] of contents) writeFileSync(resolve(directory, name), bytes);
+    target.metadata.sourceRepository = 'https://github.com/molis-ai/auth';
+    target.metadata[target.name === 'Work' ? 'sourceBaseCommit' : 'sourceRevision'] = revision;
+    if (target.name === 'Work') target.metadata.sourceIncludesUncommittedContract = false;
+    target.metadata.sourceNote = 'Immutable Auth source commit; deploy Auth before these consumers.';
     target.metadata[target.hashes] = hashes;
     target.metadata[target.version] = version;
     writeFileSync(resolve(directory, target.manifest), JSON.stringify(target.metadata, null, 2) + '\n');

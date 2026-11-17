@@ -111,3 +111,9 @@ Auth Vue 页面也调用同源 `/api/account`。`AUTH_WEB_CLIENT_ID` 必须登�
 登录成功后，BFF 在同一 guarded batch 中创建新的加密会话引用并删除匿名引用，响应更新 Cookie 和 CSRF。旧匿名 Cookie 不获得登录后的权限，旧 CSRF 不能写入新会话；失败的登录不向匿名引用保存认证材料。浏览器仍只接触 opaque Cookie，中央 Token 不进入响应。
 
 浏览器 SDK 为 `AccountClient`，只发同源 Cookie/CSRF 请求。`request` 不自动重试写入；退出中止旧 generation。服务票据及无消费者的服务凭据管理已退役，没有对应产品映射；用户会话 Token 仍不向浏览器交付。
+
+## 登录能力与 P1 一致性
+
+三端先通过自己的 `GET /api/account/auth/capabilities` 获取 `{ methods }`。Host/BFF 使用注册配置中的 `clientId` 请求 `GET /api/v2/auth/capabilities?clientId=...`，不接受浏览器指定客户端。方式为 `ACCOUNT_PASSWORD`、`EMAIL_CODE`、`PHONE_OTP`、`GOOGLE`、`GITHUB` 的子集；配置缺失时隐藏相应入口，查询失败时显示错误。此接口只说明配置就绪，既不是授权凭据，也不保证远端提供方当前可用。
+
+第三方身份验证后，由绑定了浏览器会话、事务及 state 的产品回调完成登录；事务 GET 不完成登录。发布次序、平台边界及验收条目见[登录一致性规范](login-p1.md)。消费者固定 Auth 1.3.0 的源提交，先发布 Auth，再发布消费者。

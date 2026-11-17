@@ -205,7 +205,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         403,
         "FORBIDDEN",
     )?;
-    // The callback only confirms the Cookie-bound provider state. Adoption occurs in the original same-origin poll.
+    // Only the browser-bound callback completes provider authorization; status polling is read-only.
     if path == "/account/callback" {
         ensure(method == Method::Get, 403, "FORBIDDEN")?;
     }
@@ -230,7 +230,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     };
     if row.is_null() {
         ensure(
-            method == Method::Get && path == "/api/account/session",
+            method == Method::Get && matches!(path, "/api/account/session" | "/api/account/auth/capabilities"),
             401,
             "LOGIN_REQUIRED",
         )?;
@@ -383,7 +383,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     released?;
     let mut response = if path == "/account/callback" {
         let (message, status) = match &result {
-            Ok(value) if value["status"] == "VERIFIED" => (
+            Ok(value) if value["status"] == "CONSUMED" => (
                 "授权已完成，请返回原页面继续。此窗口将由原页面自动关闭。",
                 200,
             ),

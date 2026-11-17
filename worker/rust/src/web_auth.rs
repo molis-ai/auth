@@ -8,7 +8,9 @@ use crate::{
 use serde_json::{Value, json};
 use worker::Method;
 fn view(t: &Value) -> Value {
-    json!({"handle":t["id"],"status":t["status"],"nextStep":t["nextStep"],"expiresAt":t["expiresAt"]})
+    let expired = matches!(t["status"].as_str(), Some("PENDING" | "VERIFIED"))
+        && t["expiresAt"].as_str().map(js_sys::Date::parse).unwrap_or(0.0) <= now() as f64;
+    json!({"handle":t["id"],"status":if expired {json!("EXPIRED")} else {t["status"].clone()},"nextStep":if expired {json!("NONE")} else {t["nextStep"].clone()},"expiresAt":t["expiresAt"]})
 }
 async fn call(
     s: &WebSession<'_>,
@@ -61,6 +63,10 @@ pub async fn route(
     method: Method,
     b: &mut Value,
 ) -> Result<Value> {
+    if path == "/api/account/auth/capabilities" {
+        ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
+        return s.call(&format!("/api/v2/auth/capabilities?clientId={}", s.client()?), Method::Get, None, None, None).await;
+    }
     if matches!(path,"/api/account/auth/login/password" | "/api/account/auth/login/code" | "/api/account/auth/verification-codes") {
         return login_command(s,path,method,b).await;
     }
@@ -88,7 +94,10 @@ pub async fn route(
                 403,
                 "FORBIDDEN",
             )?;
-            Ok(json!({"status":actual["status"]}))
+            if actual["status"] == "VERIFIED" {
+                finish(s, &mut t).await?;
+            }
+            Ok(json!({"status":t["status"]}))
         }
         .await;
         s.data["transactions"][id] = t;
@@ -242,10 +251,6 @@ pub async fn route(
     ensure(t.is_object(), 404, "NOT_FOUND")?;
     let result=async {
   if parts.len()==5&&method==Method::Get {
-   if matches!(t["method"].as_str(),Some("GOOGLE"|"GITHUB")){
-     if t["nextStep"]=="WAIT_PROVIDER"{sync(s,&mut t).await?;}
-     if t["status"]=="VERIFIED"{finish(s,&mut t).await?;}
-   }
    return Ok(view(&t));
   }
   ensure(method==Method::Post&&parts.len()==6,404,"NOT_FOUND")?;
