@@ -6,7 +6,7 @@ import { bootstrapPlatform } from './platform-bootstrap.mjs'
 if (process.argv.length !== 3 || process.argv[2].startsWith('-'))
   throw new Error('Usage: bootstrap-platform.ts <registered-v2-user-id>')
 const proxy = await getPlatformProxy<{ DB: D1Database; AUTH_ORIGIN: string }>({
-  configPath: fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
+  configPath: fileURLToPath(new URL('../wrangler.fixture.jsonc', import.meta.url)),
   remoteBindings: false,
 })
 try {

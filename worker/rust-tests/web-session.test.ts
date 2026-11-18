@@ -9,6 +9,7 @@ import { validateNamed } from '../../contracts/unified-account/validate.ts'
 test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async () => {
   const origin = 'http://127.0.0.1:8787',
     bffKey = secret()
+  const fixturePassword = secret() + 'aA!5'
   const p = await getRustProxy({
     AUTH_ORIGIN: origin,
     PROVIDER_STATE_KEY: secret(),
@@ -255,7 +256,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       await call('/api/account/password/change', {
         reauthHandle: passwordHandle,
         expectedVersion: view.user.version,
-        newPassword: 'Synthetic-BFF-Jupiter-94',
+        newPassword: fixturePassword,
       }),
     )
     assert.equal(ok(await call('/api/account/session')).state, 'AUTHENTICATED')
@@ -295,7 +296,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         await call('/api/account/auth/transactions/' + cancelled.handle + '/submit', {
           step: 'PASSWORD_LOGIN',
           email: 'bff@example.test',
-          password: 'Synthetic-BFF-Jupiter-94',
+          password: fixturePassword,
         })
       ).status,
       409,
@@ -451,6 +452,29 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       )
       assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
       assert.equal((await call('/api/account/login-methods')).status, 401)
+    }
+    // V2-04: reload the same worker bindings, then change the local session generation twice.
+    await p.updateBindings({ MOLIS_LOCAL_GENERATION: 'fixture-dev-first' })
+    assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
+    const signedIn = ok(
+      await call('/api/account/auth/login/password', {
+        identifier: 'bff@example.test',
+        password: fixturePassword,
+      }),
+    )
+    assert.equal(signedIn.account.state, 'AUTHENTICATED')
+    const oldCookie = cookie
+    await p.updateBindings({ MOLIS_LOCAL_GENERATION: 'fixture-dev-first' })
+    assert.equal(
+      ok(await call('/api/account/session')).session.loginSessionId,
+      signedIn.account.session.loginSessionId,
+    )
+    for (const generation of ['fixture-test', 'fixture-dev-return']) {
+      await p.updateBindings({ MOLIS_LOCAL_GENERATION: generation })
+      assert.equal(
+        ok(await call('/api/account/session', undefined, { Cookie: oldCookie })).state,
+        'ANONYMOUS',
+      )
     }
   } finally {
     await p.dispose()

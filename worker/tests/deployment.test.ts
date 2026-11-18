@@ -14,7 +14,7 @@ test('deployed backend is Rust WASM, never the legacy TypeScript implementation'
     assert.equal(config.build.command, 'node scripts/rust-build.mjs')
     assert.ok(!config.compatibility_flags?.includes('nodejs_compat'))
   }
-  const local = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+  const local = readFileSync(new URL('../wrangler.fixture.jsonc', import.meta.url), 'utf8')
   assert.match(local, /"main": "rust\/build\/index.js"/)
 })
 test('cloud seeds are repeatable and create no users or credentials', () => {

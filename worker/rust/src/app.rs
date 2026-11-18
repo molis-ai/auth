@@ -89,6 +89,25 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     // Every account entry uses the same current protocol.
     if path == "/api/v2/health" && method == Method::Get {
         a.s.all("SELECT 1 FROM auth_user LIMIT 1", vec![]).await?;
+        if env.var("MOLIS_ENVIRONMENT").is_ok() {
+            a.s.all("SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0", vec![]).await?;
+            a.s.all("SELECT payload,revision FROM auth_web_session LIMIT 0", vec![]).await?;
+            a.s.all("SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0", vec![]).await?;
+
+            let client = crate::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
+            let registration = crate::login_sessions::registered_client(a, &client).await?;
+            ensure(
+                contains(&parsed(&registration, "redirects")?, &json!(format!("{}/account/callback", a.origin)))
+                    && contains(&parsed(&registration, "allowed_origins")?, &json!(a.origin)),
+                503, "UNIFIED_CONFIGURATION_INVALID"
+            )?;
+            crate::test_admission::Admission::load(a)?;
+            ensure(
+                crate::login_capabilities::available(a, &registration).len() == 5
+                    && token(&crate::web_session::setting(a, "AUTH_WEB_SESSION_KEY")?),
+                503, "UNIFIED_CONFIGURATION_INVALID"
+            )?;
+        }
         return Ok(json_response(
             json!({"data":{"status":"UP","runtime":"cloudflare","backend":"rust"},"requestId":a.request_id}),
             200,
@@ -165,16 +184,32 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     let mut target = url.clone();
     target.set_path(if page { "/index.html" } else { &path[8..] });
     target.set_query(None);
-    let r = env
+    let mut r = env
         .assets("ASSETS")?
-        .fetch_request(Request::new(target.as_str(), method)?)
+        .fetch_request(Request::new(target.as_str(), method.clone())?)
         .await?;
     // Asset responses have immutable headers; copy them before adding our security policy.
     let headers = worker::Headers::new();
     for (key, value) in r.headers().entries() {
         headers.set(&key, &value)?;
     }
-    let mut r = r.with_headers(headers);
+    let environment = env.var("MOLIS_ENVIRONMENT").map(|value| value.to_string()).unwrap_or_default();
+    let label = match environment.as_str() {
+        "dev" => "DEV · 本地数据",
+        "test" => "TEST · 远程测试数据",
+        _ => "",
+    };
+    let mut r = if page && method == Method::Get && !label.is_empty() && r.status_code() == 200 {
+        let body = r.text().await?.replacen("</head>", &format!(
+            "<meta name=\"molis-environment\" content=\"{label}\"></head>"
+        ), 1);
+        headers.delete("Content-Length")?;
+        headers.delete("Content-Encoding")?;
+        headers.delete("ETag")?;
+        Response::from_html(body)?.with_headers(headers)
+    } else {
+        r.with_headers(headers)
+    };
     if page {
         r.headers_mut().set("Cache-Control", "no-store")?;
     }

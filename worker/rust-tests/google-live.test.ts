@@ -549,6 +549,29 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         mutation = {}
       }
     })
+    await suite.test(
+      'ENV-10/11: test requires an admitted verified Google email for new identities',
+      async () => {
+        await p.updateBindings({
+          MOLIS_ENVIRONMENT: 'test',
+          AUTH_TEST_ADMISSION: JSON.stringify({ emails: ['google-user@example.test'], phones: [] }),
+        })
+        mutation = { email_verified: false }
+        const denied = (await start('work', 'google', 987650))!
+        assert.equal((await sendCallback(denied)).status, 403)
+        mutation = {}
+        const allowed = (await start('work', 'google', 987651))!
+        await verify(allowed)
+        const { accessToken } = await finish(allowed)
+        await p.updateBindings({ AUTH_TEST_ADMISSION: JSON.stringify({ emails: [], phones: [] }) })
+        const retry = (await start('work', 'google', 987651))!
+        assert.equal((await sendCallback(retry)).status, 403)
+        assert.equal(
+          (await api('/sessions/current', undefined, undefined, accessToken)).status,
+          200,
+        )
+      },
+    )
     async function completeRejected(flow: Flow) {
       return api('/auth/transactions/' + flow.id + '/complete', {}, flow.proof)
     }

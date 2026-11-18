@@ -27,6 +27,7 @@ mod security;
 mod sensitive_transactions;
 mod sms_auth;
 mod store;
+mod test_admission;
 mod tenant_creation;
 mod tenant_invitations;
 mod tenant_membership;

@@ -458,6 +458,26 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
         assert.equal(old.avatar_data, 'https://avatars.githubusercontent.com/u/1234567?v=4')
       },
     )
+    await suite.test(
+      'ENV-10: GitHub requires a bound account with an admitted verified contact',
+      async () => {
+      const reloadedDb = await p.updateBindings({
+          MOLIS_ENVIRONMENT: 'test',
+          AUTH_TEST_ADMISSION: JSON.stringify({ emails: ['public@example.test'], phones: [] }),
+        })
+        const unbound = (await start('work', 'github', 987654))!
+        assert.equal((await sendCallback(unbound)).status, 403)
+        const bound = (await start('work', 'github'))!
+        assert.equal((await sendCallback(bound)).status, 403)
+      await reloadedDb
+          .prepare(
+            "INSERT INTO auth_user_email (id,user_id,canonical_email,created_at,verified_at) VALUES ('test-admission-email',?,'public@example.test',0,0)",
+          )
+          .bind(signedInUsers[0].userId)
+          .run()
+        await verify((await start('work', 'github'))!)
+      },
+    )
   } finally {
     await p.dispose()
   }

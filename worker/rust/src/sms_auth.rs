@@ -84,15 +84,18 @@ fn phone(target: &str) -> Result<&str> {
     Ok(&target[3..])
 }
 pub(crate) async fn send(a: &Auth, t: &Value, id: &str, target: &str, expires: i64) -> Result<()> {
-    // Explicit allowlist is required outside production; never commit real test numbers.
+    // Only local dev treats an explicitly empty recipient list as unrestricted.
     if t["kind"] != "PRODUCTION" {
         let allowed = a
             .env
             .var("ALIYUN_SMS_TEST_ALLOWLIST")
             .map_err(|_| unavailable())?
             .to_string();
+        let unrestricted_dev = allowed.is_empty()
+            && t["kind"] == "LOCAL"
+            && a.env.var("MOLIS_ENVIRONMENT").is_ok_and(|v| v.to_string() == "dev");
         ensure(
-            allowed.split(',').any(|v| v.trim() == target),
+            unrestricted_dev || allowed.split(',').any(|v| v.trim() == target),
             503,
             "UPSTREAM_UNAVAILABLE",
         )?;

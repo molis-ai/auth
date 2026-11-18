@@ -399,6 +399,7 @@ async fn commit_identity(
         );
     } else {
         let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
+        crate::test_admission::Admission::load(a)?.external(a, identity, &existing["user_id"]).await?;
         let n = now();
         let user;
         let epoch;

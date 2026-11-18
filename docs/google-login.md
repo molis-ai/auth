@@ -6,16 +6,16 @@ Google 的真实 OIDC 适配由 Auth 持有；Auth 页面与 Work 网页、桌�
 
 Google Auth Platform 创建 **Web application** 客户端。开发与生产使用独立项目/凭据，受众 External，只请求 `openid email profile`。当前使用服务端跳转流程，JavaScript origins 留空。
 
-授权回调登记为 `<AUTH_ORIGIN>/api/v2/auth/external/google/callback`。例如本轮本地联调为 `http://127.0.0.1:8788/api/v2/auth/external/google/callback`；正式环境必须使用实际 Auth HTTPS 域名。Work 的产品回跳地址登记在 Auth 的客户端策略中，不登记为 Google 回调。
+授权回调登记为 `<AUTH_ORIGIN>/api/v2/auth/external/google/callback`。例如当前本地开发入口为 `http://127.0.0.1:8787/api/v2/auth/external/google/callback`；正式环境必须使用实际 Auth HTTPS 域名。Work 的产品回跳地址登记在 Auth 的客户端策略中，不登记为 Google 回调。
 
-本地在已忽略的 `worker/.dev.vars` 配置：
+本地在已忽略的 `secrets/dev.properties` 中填写同一个 Google Web 客户端的 ID 和密钥。
 
 ```dotenv
-UNIFIED_GOOGLE_CLIENT_ID=111
-UNIFIED_GOOGLE_CLIENT_SECRET=222
+googleClientId=<Google Web 客户端 ID>
+UNIFIED_GOOGLE_CLIENT_SECRET=<Google Web 客户端密钥>
 ```
 
-替换为真实值；线上 Secret 通过 Worker secret 管理。保持 `PROVIDER_STATE_KEY` 已配置；可用 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` 生成并仅存入本地 `.dev.vars` 或线上 Secret。同时使 `UNIFIED_ACCOUNT_CONFIG.providerMode`、D1 `auth_environment.provider_mode` 和 Work 环境配置一致为 `LIVE`；D1 环境变更应增加 `version`，使在途旧事务失效。这是环境级开关，切换后 GitHub 也要求真实配置，不会回退模拟提供方。日常 MOCK 测试不需要真实密钥。
+替换为真实值；线上 Secret 通过 Worker secret 管理。保持 `PROVIDER_STATE_KEY` 已配置；可用 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` 生成并仅存入本地密钥文件 或线上 Secret。同时使 `UNIFIED_ACCOUNT_CONFIG.providerMode`、D1 `auth_environment.provider_mode` 和 Work 环境配置一致为 `LIVE`；D1 环境变更应增加 `version`，使在途旧事务失效。这是环境级开关，切换后 GitHub 也要求真实配置，不会回退模拟提供方。日常 MOCK 测试不需要真实密钥。
 
 ## 认证与边界
 
@@ -31,15 +31,15 @@ Google 授权使用 state、nonce、S256 PKCE；浏览器一次性启动票据�
 
 ## 本地网络代理
 
-在自己的 `worker/.dev.vars` 中填写完整 HTTP/HTTPS 代理地址（端口由各自代理软件决定）：
+在自己的 `secrets/dev.properties` 中填写完整 HTTP/HTTPS 代理地址（端口由各自代理软件决定）：
 
 ```dotenv
 AUTH_DEV_PROXY_URL=http://127.0.0.1:7993
 ```
 
-留空表示直连。使用 HTTP 或 mixed 监听端口，不填 SOCKS 专用端口。修改后重启服务。此配置只由本地启动脚本读取，不改变线上 Worker 网络出口、不进入产品前端；示例文件不指定团队统一端口。进程环境中同名变量优先于 `.dev.vars`。
+留空表示直连。使用 HTTP 或 mixed 监听端口，不填 SOCKS 专用端口。修改后重启服务。此配置只由本地启动脚本读取，不改变线上 Worker 网络出口、不进入产品前端；示例文件不指定团队统一端口。
 
-使用 `npm --prefix worker run dev` 启动已构建、已初始化的本地服务；本轮 8788 环境用 `npm --prefix worker run dev -- --port 8788`。首次初始化仍按根目录 `npm run dev` 执行。直接调用 `wrangler dev` 不会启用此自定义出口。
+本地数据库和客户端登记就绪后，从仓库根目录运行 `npm start -- --env dev`，打开 `http://127.0.0.1:8787/`。直接调用 `wrangler dev` 不会启用此自定义出口。
 
 脚本使用 Wrangler 本地运行时的 `outboundService` 接管 Worker 的外部 fetch，通过 Undici HTTP CONNECT 代理转发。所有外部请求（包括 Google 和阿里云）走配置的代理，回环地址保持直连；保留 TLS 验证、10 秒超时，不自动重试或跟随重定向。代理不可用时明确失败，不悄悄回退直连。只记录脱敏的失败提示，不打印密钥、令牌或请求内容。无需修改系统的全局/TUN 设置。
 

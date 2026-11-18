@@ -31,6 +31,12 @@ fn session_failure(failure: Failure) -> Failure {
         failure
     }
 }
+pub(crate) fn browser_cookie_hash(a: &Auth, cookie: &str) -> String {
+    match a.env.var("MOLIS_LOCAL_GENERATION") {
+        Ok(generation) => hash(&format!("{generation}:{cookie}")),
+        Err(_) => hash(cookie),
+    }
+}
 pub(crate) fn setting(a: &Auth, name: &str) -> Result<String> {
     let value = a
         .env
@@ -222,7 +228,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let mut row = if token(&cookie) {
         a.s.one(
             "SELECT * FROM auth_web_session WHERE id_hash=? AND expires_at>?",
-            vec![hash(&cookie).into(), now().into()],
+            vec![browser_cookie_hash(a, &cookie).into(), now().into()],
         )
         .await?
     } else {
@@ -235,7 +241,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             "LOGIN_REQUIRED",
         )?;
         cookie = secret();
-        let id = hash(&cookie);
+        let id = browser_cookie_hash(a, &cookie);
         let payload = seal(
             &key,
             &json!({"id":id,"data":{"transactions":{},"tokens":null}}).to_string(),
@@ -250,7 +256,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             )
             .await?;
     }
-    let id = hash(&cookie);
+    let id = browser_cookie_hash(a, &cookie);
     let revision = number(&row, "revision") + 1;
     let mut data: Value = serde_json::from_str(
         &open(&key, &text(&row, "payload"))
@@ -360,7 +366,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             return session.save().await;
         }
         cookie = secret();
-        browser_id = hash(&cookie);
+        browser_id = browser_cookie_hash(a, &cookie);
         let payload = seal(&key, &json!({"id":browser_id,"data":session.data}).to_string())
             .await.map_err(unavailable)?;
         // Rotate authority atomically: the anonymous reference never stores the authenticated payload.
