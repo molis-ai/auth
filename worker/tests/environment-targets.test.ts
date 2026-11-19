@@ -73,6 +73,22 @@ test('V2-01: the Auth test deployment pins account, Worker, route and D1 indepen
     phones: ['+8613800000000'],
   })
   assert.equal(authEnvironment('test', true, root).platform.d1_databases[0].remote, true)
+  assert.equal(platform.observability, undefined)
+
+  writeFileSync(configPath, `${testConfig.trimEnd()}\ngrafanaLogsDestination=molis-grafana-logs\n`)
+  assert.equal(authEnvironment('test', true, root).platform.observability, undefined)
+  assert.deepEqual(authEnvironment('test', false, root).platform.observability, {
+    enabled: true,
+    redact_query_string: true,
+    logs: {
+      enabled: true,
+      invocation_logs: false,
+      head_sampling_rate: 1,
+      persist: false,
+      destinations: ['molis-grafana-logs'],
+    },
+    traces: { enabled: false },
+  })
 })
 
 test('only local dev reads the shared account and keeps both credentials out of Worker bindings', (t) => {

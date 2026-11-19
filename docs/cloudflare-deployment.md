@@ -19,6 +19,10 @@ npm start -- --env dev
 
 部署前先执行 `npm test`，再运行 `npm run deploy -- --env test --dry-run` 或 `npm run deploy -- --env prod --dry-run`。实际部署使用同一命令并去掉 `--dry-run`。平台配置临时生成，Secret 由 Wrangler 部署参数注入。部署器先验证目标归属，再只读检查 D1 和活动应用、客户端、允许来源及回调。迁移和客户端管理由平台操作员显式执行。
 
+要将 Auth 日志导出到 Grafana Cloud，在 Cloudflare Observability 的 Destinations 中创建 Logs 目标，使用 Grafana 的 OTLP `/v1/logs` 地址和 `Authorization` 请求头。把目标名称写入对应环境的 `config/test.properties` 或 `config/prod.properties`，例如 `grafanaLogsDestination=molis-grafana-logs`，然后重新部署。认证头保存在 Cloudflare。导出启用后，Worker 应用日志全量导出，关闭自动请求日志和 Cloudflare 日志留存，并隐藏请求 URL 的查询参数。[Cloudflare 配置说明](https://developers.cloudflare.com/observability/export/opentelemetry/grafana-cloud/)
+
+在 Grafana Explore 的 Loki 数据源中查找 `auth.aliyun.request`。按 `action` 统计总调用数和 `outcome=success` 的比例，用 `duration_ms` 计算耗时。发送成功表示供应商接受了请求。短信校验成功表示供应商返回了校验结果，`verification_result` 标记验证码是否匹配。
+
 部署前记录当前 Worker 版本、路由和客户端登记。回滚时使用 Cloudflare 已部署版本恢复能力，并核对当时的域名、客户端登记、D1 绑定和供应商回调。恢复 Worker 版本不回滚数据库。
 
 ## Auth 与 Club 正式切换

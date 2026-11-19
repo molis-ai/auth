@@ -45,33 +45,22 @@ fn credentials(a: &Auth) -> Result<(String, String)> {
 pub(crate) fn scheme(id: &str) -> String {
     hash(id)[..20].to_string()
 }
-async fn call(a: &Auth, action: &str, body: Value) -> Result<Value> {
+async fn call(a: &Auth, action: &str, body: Value) -> Result<String> {
     let (id, key) = credentials(a)?;
-    let raw = rpc(&id, &key, action, &body.to_string())
+    let reply = rpc(&id, &key, action, &body.to_string())
         .await
         .map_err(|_| unavailable())?;
-    let result: Value = serde_json::from_str(&raw).map_err(|_| unavailable())?;
-    if action == "CheckSmsVerifyCode" && result["Code"] == "isv.ValidateFail" {
-        return Err(Failure {
+    match reply.as_str() {
+        "invalid_credentials" => Err(Failure {
             status: 401,
             code: "INVALID_CREDENTIALS",
-        });
-    }
-    if matches!(
-        result["Code"].as_str(),
-        Some("BUSINESS_LIMIT_CONTROL" | "FREQUENCY_FAIL")
-    ) {
-        return Err(Failure {
+        }),
+        "rate_limited" => Err(Failure {
             status: 429,
             code: "RATE_LIMITED",
-        });
+        }),
+        _ => Ok(reply),
     }
-    ensure(
-        result["Code"] == "OK" && result["Success"] == true,
-        503,
-        "UPSTREAM_UNAVAILABLE",
-    )?;
-    Ok(result)
 }
 fn phone(target: &str) -> Result<&str> {
     ensure(
@@ -98,10 +87,10 @@ pub(crate) async fn send(a: &Auth, t: &Value, id: &str, target: &str, expires: i
         Some("REAUTH") => "100005",
         _ => "100001",
     };
-    call(a,"SendSmsVerifyCode",json!({"PhoneNumber":phone(target)?,"CountryCode":"86","SignName":sign,"TemplateCode":template,
+    let reply = call(a,"SendSmsVerifyCode",json!({"PhoneNumber":phone(target)?,"CountryCode":"86","SignName":sign,"TemplateCode":template,
         "SchemeName":scheme(id),"OutId":id,"TemplateParam":json!({"code":"##code##","min":((seconds+59)/60).to_string()}).to_string(),
         "CodeLength":6,"CodeType":1,"ValidTime":seconds,"Interval":60,"DuplicatePolicy":1,"ReturnVerifyCode":false,"AutoRetry":0})).await?;
-    Ok(())
+    ensure(reply == "accepted", 503, "UPSTREAM_UNAVAILABLE")
 }
 pub(crate) async fn verify(a: &Auth, id: &str, target: &str, code: &str) -> Result<bool> {
     ensure(
@@ -109,6 +98,6 @@ pub(crate) async fn verify(a: &Auth, id: &str, target: &str, code: &str) -> Resu
         401,
         "INVALID_CREDENTIALS",
     )?;
-    let r=call(a,"CheckSmsVerifyCode",json!({"PhoneNumber":phone(target)?,"CountryCode":"86","SchemeName":scheme(id),"OutId":id,"VerifyCode":code})).await?;
-    Ok(r["Model"]["VerifyResult"] == "PASS")
+    let reply = call(a,"CheckSmsVerifyCode",json!({"PhoneNumber":phone(target)?,"CountryCode":"86","SchemeName":scheme(id),"OutId":id,"VerifyCode":code})).await?;
+    Ok(reply == "match")
 }

@@ -1,6 +1,78 @@
-// RPC transport only. Rust owns verification decisions and transaction state.
+// Interpret Aliyun's wire responses here. Rust owns Auth errors and transaction state.
 const encode = (s) =>
   encodeURIComponent(s).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+
+function rpcResult(action, response, raw) {
+  if (response.status === 429) return { outcome: 'rate_limited' }
+  if (response.status >= 500) return { outcome: 'upstream_error' }
+  if (!response.ok && response.status !== 400) return { outcome: 'http_error' }
+
+  let data
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return { outcome: 'invalid_response' }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { outcome: 'invalid_response' }
+  }
+
+  const { Code: code } = data
+  if (action === 'CheckSmsVerifyCode' && code === 'isv.ValidateFail') {
+    return { outcome: 'success', verification_result: 'mismatch', reply: 'invalid_credentials' }
+  }
+  if (code === 'BUSINESS_LIMIT_CONTROL' || code === 'FREQUENCY_FAIL') {
+    return {
+      outcome: 'rate_limited',
+      reply: action === 'SingleSendMail' ? undefined : 'rate_limited',
+    }
+  }
+  if (!response.ok) return { outcome: 'http_error' }
+
+  if (action === 'SingleSendMail') {
+    if (code != null) return { outcome: 'provider_error' }
+    const ids = [data.RequestId, data.EnvId]
+    if (!ids.every((id) => typeof id === 'string' && id.length > 0)) {
+      return { outcome: 'invalid_response' }
+    }
+  } else if (code !== 'OK' || data.Success !== true) {
+    return { outcome: 'provider_error' }
+  }
+  if (action === 'CheckSmsVerifyCode') {
+    const verdict = data.Model?.VerifyResult
+    if (verdict !== 'PASS' && verdict !== 'UNKNOWN') {
+      return { outcome: 'invalid_response', reply: 'mismatch' }
+    }
+    const verification = verdict === 'PASS' ? 'match' : 'mismatch'
+    return { outcome: 'success', verification_result: verification, reply: verification }
+  }
+  return { outcome: 'success', reply: 'accepted' }
+}
+
+async function readBody(response) {
+  if (!response.body) throw Error('upstream')
+  const reader = response.body.getReader()
+  let size = 0
+  const chunks = []
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.length
+    if (size > 32768) {
+      await reader.cancel()
+      throw Error('upstream')
+    }
+    chunks.push(value)
+  }
+  const all = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    all.set(chunk, offset)
+    offset += chunk.length
+  }
+  return new TextDecoder().decode(all)
+}
+
 export async function aliyunRpc(keyId, keySecret, action, input) {
   if (!['SendSmsVerifyCode', 'CheckSmsVerifyCode', 'SingleSendMail'].includes(action))
     throw Error('upstream')
@@ -34,44 +106,36 @@ export async function aliyunRpc(keyId, keySecret, action, input) {
       ),
     ),
   )
-  const response = await fetch(
-    action === 'SingleSendMail' ? 'https://dm.aliyuncs.com/' : 'https://dypnsapi.aliyuncs.com/',
-    {
+  const url =
+    action === 'SingleSendMail' ? 'https://dm.aliyuncs.com/' : 'https://dypnsapi.aliyuncs.com/'
+  const body = canonical + '&Signature=' + encode(signature)
+  const signal = AbortSignal.timeout(10000)
+  const started = performance.now()
+  let response
+  let result
+  try {
+    response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: canonical + '&Signature=' + encode(signature),
+      body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(10000),
-    },
-  )
-  if (!response.body) throw Error('upstream')
-  const reader = response.body.getReader()
-  let size = 0
-  const chunks = []
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > 32768) {
-      await reader.cancel()
-      throw Error('upstream')
+      signal,
+    })
+    result = rpcResult(action, response, await readBody(response))
+  } catch {
+    result = {
+      outcome: signal.aborted ? 'timeout' : response ? 'invalid_response' : 'network_error',
     }
-    chunks.push(value)
   }
-  const all = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    all.set(chunk, offset)
-    offset += chunk.length
-  }
-  const raw = new TextDecoder().decode(all)
-  if (!response.ok) {
-    const result = JSON.parse(raw)
-    const expected =
-      response.status === 400 &&
-      ((action === 'CheckSmsVerifyCode' && result.Code === 'isv.ValidateFail') ||
-        ['BUSINESS_LIMIT_CONTROL', 'FREQUENCY_FAIL'].includes(result.Code))
-    if (!expected) throw Error('upstream')
-  }
-  return raw
+
+  console.log({
+    event: 'auth.aliyun.request',
+    action,
+    outcome: result.outcome,
+    duration_ms: Math.round(performance.now() - started),
+    ...(response && { http_status: response.status }),
+    ...(result.verification_result && { verification_result: result.verification_result }),
+  })
+  if (!result.reply) throw Error('upstream')
+  return result.reply
 }
