@@ -125,6 +125,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     } else {
         text(b, "address")
     };
+    crate::test_admission::Admission::load(a)?.target(&target)?;
     if t["purpose"] == "REAUTH" {
         ensure(
             !a.s.one(
@@ -236,6 +237,7 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         401,
         "INVALID_CREDENTIALS",
     )?;
+    crate::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
     let matched = if q["verifier"] == "ALIYUN" {
         ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
         // Reserve an attempt before network I/O, including failed/uncertain requests.
@@ -340,6 +342,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
         } else {
             email(identifier)?
         };
+        crate::test_admission::Admission::load(a)?.target(&address)?;
         a.rate_ip("v2-password", 30).await?;
         a.rate("v2-password-target", &address, 10, 300000).await?;
         let query = if is_phone {
@@ -390,6 +393,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
         ensure(!p.is_null(), 401, "INVALID_CREDENTIALS")?;
         let identity = parsed(&p, "verified_identity")?;
         let target = text(&identity, "target");
+        crate::test_admission::Admission::load(a)?.target(&target)?;
         writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_identity_proof WHERE token_hash=? AND consumed_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?);
         writes.push(a.s.statement(
             "UPDATE auth_identity_proof SET consumed_at=? WHERE token_hash=?",

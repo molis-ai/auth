@@ -69,7 +69,7 @@ test('LIVE SMS: shared Auth challenges, provider validation, replay and cancella
   )
   try {
     await initializeLocalRuntime(p)
-    const db = p.env.DB
+    let db = p.env.DB
     for (const sql of readFileSync(
       new URL('../unified-account-local-seed.sql', import.meta.url),
       'utf8',
@@ -192,6 +192,16 @@ test('LIVE SMS: shared Auth challenges, provider validation, replay and cancella
       503,
     )
     assert.equal(sends, 3)
+
+    db = await p.updateBindings({ MOLIS_ENVIRONMENT: 'dev', ALIYUN_SMS_TEST_ALLOWLIST: '' })
+    const unrestricted = await begin()
+    const openSend = await api(
+      unrestricted.path + '/challenges',
+      { channel: 'SMS', address: target },
+      unrestricted.proof,
+    )
+    assert.equal(openSend.status, 200)
+    assert.equal(sends, 4)
   } finally {
     await p.dispose()
   }

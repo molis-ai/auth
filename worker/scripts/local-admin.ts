@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 // No remote flags, account tokens, or production bindings accepted by this command.
 const proxy = await getPlatformProxy<{ DB: D1Database; AUTH_ORIGIN: string }>({
-  configPath: fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
+  configPath: fileURLToPath(new URL('../wrangler.fixture.jsonc', import.meta.url)),
   remoteBindings: false,
 })
 try {

@@ -8,7 +8,7 @@ Auth 网页与 Molis Work 使用同一套 V2 challenge / verify / phone / comple
 
 通过目标 Worker 的 Secrets 配置 `ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`，RAM 身份只授予 `dypns:SendSmsVerifyCode` 和 `dypns:CheckSmsVerifyCode`。配置变量 `ALIYUN_SMS_SIGN_NAME` 为控制台实际可用的赠送签名，不使用文档示例冒充已开通配置。
 
-非 PRODUCTION 环境还必须配置 `ALIYUN_SMS_TEST_ALLOWLIST`，值为逗号分隔的完整 `+86` 号码；真实测试号码仅写本机未跟踪配置或云端变量，不入库。绑定测试手机号不代表免计费，真实测试按账户计费规则执行。
+dev 和 test 都在各自的密钥文件里用 JSON 数组配置收件人，例如 `TEST_ALLOWED_PHONES=["+8613800000000","+8613800000001"]` 和 `TEST_ALLOWED_EMAILS=["qa@example.test"]`。从旧版本升级时，将 dev 的 `SMS_DELIVERY_ALLOWLIST` 改名为 `TEST_ALLOWED_PHONES`，并添加 `TEST_ALLOWED_EMAILS=[]`。test 的逗号分隔值也需改成 JSON 数组。dev 的每个非空集合只允许向其中的地址发送验证码，空集合对该渠道放行。test 还根据这两个集合限制新的登录，空集合不为对应渠道授权。修改后重启本机 Auth 或重新部署 test。真实短信按阿里云账户计费。
 
 登录/注册使用模板 `100001`；绑定、换绑、重新确认手机号分别使用 `100004`、`100002`、`100005`。使用阿里云生成的六位数字，不返回或落库存储明文验证码。每个挑战派生独立的 20 字符 SchemeName，发送与核验一致，隔离并发客户端和不同用途；真实联调需要确认账户支持该方案名称规则。请求不自动重试，超时按失败处理，用户通过限流后的重新发送恢复。
 

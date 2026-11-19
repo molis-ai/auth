@@ -83,16 +83,30 @@ pub(crate) async fn send_live(
     m: &Message<'_>,
 ) -> Result<()> {
     ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
-    match channel {
-        "EMAIL" => crate::mail_delivery::send(a, m).await,
-        "SMS" => {
-            let mut context = t.clone();
-            context["kind"] = c["kind"].clone();
-            crate::sms_auth::send(a, &context, challenge, m.target, m.expires).await
-        }
-        _ => Err(Failure {
-            status: 400,
-            code: "INVALID_REQUEST",
-        }),
+    let list_key = match channel {
+        "EMAIL" => "ALIYUN_MAIL_TEST_ALLOWLIST",
+        "SMS" => "ALIYUN_SMS_TEST_ALLOWLIST",
+        _ => return Err(Failure { status: 400, code: "INVALID_REQUEST" }),
+    };
+    // Only local dev treats an explicitly empty recipient list as unrestricted.
+    if c["kind"] != "PRODUCTION" {
+        let allowed = a
+            .env
+            .var(list_key)
+            .map_err(|_| Failure { status: 503, code: "UPSTREAM_UNAVAILABLE" })?
+            .to_string();
+        let unrestricted_dev = allowed.is_empty()
+            && c["kind"] == "LOCAL"
+            && a.env.var("MOLIS_ENVIRONMENT").is_ok_and(|v| v.to_string() == "dev");
+        ensure(
+            unrestricted_dev || allowed.split(',').any(|v| v.trim() == m.target),
+            503,
+            "UPSTREAM_UNAVAILABLE",
+        )?;
+    }
+    if channel == "EMAIL" {
+        crate::mail_delivery::send(a, m).await
+    } else {
+        crate::sms_auth::send(a, t, challenge, m.target, m.expires).await
     }
 }

@@ -57,6 +57,11 @@ export async function getRustProxy(bindings, outbound, assets, { passwordKdf = t
     },
     scheduled: async () =>
       (await mf.getWorker()).scheduled({ cron: '0 * * * *', scheduledTime: Date.now() }),
+    async updateBindings(updates) {
+      bindings = { ...bindings, ...updates }
+      await mf.setOptions(options(bindings))
+      return mf.getD1Database('DB')
+    },
     dispose: () => mf.dispose(),
   }
 }

@@ -148,7 +148,7 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
             "FORBIDDEN",
         )?;
         let proof = secret();
-        a.s.batch(vec![sessions::session_guard(a,&source,now())?,sessions::client_guard(a,&client)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND browser_hash IS NULL AND consumed_at IS NULL AND expires_at>?)",vec![t["id"].clone(),now().into()])?,a.s.statement("UPDATE auth_management_handoff SET browser_hash=? WHERE id=?",vec![hash(&proof).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
+        a.s.batch(vec![sessions::session_guard(a,&source,now())?,sessions::client_guard(a,&client)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND browser_hash IS NULL AND consumed_at IS NULL AND expires_at>?)",vec![t["id"].clone(),now().into()])?,a.s.statement("UPDATE auth_management_handoff SET browser_hash=? WHERE id=?",vec![web_session::browser_cookie_hash(a, &proof).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
         let mut url = worker::Request::new(&text(&t, "redirect_uri"), Method::Get)?.url()?;
         url.query_pairs_mut()
             .append_pair("handoff", &text(&t, "id"));
@@ -164,7 +164,7 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
     let proof = cookie(a, "molis-auth-handoff")?;
     ensure(
         token(&proof)
-            && t["browser_hash"] == hash(&proof)
+            && t["browser_hash"] == web_session::browser_cookie_hash(a, &proof)
             && token(&text(&q, "code"))
             && t["code_hash"] == hash(&text(&q, "code")),
         403,
@@ -182,7 +182,7 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
     let s = json!({"id":uuid(),"user_id":source["user_id"],"client_id":target["client_id"],"application_id":target["application_id"],"authenticated_at":source["authenticated_at"],"last_active_at":n,"absolute_expires_at":source["absolute_expires_at"],"user_epoch":source["user_epoch"],"session_revision":0});
     let (tokens, token_writes) = sessions::tokens(a, &s, n, 0)?;
     let raw = secret();
-    let id = hash(&raw);
+    let id = web_session::browser_cookie_hash(a, &raw);
     let key = web_session::setting(a, "AUTH_WEB_SESSION_KEY")?;
     let payload = web_session::seal(
         &key,
@@ -193,13 +193,13 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
         status: 503,
         code: "AUTH_UNAVAILABLE",
     })?;
-    let mut writes=vec![sessions::session_guard(a,&source,n)?,sessions::client_guard(a,&client)?,sessions::client_guard(a,&target)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND consumed_at IS NULL AND expires_at>? AND browser_hash=? AND code_hash=?)",vec![t["id"].clone(),n.into(),hash(&proof).into(),hash(&text(&q,"code")).into()])?,a.s.statement("UPDATE auth_management_handoff SET consumed_at=? WHERE id=?",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),s["authenticated_at"].clone(),n.into(),s["absolute_expires_at"].clone(),s["user_epoch"].clone(),source["created_seq"].clone(),source["identity_verified_at"].clone()])?,a.s.statement("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",vec![id.into(),payload.into(),s["absolute_expires_at"].clone()])?];
+    let mut writes=vec![sessions::session_guard(a,&source,n)?,sessions::client_guard(a,&client)?,sessions::client_guard(a,&target)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND consumed_at IS NULL AND expires_at>? AND browser_hash=? AND code_hash=?)",vec![t["id"].clone(),n.into(),web_session::browser_cookie_hash(a, &proof).into(),hash(&text(&q,"code")).into()])?,a.s.statement("UPDATE auth_management_handoff SET consumed_at=? WHERE id=?",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),s["authenticated_at"].clone(),n.into(),s["absolute_expires_at"].clone(),s["user_epoch"].clone(),source["created_seq"].clone(),source["identity_verified_at"].clone()])?,a.s.statement("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",vec![id.into(),payload.into(),s["absolute_expires_at"].clone()])?];
     writes.extend(token_writes);
     let old = cookie(a, "molis-auth-web")?;
     if token(&old) {
         writes.push(a.s.statement(
             "DELETE FROM auth_web_session WHERE id_hash=?",
-            vec![hash(&old).into()],
+            vec![web_session::browser_cookie_hash(a, &old).into()],
         )?);
     }
     writes.push(a.s.audit(

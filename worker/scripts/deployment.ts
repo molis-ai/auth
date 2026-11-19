@@ -1,10 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+// Historical deployment snapshots used by offline regression tests.
 import { validateUnifiedConfiguration } from './unified-configuration.ts'
 
-const worker = fileURLToPath(new URL('../', import.meta.url))
 const zero = '00000000-0000-0000-0000-000000000000'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -106,39 +102,5 @@ export function deploymentArgs(action: string, environment: string): string[] {
       return ['deploy', '--config', config]
     default:
       throw new Error('操作必须是 check、dry-run、migrate、seed 或 deploy')
-  }
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    const [environment, action = 'check', ...extra] = process.argv.slice(2)
-    if (!['preview', 'production'].includes(environment) || extra.length)
-      throw new Error(
-        '用法：npm run cloudflare -- preview|production check|dry-run|migrate|seed|deploy',
-      )
-    const load = (env: string) =>
-      JSON.parse(readFileSync(resolve(worker, 'deploy', env, 'wrangler.json'), 'utf8'))
-    validateDeployment(
-      load(environment),
-      load(environment === 'preview' ? 'production' : 'preview'),
-      readFileSync(resolve(worker, 'deploy', environment, 'seed.sql'), 'utf8'),
-      environment,
-      action === 'dry-run',
-    )
-    console.log('环境检查通过：' + environment)
-    if (action !== 'check') {
-      const args = deploymentArgs(action, environment)
-      console.log('wrangler ' + args.join(' '))
-      const result = spawnSync(
-        process.execPath,
-        [resolve(worker, 'node_modules/wrangler/bin/wrangler.js'), ...args],
-        { cwd: worker, stdio: 'inherit' },
-      )
-      if (result.error) throw result.error
-      process.exitCode = result.status ?? 1
-    }
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : error)
-    process.exitCode = 1
   }
 }

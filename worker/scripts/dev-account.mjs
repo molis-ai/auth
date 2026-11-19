@@ -1,25 +1,10 @@
 import { getPlatformProxy } from 'wrangler'
 import { localCredential } from './local-credential.mjs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { authEnvironment } from './environment.mjs'
 
-// Only the local Wrangler database: never remote, never reset an existing password.
-const proxy = await getPlatformProxy({
-  configPath: fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
-  remoteBindings: false,
-  persist: { path: fileURLToPath(new URL('../.wrangler/state/v3', import.meta.url)) },
-})
-try {
-  const config = JSON.parse(proxy.env.UNIFIED_ACCOUNT_CONFIG)
-  if (
-    config.kind !== 'LOCAL' ||
-    config.authOrigin !== 'http://127.0.0.1:8787' ||
-    config.providerMode !== 'MOCK' ||
-    config.deliveryMode !== 'MOCK'
-  )
-    throw Error('Dev bootstrap requires the local mock environment')
-  const db = proxy.env.DB
-  const id = 'molis-dev-test-user',
-    email = 'preview@example.test'
+async function ensureDevAccount(db, { email, password }) {
+  const id = 'molis-dev-test-user'
   const existing = await db.prepare('SELECT id FROM auth_user WHERE id=?').bind(id).first()
   const owner = await db
     .prepare('SELECT user_id FROM auth_user_email WHERE canonical_email=?')
@@ -30,7 +15,7 @@ try {
       throw Error('Dev account conflicts with existing data; no credentials were changed')
     console.log('Dev account exists; password preserved:', email)
   } else {
-    const credential = await localCredential(email, 'Molis-dev-2026!')
+    const credential = await localCredential(email, password)
     const now = Date.now()
     await db.batch([
       db
@@ -50,6 +35,28 @@ try {
     ])
     console.log('Created local-only test account:', email)
   }
-} finally {
-  await proxy.dispose()
+}
+
+export async function prepareLocalDevAccount(account, configPath) {
+  const proxy = await getPlatformProxy({
+    configPath,
+    remoteBindings: false,
+    persist: { path: fileURLToPath(new URL('../.wrangler/state/v3', import.meta.url)) },
+  })
+  try {
+    const config = JSON.parse(proxy.env.UNIFIED_ACCOUNT_CONFIG)
+    if (config.kind !== 'LOCAL' || config.authOrigin !== 'http://127.0.0.1:8787')
+      throw Error('Dev account requires the loopback local database')
+    await ensureDevAccount(proxy.env.DB, account)
+  } finally {
+    await proxy.dispose()
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { previewAccount } = authEnvironment('dev', true)
+  await prepareLocalDevAccount(
+    previewAccount,
+    fileURLToPath(new URL('../wrangler.fixture.jsonc', import.meta.url)),
+  )
 }

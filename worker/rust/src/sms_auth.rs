@@ -84,19 +84,6 @@ fn phone(target: &str) -> Result<&str> {
     Ok(&target[3..])
 }
 pub(crate) async fn send(a: &Auth, t: &Value, id: &str, target: &str, expires: i64) -> Result<()> {
-    // Explicit allowlist is required outside production; never commit real test numbers.
-    if t["kind"] != "PRODUCTION" {
-        let allowed = a
-            .env
-            .var("ALIYUN_SMS_TEST_ALLOWLIST")
-            .map_err(|_| unavailable())?
-            .to_string();
-        ensure(
-            allowed.split(',').any(|v| v.trim() == target),
-            503,
-            "UPSTREAM_UNAVAILABLE",
-        )?;
-    }
     let sign = a
         .env
         .var("ALIYUN_SMS_SIGN_NAME")

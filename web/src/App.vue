@@ -15,6 +15,7 @@ import TenantMembers from "./TenantMembers.vue";
 import PlatformClients from "./PlatformClients.vue";
 import { accountErrorMessage } from "./errors.ts";
 import logo from "./assets/molis-logo.png";
+const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function clearToast() { clearTimeout(toastTimer); toast.value = ""; }
@@ -373,6 +374,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
+  <p v-if="environmentLabel" class="environment-label" role="status">{{ environmentLabel }}</p>
   <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
   <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @authenticating="authenticating = $event" @complete="loggedIn" />
   <div v-else class="console-shell v2-console">
@@ -702,5 +704,25 @@ onBeforeUnmount(() => {
 }
 .console-shell footer {
   margin-top: 30px;
+}
+</style>
+
+<style scoped>
+.environment-label {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 999px;
+  background: #343943;
+  color: #fff;
+  font: 500 11px/16px system-ui, sans-serif;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 </style>
