@@ -83,11 +83,14 @@ export async function profileEditorChecks({page,click,db,evidence,root}) {
   await file(join(root,'web/src/assets/molis-logo.png'));await page.wait("Boolean(document.querySelector('.avatar-crop-stage'))");
   await page.evaluate(`{const input=document.querySelector('[aria-label="缩放图片"]');input.value='1.5';input.dispatchEvent(new Event('input',{bubbles:true}));}`);
   await page.evaluate(`{const stage=document.querySelector('.avatar-crop-stage');stage.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));}`);
-  const cropBox=await page.evaluate("(()=>{const r=document.querySelector('.avatar-crop-stage').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
+  const cropBox=await page.evaluate("(async()=>{const s=document.querySelector('.avatar-crop-stage');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const r=s.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
   const beforeDrag=await page.evaluate("document.querySelector('.avatar-crop-stage image').getAttribute('x')");
-  await page.command('Input.dispatchMouseEvent',{type:'mousePressed',x:cropBox.x,y:cropBox.y,button:'left',clickCount:1});
-  await page.command('Input.dispatchMouseEvent',{type:'mouseMoved',x:cropBox.x+20,y:cropBox.y+10,buttons:1});
+  // Keep button:'left' on mouseMoved so Chromium retains AvatarCropper's pointer capture instead of firing lostpointercapture before pointermove.
+  await page.command('Input.dispatchMouseEvent',{type:'mouseMoved',x:cropBox.x,y:cropBox.y});
+  await page.command('Input.dispatchMouseEvent',{type:'mousePressed',x:cropBox.x,y:cropBox.y,button:'left',buttons:1,clickCount:1});
+  await page.command('Input.dispatchMouseEvent',{type:'mouseMoved',x:cropBox.x+20,y:cropBox.y+10,button:'left',buttons:1});
   await page.command('Input.dispatchMouseEvent',{type:'mouseReleased',x:cropBox.x+20,y:cropBox.y+10,button:'left',clickCount:1});
+  await page.wait(`document.querySelector('.avatar-crop-stage image')?.getAttribute('x')!==${JSON.stringify(beforeDrag)}`);
   assert.notEqual(await page.evaluate("document.querySelector('.avatar-crop-stage image').getAttribute('x')"),beforeDrag);
 
   await page.click('.avatar-crop-dialog footer button:first-child');
