@@ -14,6 +14,8 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
   const p = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
+      MOLIS_ENVIRONMENT: 'dev',
+      ALIYUN_MAIL_TEST_ALLOWLIST: 'alice@example.test',
       ALIYUN_ACCESS_KEY_ID: 'test-key',
       ALIYUN_ACCESS_KEY_SECRET: secret(),
       ALIYUN_MAIL_REGION: 'cn-hangzhou',
@@ -54,7 +56,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
   )
   try {
     await initializeLocalRuntime(p)
-    const db = p.env.DB
+    let db = p.env.DB
     for (const sql of readFileSync(
       new URL('../unified-account-local-seed.sql', import.meta.url),
       'utf8',
@@ -97,6 +99,15 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       assert.equal(r.status, 200, JSON.stringify(r))
       return { proof, id: r.data.transactionId, path: '/auth/transactions/' + r.data.transactionId }
     }
+    const denied = await begin()
+    const blocked = await api(
+      denied.path + '/challenges',
+      { channel: 'EMAIL', address: 'unlisted@example.test' },
+      denied.proof,
+    )
+    assert.equal(blocked.status, 503)
+    assert.equal(sent, 0)
+
     const t = await begin()
     const d = await api(
       t.path + '/challenges',
@@ -204,6 +215,17 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       200,
     )
     assert.equal(sent, 4)
+
+    duringSend = undefined
+    db = await p.updateBindings({ ALIYUN_MAIL_TEST_ALLOWLIST: '' })
+    const unrestricted = await begin()
+    const openSend = await api(
+      unrestricted.path + '/challenges',
+      { channel: 'EMAIL', address: 'alice@example.test' },
+      unrestricted.proof,
+    )
+    assert.equal(openSend.status, 200)
+    assert.equal(sent, 5)
   } finally {
     await p.dispose()
   }

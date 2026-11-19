@@ -21,7 +21,7 @@ npm run setup
 npm start -- --env dev
 ```
 
-本地 dev 数据库准备好后，首次启动 Auth 会创建共享的普通预览账号。邮箱 `previewAccountEmail` 和初始密码 `previewAccountPassword` 都从 `secrets/dev.properties` 读取。新成员从 `secrets.example/dev.properties` 复制模板后，填入团队共享的 dev 账号、密码和其余凭据。升级已有配置时，将邮箱从 `config/dev.properties` 移到密钥文件，与初始密码放在一起。每位开发者用相同账号密码登录本机的 Auth、Club 和 Work，数据各自保存在本机。重复启动会保留已有密码。test 和 prod 不支持这两个配置项。
+本地 dev 数据库准备好后，首次启动 Auth 会创建共享的普通预览账号。邮箱 `PREVIEW_ACCOUNT_EMAIL` 和初始密码 `PREVIEW_ACCOUNT_PASSWORD` 都从 `secrets/dev.properties` 读取。新成员从 `secrets.example/dev.properties` 复制模板后，填入团队共享的 dev 账号、密码和其余凭据。升级已有配置时，将邮箱从 `config/dev.properties` 移到密钥文件，与初始密码放在一起。每位开发者用相同账号密码登录本机的 Auth、Club 和 Work，数据各自保存在本机。重复启动会保留已有密码。test 的同名字段可记录由平台单独创建的测试账号凭据。本地启动和部署 test 均不会用它们创建或重置账号。测试账号登录仍需满足 test 白名单。prod 不读取预览账号凭据。
 
 Auth 和产品客户端必须使用同一版 `contracts/unified-account`。开发、测试和部署的状态见 [三环境方案](docs/environment-unification-plan.md)。
 

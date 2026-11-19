@@ -11,7 +11,7 @@ Google Auth Platform 创建 **Web application** 客户端。开发与生产使�
 本地在已忽略的 `secrets/dev.properties` 中填写同一个 Google Web 客户端的 ID 和密钥。
 
 ```dotenv
-googleClientId=<Google Web 客户端 ID>
+UNIFIED_GOOGLE_CLIENT_ID=<Google Web 客户端 ID>
 UNIFIED_GOOGLE_CLIENT_SECRET=<Google Web 客户端密钥>
 ```
 

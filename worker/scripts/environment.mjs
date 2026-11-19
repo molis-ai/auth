@@ -7,25 +7,28 @@ export const port = Number(new URL(targets.dev.authOrigin).port)
 const path = (relative) => fileURLToPath(new URL(relative, root))
 const sessionKey = (value) => required(value) && /^[A-Za-z0-9_-]{43}$/u.test(value)
 const optional = (value) => value === undefined || typeof value === 'string'
-const phones = (value) =>
-  value === '' ||
-  (typeof value === 'string' &&
-    value.split(',').every((phone) => /^\+86\d{11}$/u.test(phone.trim())))
-function phoneList(value) {
-  try {
-    const list = JSON.parse(value)
-    return (
-      Array.isArray(list) &&
-      list.every((phone) => typeof phone === 'string' && /^\+86\d{11}$/u.test(phone))
-    )
-  } catch {
-    return false
+const email = (value) => required(value) && /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/u.test(value)
+const phone = (value) => /^\+86\d{11}$/u.test(value)
+function useLocalCredentials(localTest, provider, clientId, secret) {
+  if (Boolean(clientId) !== Boolean(secret))
+    throw new Error(`Configure both local ${provider} credentials or leave both empty`)
+  return localTest && Boolean(clientId)
+}
+
+function contactList(validate) {
+  return (value) => {
+    try {
+      const list = JSON.parse(value)
+      return Array.isArray(list) && list.every((item) => typeof item === 'string' && validate(item.trim()))
+    } catch {
+      return false
+    }
   }
 }
-const emails = (value) =>
-  value === '' ||
-  (typeof value === 'string' &&
-    value.split(',').every((email) => /^[^\s@]+@[^\s@]+$/u.test(email.trim())))
+
+function contacts(value) {
+  return [...new Set(JSON.parse(value).map((item) => item.trim().toLowerCase()))]
+}
 
 export function authEnvironment(name, local, configRoot = root) {
   if (name === 'prod' && local) throw new Error('Auth prod is deploy only')
@@ -47,18 +50,17 @@ export function authEnvironment(name, local, configRoot = root) {
       tenantCreationPolicy: oneOf('SELF_SERVICE', 'PLATFORM_ONLY'),
     },
     {
-      mailRegion: oneOf('cn-hangzhou'),
-      mailAccount: required,
-      smsSignName: required,
-      smsDeliveryAllowlist: name === 'dev' ? phoneList : oneOf(undefined),
-      googleClientId: required,
-      githubClientId: required,
-      localGoogleClientId: name === 'test' ? required : oneOf(undefined),
-      localGithubClientId: name === 'test' ? required : oneOf(undefined),
-      ...(name === 'dev'
+      ALIYUN_MAIL_REGION: oneOf('cn-hangzhou'),
+      ALIYUN_MAIL_ACCOUNT_NAME: required,
+      ALIYUN_SMS_SIGN_NAME: required,
+      UNIFIED_GOOGLE_CLIENT_ID: required,
+      UNIFIED_GITHUB_CLIENT_ID: required,
+      LOCAL_GOOGLE_CLIENT_ID: name === 'test' ? optional : oneOf(undefined),
+      LOCAL_GITHUB_CLIENT_ID: name === 'test' ? optional : oneOf(undefined),
+      ...(name !== 'prod'
         ? {
-            previewAccountEmail: (value) => required(value) && /^[^\s@]+@[^\s@]+$/u.test(value),
-            previewAccountPassword: required,
+            PREVIEW_ACCOUNT_EMAIL: name === 'dev' ? email : (value) => !value || email(value),
+            PREVIEW_ACCOUNT_PASSWORD: name === 'dev' ? required : optional,
           }
         : {}),
       ALIYUN_ACCESS_KEY_ID: required,
@@ -68,45 +70,39 @@ export function authEnvironment(name, local, configRoot = root) {
       UNIFIED_GOOGLE_CLIENT_SECRET: required,
       UNIFIED_GITHUB_CLIENT_SECRET: required,
       AUTH_DEV_PROXY_URL: name === 'prod' ? oneOf(undefined) : optional,
-      LOCAL_GOOGLE_CLIENT_SECRET: name === 'test' ? required : oneOf(undefined),
-      LOCAL_GITHUB_CLIENT_SECRET: name === 'test' ? required : oneOf(undefined),
-      allowedEmails: name === 'test' ? emails : oneOf(undefined),
-      allowedPhones: name === 'test' ? phones : oneOf(undefined),
+      LOCAL_GOOGLE_CLIENT_SECRET: name === 'test' ? optional : oneOf(undefined),
+      LOCAL_GITHUB_CLIENT_SECRET: name === 'test' ? optional : oneOf(undefined),
+      TEST_ALLOWED_EMAILS: name !== 'prod' ? contactList(email) : oneOf(undefined),
+      TEST_ALLOWED_PHONES: name !== 'prod' ? contactList(phone) : oneOf(undefined),
     },
   )
   const origin = local ? targets.dev.authOrigin : config.authOrigin
   const localTest = name === 'test' && local
+  const localGoogle = useLocalCredentials(localTest, 'Google', secrets.LOCAL_GOOGLE_CLIENT_ID, secrets.LOCAL_GOOGLE_CLIENT_SECRET)
+  const localGithub = useLocalCredentials(localTest, 'GitHub', secrets.LOCAL_GITHUB_CLIENT_ID, secrets.LOCAL_GITHUB_CLIENT_SECRET)
   const bindings = {
     AUTH_WEB_SESSION_KEY: secrets.AUTH_WEB_SESSION_KEY,
     PROVIDER_STATE_KEY: secrets.PROVIDER_STATE_KEY,
     ALIYUN_ACCESS_KEY_ID: secrets.ALIYUN_ACCESS_KEY_ID,
     ALIYUN_ACCESS_KEY_SECRET: secrets.ALIYUN_ACCESS_KEY_SECRET,
-    ALIYUN_MAIL_REGION: secrets.mailRegion,
-    ALIYUN_MAIL_ACCOUNT_NAME: secrets.mailAccount,
-    ALIYUN_SMS_SIGN_NAME: secrets.smsSignName,
-    UNIFIED_GOOGLE_CLIENT_ID: localTest ? secrets.localGoogleClientId : secrets.googleClientId,
-    UNIFIED_GOOGLE_CLIENT_SECRET: localTest
+    ALIYUN_MAIL_REGION: secrets.ALIYUN_MAIL_REGION,
+    ALIYUN_MAIL_ACCOUNT_NAME: secrets.ALIYUN_MAIL_ACCOUNT_NAME,
+    ALIYUN_SMS_SIGN_NAME: secrets.ALIYUN_SMS_SIGN_NAME,
+    UNIFIED_GOOGLE_CLIENT_ID: localGoogle ? secrets.LOCAL_GOOGLE_CLIENT_ID : secrets.UNIFIED_GOOGLE_CLIENT_ID,
+    UNIFIED_GOOGLE_CLIENT_SECRET: localGoogle
       ? secrets.LOCAL_GOOGLE_CLIENT_SECRET
       : secrets.UNIFIED_GOOGLE_CLIENT_SECRET,
-    UNIFIED_GITHUB_CLIENT_ID: localTest ? secrets.localGithubClientId : secrets.githubClientId,
-    UNIFIED_GITHUB_CLIENT_SECRET: localTest
+    UNIFIED_GITHUB_CLIENT_ID: localGithub ? secrets.LOCAL_GITHUB_CLIENT_ID : secrets.UNIFIED_GITHUB_CLIENT_ID,
+    UNIFIED_GITHUB_CLIENT_SECRET: localGithub
       ? secrets.LOCAL_GITHUB_CLIENT_SECRET
       : secrets.UNIFIED_GITHUB_CLIENT_SECRET,
   }
-  if (name === 'dev')
-    bindings.ALIYUN_SMS_TEST_ALLOWLIST = JSON.parse(secrets.smsDeliveryAllowlist).join(',')
-  if (name === 'test') {
-    bindings.ALIYUN_SMS_TEST_ALLOWLIST = secrets.allowedPhones
-    bindings.AUTH_TEST_ADMISSION = JSON.stringify({
-      emails: secrets.allowedEmails
-        .split(',')
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-      phones: secrets.allowedPhones
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-    })
+  if (name !== 'prod') {
+    const emails = contacts(secrets.TEST_ALLOWED_EMAILS)
+    const phones = contacts(secrets.TEST_ALLOWED_PHONES)
+    bindings.ALIYUN_MAIL_TEST_ALLOWLIST = emails.join(',')
+    bindings.ALIYUN_SMS_TEST_ALLOWLIST = phones.join(',')
+    if (name === 'test') bindings.AUTH_TEST_ADMISSION = JSON.stringify({ emails, phones })
   }
   if (
     localTest &&
@@ -134,9 +130,9 @@ export function authEnvironment(name, local, configRoot = root) {
     ...(config.accountId ? { account_id: config.accountId } : {}),
     main: path('worker/rust/build/index.js'),
     compatibility_date: '2026-09-19',
-    workers_dev: name === 'prod',
+    workers_dev: false,
     preview_urls: false,
-    ...(name === 'test' && !local
+    ...(!local && name !== 'dev'
       ? { routes: [{ pattern: new URL(origin).hostname, custom_domain: true }] }
       : {}),
     assets: {
@@ -167,8 +163,8 @@ export function authEnvironment(name, local, configRoot = root) {
     ...(local && name === 'dev'
       ? {
           previewAccount: {
-            email: secrets.previewAccountEmail.toLowerCase(),
-            password: secrets.previewAccountPassword,
+            email: secrets.PREVIEW_ACCOUNT_EMAIL.toLowerCase(),
+            password: secrets.PREVIEW_ACCOUNT_PASSWORD,
           },
         }
       : {}),

@@ -7,15 +7,15 @@
     "authOrigin": "http://127.0.0.1:8787"
   },
   "test": {
-    "workerName": "molis-auth-staging",
-    "databaseName": "molis-auth-staging",
-    "databaseId": "de8dc585-1d73-401d-8f4c-37e8e227702d",
+    "workerName": "molis-auth-test",
+    "databaseName": "molis-auth-test",
+    "databaseId": "a40965f5-e9e9-4d97-b471-d4e76368630e",
     "authOrigin": "https://auth.test.molis.ai"
   },
   "prod": {
     "workerName": "molis-auth-production",
-    "databaseName": "molis-auth-production",
-    "databaseId": "33c19147-0f55-441d-af1b-8d334d064c51",
-    "authOrigin": "https://molis-auth-production.sparkling-silence-0a49.workers.dev"
+    "databaseName": "molis-auth-prod",
+    "databaseId": "649fadf9-f897-4d37-915c-b404ec336e69",
+    "authOrigin": "https://auth.molis.ai"
   }
 }
