@@ -5,14 +5,18 @@ import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.m
 test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 entries reject without effects', async () => {
   const origin = 'http://127.0.0.1:8787',
     p = await getRustProxy(
-      { AUTH_ORIGIN: origin },
+      { AUTH_ORIGIN: origin, MOLIS_LOCAL_GENERATION: 'fixture-health' },
       undefined,
       (r) => new Response(new URL(r.url).pathname, { headers: { 'Content-Type': 'text/html' } }),
     )
   try {
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/health'))).status, 503)
+    const health = await p.fetch(new Request(origin + '/api/v2/health'))
+    assert.equal(health.status, 200)
+    assert.equal(health.headers.get('Cache-Control'), 'no-store')
+    assert.equal((await health.json()).data.status, 'UP')
+    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 503)
     await initializeLocalRuntime(p)
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/health'))).status, 200)
+    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 200)
     for (const path of ['/', '/login', '/console']) {
       const r = await p.fetch(new Request(origin + path))
       assert.equal(r.status, 200)
