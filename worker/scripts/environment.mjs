@@ -48,6 +48,7 @@ export function authEnvironment(name, local, configRoot = root) {
       localEnvironmentId: name === 'test' ? id : oneOf(undefined),
       localWebClientId: name === 'test' ? id : oneOf(undefined),
       tenantCreationPolicy: oneOf('SELF_SERVICE', 'PLATFORM_ONLY'),
+      grafanaLogsDestination: (value) => value === undefined || (name !== 'dev' && id(value)),
     },
     {
       ALIYUN_MAIL_REGION: oneOf('cn-hangzhou'),
@@ -132,6 +133,22 @@ export function authEnvironment(name, local, configRoot = root) {
     compatibility_date: '2026-09-19',
     workers_dev: false,
     preview_urls: false,
+    ...(!local && config.grafanaLogsDestination
+      ? {
+          observability: {
+            enabled: true,
+            redact_query_string: true,
+            logs: {
+              enabled: true,
+              invocation_logs: false,
+              head_sampling_rate: 1,
+              persist: false,
+              destinations: [config.grafanaLogsDestination],
+            },
+            traces: { enabled: false },
+          },
+        }
+      : {}),
     ...(!local && name !== 'dev'
       ? { routes: [{ pattern: new URL(origin).hostname, custom_domain: true }] }
       : {}),

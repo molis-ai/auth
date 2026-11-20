@@ -1,6 +1,6 @@
 //! Verification mail delivery; code verification remains in Auth's shared challenge service.
 use crate::{delivery::Message, http::*, identity::Auth};
-use serde_json::{Value, json};
+use serde_json::json;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen(module = "/src/runtime/aliyun.js")]
 extern "C" {
@@ -53,16 +53,8 @@ pub(crate) async fn send(a: &Auth, m: &Message<'_>) -> Result<()> {
     let content = crate::mail_templates::render(m.template, m.credential, m.expires, now())
         .ok_or_else(unavailable)?;
     let body = json!({"AccountName":account,"AddressType":1,"ReplyToAddress":"false","ToAddress":m.target,"FromAlias":content.sender_name,"Subject":content.subject,"TextBody":content.text});
-    let raw = rpc(&id, &secret, "SingleSendMail", &body.to_string())
+    let reply = rpc(&id, &secret, "SingleSendMail", &body.to_string())
         .await
         .map_err(|_| unavailable())?;
-    let result: Value = serde_json::from_str(&raw).map_err(|_| unavailable())?;
-    ensure(
-        result["Code"].is_null()
-            && result["RequestId"].as_str().is_some_and(|v| !v.is_empty())
-            && result["EnvId"].as_str().is_some_and(|v| !v.is_empty()),
-        503,
-        "UPSTREAM_UNAVAILABLE",
-    )?;
-    Ok(())
+    ensure(reply == "accepted", 503, "UPSTREAM_UNAVAILABLE")
 }

@@ -18,6 +18,12 @@ async fn handle_inner(
     owner: Option<(String, i64)>,
 ) -> worker::Result<Response> {
     let id = uuid();
+    if req.method() == Method::Get {
+        let url = req.url()?;
+        if url.path() == "/api/v2/health" {
+            return with_security_headers(health_response(&id)?, &id, url.scheme() == "https");
+        }
+    }
     let mut a = match Auth::new(req, &env, id.clone()) {
         Ok(a) => a,
         Err(e) => return error_response(e, &id),
@@ -48,8 +54,19 @@ async fn handle_inner(
     if response.status_code() == 429 {
         response.headers_mut().set("Retry-After", "60")?;
     }
+    with_security_headers(response, &id, a.origin.starts_with("https:"))
+}
+
+fn health_response(id: &str) -> worker::Result<Response> {
+    json_response(
+        json!({"data":{"status":"UP","runtime":"cloudflare","backend":"rust"},"requestId":id}),
+        200,
+    )
+}
+
+fn with_security_headers(mut response: Response, id: &str, https: bool) -> worker::Result<Response> {
     for (k, v) in [
-        ("X-Request-ID", id.as_str()),
+        ("X-Request-ID", id),
         ("X-Content-Type-Options", "nosniff"),
         ("Referrer-Policy", "no-referrer"),
         ("X-Frame-Options", "DENY"),
@@ -65,7 +82,7 @@ async fn handle_inner(
         }
         response.headers_mut().set(k, v)?;
     }
-    if a.origin.starts_with("https:") {
+    if https {
         response
             .headers_mut()
             .set("Strict-Transport-Security", "max-age=31536000")?;
@@ -86,8 +103,8 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     if path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback" {
         return crate::web_session::route(a, path, method).await;
     }
-    // Every account entry uses the same current protocol.
-    if path == "/api/v2/health" && method == Method::Get {
+    if path == "/api/v2/readiness" && method == Method::Get {
+        ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
         a.s.all("SELECT 1 FROM auth_user LIMIT 1", vec![]).await?;
         if env.var("MOLIS_ENVIRONMENT").is_ok() {
             a.s.all("SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0", vec![]).await?;
@@ -108,11 +125,9 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
                 503, "UNIFIED_CONFIGURATION_INVALID"
             )?;
         }
-        return Ok(json_response(
-            json!({"data":{"status":"UP","runtime":"cloudflare","backend":"rust"},"requestId":a.request_id}),
-            200,
-        )?);
+        return Ok(health_response(&a.request_id)?);
     }
+    // Every account entry uses the same current protocol.
     if path == "/api/v2" || path.starts_with("/api/v2/") {
         if crate::platform_management::matches(path) {
             return crate::platform_management::route(a, path, method).await;

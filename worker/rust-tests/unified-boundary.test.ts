@@ -17,6 +17,7 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
   })
   try {
     await initializeLocalRuntime(proxy)
+    assert.equal((await proxy.fetch(new Request(origin + '/api/v2/readiness'))).status, 404)
     for (const path of ['/api/v2', '/api/v2/auth/providers', '/api/v2/me']) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
         const response = await proxy.fetch(new Request(origin + path, { method }))
@@ -85,7 +86,11 @@ test('UAS-40: runtime itself rejects production mock, even when deployment check
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
     })
     try {
-      const response = await proxy.fetch(new Request(origin + '/api/v2/health'))
+      const health = await proxy.fetch(new Request(origin + '/api/v2/health'))
+      assert.equal(health.status, 200)
+      const response = await proxy.fetch(
+        new Request(origin + '/api/v2/auth/capabilities?clientId=fixture'),
+      )
       assert.equal(response.status, 503)
       assert.equal((await response.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')
     } finally {
