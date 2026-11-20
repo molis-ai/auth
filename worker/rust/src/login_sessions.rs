@@ -117,6 +117,7 @@ pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
     )?;
     let c = client(a, &text(&s, "client_id")).await?;
     s["access_hash"] = digest.into();
+    s["access_expires_at"] = t["expires_at"].clone();
     Ok((s, c))
 }
 pub(crate) fn active_guard(a: &Auth, s: &Value) -> Result<D1PreparedStatement> {

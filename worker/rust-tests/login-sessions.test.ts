@@ -2,6 +2,8 @@ import test from 'node:test'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { generateKeyPairSync } from 'node:crypto'
+import { importJWK, jwtVerify, type JWK } from 'jose'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { secret, hash, challenge } from './fixtures.ts'
 
@@ -19,6 +21,10 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
   const p = await getRustProxy({
     AUTH_ORIGIN: origin,
     UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
+    SYNC_READ_SIGNING_JWK: JSON.stringify({
+      ...generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' }),
+      kid: 'synthetic-sync',
+    }),
   })
   try {
     await initializeLocalRuntime(p)
@@ -112,6 +118,25 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     )
     const current = await call('/sessions/current', undefined, a.accessToken)
     assert.equal(current.status, 200)
+    // PCSYNC-OPT-01: use an actual live Auth session; publish only the public key.
+    const signed = await call('/auth/sync-read-proof', undefined, a.accessToken)
+    assert.equal(signed.status, 200)
+    const jwksReply = await p.fetch(new Request(origin + '/.well-known/molis-sync-jwks.json'))
+    assert.equal(jwksReply.status, 200)
+    const { keys } = (await jwksReply.json()) as { keys: JWK[] }
+    assert.equal(keys[0].kid, 'synthetic-sync')
+    assert.equal(keys[0].d, undefined)
+    const claims = (
+      await jwtVerify(signed.data.proof, await importJWK(keys[0], 'EdDSA'), {
+        issuer: origin,
+        audience: a.session.applicationId,
+        algorithms: ['EdDSA'],
+        typ: 'molis-sync-read+jwt',
+      })
+    ).payload
+    assert.equal(claims.token_sha256, hash(a.accessToken))
+    assert.equal(claims.scope, 'molis-sync:read')
+    assert.ok(Number(claims.exp) - Number(claims.iat) <= 30)
     const before = current.data.lastActiveAt
     const refreshed = await call('/auth/token', {
       grantType: 'refresh_token',
@@ -189,6 +214,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(all.status, 200, JSON.stringify(all))
     assert.equal((await call('/sessions/logout-all', {}, b.accessToken, key)).status, 200)
     assert.equal((await call('/sessions/logout-all', {}, b.accessToken)).status, 401)
+    assert.equal((await call('/auth/sync-read-proof', undefined, b.accessToken)).status, 401)
     assert.equal((await call('/sessions/current', undefined, other.accessToken)).status, 401)
     assert.equal((await call('/auth/token', pending)).status, 409)
     // Even if future verification stamps a fresh epoch, an old anonymous transaction is blocked by sequence.

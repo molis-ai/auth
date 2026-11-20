@@ -64,3 +64,4 @@ pub async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) 
         worker::console_error!("AUTH_CLEANUP_FAILED");
     }
 }
+mod sync_read_proof;

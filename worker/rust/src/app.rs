@@ -64,7 +64,11 @@ fn health_response(id: &str) -> worker::Result<Response> {
     )
 }
 
-fn with_security_headers(mut response: Response, id: &str, https: bool) -> worker::Result<Response> {
+fn with_security_headers(
+    mut response: Response,
+    id: &str,
+    https: bool,
+) -> worker::Result<Response> {
     for (k, v) in [
         ("X-Request-ID", id),
         ("X-Content-Type-Options", "nosniff"),
@@ -94,6 +98,13 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     let path = url.path();
     let method = a.request.method();
 
+    if matches!(
+        path,
+        "/.well-known/molis-sync-jwks.json" | "/api/v2/auth/sync-read-proof"
+    ) {
+        return crate::sync_read_proof::route(a, path, method).await;
+    }
+
     if path.starts_with("/api/v2/auth/management-handoffs")
         || path == "/account/handoff/start"
         || path == "/account/handoff/finish"
@@ -107,22 +118,38 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
         ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
         a.s.all("SELECT 1 FROM auth_user LIMIT 1", vec![]).await?;
         if env.var("MOLIS_ENVIRONMENT").is_ok() {
-            a.s.all("SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0", vec![]).await?;
-            a.s.all("SELECT payload,revision FROM auth_web_session LIMIT 0", vec![]).await?;
-            a.s.all("SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0", vec![]).await?;
+            a.s.all(
+                "SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0",
+                vec![],
+            )
+            .await?;
+            a.s.all(
+                "SELECT payload,revision FROM auth_web_session LIMIT 0",
+                vec![],
+            )
+            .await?;
+            a.s.all(
+                "SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0",
+                vec![],
+            )
+            .await?;
 
             let client = crate::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
             let registration = crate::login_sessions::registered_client(a, &client).await?;
             ensure(
-                contains(&parsed(&registration, "redirects")?, &json!(format!("{}/account/callback", a.origin)))
-                    && contains(&parsed(&registration, "allowed_origins")?, &json!(a.origin)),
-                503, "UNIFIED_CONFIGURATION_INVALID"
+                contains(
+                    &parsed(&registration, "redirects")?,
+                    &json!(format!("{}/account/callback", a.origin)),
+                ) && contains(&parsed(&registration, "allowed_origins")?, &json!(a.origin)),
+                503,
+                "UNIFIED_CONFIGURATION_INVALID",
             )?;
             crate::test_admission::Admission::load(a)?;
             ensure(
                 crate::login_capabilities::available(a, &registration).len() == 5
                     && token(&crate::web_session::setting(a, "AUTH_WEB_SESSION_KEY")?),
-                503, "UNIFIED_CONFIGURATION_INVALID"
+                503,
+                "UNIFIED_CONFIGURATION_INVALID",
             )?;
         }
         return Ok(health_response(&a.request_id)?);
@@ -162,7 +189,12 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
         if path == "/api/v2/auth/capabilities" {
             return crate::login_capabilities::route(a, method).await;
         }
-        if matches!(path, "/api/v2/auth/login/password" | "/api/v2/auth/login/code" | "/api/v2/auth/verification-codes") {
+        if matches!(
+            path,
+            "/api/v2/auth/login/password"
+                | "/api/v2/auth/login/code"
+                | "/api/v2/auth/verification-codes"
+        ) {
             return crate::login_commands::route(a, path, method).await;
         }
         if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
@@ -208,16 +240,21 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     for (key, value) in r.headers().entries() {
         headers.set(&key, &value)?;
     }
-    let environment = env.var("MOLIS_ENVIRONMENT").map(|value| value.to_string()).unwrap_or_default();
+    let environment = env
+        .var("MOLIS_ENVIRONMENT")
+        .map(|value| value.to_string())
+        .unwrap_or_default();
     let label = match environment.as_str() {
         "dev" => "DEV · 本地数据",
         "test" => "TEST · 远程测试数据",
         _ => "",
     };
     let mut r = if page && method == Method::Get && !label.is_empty() && r.status_code() == 200 {
-        let body = r.text().await?.replacen("</head>", &format!(
-            "<meta name=\"molis-environment\" content=\"{label}\"></head>"
-        ), 1);
+        let body = r.text().await?.replacen(
+            "</head>",
+            &format!("<meta name=\"molis-environment\" content=\"{label}\"></head>"),
+            1,
+        );
         headers.delete("Content-Length")?;
         headers.delete("Content-Encoding")?;
         headers.delete("ETag")?;
