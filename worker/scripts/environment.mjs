@@ -68,6 +68,7 @@ export function authEnvironment(name, local, configRoot = root) {
       ALIYUN_ACCESS_KEY_SECRET: required,
       AUTH_WEB_SESSION_KEY: sessionKey,
       PROVIDER_STATE_KEY: sessionKey,
+      SYNC_READ_SIGNING_JWK: optional,
       UNIFIED_GOOGLE_CLIENT_SECRET: required,
       UNIFIED_GITHUB_CLIENT_SECRET: required,
       AUTH_DEV_PROXY_URL: name === 'prod' ? oneOf(undefined) : optional,
@@ -98,6 +99,7 @@ export function authEnvironment(name, local, configRoot = root) {
       ? secrets.LOCAL_GITHUB_CLIENT_SECRET
       : secrets.UNIFIED_GITHUB_CLIENT_SECRET,
   }
+  if (secrets.SYNC_READ_SIGNING_JWK) bindings.SYNC_READ_SIGNING_JWK = secrets.SYNC_READ_SIGNING_JWK
   if (name !== 'prod') {
     const emails = contacts(secrets.TEST_ALLOWED_EMAILS)
     const phones = contacts(secrets.TEST_ALLOWED_PHONES)
