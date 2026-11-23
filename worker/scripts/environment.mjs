@@ -19,7 +19,10 @@ function contactList(validate) {
   return (value) => {
     try {
       const list = JSON.parse(value)
-      return Array.isArray(list) && list.every((item) => typeof item === 'string' && validate(item.trim()))
+      return (
+        Array.isArray(list) &&
+        list.every((item) => typeof item === 'string' && validate(item.trim()))
+      )
     } catch {
       return false
     }
@@ -80,8 +83,18 @@ export function authEnvironment(name, local, configRoot = root) {
   )
   const origin = local ? targets.dev.authOrigin : config.authOrigin
   const localTest = name === 'test' && local
-  const localGoogle = useLocalCredentials(localTest, 'Google', secrets.LOCAL_GOOGLE_CLIENT_ID, secrets.LOCAL_GOOGLE_CLIENT_SECRET)
-  const localGithub = useLocalCredentials(localTest, 'GitHub', secrets.LOCAL_GITHUB_CLIENT_ID, secrets.LOCAL_GITHUB_CLIENT_SECRET)
+  const localGoogle = useLocalCredentials(
+    localTest,
+    'Google',
+    secrets.LOCAL_GOOGLE_CLIENT_ID,
+    secrets.LOCAL_GOOGLE_CLIENT_SECRET,
+  )
+  const localGithub = useLocalCredentials(
+    localTest,
+    'GitHub',
+    secrets.LOCAL_GITHUB_CLIENT_ID,
+    secrets.LOCAL_GITHUB_CLIENT_SECRET,
+  )
   const bindings = {
     AUTH_WEB_SESSION_KEY: secrets.AUTH_WEB_SESSION_KEY,
     PROVIDER_STATE_KEY: secrets.PROVIDER_STATE_KEY,
@@ -90,11 +103,15 @@ export function authEnvironment(name, local, configRoot = root) {
     ALIYUN_MAIL_REGION: secrets.ALIYUN_MAIL_REGION,
     ALIYUN_MAIL_ACCOUNT_NAME: secrets.ALIYUN_MAIL_ACCOUNT_NAME,
     ALIYUN_SMS_SIGN_NAME: secrets.ALIYUN_SMS_SIGN_NAME,
-    UNIFIED_GOOGLE_CLIENT_ID: localGoogle ? secrets.LOCAL_GOOGLE_CLIENT_ID : secrets.UNIFIED_GOOGLE_CLIENT_ID,
+    UNIFIED_GOOGLE_CLIENT_ID: localGoogle
+      ? secrets.LOCAL_GOOGLE_CLIENT_ID
+      : secrets.UNIFIED_GOOGLE_CLIENT_ID,
     UNIFIED_GOOGLE_CLIENT_SECRET: localGoogle
       ? secrets.LOCAL_GOOGLE_CLIENT_SECRET
       : secrets.UNIFIED_GOOGLE_CLIENT_SECRET,
-    UNIFIED_GITHUB_CLIENT_ID: localGithub ? secrets.LOCAL_GITHUB_CLIENT_ID : secrets.UNIFIED_GITHUB_CLIENT_ID,
+    UNIFIED_GITHUB_CLIENT_ID: localGithub
+      ? secrets.LOCAL_GITHUB_CLIENT_ID
+      : secrets.UNIFIED_GITHUB_CLIENT_ID,
     UNIFIED_GITHUB_CLIENT_SECRET: localGithub
       ? secrets.LOCAL_GITHUB_CLIENT_SECRET
       : secrets.UNIFIED_GITHUB_CLIENT_SECRET,

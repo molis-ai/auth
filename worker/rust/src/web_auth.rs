@@ -9,7 +9,11 @@ use serde_json::{Value, json};
 use worker::Method;
 fn view(t: &Value) -> Value {
     let expired = matches!(t["status"].as_str(), Some("PENDING" | "VERIFIED"))
-        && t["expiresAt"].as_str().map(js_sys::Date::parse).unwrap_or(0.0) <= now() as f64;
+        && t["expiresAt"]
+            .as_str()
+            .map(js_sys::Date::parse)
+            .unwrap_or(0.0)
+            <= now() as f64;
     json!({"handle":t["id"],"status":if expired {json!("EXPIRED")} else {t["status"].clone()},"nextStep":if expired {json!("NONE")} else {t["nextStep"].clone()},"expiresAt":t["expiresAt"]})
 }
 async fn call(
@@ -65,10 +69,23 @@ pub async fn route(
 ) -> Result<Value> {
     if path == "/api/account/auth/capabilities" {
         ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
-        return s.call(&format!("/api/v2/auth/capabilities?clientId={}", s.client()?), Method::Get, None, None, None).await;
+        return s
+            .call(
+                &format!("/api/v2/auth/capabilities?clientId={}", s.client()?),
+                Method::Get,
+                None,
+                None,
+                None,
+            )
+            .await;
     }
-    if matches!(path,"/api/account/auth/login/password" | "/api/account/auth/login/code" | "/api/account/auth/verification-codes") {
-        return login_command(s,path,method,b).await;
+    if matches!(
+        path,
+        "/api/account/auth/login/password"
+            | "/api/account/auth/login/code"
+            | "/api/account/auth/verification-codes"
+    ) {
+        return login_command(s, path, method, b).await;
     }
     if path == "/account/callback" {
         ensure(method == Method::Get, 400, "INVALID_REQUEST")?;
@@ -279,7 +296,7 @@ async fn finish(s: &mut WebSession<'_>, t: &mut Value) -> Result<Value> {
     t["status"] = "CONSUMED".into();
     t["nextStep"] = "NONE".into();
     if result["kind"] == "LOGIN_CODE" {
-        return accept_login(s,t,&result).await;
+        return accept_login(s, t, &result).await;
     }
     for field in ["operationProof", "newIdentityProof", "resetProof"] {
         if !result[field].is_null() {
@@ -392,36 +409,74 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
 }
 
 async fn accept_login(s: &mut WebSession<'_>, t: &Value, result: &Value) -> Result<Value> {
-        ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
-        let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
-        shape("TokenSet", &tokens)?;
-        s.data["tokens"] = tokens;
-        Ok(json!({"account":s.view().await?}))
+    ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
+    let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+    shape("TokenSet", &tokens)?;
+    s.data["tokens"] = tokens;
+    Ok(json!({"account":s.view().await?}))
 }
-async fn login_command(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -> Result<Value> {
-    ensure(method == Method::Post,405,"METHOD_NOT_ALLOWED")?;
-    ensure(s.data["tokens"].is_null(),409,"VERSION_CONFLICT")?;
+async fn login_command(
+    s: &mut WebSession<'_>,
+    path: &str,
+    method: Method,
+    b: &Value,
+) -> Result<Value> {
+    ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
+    ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
     if path.ends_with("/login/code") {
-        shape("LoginCodeRequest",b)?;
-        let t=s.data["loginVerification"].clone();
-        ensure(t.is_object() && t["verificationId"]==b["verificationId"],403,"FORBIDDEN")?;
-        let result=s.call("/api/v2/auth/login/code",Method::Post,Some(b.clone()),Some(&text(&t,"proof")),None).await?;
-        s.data["loginVerification"]=Value::Null;
-        return accept_login(s,&t,&result).await;
+        shape("LoginCodeRequest", b)?;
+        let t = s.data["loginVerification"].clone();
+        ensure(
+            t.is_object() && t["verificationId"] == b["verificationId"],
+            403,
+            "FORBIDDEN",
+        )?;
+        let result = s
+            .call(
+                "/api/v2/auth/login/code",
+                Method::Post,
+                Some(b.clone()),
+                Some(&text(&t, "proof")),
+                None,
+            )
+            .await?;
+        s.data["loginVerification"] = Value::Null;
+        return accept_login(s, &t, &result).await;
     }
-    let sending=path.ends_with("/verification-codes");
-    shape(if sending {"ProductSendVerificationRequest"} else {"ProductLoginPasswordRequest"},b)?;
-    let mut t=json!({"proof":secret(),"verifier":secret(),"state":secret()});
-    let mut input=b.clone();
+    let sending = path.ends_with("/verification-codes");
+    shape(
+        if sending {
+            "ProductSendVerificationRequest"
+        } else {
+            "ProductLoginPasswordRequest"
+        },
+        b,
+    )?;
+    let mut t = json!({"proof":secret(),"verifier":secret(),"state":secret()});
+    let mut input = b.clone();
     for (key,value) in json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))}).as_object().unwrap() {
         input[key]=value.clone();
     }
-    let result=s.call(if sending {"/api/v2/auth/verification-codes"} else {"/api/v2/auth/login/password"},Method::Post,Some(input),Some(&text(&t,"proof")),None).await?;
-    s.data["transactions"]=json!({});
-    s.data["loginVerification"]=Value::Null;
+    let result = s
+        .call(
+            if sending {
+                "/api/v2/auth/verification-codes"
+            } else {
+                "/api/v2/auth/login/password"
+            },
+            Method::Post,
+            Some(input),
+            Some(&text(&t, "proof")),
+            None,
+        )
+        .await?;
+    s.data["transactions"] = json!({});
+    s.data["loginVerification"] = Value::Null;
     if sending {
-        t["verificationId"]=result["verificationId"].clone();
-        s.data["loginVerification"]=t;
+        t["verificationId"] = result["verificationId"].clone();
+        s.data["loginVerification"] = t;
         Ok(result)
-    } else { accept_login(s,&t,&result).await }
+    } else {
+        accept_login(s, &t, &result).await
+    }
 }

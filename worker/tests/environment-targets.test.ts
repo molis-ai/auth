@@ -11,16 +11,20 @@ function fixtureSecrets(env: string) {
     .replace(/^PREVIEW_ACCOUNT_EMAIL=$/mu, 'PREVIEW_ACCOUNT_EMAIL=fixture-user@example.test')
     .replace(/^PREVIEW_ACCOUNT_PASSWORD=$/mu, 'PREVIEW_ACCOUNT_PASSWORD=fixture-only-password')
     .replace(/^([A-Z_]+)=$/gmu, (_, key: string) => {
-      const value = key === 'AUTH_WEB_SESSION_KEY' || key === 'PROVIDER_STATE_KEY'
-        ? 'A'.repeat(43)
-        : key + '-fixture'
+      const value =
+        key === 'AUTH_WEB_SESSION_KEY' || key === 'PROVIDER_STATE_KEY'
+          ? 'A'.repeat(43)
+          : key + '-fixture'
       return `${key}=${value}`
     })
 }
 
 test('secret property names use upper snake case in every environment template', () => {
   for (const env of ['dev', 'test', 'prod']) {
-    const template = readFileSync(new URL(`../../secrets.example/${env}.properties`, import.meta.url), 'utf8')
+    const template = readFileSync(
+      new URL(`../../secrets.example/${env}.properties`, import.meta.url),
+      'utf8',
+    )
     for (const line of template.split(/\r?\n/u)) {
       if (line.trim() && !line.trimStart().startsWith('#'))
         assert.match(line, /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*=/u, env)
@@ -36,7 +40,10 @@ test('V2-01: the Auth test deployment pins account, Worker, route and D1 indepen
   mkdirSync(new URL('secrets', root))
   const testConfig = readFileSync(new URL('../../config/test.properties', import.meta.url), 'utf8')
   const privateValues = fixtureSecrets('test')
-    .replace('TEST_ALLOWED_EMAILS=[]', 'TEST_ALLOWED_EMAILS=["Allowed@Example.test","allowed@example.test"]')
+    .replace(
+      'TEST_ALLOWED_EMAILS=[]',
+      'TEST_ALLOWED_EMAILS=["Allowed@Example.test","allowed@example.test"]',
+    )
     .replace('TEST_ALLOWED_PHONES=[]', 'TEST_ALLOWED_PHONES=["+8613800000000","+8613800000000"]')
   writeFileSync(new URL('secrets/test.properties', root), privateValues)
   const configPath = new URL('config/test.properties', root)
@@ -106,19 +113,27 @@ test('only local dev reads the shared account and keeps both credentials out of 
     writeFileSync(privateFile, secrets)
     const settings = authEnvironment(env, env !== 'prod', root)
     if (env === 'prod') {
-      assert.deepEqual(settings.platform.routes, [{ pattern: 'auth.molis.ai', custom_domain: true }])
+      assert.deepEqual(settings.platform.routes, [
+        { pattern: 'auth.molis.ai', custom_domain: true },
+      ])
       assert.equal(settings.platform.workers_dev, false)
       assert.equal(settings.platform.preview_urls, false)
       assert.equal(settings.platform.vars.AUTH_ORIGIN, 'https://auth.molis.ai')
       assert.equal(settings.platform.d1_databases[0].database_name, 'molis-auth-prod')
-      assert.equal(settings.platform.d1_databases[0].database_id, '649fadf9-f897-4d37-915c-b404ec336e69')
+      assert.equal(
+        settings.platform.d1_databases[0].database_id,
+        '649fadf9-f897-4d37-915c-b404ec336e69',
+      )
       assert.throws(() => authEnvironment('prod', true, root), /deploy only/u)
     }
     const providerBindings = settings.bindings
     assert.equal(providerBindings.ALIYUN_MAIL_REGION, 'cn-hangzhou')
     assert.equal(providerBindings.ALIYUN_MAIL_ACCOUNT_NAME, 'ALIYUN_MAIL_ACCOUNT_NAME-fixture')
     assert.equal(providerBindings.ALIYUN_SMS_SIGN_NAME, 'ALIYUN_SMS_SIGN_NAME-fixture')
-    for (const [provider, localIdKey] of [['google', 'LOCAL_GOOGLE_CLIENT_ID'], ['github', 'LOCAL_GITHUB_CLIENT_ID']]) {
+    for (const [provider, localIdKey] of [
+      ['google', 'LOCAL_GOOGLE_CLIENT_ID'],
+      ['github', 'LOCAL_GITHUB_CLIENT_ID'],
+    ]) {
       const upper = provider.toUpperCase()
       const idBinding = `UNIFIED_${upper}_CLIENT_ID`
       const secretBinding = `UNIFIED_${upper}_CLIENT_SECRET`
@@ -155,7 +170,11 @@ test('only local dev reads the shared account and keeps both credentials out of 
       assert.equal(providerBindings.ALIYUN_SMS_TEST_ALLOWLIST, '')
       assert.equal(providerBindings.ALIYUN_MAIL_TEST_ALLOWLIST, '')
       if (env === 'dev') assert.equal(providerBindings.AUTH_TEST_ADMISSION, undefined)
-      else assert.deepEqual(JSON.parse(providerBindings.AUTH_TEST_ADMISSION), { emails: [], phones: [] })
+      else
+        assert.deepEqual(JSON.parse(providerBindings.AUTH_TEST_ADMISSION), {
+          emails: [],
+          phones: [],
+        })
       for (const [key, invalidItem] of [
         ['TEST_ALLOWED_PHONES', '+123'],
         ['TEST_ALLOWED_EMAILS', 'invalid'],
