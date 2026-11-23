@@ -71,7 +71,7 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
         "EMAIL" => verified && password,
         "PHONE" => {
             verified
-                && (c["delivery_mode"] == "MOCK"
+                && (crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
                     || (c["delivery_mode"] == "LIVE" && crate::delivery::sms_auth::configured(a)))
         }
         "GOOGLE" if c["provider_mode"] == "LIVE" => {

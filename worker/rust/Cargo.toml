@@ -8,8 +8,9 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["mock-provider"]
+default = ["mock-provider", "mock-delivery"]
 mock-provider = []
+mock-delivery = []
 
 [dependencies]
 worker = { version = "=0.8.6", features = ["d1"] }

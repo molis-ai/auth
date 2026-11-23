@@ -8,6 +8,7 @@ use crate::{http::*, identity::Auth};
 use serde_json::Value;
 use worker::D1PreparedStatement;
 pub(crate) struct Message<'a> {
+    #[cfg(feature = "mock-delivery")]
     pub id: &'a str,
     pub target: &'a str,
     pub template: &'a str,
@@ -19,9 +20,10 @@ pub(crate) trait Sender {
 }
 pub(crate) struct SmsSender;
 pub(crate) struct MailSender;
+#[cfg(feature = "mock-delivery")]
 fn mock(a: &Auth, c: &Value, m: &Message, channel: &str) -> Result<D1PreparedStatement> {
     ensure(
-        c["delivery_mode"] == "MOCK" && (c["kind"] == "LOCAL" || c["kind"] == "TEST"),
+        supports_mock_delivery(&c["kind"], &c["delivery_mode"]),
         503,
         "UPSTREAM_UNAVAILABLE",
     )?;
@@ -39,6 +41,13 @@ fn mock(a: &Auth, c: &Value, m: &Message, channel: &str) -> Result<D1PreparedSta
         ],
     )
 }
+#[cfg(not(feature = "mock-delivery"))]
+fn mock(_: &Auth, _: &Value, _: &Message, _: &str) -> Result<D1PreparedStatement> {
+    Err(Failure {
+        status: 503,
+        code: "UPSTREAM_UNAVAILABLE",
+    })
+}
 impl Sender for SmsSender {
     fn enqueue(a: &Auth, c: &Value, m: &Message) -> Result<D1PreparedStatement> {
         mock(a, c, m, "SMS")
@@ -50,11 +59,16 @@ impl Sender for MailSender {
     }
 }
 
+pub(crate) fn supports_mock_delivery(kind: &Value, mode: &Value) -> bool {
+    cfg!(feature = "mock-delivery") && mode == "MOCK" && (kind == "LOCAL" || kind == "TEST")
+}
+
 pub(crate) fn supports_invitation_notifications(kind: &Value, mode: &Value) -> bool {
-    mode == "MOCK" && (kind == "LOCAL" || kind == "TEST")
+    supports_mock_delivery(kind, mode)
 }
 
 /// Notification metadata is not a login code or an invitation bearer capability.
+#[cfg(feature = "mock-delivery")]
 pub(crate) fn invitation_notification(
     a: &Auth,
     c: &Value,
@@ -80,6 +94,21 @@ pub(crate) fn invitation_notification(
             expires.into(),
         ],
     )
+}
+
+#[cfg(not(feature = "mock-delivery"))]
+pub(crate) fn invitation_notification(
+    _: &Auth,
+    _: &Value,
+    _: &str,
+    _: &str,
+    _: &Value,
+    _: i64,
+) -> Result<D1PreparedStatement> {
+    Err(Failure {
+        status: 503,
+        code: "UPSTREAM_UNAVAILABLE",
+    })
 }
 
 /// Remote delivery is performed only after the transaction has reserved a challenge.

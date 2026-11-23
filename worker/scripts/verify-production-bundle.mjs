@@ -11,6 +11,10 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const fixtureWasm = join(root, 'worker/rust/build/index_bg.wasm')
 const contract = readFileSync(join(root, 'contracts/unified-account/openapi.json'))
 const mockPage = 'Molis 提供方模拟授权'
+const mockDeliveryStatements = [
+  'INSERT INTO auth_mock_delivery',
+  'INSERT INTO auth_mock_notification',
+]
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
@@ -25,6 +29,8 @@ function report(label, bytes) {
 
 const fixture = readFileSync(fixtureWasm)
 assert(fixture.includes(mockPage), 'Default WASM is missing the mock provider page')
+for (const statement of mockDeliveryStatements)
+  assert(fixture.includes(statement), `Default WASM is missing ${statement}`)
 assert(!fixture.includes(contract), 'Default WASM embeds the entire OpenAPI document')
 const fixtureHash = report('Default', fixture)
 
@@ -50,8 +56,15 @@ try {
   )
   assert(!production.includes(mockPage), 'Production WASM includes the mock provider page')
   assert(!production.includes('/api/v2/auth/mock/'), 'Production WASM includes the mock API path')
+  for (const statement of mockDeliveryStatements)
+    assert(!production.includes(statement), `Production WASM includes ${statement}`)
   assert(!production.includes(contract), 'Production WASM embeds the entire OpenAPI document')
   const productionHash = report('Production', production)
+  execFileSync(process.execPath, ['--test', 'worker/tests/test-admission.test.ts'], {
+    cwd: root,
+    env: { ...process.env, AUTH_PRODUCTION_WASM_BUILD_DIR: build },
+    stdio: 'inherit',
+  })
 
   const config = join(staging, 'wrangler.json')
   const outdir = join(staging, 'bundle')

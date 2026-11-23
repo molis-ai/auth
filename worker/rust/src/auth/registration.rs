@@ -108,6 +108,12 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         text(b, "address")
     };
     crate::test_admission::Admission::load(a)?.target(&target)?;
+    ensure(
+        c["delivery_mode"] == "LIVE"
+            || crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"]),
+        503,
+        "UPSTREAM_UNAVAILABLE",
+    )?;
     if t["purpose"] == "REAUTH" {
         ensure(
             !a.s.one(
@@ -150,6 +156,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let credential = otp();
     let expires = (n + CODE).min(number(t, "expires_at"));
     let m = Message {
+        #[cfg(feature = "mock-delivery")]
         id: &delivery,
         target: &target,
         template: t["purpose"].as_str().unwrap_or("PHONE_LOGIN"),
@@ -197,12 +204,6 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         } else {
             SmsSender::enqueue(a, c, &m)?
         });
-    } else {
-        ensure(
-            c["delivery_mode"] == "MOCK" && c["kind"] != "PRODUCTION",
-            503,
-            "UPSTREAM_UNAVAILABLE",
-        )?;
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(receipt)
@@ -241,7 +242,7 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         .await?
     } else {
         ensure(
-            c["delivery_mode"] == "MOCK"
+            crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
                 || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL"),
             503,
             "UPSTREAM_UNAVAILABLE",
