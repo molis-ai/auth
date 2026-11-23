@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
+import { verifyDeploymentDatabase } from '../scripts/deployment-readiness.mjs'
 
 const busyLeaseMigration = '0019_web_session_busy_lease.sql'
 const migrationDirectory = new URL('../migrations/', import.meta.url)
@@ -116,6 +117,58 @@ test('V2C-02 a fresh database has no retired V1 token, member, invitation or ser
     ])
       assert.equal(db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n, 0, table)
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
+  } finally {
+    db.close()
+  }
+})
+
+test('deployment preflight requires every migration record and the deployed schema probes', () => {
+  const db = database()
+  const vars = {
+    AUTH_WEB_CLIENT_ID: 'deploy-web',
+    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+      environmentId: 'deploy-environment',
+      authOrigin: 'https://auth.example.test',
+      kind: 'TEST',
+    }),
+  }
+  const execute = (sql: string) =>
+    JSON.stringify(
+      sql
+        .split(';')
+        .filter((s) => s.trim())
+        .map((statement) => ({
+          success: true,
+          results: db.prepare(statement).all(),
+        })),
+    )
+  try {
+    db.exec(`
+      CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+      INSERT INTO auth_environment(id,kind,auth_origin,delivery_mode,provider_mode,created_at,updated_at)
+        VALUES ('deploy-environment','TEST','https://auth.example.test','LIVE','LIVE',0,0);
+      INSERT INTO auth_application(id,name) VALUES ('deploy-app','Auth');
+      INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
+        VALUES ('deploy-web','deploy-web','deploy-app','WEB','["account","profile"]','["https://auth.example.test/account/callback"]');
+      INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
+        VALUES ('deploy-web','unified-account-v2','deploy-environment','["https://auth.example.test"]',0,0);
+    `)
+    const files = readdirSync(migrationDirectory).filter((name) => name.endsWith('.sql'))
+    const apply = db.prepare('INSERT INTO d1_migrations(name) VALUES (?)')
+    for (const file of files) apply.run(file)
+    const verify = () => verifyDeploymentDatabase(execute, vars, migrationDirectory)
+    for (const file of files) {
+      db.prepare('DELETE FROM d1_migrations WHERE name=?').run(file)
+      assert.throws(verify, { message: 'Unapplied Auth D1 migrations: ' + file })
+      apply.run(file)
+    }
+    assert.doesNotThrow(verify)
+    db.exec("UPDATE auth_client SET status='DISABLED' WHERE client_id='deploy-web'")
+    assert.throws(verify, /registration is not ready/)
+    db.exec("UPDATE auth_client SET status='ACTIVE' WHERE client_id='deploy-web'")
+    assert.doesNotThrow(verify)
+    db.exec('DROP INDEX ix_logout_receipt_proof_expiry')
+    assert.throws(verify, /schema or browser client registration is not ready/)
   } finally {
     db.close()
   }

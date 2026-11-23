@@ -6,7 +6,7 @@ export async function getRustProxy(
   bindings,
   outbound,
   assets,
-  { passwordKdf = true, fixtureEntrypoint } = {},
+  { passwordKdf = true, fixtureEntrypoint, handleStructuredLogs } = {},
 ) {
   const base = {
     modulesRoot: fileURLToPath(new URL('../rust/build/', import.meta.url)),
@@ -27,6 +27,7 @@ export async function getRustProxy(
       },
     ],
     compatibilityDate: '2026-09-19',
+    handleStructuredLogs,
     d1Databases: { DB: 'rust-isolated-test' },
     durableObjects: passwordKdf
       ? { PASSWORD_KDF: { className: 'PasswordKdf', useSQLite: true } }

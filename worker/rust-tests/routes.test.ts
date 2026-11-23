@@ -17,6 +17,9 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
     assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 503)
     await initializeLocalRuntime(p)
     assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 200)
+    await p.env.DB.prepare('DROP INDEX ix_logout_receipt_proof_expiry').run()
+    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 503)
+    assert.equal((await p.fetch(new Request(origin + '/api/v2/health'))).status, 200)
     for (const path of ['/', '/login', '/console']) {
       const r = await p.fetch(new Request(origin + path))
       assert.equal(r.status, 200)

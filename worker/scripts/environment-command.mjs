@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { assertPortAvailable, selectEnvironment } from '../../scripts/environment-properties.mjs'
 import { sessionGeneration } from '../../scripts/environment-session.mjs'
 import { authEnvironment, port, root } from './environment.mjs'
+import { verifyDeploymentDatabase } from './deployment-readiness.mjs'
 
 const [operation, ...args] = process.argv.slice(2)
 if (!['start', 'deploy'].includes(operation)) throw new Error('Choose start or deploy')
@@ -85,42 +86,27 @@ try {
         d1_databases: [database],
         vars,
       } = settings.platform
-      const { environmentId, authOrigin, kind } = JSON.parse(vars.UNIFIED_ACCOUNT_CONFIG)
-      const sql = `SELECT EXISTS (
-        SELECT 1 FROM auth_environment e JOIN auth_client_policy p ON p.environment_id=e.id
-        JOIN auth_client c ON c.client_id=p.client_id
-        JOIN auth_application app ON app.id=c.application_id
-        WHERE e.id='${environmentId}' AND e.auth_origin='${authOrigin}' AND e.kind='${kind}'
-        AND e.status='ACTIVE' AND c.status='ACTIVE' AND c.client_id='${vars.AUTH_WEB_CLIENT_ID}'
-        AND app.status='ACTIVE' AND p.policy_profile='unified-account-v2'
-        AND EXISTS (SELECT 1 FROM json_each(p.allowed_origins) WHERE value='${authOrigin}')
-        AND EXISTS (SELECT 1 FROM json_each(c.redirects) WHERE value='${authOrigin}/account/callback')
-        AND e.delivery_mode='LIVE' AND e.provider_mode='LIVE'
-      ) AS ready;
-      SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0;
-      SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0;
-      SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0;`
-      try {
-        const raw = execFileSync(
-          process.execPath,
-          [
-            'worker/node_modules/wrangler/bin/wrangler.js',
-            'd1',
-            'execute',
-            database.database_id,
-            '--remote',
-            '--config',
-            config,
-            '--command',
-            sql,
-            '--json',
-          ],
-          { cwd, env: wranglerEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-        )
-        if (JSON.parse(raw)[0]?.results[0]?.ready !== 1) throw new Error()
-      } catch {
-        throw new Error('Auth deployment D1 schema or browser client registration is not ready')
-      }
+      verifyDeploymentDatabase(
+        (sql) =>
+          execFileSync(
+            process.execPath,
+            [
+              'worker/node_modules/wrangler/bin/wrangler.js',
+              'd1',
+              'execute',
+              database.database_id,
+              '--remote',
+              '--config',
+              config,
+              '--command',
+              sql,
+              '--json',
+            ],
+            { cwd, env: wranglerEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+          ),
+        vars,
+        database.migrations_dir,
+      )
       writeFileSync(secretFile, JSON.stringify(settings.bindings), { mode: 0o600 })
       deploy.push('--secrets-file', secretFile)
     }

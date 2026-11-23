@@ -1,14 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { setTimeout as delay } from 'node:timers/promises'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret, challenge } from './fixtures.ts'
+import { captureAuthFailures, secret, challenge } from './fixtures.ts'
 
 test('LIVE signup and password reset mail: shared delivery, failed delivery and late-response fencing', async () => {
   const origin = 'http://127.0.0.1:8787'
   let code = '',
     sent = 0,
-    fail = false
+    failureStatus = 0
+  const failures = captureAuthFailures()
   let expectedSubject = 'Molis 注册验证码'
   let duringSend: (() => Promise<void>) | undefined
   const p = await getRustProxy(
@@ -49,10 +51,12 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       assert.match(f.get('TextBody')!, /请勿向他人透露验证码。/)
       code = f.get('TextBody')!.match(/\d{6}/)![0]
       if (duringSend) await duringSend()
-      return fail
-        ? Response.json({ Code: 'InvalidMailAddress.NotFound' }, { status: 404 })
+      return failureStatus
+        ? Response.json({ Code: 'InvalidMailAddress.NotFound' }, { status: failureStatus })
         : Response.json({ RequestId: 'test-request', EnvId: 'test-mail' })
     },
+    undefined,
+    failures,
   )
   try {
     await initializeLocalRuntime(p)
@@ -170,7 +174,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
     assert.equal(sent, beforeUnknown, 'unknown email must not receive mail')
     expectedSubject = 'Molis 注册验证码'
     const failed = await begin()
-    fail = true
+    failureStatus = 404
     assert.equal(
       (
         await api(
@@ -196,7 +200,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       ).status,
       401,
     )
-    fail = false
+    failureStatus = 0
     const late = await begin()
     duringSend = async () => {
       await db
@@ -226,6 +230,67 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
     )
     assert.equal(openSend.status, 200)
     assert.equal(sent, 5)
+
+    expectedSubject = 'Molis 密码重置验证码'
+    for (const timeout of [false, true]) {
+      failureStatus = 500
+      duringSend = timeout ? () => delay(10_500) : undefined
+      const known = await begin('PASSWORD_RESET')
+      const knownReply = await api(
+        known.path + '/challenges',
+        {
+          channel: 'EMAIL',
+          address: 'alice@example.test',
+        },
+        known.proof,
+      )
+      const unknown = await begin('PASSWORD_RESET')
+      const unknownReply = await api(
+        unknown.path + '/challenges',
+        {
+          channel: 'EMAIL',
+          address: 'unknown@example.test',
+        },
+        unknown.proof,
+      )
+      assert.equal(knownReply.status, 200, JSON.stringify(knownReply))
+      assert.equal(unknownReply.status, knownReply.status)
+      assert.deepEqual(Object.keys(unknownReply).sort(), Object.keys(knownReply).sort())
+      assert.deepEqual(Object.keys(knownReply.data).sort(), [
+        'challengeId',
+        'expiresAt',
+        'retryAfterSeconds',
+      ])
+      assert.deepEqual(Object.keys(unknownReply.data).sort(), Object.keys(knownReply.data).sort())
+      assert.equal(knownReply.data.retryAfterSeconds, unknownReply.data.retryAfterSeconds)
+      assert.equal(sent, timeout ? 7 : 6)
+      for (const [flow, reply] of [
+        [known, knownReply],
+        [unknown, unknownReply],
+      ]) {
+        const response = await api(
+          flow.path + '/challenges/' + reply.data.challengeId + '/verify',
+          { credential: code },
+          flow.proof,
+        )
+        assert.equal(response.status, 401)
+      }
+      const logs = await failures.forRequest(knownReply.requestId, ['mail.password_reset'])
+      assert.equal(logs.length, 1)
+      assert.equal(logs[0].code, 'UPSTREAM_UNAVAILABLE')
+      assert.equal(logs[0].status, 503)
+      assert.equal(logs[0].route, '/api/v2/auth/transactions/{transactionId}/challenges')
+      if (timeout) assert.ok(logs[0].elapsed_ms >= 9_000)
+      for (const value of [
+        'alice@example.test',
+        known.proof,
+        code,
+        known.id,
+        knownReply.data.challengeId,
+      ]) {
+        assert.equal(JSON.stringify(logs).includes(value), false)
+      }
+    }
   } finally {
     await p.dispose()
   }

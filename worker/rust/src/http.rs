@@ -24,6 +24,55 @@ impl From<serde_json::Error> for Failure {
         }
     }
 }
+pub(crate) fn matches_route_template(path: &str, template: &str) -> bool {
+    let mut segments = path.split('/');
+    template.split('/').all(|part| {
+        segments
+            .next()
+            .is_some_and(|value| part.starts_with('{') || part == value)
+    }) && segments.next().is_none()
+}
+
+pub(crate) fn failure_route(path: &str) -> &'static str {
+    static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
+    match path {
+        "/api/v2/health" => "/api/v2/health",
+        "/api/v2/readiness" => "/api/v2/readiness",
+        "/account/handoff/start" => "/account/handoff/start",
+        "/account/handoff/finish" => "/account/handoff/finish",
+        "/account/callback" => "/account/callback",
+        "/" | "/login" | "/console" => "/",
+        _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
+        _ => ROUTES
+            .iter()
+            .copied()
+            .find(|template| matches_route_template(path, template))
+            .unwrap_or("unmatched"),
+    }
+}
+
+pub(crate) fn log_failure(
+    request_id: &str,
+    route: &'static str,
+    phase: &'static str,
+    failure: &Failure,
+    started: i64,
+) {
+    if failure.status < 500 {
+        return;
+    }
+    let message = json!({
+        "event": "auth.request.failure",
+        "request_id": request_id,
+        "route": route,
+        "phase": phase,
+        "code": failure.code,
+        "status": failure.status,
+        "elapsed_ms": (now() - started).max(0),
+    });
+    worker::console_error!("{message}");
+}
+
 pub fn ensure(condition: bool, status: u16, code: &'static str) -> Result<()> {
     if condition {
         Ok(())
