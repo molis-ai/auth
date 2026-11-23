@@ -8,8 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const build = join(root, 'worker/rust/build')
-const wasm = join(build, 'index_bg.wasm')
+const fixtureWasm = join(root, 'worker/rust/build/index_bg.wasm')
 const contract = readFileSync(join(root, 'contracts/unified-account/openapi.json'))
 const mockPage = 'Molis 提供方模拟授权'
 
@@ -24,27 +23,36 @@ function report(label, bytes) {
   return hash
 }
 
-const fixture = readFileSync(wasm)
+const fixture = readFileSync(fixtureWasm)
 assert(fixture.includes(mockPage), 'Default WASM is missing the mock provider page')
 assert(!fixture.includes(contract), 'Default WASM embeds the entire OpenAPI document')
-report('Default', fixture)
-
-execFileSync('npm', ['--prefix', 'worker', 'run', 'build:rust:production'], {
-  cwd: root,
-  stdio: 'inherit',
-})
-const production = readFileSync(wasm)
-assert(
-  production.length >= 8 && production.subarray(0, 4).equals(Buffer.from('\0asm')),
-  'Production artifact must be a nonempty WASM module',
-)
-assert(!production.includes(mockPage), 'Production WASM includes the mock provider page')
-assert(!production.includes('/api/v2/auth/mock/'), 'Production WASM includes the mock API path')
-assert(!production.includes(contract), 'Production WASM embeds the entire OpenAPI document')
-const productionHash = report('Production', production)
+const fixtureHash = report('Default', fixture)
 
 const staging = mkdtempSync(join(tmpdir(), 'molis-auth-production-'))
 try {
+  const build = join(staging, 'rust-build')
+  const productionWasm = join(build, 'index_bg.wasm')
+  execFileSync(
+    'npm',
+    ['--prefix', 'worker', 'run', 'build:rust:production', '--', '--out-dir', build],
+    {
+      cwd: root,
+      stdio: 'inherit',
+    },
+  )
+  const production = readFileSync(productionWasm)
+  const mod = new WebAssembly.Module(production)
+  assert(
+    WebAssembly.Module.exports(mod).some(
+      (entry) => entry.name === 'fetch' && entry.kind === 'function',
+    ),
+    'Production WASM must export a fetch function',
+  )
+  assert(!production.includes(mockPage), 'Production WASM includes the mock provider page')
+  assert(!production.includes('/api/v2/auth/mock/'), 'Production WASM includes the mock API path')
+  assert(!production.includes(contract), 'Production WASM embeds the entire OpenAPI document')
+  const productionHash = report('Production', production)
+
   const config = join(staging, 'wrangler.json')
   const outdir = join(staging, 'bundle')
   // Use the verified production files directly, without a custom build command.
@@ -108,8 +116,14 @@ try {
   const [output] = outputs
   const bundledHash = sha256(readFileSync(join(output.parentPath, output.name)))
   assert.equal(bundledHash, productionHash, 'Wrangler bundled a different WASM module')
-  assert.equal(sha256(readFileSync(wasm)), productionHash, 'Wrangler overwrote the production WASM')
+  assert.equal(
+    sha256(readFileSync(productionWasm)),
+    productionHash,
+    'Wrangler overwrote the production WASM',
+  )
+  assert.equal(sha256(readFileSync(fixtureWasm)), fixtureHash, 'Default WASM was overwritten')
   console.log(`Wrangler bundle and production WASM SHA-256 match: ${bundledHash}`)
+  console.log(`Default WASM SHA-256 unchanged: ${fixtureHash}`)
 } finally {
   rmSync(staging, { recursive: true, force: true })
 }
