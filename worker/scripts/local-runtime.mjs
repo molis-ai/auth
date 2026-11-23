@@ -1,29 +1,35 @@
 import { Miniflare, Response, convertV4MiniflareOptions } from 'miniflare'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 export async function getRustProxy(
   bindings,
   outbound,
   assets,
-  { passwordKdf = true, fixtureEntrypoint, handleStructuredLogs } = {},
+  {
+    passwordKdf = true,
+    fixtureEntrypoint,
+    handleStructuredLogs,
+    buildDirectory = fileURLToPath(new URL('../rust/build/', import.meta.url)),
+  } = {},
 ) {
   const base = {
-    modulesRoot: fileURLToPath(new URL('../rust/build/', import.meta.url)),
+    modulesRoot: buildDirectory,
     modules: [
       ...(fixtureEntrypoint
         ? [
             {
               type: 'ESModule',
-              path: fileURLToPath(new URL('../rust/build/fixture.js', import.meta.url)),
+              path: join(buildDirectory, 'fixture.js'),
               contents: fixtureEntrypoint,
             },
           ]
         : []),
-      { type: 'ESModule', path: fileURLToPath(new URL('../rust/build/index.js', import.meta.url)) },
+      { type: 'ESModule', path: join(buildDirectory, 'index.js') },
       {
         type: 'CompiledWasm',
-        path: fileURLToPath(new URL('../rust/build/index_bg.wasm', import.meta.url)),
+        path: join(buildDirectory, 'index_bg.wasm'),
       },
     ],
     compatibilityDate: '2026-09-19',
