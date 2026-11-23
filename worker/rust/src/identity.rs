@@ -4,13 +4,18 @@ use worker::{Env, Request};
 
 pub(crate) const DEFAULT_RETRY_AFTER: u64 = 60;
 
+pub(crate) fn retry_after_seconds(expires_at: i64, current_ms: i64) -> u64 {
+    let remaining_ms = expires_at.saturating_sub(current_ms).max(0) as u64;
+    remaining_ms.div_ceil(1_000).clamp(1, 86_400)
+}
+
 pub struct Auth {
     pub s: Store,
     pub origin: String,
     pub request: Request,
     pub request_id: String,
     pub client_ip: String,
-    pub retry_after: Cell<Option<u64>>,
+    pub retry_after_at: Cell<Option<i64>>,
     pub cookies: Vec<String>,
     pub env: Env,
 }
@@ -39,7 +44,7 @@ impl Auth {
             request,
             request_id,
             client_ip,
-            retry_after: Cell::new(None),
+            retry_after_at: Cell::new(None),
             cookies: vec![],
             env: env.clone(),
         })
@@ -65,10 +70,7 @@ impl Auth {
         if !r.is_null() && number(&r, "hits") <= limit {
             return Ok(());
         }
-        if let Some(expires_at) = r["expires_at"].as_i64() {
-            let seconds = ((expires_at - n).max(0) + 999) / 1000;
-            self.retry_after.set(Some(seconds.clamp(1, 86_400) as u64));
-        }
+        self.retry_after_at.set(r["expires_at"].as_i64());
         Err(Failure {
             status: 429,
             code: "RATE_LIMITED",
@@ -79,5 +81,20 @@ impl Auth {
     }
     pub async fn rate_ip_window(&self, kind: &str, limit: i64, window: i64) -> Result<()> {
         self.rate(kind, &self.client_ip, limit, window).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::retry_after_seconds;
+
+    #[test]
+    fn retry_after_uses_remaining_time_and_stays_within_contract() {
+        assert_eq!(retry_after_seconds(5_000, 0), 5);
+        assert_eq!(retry_after_seconds(5_000, 3_000), 2);
+        assert_eq!(retry_after_seconds(5_000, 3_999), 2);
+        assert_eq!(retry_after_seconds(5_000, 5_000), 1);
+        assert_eq!(retry_after_seconds(5_000, 5_001), 1);
+        assert_eq!(retry_after_seconds(86_400_001, 0), 86_400);
     }
 }

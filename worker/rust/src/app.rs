@@ -1,20 +1,21 @@
 use crate::{
     http::*,
-    identity::{Auth, DEFAULT_RETRY_AFTER},
+    identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
     security::uuid,
 };
 use serde_json::json;
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    handle_inner(req, env, None, None).await
+    let (response, _) = handle_inner(req, env, None, None).await?;
+    Ok(response)
 }
 pub(crate) async fn handle_internal(
     req: Request,
     env: Env,
     owner: (String, i64),
     client_ip: String,
-) -> worker::Result<Response> {
+) -> worker::Result<(Response, Option<i64>)> {
     Box::pin(handle_inner(req, env, Some(owner), Some(client_ip))).await
 }
 async fn handle_inner(
@@ -22,31 +23,44 @@ async fn handle_inner(
     env: Env,
     owner: Option<(String, i64)>,
     client_ip: Option<String>,
-) -> worker::Result<Response> {
+) -> worker::Result<(Response, Option<i64>)> {
     let id = uuid();
     if req.method() == Method::Get {
         let url = req.url()?;
         if url.path() == "/api/v2/health" {
-            return with_security_headers(health_response(&id)?, &id, url.scheme() == "https");
+            let response =
+                with_security_headers(health_response(&id)?, &id, url.scheme() == "https")?;
+            return Ok((response, None));
         }
     }
     let mut a = match Auth::new(req, &env, id.clone(), client_ip) {
         Ok(a) => a,
-        Err(e) => return error_response(e, &id),
+        Err(e) => return Ok((error_response(e, &id)?, None)),
     };
+    let external = owner.is_none();
     a.s.web_owner = owner;
     let result = dispatch(&mut a, &env).await;
-    let retry_after = a.retry_after.get().unwrap_or(DEFAULT_RETRY_AFTER);
+    let retry_after_at = a.retry_after_at.get();
+    let status = match &result {
+        Ok(response) => response.status_code(),
+        Err(e) => e.status,
+    };
+    // Internal calls carry the deadline through BFF session cleanup to the public response.
+    let retry_after = (external && status == 429).then(|| {
+        retry_after_at
+            .map(|expires_at| retry_after_seconds(expires_at, now()))
+            .unwrap_or(DEFAULT_RETRY_AFTER)
+    });
     let mut response = match result {
         Ok(r) => r,
         Err(e) => {
             if e.status >= 500 {
                 worker::console_error!("AUTH_SERVER_FAILURE request_id={} code={}", id, e.code);
             }
-            if e.status == 429 && {
+            if let Some(retry_after) = retry_after.filter(|_| {
                 let path = a.request.path();
                 path.starts_with("/api/v2/") || path.starts_with("/api/account/")
-            } {
+            }) {
                 json_response(
                     json!({"error":{"code":e.code,"retryAfterSeconds":retry_after},"requestId":id}),
                     429,
@@ -61,12 +75,13 @@ async fn handle_inner(
             response.headers_mut().append("Set-Cookie", c)?;
         }
     }
-    if response.status_code() == 429 {
+    if let Some(retry_after) = retry_after {
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
     }
-    with_security_headers(response, &id, a.origin.starts_with("https:"))
+    let response = with_security_headers(response, &id, a.origin.starts_with("https:"))?;
+    Ok((response, retry_after_at))
 }
 
 fn health_response(id: &str) -> worker::Result<Response> {

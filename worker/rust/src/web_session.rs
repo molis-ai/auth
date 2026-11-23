@@ -1,7 +1,7 @@
 //! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
 use crate::{
     http::*,
-    identity::{Auth, DEFAULT_RETRY_AFTER},
+    identity::Auth,
     security::{hash, secret},
     sensitive_transactions::shape,
 };
@@ -102,7 +102,7 @@ impl WebSession<'_> {
         if let Some(key) = key {
             h.set("Idempotency-Key", key)?;
         }
-        let mut response = crate::app::handle_internal(
+        let (mut response, retry_after_at) = crate::app::handle_internal(
             request,
             self.a.env.clone(),
             (self.id.clone(), self.revision),
@@ -112,19 +112,7 @@ impl WebSession<'_> {
         let value: Value = response.json().await?;
         let status = response.status_code();
         if status == 429 {
-            let retry_after = value["error"]["retryAfterSeconds"]
-                .as_u64()
-                .or_else(|| {
-                    response
-                        .headers()
-                        .get("Retry-After")
-                        .ok()
-                        .flatten()?
-                        .parse()
-                        .ok()
-                })
-                .unwrap_or(DEFAULT_RETRY_AFTER);
-            self.a.retry_after.set(Some(retry_after));
+            self.a.retry_after_at.set(retry_after_at);
         }
         if status >= 400 {
             // Return a bounded, declared code, never an upstream body or secret-bearing message.

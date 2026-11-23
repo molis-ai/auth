@@ -524,11 +524,12 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       assert.equal((await call('/api/account/login-methods')).status, 401)
     }
     await t.test(
-      'BFF and direct V2 share per-IP delivery quotas and report the D1 expiry',
+      'BFF uses per-IP password and delivery buckets, and both APIs report the D1 expiry',
       async () => {
         const ipA = '192.0.2.1',
           ipB = '192.0.2.2',
           ipC = '192.0.2.3'
+        const sendPath = '/api/account/auth/verification-codes'
         const sendBody = (address: string) => ({ purpose: 'LOGIN', channel: 'EMAIL', address })
         async function browser(ip: string) {
           const bootstrap = await p.fetch(
@@ -543,9 +544,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           assert.ok(cookie && csrf)
           return {
             cookie,
-            send: (address: string) =>
+            post: (path: string, body: unknown) =>
               p.fetch(
-                new Request(origin + '/api/account/auth/verification-codes', {
+                new Request(origin + path, {
                   method: 'POST',
                   headers: {
                     Origin: origin,
@@ -554,7 +555,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
                     'Content-Type': 'application/json',
                     'CF-Connecting-IP': ip,
                   },
-                  body: JSON.stringify(sendBody(address)),
+                  body: JSON.stringify(body),
                 }),
               ),
           }
@@ -607,25 +608,35 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           assert.ok(seconds <= Math.ceil((expiresAt - before) / 1000))
         }
 
-        const accepted = await first.send('quota-first@example.test')
+        const accepted = await first.post(sendPath, sendBody('quota-first@example.test'))
         assert.equal(accepted.status, 200, await accepted.text())
-        await assertThrottled(() => second.send('quota-same-ip@example.test'))
-        const otherIp = await other.send('quota-other-ip@example.test')
+        await assertThrottled(() => second.post(sendPath, sendBody('quota-same-ip@example.test')))
+        const otherIp = await other.post(sendPath, sendBody('quota-other-ip@example.test'))
         assert.equal(otherIp.status, 200, await otherIp.text())
         await assertThrottled(() => direct(ipA, 'quota-direct-same@example.test'))
         const directOther = await direct(ipC, 'quota-direct-other@example.test')
         assert.equal(directOther.status, 200, await directOther.text())
 
-        const hourlyHits = async (ip: string) =>
+        const bucketHits = async (bucketHash: string) =>
           (
             await db
               .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
-              .bind(hourlyBucket(ip))
+              .bind(bucketHash)
               .first()
           )?.hits
-        assert.equal(await hourlyHits(ipA), 62)
-        assert.equal(await hourlyHits(ipB), 1)
-        assert.equal(await hourlyHits(ipC), 1)
+        assert.equal(await bucketHits(hourlyBucket(ipA)), 62)
+        assert.equal(await bucketHits(hourlyBucket(ipB)), 1)
+        assert.equal(await bucketHits(hourlyBucket(ipC)), 1)
+
+        const localPasswordBucket = hash('v2-password:local')
+        const localPasswordHits = await bucketHits(localPasswordBucket)
+        const badPassword = await first.post('/api/account/auth/login/password', {
+          identifier: 'quota-password@example.test',
+          password: 'incorrect-test-password',
+        })
+        assert.equal(badPassword.status, 401, await badPassword.text())
+        assert.equal(await bucketHits(hash(`v2-password:${ipA}`)), 1)
+        assert.equal(await bucketHits(localPasswordBucket), localPasswordHits)
       },
     )
     // V2-04: reload the same worker bindings, then change the local session generation twice.
