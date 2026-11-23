@@ -139,6 +139,16 @@ pub(crate) fn tokens(
         writes,
     ))
 }
+async fn revoke_replayed_refresh(a: &Auth, session: &Value, n: i64) -> Result<()> {
+    a.s.batch(
+        vec![a.s.statement(
+            "UPDATE auth_login_session SET revoked_at=COALESCE(revoked_at,?),session_revision=session_revision+1 WHERE id=? AND revoked_at IS NULL",
+            vec![n.into(), session["id"].clone()],
+        )?],
+        "VERSION_CONFLICT",
+    )
+    .await
+}
 async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     shape("TokenRequest", b)?;
     let c = client(a, &text(b, "clientId")).await?;
@@ -156,7 +166,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         let s = session(a, &text(&t, "login_session_id")).await?;
         ensure(s["client_id"] == c["client_id"], 401, "INVALID_GRANT")?;
         if !t["used_at"].is_null() {
-            a.s.run("UPDATE auth_login_session SET revoked_at=COALESCE(revoked_at,?),session_revision=session_revision+1 WHERE id=? AND revoked_at IS NULL",vec![n.into(),s["id"].clone()]).await?;
+            revoke_replayed_refresh(a, &s, n).await?;
             return Err(Failure {
                 status: 401,
                 code: "INVALID_GRANT",
@@ -184,7 +194,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         )?);
         if let Err(e) = a.s.batch(writes, "VERSION_CONFLICT").await {
             if e.status == 409 {
-                a.s.run("UPDATE auth_login_session SET revoked_at=COALESCE(revoked_at,?),session_revision=session_revision+1 WHERE id=? AND revoked_at IS NULL",vec![n.into(),s["id"].clone()]).await?;
+                revoke_replayed_refresh(a, &s, n).await?;
             }
             return Err(e);
         }

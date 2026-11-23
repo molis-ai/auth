@@ -98,7 +98,7 @@ try {
         AND e.delivery_mode='LIVE' AND e.provider_mode='LIVE'
       ) AS ready;
       SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0;
-      SELECT payload,revision FROM auth_web_session LIMIT 0;
+      SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0;
       SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0;`
       try {
         const raw = execFileSync(

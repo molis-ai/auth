@@ -3,16 +3,39 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
 
-function database() {
+const busyLeaseMigration = '0019_web_session_busy_lease.sql'
+const migrationDirectory = new URL('../migrations/', import.meta.url)
+
+function database(through?: string) {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
-  const directory = new URL('../migrations/', import.meta.url)
-  for (const name of readdirSync(directory)
-    .filter((n) => n.endsWith('.sql'))
+  for (const name of readdirSync(migrationDirectory)
+    .filter((n) => n.endsWith('.sql') && (!through || n <= through))
     .sort())
-    db.exec(readFileSync(new URL(name, directory), 'utf8'))
+    db.exec(readFileSync(new URL(name, migrationDirectory), 'utf8'))
   return db
 }
+
+test('0019 preserves existing READY and BUSY sessions and enables the lease readiness probe', () => {
+  const db = database('0018_management_handoff.sql')
+  try {
+    db.exec(`INSERT INTO auth_web_session(id_hash,payload,revision,status,expires_at) VALUES
+      ('ready','sealed-ready',7,'READY',1795417800000),
+      ('busy','sealed-busy',11,'BUSY',1795417900000)`)
+    const rows = () => db.prepare('SELECT * FROM auth_web_session ORDER BY id_hash').all()
+    const before = rows()
+    const readiness = 'SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0'
+    assert.throws(() => db.prepare(readiness), /no such column: busy_until/)
+    db.exec(readFileSync(new URL(busyLeaseMigration, migrationDirectory), 'utf8'))
+    assert.deepEqual(db.prepare(readiness).all(), [])
+    assert.deepEqual(
+      rows().map((row) => ({ ...row })),
+      before.map((row) => ({ ...row, busy_until: 0 })),
+    )
+  } finally {
+    db.close()
+  }
+})
 
 test('V2C-02 current tenant schema enforces ownership, membership, foreign keys and rollback', () => {
   const db = database()

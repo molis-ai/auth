@@ -26,6 +26,9 @@ export class AuthError extends Error {
     this.requestId = requestId;
   }
 }
+const TIMEOUT = Symbol("timeout");
+const CANCEL = Symbol("cancel");
+
 export class AccountClient {
   private readonly transport: typeof fetch;
   private readonly origin: string;
@@ -87,7 +90,7 @@ export class AccountClient {
       return Promise.reject(new AuthError("INVALID_REQUEST"));
     const generation = this.generation;
     const run = async () => {
-      if (generation !== this.generation) throw new AuthError("CANCELLED");
+      this.checkGeneration(generation);
       if (method !== "GET" && !this.csrf)
         await this.send("/session", undefined, "GET", generation);
       return this.send<T>(path, body, method, generation, key);
@@ -103,12 +106,12 @@ export class AccountClient {
     remoteRevocation: "CONFIRMED" | "UNCONFIRMED";
   }> {
     if (this.closed) throw new AuthError("CANCELLED");
-    this.generation++;
-    for (const controller of this.pending) controller.abort();
+    const generation = ++this.generation;
+    for (const controller of this.pending) controller.abort(CANCEL);
     // Logout fences in-flight responses and reaches the server without waiting for old work.
     if (!this.csrf)
-      await this.send("/session", undefined, "GET", this.generation);
-    const generation = this.generation, key = crypto.randomUUID();
+      await this.send("/session", undefined, "GET", generation);
+    const key = crypto.randomUUID();
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.send<{localCleared:boolean;remoteRevocation:"CONFIRMED"|"UNCONFIRMED"}>(
@@ -124,7 +127,11 @@ export class AccountClient {
   close(): void {
     this.closed = true;
     this.generation++;
-    for (const controller of this.pending) controller.abort();
+    for (const controller of this.pending) controller.abort(CANCEL);
+  }
+  private checkGeneration(generation: number): void {
+    if (this.closed || generation !== this.generation)
+      throw new AuthError("CANCELLED");
   }
   private async send<T>(
     path: string,
@@ -133,9 +140,10 @@ export class AccountClient {
     generation: number,
     key?: string,
   ): Promise<T> {
+    this.checkGeneration(generation);
     const controller = new AbortController();
     this.pending.add(controller);
-    const timer = setTimeout(() => controller.abort(), this.timeout);
+    const timer = setTimeout(() => controller.abort(TIMEOUT), this.timeout);
     try {
       const response = await this.transport(
         this.origin + "/api/account" + path,
@@ -157,8 +165,11 @@ export class AccountClient {
           body: body === undefined ? undefined : JSON.stringify(body),
         },
       );
+      this.checkGeneration(generation);
+      controller.signal.throwIfAborted();
       const reply = await response.json();
-      if (generation !== this.generation) throw new AuthError("CANCELLED");
+      this.checkGeneration(generation);
+      controller.signal.throwIfAborted();
       const csrf = response.headers.get("X-CSRF-Token");
       if (csrf) this.csrf = csrf;
       if (!response.ok)
@@ -173,10 +184,11 @@ export class AccountClient {
         throw new AuthError("INVALID_RESPONSE");
       return reply.data as T;
     } catch (error) {
+      this.checkGeneration(generation);
+      if (controller.signal.reason === CANCEL) throw new AuthError("CANCELLED");
+      if (controller.signal.reason === TIMEOUT) throw new AuthError("RESULT_UNKNOWN");
       if (error instanceof AuthError) throw error;
-      throw new AuthError(
-        controller.signal.aborted ? "CANCELLED" : "RESULT_UNKNOWN",
-      );
+      throw new AuthError("RESULT_UNKNOWN");
     } finally {
       clearTimeout(timer);
       this.pending.delete(controller);

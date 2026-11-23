@@ -1,15 +1,31 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import type { AccountClient } from './account-client.ts';
 import { accountErrorMessage } from './errors.ts';
 type Member = { displayName: string; email: string | null; membershipId: string; userId: string; role: string; status: string; version: number };
 type Tenant = { tenantId: string; name: string; status: string; myRole: string; membershipId: string; version: number };
-const props = defineProps<{ tenant: Tenant; members: Member[]; client: AccountClient; loading: boolean; reload: () => Promise<void>; refreshTransfers: () => Promise<void>; leave: () => Promise<void> }>();
-const emit = defineEmits<{ busy: [value: boolean] }>();
-let mounted = true;
-onBeforeUnmount(() => { mounted = false; dialog.value?.close(); });
+const props = defineProps<{
+  tenant: Tenant;
+  members: Member[];
+  loading: boolean;
+  refreshPending: boolean;
+  reload: (tenant: Tenant) => Promise<void>;
+  refreshTransfers: () => Promise<void>;
+  leave: () => Promise<void>;
+  discard: (action: string) => void;
+  submitWrite: (path: string, body: unknown, options: {
+    action: string;
+    method: string;
+    committed: () => void;
+    after: () => Promise<void>;
+    success: string;
+    refreshMessage: string;
+  }) => Promise<void>;
+}>();
+const emit = defineEmits<{ left: [tenantId: string]; expired: [error: unknown] }>();
+const action = 'tenant-member:' + props.tenant.tenantId;
+onBeforeUnmount(() => { props.discard(action); dialog.value?.close(); });
 const query = ref(''), page = ref(1), size = ref(10), sort = ref('role'), dialog = ref<HTMLDialogElement>();
-const operation = ref(''), target = ref<Member>(), role = ref('MEMBER'), invite = ref(''), inviteKind = ref('EMAIL'), saving = ref(false), error = ref(''), notice = ref('');
+const operation = ref(''), target = ref<Member>(), role = ref('MEMBER'), invite = ref(''), inviteKind = ref('EMAIL'), saving = ref(false), error = ref('');
 const labels: Record<string,string> = { OWNER: '所有者', ADMIN: '管理员', MEMBER: '成员' };
 const weights: Record<string,number> = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
 const active = computed(() => props.tenant.status === 'ACTIVE');
@@ -19,48 +35,84 @@ const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / size.
 const rows = computed(() => filtered.value.slice((page.value-1)*size.value,page.value*size.value));
 watch([query,size,sort], () => { page.value = 1; });
 watch(pages, value => { page.value = Math.min(page.value,value); });
+watch([role, () => invite.value.trim(), inviteKind, () => props.tenant.version],
+  () => props.discard(action), { flush: 'sync' });
 async function open(kind: string, member?: Member) {
-  operation.value = kind; target.value = member; role.value = member?.role ?? 'MEMBER'; invite.value = ''; error.value = ''; notice.value = '';
+  if (props.loading || props.refreshPending) return;
+  props.discard(action);
+  operation.value = kind; target.value = member; role.value = member?.role ?? 'MEMBER'; invite.value = ''; error.value = '';
   await nextTick(); dialog.value?.showModal();
 }
-function close() { if (!saving.value) dialog.value?.close(); }
+function close() {
+  if (saving.value) return;
+  props.discard(action);
+  dialog.value?.close();
+}
 const title = computed(() => ({ invite: '邀请成员', role: '修改角色', remove: '移除成员', transfer: '交接所有权', leave: '退出团队' })[operation.value]);
 async function submit() {
-  if (saving.value) return;
-  saving.value = true; emit('busy', true); error.value = '';
+  if (saving.value || props.loading || props.refreshPending) return;
+  saving.value = true; error.value = '';
   try {
-    const base = '/tenants/' + encodeURIComponent(props.tenant.tenantId);
+    const tenant = props.tenant;
+    const base = '/tenants/' + encodeURIComponent(tenant.tenantId);
     const member = target.value;
-    if (operation.value === 'invite') await props.client.request(base+'/invitations', {target: {kind:inviteKind.value,value:invite.value.trim()}}, 'POST', crypto.randomUUID());
-    else if (operation.value === 'transfer' && member) await props.client.request(base+'/ownership-transfers',{targetMembershipId:member.membershipId,expectedVersion:props.tenant.version},'POST',crypto.randomUUID());
-    else if (operation.value === 'leave') {
-      const mine = props.members.find(m => m.membershipId === props.tenant.membershipId);
+    const kind = operation.value;
+    let path: string, body: unknown;
+    if (kind === 'invite') {
+      path = base + '/invitations';
+      body = { target: { kind: inviteKind.value, value: invite.value.trim() } };
+    } else if (kind === 'transfer' && member) {
+      path = base + '/ownership-transfers';
+      body = { targetMembershipId: member.membershipId, expectedVersion: tenant.version };
+    } else if (kind === 'leave') {
+      const mine = props.members.find(m => m.membershipId === tenant.membershipId);
       if (!mine) throw Error('请刷新成员列表后重试');
-      await props.client.request(base+'/leave',{expectedVersion:mine.version},'POST',crypto.randomUUID());
-    } else if (member) await props.client.request(base+'/members/'+encodeURIComponent(member.membershipId)+(operation.value==='role'?'/role':'/remove'),{expectedVersion:member.version,...(operation.value==='role'?{role:role.value}:{})},operation.value==='role'?'PATCH':'POST',crypto.randomUUID());
-    if (!mounted) return;
-    dialog.value?.close();
-    notice.value = operation.value === 'invite' ? '邀请已发送，对方接受后会加入团队。' : '操作已完成';
-    if (operation.value === 'leave') { emit('busy', false); await props.leave(); }
-    else { await props.reload(); await props.refreshTransfers(); }
-  } catch(e) { error.value = accountErrorMessage(e); }
-  finally { saving.value = false; if (mounted) emit('busy', false); }
+      path = base + '/leave';
+      body = { expectedVersion: mine.version };
+    } else {
+      if (!member) return;
+      path = base + '/members/' + encodeURIComponent(member.membershipId) + (kind === 'role' ? '/role' : '/remove');
+      body = { expectedVersion: member.version, ...(kind === 'role' ? { role: role.value } : {}) };
+    }
+    const success = kind === 'invite' ? '邀请已发送' : '操作已完成';
+    await props.submitWrite(path, body, {
+      action,
+      method: kind === 'role' ? 'PATCH' : 'POST',
+      success,
+      refreshMessage: success + '，但成员或租户数据暂未刷新。',
+      committed: () => {
+        dialog.value?.close();
+        if (kind === 'leave') emit('left', tenant.tenantId);
+      },
+      after: async () => {
+        if (kind === 'leave') await props.leave();
+        else {
+          await props.reload(tenant);
+          await props.refreshTransfers();
+        }
+      },
+    });
+  } catch(e) {
+    emit('expired', e);
+    error.value = accountErrorMessage(e);
+  }
+  finally { saving.value = false; }
 }
 </script>
 <template>
   <section class="tenant-members" :aria-busy="loading || saving">
-    <header class="tm-heading"><div class="tm-team-avatar">{{ tenant.name.slice(0,1) }}</div><div><h2>{{ tenant.name }}</h2><p>{{ labels[tenant.myRole] }} · {{ members.length }} 位成员</p></div><button v-if="active && tenant.myRole !== 'OWNER'" class="tm-quiet" :disabled="saving || loading" @click="open('leave')">退出团队</button></header>
+    <header class="tm-heading"><div class="tm-team-avatar">{{ tenant.name.slice(0,1) }}</div><div><h2>{{ tenant.name }}</h2><p>{{ labels[tenant.myRole] }} · {{ members.length }} 位成员</p></div><button v-if="active && tenant.myRole !== 'OWNER'" class="tm-quiet" :disabled="saving || loading || refreshPending" @click="open('leave')">退出团队</button></header>
     <nav class="tm-tabs" aria-label="团队管理"><span aria-current="page">成员管理</span></nav>
-    <div class="tm-tools"><input v-model="query" type="search" placeholder="搜索名称或邮箱" aria-label="搜索名称或邮箱"/><button v-if="manager" class="tm-primary" :disabled="saving || loading" @click="open('invite')">＋ 邀请成员</button></div>
-    <p v-if="notice" role="status" class="tm-feedback">{{ notice }}</p><p v-if="error && !dialog?.open" role="alert">{{ error }}</p>
+    <div class="tm-tools"><input v-model="query" type="search" placeholder="搜索名称或邮箱" aria-label="搜索名称或邮箱"/><button v-if="manager" class="tm-primary" :disabled="saving || loading || refreshPending" @click="open('invite')">＋ 邀请成员</button></div>
+    <p v-if="error && !dialog?.open" role="alert">{{ error }}</p>
     <div class="tm-table-wrap"><table><thead><tr><th><button @click="sort='name'">用户 {{ sort==='name'?'↓':'' }}</button></th><th>状态</th><th><button @click="sort='role'">角色 {{ sort==='role'?'↓':'' }}</button></th><th class="tm-actions">操作</th></tr></thead><tbody>
       <tr v-if="loading"><td colspan="4" class="tm-empty">正在加载成员…</td></tr>
       <tr v-else-if="!rows.length"><td colspan="4" class="tm-empty">{{ query ? '没有匹配的成员' : active ? '暂无成员' : '团队已停用' }}<button v-if="query" @click="query=''">清除搜索</button></td></tr>
       <tr v-for="m in loading ? [] : rows" :key="m.membershipId"><td><div class="tm-person"><span class="tm-initial">{{ (m.displayName || '未').slice(0,1).toUpperCase() }}</span><div><strong>{{ m.displayName || '未设置名称' }}<span v-if="m.membershipId === tenant.membershipId" class="tm-self">（我）</span></strong><small>{{ m.email || '未绑定邮箱' }}</small></div></div></td><td><span class="tm-status">{{ m.status === 'ACTIVE' ? '正常' : m.status }}</span></td><td>{{ labels[m.role] }}</td><td class="tm-actions">
         <div class="tm-action-slots">
-          <span><button v-if="active && tenant.myRole==='OWNER' && m.role!=='OWNER'" :disabled="saving" @click="open('role',m)">修改角色</button></span>
-          <span><button v-if="active && tenant.myRole==='OWNER' && m.role!=='OWNER'" :disabled="saving" @click="open('transfer',m)">交接所有权</button></span>
-          <span><button v-if="manager && m.role==='MEMBER' && m.membershipId!==tenant.membershipId" class="tm-danger" :disabled="saving" @click="open('remove',m)">移除</button></span>
+          <span><button v-if="active && tenant.myRole==='OWNER' && m.role!=='OWNER'" :disabled="saving || refreshPending" @click="open('role',m)">修改角色</button></span>
+          <span><button v-if="active && tenant.myRole==='OWNER' && m.role!=='OWNER'" :disabled="saving || refreshPending" @click="open('transfer',m)">交接所有权</button></span>
+          <span><button v-if="manager && m.role==='MEMBER' && m.membershipId!==tenant.membershipId" class="tm-danger" :disabled="saving || refreshPending" @click="open('remove',m)">移除</button></span>
           <span v-if="!manager || m.role==='OWNER'" class="tm-no-actions" aria-label="暂无可用操作">—</span>
         </div>
       </td></tr>

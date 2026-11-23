@@ -151,7 +151,7 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
             )
             .await?;
             a.s.all(
-                "SELECT payload,revision FROM auth_web_session LIMIT 0",
+                "SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0",
                 vec![],
             )
             .await?;
