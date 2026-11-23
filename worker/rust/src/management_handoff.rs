@@ -106,13 +106,22 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         )?);
     }
     // Navigation errors stay in the account UI, never a raw API JSON document.
-    let result = browser(a, path, method).await;
-    match result {
-        Ok(r) => Ok(r),
-        Err(_) => {
-            let mut r=Response::from_html("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Molis 账号</title><main><h1>暂时无法打开账号管理</h1><p>本次跳转已失效，请返回原页面重新点击管理 Molis 账号。</p><a href=\"/\">前往账号登录</a></main></html>")?.with_status(400);
-            r.headers_mut().set("Cache-Control", "no-store")?;
-            Ok(r)
+    let started = now();
+    match browser(a, path, method).await {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            a.s.log_failure("handoff.browser", &error, started);
+            let (status, message) = if error.status >= 500 {
+                (503, "服务暂时不可用，请稍后重试。")
+            } else {
+                (400, "本次跳转已失效，请返回原页面重新点击管理 Molis 账号。")
+            };
+            let mut response = Response::from_html(format!(
+                "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Molis 账号</title><main><h1>暂时无法打开账号管理</h1><p>{message}</p><a href=\"/\">前往账号登录</a></main></html>"
+            ))?
+            .with_status(status);
+            response.headers_mut().set("Cache-Control", "no-store")?;
+            Ok(response)
         }
     }
 }

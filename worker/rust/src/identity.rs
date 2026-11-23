@@ -24,6 +24,7 @@ impl Auth {
         request: Request,
         env: &Env,
         request_id: String,
+        route: &'static str,
         client_ip: Option<String>,
     ) -> Result<Self> {
         let origin = env.var("AUTH_ORIGIN")?.to_string();
@@ -39,7 +40,7 @@ impl Auth {
                 .unwrap_or_else(|| "local".to_owned())
         });
         Ok(Self {
-            s: Store::new(env.d1("DB")?),
+            s: Store::new(env.d1("DB")?, request_id.clone(), route),
             origin,
             request,
             request_id,

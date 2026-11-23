@@ -7,7 +7,7 @@ use serde_json::json;
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    let (response, _) = handle_inner(req, env, None, None).await?;
+    let (response, _) = handle_inner(req, env, None, None, uuid()).await?;
     Ok(response)
 }
 pub(crate) async fn handle_internal(
@@ -15,31 +15,41 @@ pub(crate) async fn handle_internal(
     env: Env,
     owner: (String, i64),
     client_ip: String,
+    request_id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
-    Box::pin(handle_inner(req, env, Some(owner), Some(client_ip))).await
+    Box::pin(handle_inner(
+        req,
+        env,
+        Some(owner),
+        Some(client_ip),
+        request_id,
+    ))
+    .await
 }
 async fn handle_inner(
     req: Request,
     env: Env,
     owner: Option<(String, i64)>,
     client_ip: Option<String>,
+    id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
-    let id = uuid();
-    if req.method() == Method::Get {
-        let url = req.url()?;
-        if url.path() == "/api/v2/health" {
-            let response =
-                with_security_headers(health_response(&id)?, &id, url.scheme() == "https")?;
-            return Ok((response, None));
-        }
+    let started = now();
+    let url = req.url()?;
+    if req.method() == Method::Get && url.path() == "/api/v2/health" {
+        let response = with_security_headers(health_response(&id)?, &id, url.scheme() == "https")?;
+        return Ok((response, None));
     }
-    let mut a = match Auth::new(req, &env, id.clone(), client_ip) {
-        Ok(a) => a,
-        Err(e) => return Ok((error_response(e, &id)?, None)),
-    };
+    let route = failure_route(url.path());
     let external = owner.is_none();
+    let mut a = match Auth::new(req, &env, id.clone(), route, client_ip) {
+        Ok(a) => a,
+        Err(e) => {
+            log_failure(&id, route, "initialize", &e, started);
+            return Ok((error_response(e, &id)?, None));
+        }
+    };
     a.s.web_owner = owner;
-    let result = dispatch(&mut a, &env).await;
+    let result = dispatch(&mut a, &env, url).await;
     let retry_after_at = a.retry_after_at.get();
     let status = match &result {
         Ok(response) => response.status_code(),
@@ -54,9 +64,8 @@ async fn handle_inner(
     let mut response = match result {
         Ok(r) => r,
         Err(e) => {
-            if e.status >= 500 {
-                worker::console_error!("AUTH_SERVER_FAILURE request_id={} code={}", id, e.code);
-            }
+            let phase = if external { "dispatch" } else { "internal" };
+            log_failure(&id, route, phase, &e, started);
             if let Some(retry_after) = retry_after.filter(|_| {
                 let path = a.request.path();
                 path.starts_with("/api/v2/") || path.starts_with("/api/account/")
@@ -120,8 +129,7 @@ fn with_security_headers(
     }
     Ok(response)
 }
-async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
-    let url = a.request.url()?;
+async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response> {
     let path = url.path();
     let method = a.request.method();
 
@@ -143,24 +151,14 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
     }
     if path == "/api/v2/readiness" && method == Method::Get {
         ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
-        a.s.all("SELECT 1 FROM auth_user LIMIT 1", vec![]).await?;
+        for query in include_str!("schema-readiness.sql")
+            .split(';')
+            .map(str::trim)
+            .filter(|statement| !statement.is_empty())
+        {
+            a.s.all(query, vec![]).await?;
+        }
         if env.var("MOLIS_ENVIRONMENT").is_ok() {
-            a.s.all(
-                "SELECT user_epoch,session_revision FROM auth_login_session LIMIT 0",
-                vec![],
-            )
-            .await?;
-            a.s.all(
-                "SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0",
-                vec![],
-            )
-            .await?;
-            a.s.all(
-                "SELECT provider_pkce_verifier_sealed FROM auth_product_transaction LIMIT 0",
-                vec![],
-            )
-            .await?;
-
             let client = crate::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
             let registration = crate::login_sessions::registered_client(a, &client).await?;
             ensure(

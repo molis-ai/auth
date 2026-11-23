@@ -3,29 +3,35 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { challenge, hash, secret } from './fixtures.ts'
+import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async (t) => {
   const origin = 'http://127.0.0.1:8787',
     bffKey = secret()
   const fixturePassword = secret() + 'aA!5'
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    PROVIDER_STATE_KEY: secret(),
-    AUTH_WEB_SESSION_KEY: bffKey,
-    AUTH_WEB_CLIENT_ID: 'auth-web',
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const failures = captureAuthFailures()
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      PROVIDER_STATE_KEY: secret(),
+      AUTH_WEB_SESSION_KEY: bffKey,
+      AUTH_WEB_CLIENT_ID: 'auth-web',
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    undefined,
+    undefined,
+    failures,
+  )
   try {
     await initializeLocalRuntime(p)
-    const db = p.env.DB
+    let db = p.env.DB
     for (const sql of readFileSync(
       new URL('../unified-account-local-seed.sql', import.meta.url),
       'utf8',
@@ -656,12 +662,65 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       signedIn.account.session.loginSessionId,
     )
     for (const generation of ['fixture-test', 'fixture-dev-return']) {
-      await p.updateBindings({ MOLIS_LOCAL_GENERATION: generation })
+      db = await p.updateBindings({ MOLIS_LOCAL_GENERATION: generation })
       assert.equal(
         ok(await call('/api/account/session', undefined, { Cookie: oldCookie })).state,
         'ANONYMOUS',
       )
     }
+    await t.test(
+      'correlates a BFF response, V2 dispatch and D1 failure without inputs',
+      async () => {
+        ok(await call('/api/account/session'))
+        const tx = ok(
+          await call('/api/account/auth/transactions', {
+            purpose: 'LOGIN',
+            method: 'PHONE_OTP',
+          }),
+        )
+        const phone = '+8613800000888'
+        await db.prepare('DROP TABLE auth_rate_bucket').run()
+        const failure = await call('/api/account/auth/transactions/' + tx.handle + '/submit', {
+          step: 'REQUEST_CHALLENGE',
+          address: phone,
+        })
+        assert.equal(failure.status, 503, JSON.stringify(failure))
+        const logs = await failures.forRequest(failure.requestId, [
+          'd1.first',
+          'internal',
+          'dispatch',
+        ])
+        const reportedRoutes = new Map(logs.map(({ phase, route }) => [phase, route]))
+        assert.equal(
+          reportedRoutes.get('dispatch'),
+          '/api/account/auth/transactions/{handle}/submit',
+        )
+        for (const phase of ['d1.first', 'internal']) {
+          assert.equal(
+            reportedRoutes.get(phase),
+            '/api/v2/auth/transactions/{transactionId}/challenges',
+          )
+        }
+        for (const log of logs) {
+          assert.equal(log.code, 'AUTH_UNAVAILABLE')
+          assert.equal(log.status, 503)
+          assert.ok(log.elapsed_ms >= 0)
+          assert.deepEqual(Object.keys(log).sort(), [
+            'code',
+            'elapsed_ms',
+            'event',
+            'phase',
+            'request_id',
+            'route',
+            'status',
+          ])
+        }
+        const raw = JSON.stringify(logs)
+        for (const value of [phone, tx.handle, cookie, csrf, fixturePassword, 'auth_rate_bucket']) {
+          assert.equal(raw.includes(value), false)
+        }
+      },
+    )
   } finally {
     await p.dispose()
   }

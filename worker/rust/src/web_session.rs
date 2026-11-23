@@ -174,6 +174,7 @@ impl WebSession<'_> {
             self.a.env.clone(),
             (self.id.clone(), self.revision),
             self.a.client_ip.clone(),
+            self.a.request_id.clone(),
         )
         .await?;
         let value: Value = response.json().await?;
@@ -489,17 +490,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     Ok(response)
 }
 fn is_product_route(path: &str, method: &Method) -> bool {
-    PRODUCT_ROUTES.iter().any(|(declared, template)| {
-        if declared != method {
-            return false;
-        }
-        let mut parts = path.split('/');
-        template.split('/').all(|part| {
-            parts
-                .next()
-                .is_some_and(|value| part.starts_with('{') || part == value)
-        }) && parts.next().is_none()
-    })
+    PRODUCT_ROUTES
+        .iter()
+        .any(|(declared, template)| declared == method && matches_route_template(path, template))
 }
 
 fn product_target(path: &str, query: Option<&str>) -> String {

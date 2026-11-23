@@ -13,7 +13,9 @@ fn main() {
     let source = fs::read(manifest.join(CONTRACT)).expect("read OpenAPI contract");
     let doc: Value = serde_json::from_slice(&source).expect("parse OpenAPI contract");
     let mut routes = String::from("&[\n");
+    let mut log_routes = String::from("&[\n");
     for (template, operations) in doc["paths"].as_object().expect("OpenAPI paths") {
+        writeln!(log_routes, "    {template:?},").expect("write log route");
         if !template.starts_with("/api/account/") {
             continue;
         }
@@ -43,8 +45,10 @@ fn main() {
         }
     }
     routes.push_str("]\n");
+    log_routes.push_str("]\n");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"));
     fs::write(output.join("product_routes.rs"), routes).expect("write product route table");
+    fs::write(output.join("log_routes.rs"), log_routes).expect("write log route table");
     generate_contract_patterns(&manifest, output);
 }
 

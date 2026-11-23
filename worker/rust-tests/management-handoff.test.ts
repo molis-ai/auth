@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
-import { challenge, hash, secret } from './fixtures.ts'
+import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
 
 const origin = 'http://127.0.0.1:8787'
 const redirectUri = 'http://127.0.0.1:4207/account/callback'
@@ -46,18 +46,24 @@ async function rejectedNavigation(response: Response) {
 }
 
 async function fixture(t: TestContext) {
-  const proxy = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    AUTH_WEB_SESSION_KEY: secret(),
-    AUTH_WEB_CLIENT_ID: 'auth-web',
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const failures = captureAuthFailures()
+  const proxy = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      AUTH_WEB_SESSION_KEY: secret(),
+      AUTH_WEB_CLIENT_ID: 'auth-web',
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    undefined,
+    undefined,
+    failures,
+  )
   t.after(() => proxy.dispose())
   await initializeLocalRuntime(proxy)
   const db = proxy.env.DB
@@ -201,6 +207,7 @@ async function fixture(t: TestContext) {
 
   return {
     db,
+    failures,
     source,
     post,
     create,
@@ -460,4 +467,32 @@ test('management handoff rejects tampering and expiry without consuming or creat
     audits: 0,
     web: 0,
   })
+})
+
+test('management handoff distinguishes an invalid link from a D1 outage', async (t) => {
+  const f = await fixture(t)
+  await rejectedNavigation(await f.navigate('/account/handoff/start?id=missing'))
+  const source = await f.source()
+  const handoff = await f.approved(source.bearer)
+  await f.db.prepare('DROP TABLE auth_management_handoff').run()
+  const response = await f.navigate(handoff.finishUrl, handoff.bound)
+  assert.equal(response.status, 503)
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  assert.match(response.headers.get('Content-Type') ?? '', /^text\/html\b/)
+  assert.match(await response.text(), /服务暂时不可用/)
+  const logs = await f.failures.forRequest(response.headers.get('X-Request-ID')!, [
+    'd1.first',
+    'handoff.browser',
+  ])
+  assert.ok(
+    logs.every(({ route, status }) => route === '/account/handoff/finish' && status === 503),
+  )
+  for (const value of [
+    handoff.id,
+    handoff.bound,
+    new URL(handoff.finishUrl).searchParams.get('code')!,
+    source.bearer,
+  ]) {
+    assert.equal(JSON.stringify(logs).includes(value), false)
+  }
 })

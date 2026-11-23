@@ -6,13 +6,25 @@ use worker::{D1Database, D1PreparedStatement};
 pub struct Store {
     pub db: D1Database,
     pub web_owner: Option<(String, i64)>,
+    request_id: String,
+    route: &'static str,
 }
 impl Store {
-    pub fn new(db: D1Database) -> Self {
+    pub fn new(db: D1Database, request_id: String, route: &'static str) -> Self {
         Self {
             db,
             web_owner: None,
+            request_id,
+            route,
         }
+    }
+    pub(crate) fn log_failure(&self, phase: &'static str, failure: &Failure, started: i64) {
+        log_failure(&self.request_id, self.route, phase, failure, started);
+    }
+    fn database_failure(&self, error: worker::Error, phase: &'static str, started: i64) -> Failure {
+        let failure = Failure::from(error);
+        self.log_failure(phase, &failure, started);
+        failure
     }
     pub fn statement(&self, sql: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
         let args: Vec<JsValue> = values
@@ -25,25 +37,38 @@ impl Store {
                 _ => JsValue::from(v.to_string()),
             })
             .collect();
-        Ok(self.db.prepare(sql).bind(&args)?)
+        let started = now();
+        self.db
+            .prepare(sql)
+            .bind(&args)
+            .map_err(|error| self.database_failure(error, "d1.bind", started))
     }
     pub async fn one(&self, sql: &str, values: Vec<Value>) -> Result<Value> {
-        Ok(self
-            .statement(sql, values)?
+        let statement = self.statement(sql, values)?;
+        let started = now();
+        let result = statement
             .first::<Value>(None)
-            .await?
-            .unwrap_or(Value::Null))
+            .await
+            .map_err(|error| self.database_failure(error, "d1.first", started))?;
+        Ok(result.unwrap_or(Value::Null))
     }
     pub async fn all(&self, sql: &str, values: Vec<Value>) -> Result<Vec<Value>> {
-        Ok(self
-            .statement(sql, values)?
+        let statement = self.statement(sql, values)?;
+        let started = now();
+        statement
             .all()
-            .await?
-            .results::<Value>()?)
+            .await
+            .and_then(|result| result.results::<Value>())
+            .map_err(|error| self.database_failure(error, "d1.all", started))
     }
     pub async fn run(&self, sql: &str, values: Vec<Value>) -> Result<()> {
-        self.statement(sql, values)?.run().await?;
-        Ok(())
+        let statement = self.statement(sql, values)?;
+        let started = now();
+        statement
+            .run()
+            .await
+            .map(|_| ())
+            .map_err(|error| self.database_failure(error, "d1.run", started))
     }
     pub fn guard(&self, condition: &str, mut values: Vec<Value>) -> Result<D1PreparedStatement> {
         values.insert(0, Value::String(uuid()));
@@ -58,6 +83,7 @@ impl Store {
             statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY' AND expires_at>?)", vec![id.clone().into(),(*revision).into(),now().into()])?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
+        let started = now();
         match self.db.batch(statements).await {
             Ok(_) => Ok(()),
             Err(e) => {
@@ -73,7 +99,7 @@ impl Store {
                         code: "ALREADY_EXISTS",
                     }
                 } else {
-                    e.into()
+                    self.database_failure(e, "d1.batch", started)
                 })
             }
         }
