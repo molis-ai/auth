@@ -315,8 +315,28 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::identify(a, t, c, op, b).await;
     }
+    if let Some(result) = identify_once(a, t, c, op, b, true).await? {
+        return Ok(result);
+    }
+    // The failed batch left this transaction's proof unused. Retry only against
+    // an existing binding, keeping the ordinary proof and commit-time checks.
+    identify_once(a, t, c, op, b, false).await?.ok_or(Failure {
+        status: 409,
+        code: "ALREADY_EXISTS",
+    })
+}
+
+async fn identify_once(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    op: &str,
+    b: &Value,
+    allow_new_code_identity: bool,
+) -> Result<Option<Value>> {
     let n = now();
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, n, "PENDING")?];
+    let mut creating_code_identity = false;
     let user: String;
     let epoch: i64;
     if op == "password" {
@@ -438,6 +458,8 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             )?;
             let existing = code_identity(a, is_email, &target).await?;
             if existing.is_null() {
+                ensure(allow_new_code_identity, 409, "ALREADY_EXISTS")?;
+                creating_code_identity = true;
                 user = uuid();
                 epoch = 0;
                 writes.extend(new_user(a, &user, n)?);
@@ -492,8 +514,13 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
         Value::Null,
         false,
     )?);
-    a.s.batch(writes, "VERSION_CONFLICT").await?;
-    Ok(json!({"status":"VERIFIED","nextStep":"COMPLETE"}))
+    match a.s.batch(writes, "VERSION_CONFLICT").await {
+        Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(None),
+        result => {
+            result?;
+            Ok(Some(json!({"status":"VERIFIED","nextStep":"COMPLETE"})))
+        }
+    }
 }
 pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {

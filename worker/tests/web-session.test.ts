@@ -776,7 +776,7 @@ test(
       undefined,
       {
         fixtureEntrypoint: readFileSync(
-          new URL('./fixtures/web-session-lease.mjs', import.meta.url),
+          new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
           'utf8',
         ),
       },
