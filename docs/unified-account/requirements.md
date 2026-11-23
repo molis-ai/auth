@@ -1,11 +1,11 @@
 # Molis 统一账号 租户与订阅席位需求
 
-状态：2026-11-08 用户确认产品未上线，本次直接统一为 V2，不做 V1 兼容、存量接续或灰度回退，当前执行范围见 [V2 整合方案](v2-consolidation.md)。[验收矩阵](acceptance-matrix.md)和[交付记录](delivery.md)保留原阶段证据，其历史存量要求不再作为本次前置。本期仍交付统一账号、租户成员、订阅席位管理和权益判断；支付、业务收费拦截与真实内容共享另期。
+状态：2026-11-08 用户确认产品未上线，本次直接统一为 V2，不做 V1 兼容、存量接续或灰度回退，当前执行范围见 [V2 整合方案](v2-consolidation.md)。[验收矩阵](acceptance-matrix.md)和[交付记录](../history/unified-account/delivery.md)保留原阶段证据，其历史存量要求不再作为本次前置。本期仍交付统一账号、租户成员、订阅席位管理和权益判断；支付、业务收费拦截与真实内容共享另期。
 
 本需求覆盖 `auth`、`molis-work` 和 `molis-club`。Auth 是统一用户和组织事实的来源；商业授权已在 Auth 仓库内作为独立领域实现；Work 与 Club 保留各自界面并消费同一合同。实现及验证状态以交付矩阵为准，不表示已部署。
 
-- 分阶段交付、依赖及退出条件：[实施计划](implementation-plan.md)。
-- 请求响应、权限、状态与适配边界：[接口合同](api-contracts.md)；三个仓库的任务、依赖与验收：[开发任务](development-tasks.md)。
+- 分阶段交付、依赖及退出条件：[实施计划](../history/unified-account/implementation-plan.md)。
+- 请求响应、权限、状态与适配边界：[接口合同](api-contracts.md)；三个仓库的任务、依赖与验收：[开发任务](../history/unified-account/development-tasks.md)。
 - 当前已有 Web 协议：[登录接入说明](../history/login-integration.md)。该说明描述现状，不代表本需求中的产品内认证、手机登录或产品级退出已经实现。
 - 需求和确认记录以本文件为共同来源；实施计划引用需求，不维护第二套产品规则。
 
@@ -324,8 +324,8 @@ D-10 的外部资源需分别落实：替换前 Auth 的[邮件管理接口](htt
 
 - 2026-11-04：已完成三个仓库及 personal 分支的代码现状调研；确认首期范围、登录交互和保留数据原则；形成需求与实施计划。
 - 2026-11-04：补充 API-01 至 API-09 合同草案、三个仓库任务拆分与依赖、跨仓库验收矩阵；旧路由旁路和会话竞态已列入实现任务，尚未修改产品代码。
-- 2026-11-04 初始调研仅整理文档；之后分阶段开发与验证记录保存在[开发任务](development-tasks.md)。
-- 2026-11-05 AUTH-12：汇总[验收矩阵](acceptance-matrix.md)、[源码/合同版本摘要](delivery-manifest.json)与[交付记录](delivery.md)，完成本轮点名隔离复验。外部服务 mock，未操作真实数据或发布；K-03/K-04 与 D-09 等剩余事项按交付记录处理。
+- 2026-11-04 初始调研仅整理文档；之后分阶段开发与验证记录保存在[开发任务](../history/unified-account/development-tasks.md)。
+- 2026-11-05 AUTH-12：汇总[验收矩阵](acceptance-matrix.md)、[源码/合同版本摘要](../history/unified-account/delivery-manifest.json)与[交付记录](../history/unified-account/delivery.md)，完成本轮点名隔离复验。外部服务 mock，未操作真实数据或发布；K-03/K-04 与 D-09 等剩余事项按交付记录处理。
 
 - 2026-11-05 K-03/K-04：补齐两端登录方式丢失帮助及真实 Auth 下的合成共享资源访问合同；UAS-08、UAS-15 更新为注明范围的隔离通过。真实共享产品、外部服务和 D-09 仍另期。
 

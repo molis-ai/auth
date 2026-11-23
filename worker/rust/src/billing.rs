@@ -1,10 +1,16 @@
 //! AUTH-08/09 catalog, subscriptions, seat management and commercial audit.
+
+pub(crate) mod catalog;
+pub(crate) mod entitlements;
+pub(crate) mod seats;
+pub(crate) mod subscriptions;
+
 use crate::{
+    auth::login_sessions,
     http::*,
     identity::Auth,
-    login_sessions,
     security::uuid,
-    tenant_protocol as protocol,
+    tenants::protocol,
     tenants::{Action, Context, Service},
 };
 use serde_json::{Value, json};
@@ -306,7 +312,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 break;
             }
             let result:Result<Value>=async {
-                let before=if ctx.record.is_null(){Value::Null}else if action.op.starts_with("seat."){crate::billing_seats::view(&ctx.record)}else{crate::billing_subscriptions::view(&ctx.record)};
+                let before=if ctx.record.is_null(){Value::Null}else if action.op.starts_with("seat."){crate::billing::seats::view(&ctx.record)}else{crate::billing::subscriptions::view(&ctx.record)};
                 let before_quantities=if ctx.record.is_null()||ctx.record["owner_tenant_id"].is_null(){Value::Null}else{
                     let mut m=serde_json::Map::new();for p in a.s.all("SELECT seat_type_id,quantity FROM billing_seat_pool WHERE subscription_id=? AND status='CURRENT'",vec![ctx.record["id"].clone()]).await? {m.insert(text(&p,"seat_type_id"),p["quantity"].clone());}Value::Object(m)
                 };

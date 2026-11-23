@@ -4,18 +4,18 @@ import {
   AccountClient,
   AuthError,
   type AccountView,
-} from "./account-client.ts";
-import AccountSecurityEditor from "./AccountSecurityEditor.vue";
-import AuthEntry from "./AuthEntry.vue";
-import AccountProfile from "./AccountProfile.vue";
-import { entryText } from "./entry-copy.ts";
-import { entryLanguage, rememberEmail } from "./entry-preferences.ts";
-import { accountErrorMessage } from "./errors.ts";
-import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./idempotent-submit.ts";
+} from "./lib/account-client.ts";
+import AccountSecurityEditor from "./components/AccountSecurityEditor.vue";
+import AuthEntry from "./components/AuthEntry.vue";
+import AccountProfile from "./components/AccountProfile.vue";
+import { entryText } from "./lib/entry-copy.ts";
+import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
+import { accountErrorMessage } from "./lib/errors.ts";
+import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./lib/idempotent-submit.ts";
 import logo from "./assets/molis-logo.png";
-const PlatformUsers = defineAsyncComponent(() => import("./PlatformUsers.vue"));
-const PlatformClients = defineAsyncComponent(() => import("./PlatformClients.vue"));
-const TenantPage = defineAsyncComponent(() => import("./TenantPage.vue"));
+const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
+const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
+const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;

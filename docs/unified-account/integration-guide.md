@@ -2,13 +2,13 @@
 
 > 2026-11-08：尚未上线，直接使用 V2，不保留旧账号、协议或 SDK 兼容。Auth 与 Work 的实现、验证及剩余验收见 [V2 整合方案](v2-consolidation.md)。Club 未在本次两个检出核对，不以历史记录代替当前验收。
 
-本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](delivery-manifest.json)只记录当时交付。
+本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](../history/unified-account/delivery-manifest.json)只记录当时交付。
 
 ## 入口与客户端选择
 
 Work 使用 `horizontal/account` 及 Host 的账号入口；Auth 自身页面使用同源 BFF。邮箱/手机直接在当前页面完成，Google/GitHub 则回到登记的精确回调。当前隔离验证明确使用模拟提供方。Club 的历史接入使用 `lib/account` BFF，其当前代码不在本次验证范围。
 
-Auth 的 `web/src/account-client.ts` 导出 `AccountClient`，用于同源 `/api/account` BFF。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本。
+Auth 的 `web/src/lib/account-client.ts` 导出 `AccountClient`，用于同源 `/api/account` BFF。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本。
 
 | 层 | 使用的入口 | 身份与存储 |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ X-CSRF-Token: <本次浏览器会话的 CSRF>
 - Club：`MOLIS_CLUB_ACCOUNT_CONFIG` 与独立运行时 `MOLIS_CLUB_ACCOUNT_KEY`，见 Club `docs/AUTH-SETUP.md`。密钥为随机 32 字节的无填充 base64url，重启保持相同，不进入普通构建变量。
 - 本轮 LOCAL/MOCK 采用临时 D1/Home；测试从隔离 mock 投递记录取验证码，不提供万能验证码或正常产品接口返回验证码。真实配置缺失不自动回退 mock；PRODUCTION 拒绝 MOCK。
 
-不要为复验运行会写既有本地状态的 `npm run dev`、`admin`、`db:seed` 或对真实服务运行历史 HTTP 写入脚本。使用 [交付记录](delivery.md) 点名的隔离命令，它们创建自己的合成数据。未授权读取真实 `.dev.vars`、Home、浏览器凭据或 `.wrangler/state`。
+不要为复验运行会写既有本地状态的 `npm run dev`、`admin`、`db:seed` 或对真实服务运行历史 HTTP 写入脚本。使用 [交付记录](../history/unified-account/delivery.md) 点名的隔离命令，它们创建自己的合成数据。未授权读取真实 `.dev.vars`、Home、浏览器凭据或 `.wrangler/state`。
 
 ## 平台与租户管理
 
@@ -90,7 +90,7 @@ Auth 的旧认证、OAuth2、Team 和权限矩阵入口已删除，Work 不读�
 
 ## 共享资源访问合同夹具
 
-K04-01 的 [测试资源 owner](../../worker/rust-tests/shared-resource-fixture.ts) 只由 [真实 Auth 专项](../../worker/rust-tests/entitlements.test.ts) 加载，不进入部署产物，不提供业务共享服务或对象存储。资源记录、内容、账号和订阅都是合成数据，临时 D1 在结束后销毁；外部服务继续 mock。
+K04-01 的 [测试资源 owner](../../worker/tests/shared-resource-fixture.ts) 只由 [真实 Auth 专项](../../worker/tests/entitlements.test.ts) 加载，不进入部署产物，不提供业务共享服务或对象存储。资源记录、内容、账号和订阅都是合成数据，临时 D1 在结束后销毁；外部服务继续 mock。
 
 | 边界 | 约定 |
 | --- | --- |

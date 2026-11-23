@@ -2,7 +2,7 @@
 
 状态：AUTH-01 合同与结构校验已实现；本目录不实现登录、租户、订阅或权益服务。业务语义来自 [API-01 至 API-10](../../docs/unified-account/api-contracts.md)，产品决定来自[需求文档](../../docs/unified-account/requirements.md)。OpenAPI 每个操作均标记 `CONTRACT_ONLY`，不能用合同存在代替运行中的接口验收。
 
-运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/unified-account/delivery.md)。
+运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/history/unified-account/delivery.md)。
 
 ## 文件与使用
 
@@ -78,7 +78,7 @@ Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`�
 
 总有效期 60 秒。Auth 原子校验两端浏览器凭证、原登录会话 revision/有效性、客户端策略和一次性消费状态后建立自己的 Web 会话。访问令牌和刷新令牌只留服务端；目标固定为 Auth 根管理页。跳转保留原认证时间、最近身份验证时间和绝对过期时间，不授予新的敏感操作验证。替换旧 Auth Web cookie 时轮换会话引用。首次部署需应用 `0018_management_handoff.sql`。
 
-隔离验证：Club `scripts/test-account-live-login.mjs` 的 `CLUB-SSO-01` 覆盖同账号进入、缺失浏览器凭证、重放、过期、跨站发起和原会话失效拒绝；Auth `rust-tests/web-session.test.ts` 验证现有 Web 会话与 CSRF 不变量。
+隔离验证：Club `scripts/test-account-live-login.mjs` 的 `CLUB-SSO-01` 覆盖同账号进入、缺失浏览器凭证、重放、过期、跨站发起和原会话失效拒绝；Auth `worker/tests/web-session.test.ts` 验证现有 Web 会话与 CSRF 不变量。
 
 ## 简化登录入口
 

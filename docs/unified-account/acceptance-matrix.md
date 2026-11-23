@@ -1,6 +1,6 @@
 # AUTH-12 三仓库验收矩阵
 
-状态：2026-11-06，Auth/Club 开发分支只构建测试，纠正记录已推送；Auth 文档 CI 通过，Club 因额度未启动经用户接受不阻塞。Work 当前候选 `356fdaa3a` 已集成 main `c30e251b3`；K-26 修复桌面看板隐藏后的列状态，最终 39 个具名文件 435/435、账号联合验证和本地门禁通过。最终 Verify/Full 待核回，三个功能 PR 尚未合入。42 项要求仍为 39 项隔离通过、3 项部分完成；仅 mock/合成数据，无真实数据操作或部署。 版本见 [交付摘要](delivery-manifest.json)，详情见 [交付记录](delivery.md)。
+状态：2026-11-06，Auth/Club 开发分支只构建测试，纠正记录已推送；Auth 文档 CI 通过，Club 因额度未启动经用户接受不阻塞。Work 当前候选 `356fdaa3a` 已集成 main `c30e251b3`；K-26 修复桌面看板隐藏后的列状态，最终 39 个具名文件 435/435、账号联合验证和本地门禁通过。最终 Verify/Full 待核回，三个功能 PR 尚未合入。42 项要求仍为 39 项隔离通过、3 项部分完成；仅 mock/合成数据，无真实数据操作或部署。 版本见 [交付摘要](../history/unified-account/delivery-manifest.json)，详情见 [交付记录](../history/unified-account/delivery.md)。
 
 `A` 为 Auth 检出，`W` 为 Work 的 `codex/work-01-account-foundation` 检出，`C` 为 Club 的 `codex/club-01-account-foundation` 检出。下表中的 E 编号指后面的可执行证据组；同一组可证明多项要求，不能把各行或历轮测试数量相加当成去重测试总数。
 
@@ -67,6 +67,8 @@ PR 检查补查发现 Auth、Club 的 Cloudflare Workers Builds 均失败（K-14
 
 AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X1 及 Club 构建旧路由。其余页面证据引用前阶段已执行记录，未冒充本轮全量重跑；准确命令、测试数量和日期在交付记录中分别列出。K-03/K-04 补齐轮另外复验 E-A11、E-A9、两端帮助浏览器及相关页面回归，未重新运行所有历史证据。
 
+表中保留验收时的路径。仍在维护的 `worker/rust-tests/` 用例现位于 `worker/tests/`。
+
 | 编号 | 文件或脚本（仓库前缀） | 证明范围 |
 | --- | --- | --- |
 | E-A1 | `A:contracts/unified-account/validate.test.ts`、`A:worker/tests/unified-configuration.test.ts`、`A:worker/tests/unified-schema.test.ts`、`A:worker/rust-tests/unified-boundary.test.ts`、`A:worker/rust-tests/unified-policy.test.ts` | 合同、环境、v1/v2 与主体/权限隔离 |
@@ -106,7 +108,7 @@ AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X
 - **K03-01 / K03-02** Work / Club 的登录和安全页均可发现“无法使用登录方式？”帮助；说明可用方式换绑、邮箱找回、全部丢失先找回原方式与不提供人工恢复。展开/收起不改变表单或账号。证明分别为 `W:scripts/account-authentication.test.mjs`、`C:scripts/test-account-browser.mjs` 的同名断言。
 - **K04-01** 共享资源 VIEW/DOWNLOAD 的基础权限与付费权益分离；Auth 不可用或返回不匹配租户时拒绝，拒绝时不读取资源内容。夹具合同和范围见[接入说明](integration-guide.md#共享资源访问合同夹具)。
 
-- **K01-01 / K05-01 / K05-02** Work 基线修复的具体断言与结果见 E-W6 和[交付记录](delivery.md)。原 3 项失败已定向通过；搜索索引的同源整数问题一并修复，K-02 生命周期也恢复为 3/3。此证据不扩大账号验收范围，矩阵仍为 39 项隔离通过、3 项部分完成。
+- **K01-01 / K05-01 / K05-02** Work 基线修复的具体断言与结果见 E-W6 和[交付记录](../history/unified-account/delivery.md)。原 3 项失败已定向通过；搜索索引的同源整数问题一并修复，K-02 生命周期也恢复为 3/3。此证据不扩大账号验收范围，矩阵仍为 39 项隔离通过、3 项部分完成。
 
 - **T01-01 / T01-02 / T01-03** 仅提交验收文档不使被验源码基准过期；修改、暂存、新增、删除源码仍标为未提交，非祖先基准拒绝。证明：`A:worker/tests/account-source-revision.test.ts`。提交后的源码字节仍由交付摘要工具检查；此处不把工具通过记为业务测试通过。
 

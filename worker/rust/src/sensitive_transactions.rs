@@ -1,9 +1,9 @@
 //! AUTH-06: authenticated identity verification, without account creation.
 use crate::{
+    auth::login_sessions,
+    auth::registration::{boundary, tx_guard},
     http::*,
     identity::Auth,
-    login_sessions,
-    registration::{boundary, tx_guard},
     security::*,
 };
 use serde_json::{Value, json};

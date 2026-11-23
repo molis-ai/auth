@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cursorCollection } from "../src/cursor-collection.ts";
+import { cursorCollection } from "../src/lib/cursor-collection.ts";
 
 test("collections request one page at a time and retry the same cursor after failure", async () => {
   const calls: string[] = [];

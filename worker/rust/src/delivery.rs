@@ -1,4 +1,9 @@
 //! Delivery adapters own channel routing; transactions own challenge persistence and commit guards.
+
+pub(crate) mod mail_delivery;
+pub(crate) mod mail_templates;
+pub(crate) mod sms_auth;
+
 use crate::{http::*, identity::Auth};
 use serde_json::Value;
 use worker::D1PreparedStatement;
@@ -119,8 +124,8 @@ pub(crate) async fn send_live(
         )?;
     }
     if channel == "EMAIL" {
-        crate::mail_delivery::send(a, m).await
+        crate::delivery::mail_delivery::send(a, m).await
     } else {
-        crate::sms_auth::send(a, t, challenge, m.target, m.expires).await
+        crate::delivery::sms_auth::send(a, t, challenge, m.target, m.expires).await
     }
 }

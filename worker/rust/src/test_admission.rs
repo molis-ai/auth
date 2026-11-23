@@ -55,7 +55,7 @@ impl Admission {
             return Ok(());
         }
         // The Google adapter supplies only verified email. GitHub supplies no trusted email.
-        if identity["issuer"] == crate::google_login::ISSUER
+        if identity["issuer"] == crate::auth::google_login::ISSUER
             && email(&identity["profile"]["email"]).is_ok_and(|v| self.contains("emails", &v))
         {
             return Ok(());

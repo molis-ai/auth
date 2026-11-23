@@ -1,8 +1,8 @@
 # Molis 统一账号接口合同
 
-状态：2026-11-04，AUTH-01 已生成可执行合同，AUTH-02 已实现存储与策略边界，AUTH-03 已实现换码、会话、刷新及退出接口；AUTH-04 已实现邮箱/手机认证事务与 mock 投递；AUTH-05 已实现 Google/GitHub mock 授权、浏览器绑定与回调；AUTH-06 已实现资料、登录方式及密码管理；AUTH-07 已实现租户、邀请、角色、交接与平台启停；AUTH-08 已实现目录发布、订阅生命周期、容量维护及商业审计；AUTH-09 已实现席位分配、回收、换绑和历史查询；AUTH-10 已实现退出/移除与席位释放原子联动及在线权益判定。产品规则以[需求文档](requirements.md)的 C-01 至 C-40 为准；本文件给出技术方案，供三个仓库按[开发任务](development-tasks.md)实现和评审。路径、字段和工程默认值已在 [AUTH-01 合同包](../../contracts/unified-account/README.md)固化为 OpenAPI、JSON Schema 与合同夹具；实际交付与未完成项见开发任务实施记录。
+状态：2026-11-04，AUTH-01 已生成可执行合同，AUTH-02 已实现存储与策略边界，AUTH-03 已实现换码、会话、刷新及退出接口；AUTH-04 已实现邮箱/手机认证事务与 mock 投递；AUTH-05 已实现 Google/GitHub mock 授权、浏览器绑定与回调；AUTH-06 已实现资料、登录方式及密码管理；AUTH-07 已实现租户、邀请、角色、交接与平台启停；AUTH-08 已实现目录发布、订阅生命周期、容量维护及商业审计；AUTH-09 已实现席位分配、回收、换绑和历史查询；AUTH-10 已实现退出/移除与席位释放原子联动及在线权益判定。产品规则以[需求文档](requirements.md)的 C-01 至 C-40 为准；本文件给出技术方案，供三个仓库按[开发任务](../history/unified-account/development-tasks.md)实现和评审。路径、字段和工程默认值已在 [AUTH-01 合同包](../../contracts/unified-account/README.md)固化为 OpenAPI、JSON Schema 与合同夹具；实际交付与未完成项见开发任务实施记录。
 
-AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
+AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](../history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
 ## 当前登录入口与三端行为（2026-11-15）
 
@@ -61,7 +61,7 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 | API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
 | API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
 
-当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/login_sessions.rs)、[资料与安全](../../worker/rust/src/account_management.rs)和[租户](../../worker/rust/src/tenants.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、Team 和权限矩阵实现已删除，不保留别名或失败降级。
+当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account_management.rs)和[租户](../../worker/rust/src/tenants.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、Team 和权限矩阵实现已删除，不保留别名或失败降级。
 
 V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 V2 用户与租户，不读取或自动转换旧 TEAM。
 
@@ -147,7 +147,7 @@ complete 的数据按 kind 分别包含 `code`、`operationProof`、`newIdentity
 
 Google/GitHub 流程：BFF/Host 创建事务 → 浏览器访问 browserStartUrl → Auth 建立一次性浏览器绑定并跳官方/受控 mock 提供方 → Auth 回调验证提供方 state、浏览器绑定和身份 → 回精确产品回调（仅事务结果和产品 state）→ 原 BFF/Host 用发起方证明完成并换码。提供方 state 与产品 state 分开保存；认证取消、退出或换号后的迟到回调不能建立会话。Google 验证其 OIDC 响应，GitHub 使用其可信稳定用户标识，不能假设两者都是 id_token。
 
-AUTH-05 的 mock 实现使用 `/api/v2/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v2/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](development-tasks.md#10-auth-05-实施记录)。
+AUTH-05 的 mock 实现使用 `/api/v2/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v2/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](../history/unified-account/development-tasks.md#10-auth-05-实施记录)。
 
 PASSWORD_RESET 仅向已验证邮箱对应的已有账号发出找回证明，未知目标返回等形状的投递受理结果但不创建账号。找回完成不自动签发登录码。BIND/REPLACE 的目标用户必须来自当前会话，并要求 API-03 的再次验证证明。
 
@@ -228,7 +228,7 @@ Invitation 含 `invitationId,tenantId,targetSummary,status:PENDING/ACCEPTED/DECL
 
 AUTH-07 与 AUTH-10 已开放本节接口，返回形状以可执行合同为准。成员列表仅含 ACTIVE 成员；本人邀请列表仅含当前身份匹配、未过期且租户启用的 PENDING 邀请。管理员的租户邀请列表保留历史状态，交接列表按仍有效的参与成员关系查询。列表使用服务端保存的随机游标，有效 15 分钟，绑定用户、客户端、路由、页大小及当前管理权限/成员版本；每次请求及最终返回前复核权限。
 
-邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。EMAIL/SMS 在 LOCAL/TEST 的显式 MOCK 模式中写入独立通知 outbox，USER 邀请从本人邀请列表读取，不触发外部发送。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](development-tasks.md#15-auth-10-实施记录)。
+邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。EMAIL/SMS 在 LOCAL/TEST 的显式 MOCK 模式中写入独立通知 outbox，USER 邀请从本人邀请列表读取，不触发外部发送。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 本人已成功 leave 的同键、同请求重试，可在仍有效的原用户/客户端会话下取回本人旧成员的 LEFT 结果；仍须租户启用、该旧成员确为对应版本的 LEFT。它不要求已离开的成员仍 ACTIVE，不返回其他租户数据，也不会退出后来重新加入的成员。移除他人的回执仍要求操作者当前具备对应管理权限。新的幂等键按当前成员和版本处理，不复用历史操作。
 
@@ -290,11 +290,11 @@ AUTH-08 已实现功能和套餐目录发布/查询、本人及租户订阅查�
 
 更换套餐时，未提交 `seatQuantities` 会保留原映射；如果旧类型不在新套餐中，应明确提交目标映射，否则拒绝请求。移除类型将池标记 RETIRED，保留历史；重新增加同类型只恢复库存，不恢复 ENDED 分配。容量检查在最终事务中再次执行；AUTH-09 已接入分配/回收/换绑并与容量变更联合验证，AUTH-10 已完成成员退出时的全量释放及权益判断。
 
-订阅状态依服务端当前时间计算，区间为 `startsAt <= now < endsAt`，disabled 优先显示 DISABLED。平台可以在停用租户下开通及维护订阅，但不会恢复租户访问或自动顺延。商业审计接口当前返回 `auth_management_audit` 中的目录、订阅和席位事件，旧身份/租户审计仍在原有审计存储中。公开 changes 是受长度限制的摘要，完整目录定义、订阅前后值、容量映射与操作原因保存在审计记录中。实施与验证见[AUTH-08 实施记录](development-tasks.md#13-auth-08-实施记录)。
+订阅状态依服务端当前时间计算，区间为 `startsAt <= now < endsAt`，disabled 优先显示 DISABLED。平台可以在停用租户下开通及维护订阅，但不会恢复租户访问或自动顺延。商业审计接口当前返回 `auth_management_audit` 中的目录、订阅和席位事件，旧身份/租户审计仍在原有审计存储中。公开 changes 是受长度限制的摘要，完整目录定义、订阅前后值、容量映射与操作原因保存在审计记录中。实施与验证见[AUTH-08 实施记录](../history/unified-account/development-tasks.md#13-auth-08-实施记录)。
 
 AUTH-09 的分配/回收返回 `SeatMutationResult {assignment,pool,entitlementRevision}`，换绑返回 `SeatReassignResult {endedAssignment,assignment,pool,entitlementRevision}`。新分配请求的 expectedVersion 是池版本，回收/换绑的是原分配版本；每次成功操作都推进池和相关权益版本。重复操作需沿用原 Idempotency-Key，不能把“原分配已 ENDED”误认为同键重试失败；权限和租户状态仍按当前事实检查。
 
-当前列表默认 `state=current` 仅含 ASSIGNED；`state=history` 仅含 ENDED。普通成员按本人 userId 查询，仍须是该租户当前有效成员；游标绑定 state，不能从当前列表切换过滤条件继续翻页。新分配/换绑最终提交复核数据库时间、订阅版本、当前池、目标有效成员/账号及容量；回收允许原受益成员或账号失效。停用租户一律禁止成员操作。实施及容量联合验证见[AUTH-09 实施记录](development-tasks.md#14-auth-09-实施记录)。
+当前列表默认 `state=current` 仅含 ASSIGNED；`state=history` 仅含 ENDED。普通成员按本人 userId 查询，仍须是该租户当前有效成员；游标绑定 state，不能从当前列表切换过滤条件继续翻页。新分配/换绑最终提交复核数据库时间、订阅版本、当前池、目标有效成员/账号及容量；回收允许原受益成员或账号失效。停用租户一律禁止成员操作。实施及容量联合验证见[AUTH-09 实施记录](../history/unified-account/development-tasks.md#14-auth-09-实施记录)。
 
 ## 8 API-07 权益判定
 
@@ -328,7 +328,7 @@ AUTH-09 的分配/回收返回 `SeatMutationResult {assignment,pool,entitlementR
 
 AUTH-10 实现使用服务端 `auth_client_product` 明确登记当前客户端的 WORK/CLUB 产品，只允许该产品或 SHARED 的目录项；未登记客户端返回 403 POLICY_MISMATCH，未知或其他产品功能返回 400 FEATURE_UNKNOWN。不从客户端名称、前端参数或套餐名推断产品。0011 迁移仅建表，不自动登记旧客户端；本地可选 seed 显式登记隔离客户端，不覆盖已有登记。
 
-`revision` 是当前用户、客户端、产品、Scope、所请求功能列表、来源及相关版本的不可解读摘要；不同功能批次的摘要不能互相比较或拼成一份全局版本。同样的事实和会话读取保持稳定，跨生效/到期边界即使没有数据库写入也会改变。返回前原子复核当前会话、客户端登记、成员、租户及商业版本和时间边界，竞争变化返回 409 VERSION_CONFLICT，调用方重新查询。`validUntil` 同时不超过本次 access、会话最长/闲置截止；没有有效来源的否定结果也受未来订阅生效时间约束。完整来源超过合同或查询上限时返回 503 AUTH_UNAVAILABLE，不截断来源后给出部分判断。验证见[AUTH-10 实施记录](development-tasks.md#15-auth-10-实施记录)。
+`revision` 是当前用户、客户端、产品、Scope、所请求功能列表、来源及相关版本的不可解读摘要；不同功能批次的摘要不能互相比较或拼成一份全局版本。同样的事实和会话读取保持稳定，跨生效/到期边界即使没有数据库写入也会改变。返回前原子复核当前会话、客户端登记、成员、租户及商业版本和时间边界，竞争变化返回 409 VERSION_CONFLICT，调用方重新查询。`validUntil` 同时不超过本次 access、会话最长/闲置截止；没有有效来源的否定结果也受未来订阅生效时间约束。完整来源超过合同或查询上限时返回 503 AUTH_UNAVAILABLE，不截断来源后给出部分判断。验证见[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 ## 9 API-08 两产品适配合同
 
@@ -400,7 +400,7 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 合同交付包含 OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、平台能力与租户角色、版本与幂等约定、脱敏夹具和变更记录。Rust 与消费端 TypeScript 使用同一合同样本校验，禁止分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
 
-合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需证明拒绝、失败和竞态，而不只是页面成功；商业链路需用实际持久化数据证明权限与功能并集。实现拆分及完整覆盖见[开发任务](development-tasks.md)。
+合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需证明拒绝、失败和竞态，而不只是页面成功；商业链路需用实际持久化数据证明权限与功能并集。实现拆分及完整覆盖见[开发任务](../history/unified-account/development-tasks.md)。
 
 ## 12 API-10 当前平台管理
 

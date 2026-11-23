@@ -1,6 +1,6 @@
 # Google 登录
 
-Google 的真实 OIDC 适配由 Auth 持有；Auth 页面与 Work 网页、桌面客户端共用统一账号事务接口。桌面端通过系统浏览器打开授权地址，不内嵌 Google 登录、不携带 Google Client Secret。
+Google 的真实 OIDC 适配位于 Auth 的 [google_login.rs](../worker/rust/src/auth/google_login.rs)；Auth 页面与 Work 网页、桌面客户端共用统一账号事务接口。桌面端通过系统浏览器打开授权地址，不内嵌 Google 登录、不携带 Google Client Secret。
 
 ## 配置
 
@@ -25,7 +25,7 @@ Google 授权使用 state、nonce、S256 PKCE；浏览器一次性启动票据�
 
 ## 验证
 
-`node --test --test-concurrency=1 worker/rust-tests/google-live.test.ts worker/rust-tests/github-live.test.ts worker/rust-tests/external-login.test.ts`
+`node --test --test-concurrency=1 worker/tests/google-live.test.ts worker/tests/github-live.test.ts worker/tests/external-login.test.ts`
 
 先运行 `npm --prefix worker run build:rust`。测试使用临时 D1、生成的 RSA 密钥和隔离的 Google 网络响应，覆盖跨产品会话、绑定/替换/再认证、签名及 claims 拒绝、浏览器绑定、回放与取消期间的迟到响应。真实 Google 账号同意授权仍需用户在系统浏览器完成。
 

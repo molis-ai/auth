@@ -23,7 +23,7 @@ npm start -- --env dev
 
 本地 dev 数据库准备好后，首次启动 Auth 会创建共享的普通预览账号。邮箱 `PREVIEW_ACCOUNT_EMAIL` 和初始密码 `PREVIEW_ACCOUNT_PASSWORD` 都从 `secrets/dev.properties` 读取。新成员从 `secrets.example/dev.properties` 复制模板后，填入团队共享的 dev 账号、密码和其余凭据。升级已有配置时，将邮箱从 `config/dev.properties` 移到密钥文件，与初始密码放在一起。每位开发者用相同账号密码登录本机的 Auth、Club 和 Work，数据各自保存在本机。重复启动会保留已有密码。test 的同名字段可记录由平台单独创建的测试账号凭据。本地启动和部署 test 均不会用它们创建或重置账号。测试账号登录仍需满足 test 白名单。prod 不读取预览账号凭据。
 
-Auth 和产品客户端必须使用同一版 `contracts/unified-account`。开发、测试和部署的状态见 [三环境方案](docs/environment-unification-plan.md)。
+Auth 和产品客户端必须使用同一版 `contracts/unified-account`。开发、测试和部署见 [三环境执行方案](docs/environment-unification-v2.md)。
 
 ## 验证
 
@@ -33,7 +33,7 @@ npm run build
 npm run contracts:check
 ```
 
-`npm test` 包含合同校验、两种 Cargo feature 配置的 Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束，以及包含 `AccountClient` 的 Web 用例。测试只创建临时数据。旧测试的职责迁移见 [V2 回归范围](docs/unified-account/v2-test-transition.md)。
+`npm test` 包含合同校验、两种 Cargo feature 配置的 Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束，以及包含 `AccountClient` 的 Web 用例。测试只创建临时数据。旧测试的职责迁移见 [V2 回归迁移记录](docs/history/unified-account/v2-test-transition.md)。
 
 真实页面专项在构建 Auth 与 Work 后运行 `MOLIS_WORK_SOURCE=/absolute/path/to/molis-work npm run test:browser`。它借用 Work 的公开 Chrome test-kit 和机器测试槽，创建临时 D1、随机端口与独立浏览器 profile，验证注册登录、租户创建、资料、再次验证、绑定邮箱、改密、会话撤销后重新登录及退出；投递明确为 mock。截图默认写临时目录，可用 `AUTH_BROWSER_EVIDENCE_DIR` 指定。该命令不访问已有浏览器或数据库，不计为 LIVE 供应商验收。
 
