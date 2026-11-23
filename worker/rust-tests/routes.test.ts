@@ -7,7 +7,12 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
     p = await getRustProxy(
       { AUTH_ORIGIN: origin, MOLIS_LOCAL_GENERATION: 'fixture-health' },
       undefined,
-      (r) => new Response(new URL(r.url).pathname, { headers: { 'Content-Type': 'text/html' } }),
+      (r) => {
+        const path = new URL(r.url).pathname
+        return new Response(path === '/index.html' ? '<head></head>' + path : path, {
+          headers: { 'Content-Type': 'text/html' },
+        })
+      },
     )
   try {
     const health = await p.fetch(new Request(origin + '/api/v2/health'))
@@ -23,7 +28,10 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
     for (const path of ['/', '/login', '/console']) {
       const r = await p.fetch(new Request(origin + path))
       assert.equal(r.status, 200)
-      assert.equal(await r.text(), '/index.html')
+      assert.equal(
+        await r.text(),
+        '<head><meta name="molis-tenant-invite-channels" content="USER"></head>/index.html',
+      )
       assert.equal(r.headers.get('Cache-Control'), 'no-store')
       assert.equal(r.headers.get('X-Frame-Options'), 'DENY')
       assert.match(r.headers.get('Content-Security-Policy') ?? '', /frame-ancestors 'none'/)
@@ -69,6 +77,22 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
         await p.env.DB.prepare('SELECT name FROM sqlite_schema WHERE name=?').bind(name).first(),
         null,
       )
+    for (const deliveryMode of ['MOCK', 'LIVE']) {
+      await p.updateBindings({
+        UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+          environmentId: 'unified-local',
+          kind: 'LOCAL',
+          authOrigin: origin,
+          deliveryMode,
+          providerMode: 'MOCK',
+        }),
+      })
+      const r = await p.fetch(new Request(origin + '/console'))
+      const channels = deliveryMode === 'MOCK' ? 'EMAIL PHONE USER' : 'USER'
+      assert.ok(
+        (await r.text()).includes(`name="molis-tenant-invite-channels" content="${channels}"`),
+      )
+    }
   } finally {
     await p.dispose()
   }

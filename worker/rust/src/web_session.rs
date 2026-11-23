@@ -3,7 +3,6 @@ use crate::{
     http::*,
     identity::Auth,
     security::{hash, secret},
-    sensitive_transactions::shape,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;

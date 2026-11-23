@@ -1,10 +1,7 @@
 //! AUTH-06 account views and atomic, proof-bound mutations.
 use crate::{
-    http::*,
-    identity::Auth,
-    login_sessions as sessions, registration,
-    security::*,
-    sensitive_transactions::{self as sensitive, shape},
+    http::*, identity::Auth, login_sessions as sessions, registration, security::*,
+    sensitive_transactions as sensitive,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};

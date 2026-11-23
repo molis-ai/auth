@@ -11,13 +11,6 @@ const ABSOLUTE: i64 = 7776000000;
 const ACCESS: i64 = 900000;
 const RECEIPT: i64 = 86400000;
 const LIVE: &str = "s.revoked_at IS NULL AND u.status='ACTIVE' AND s.user_epoch=us.session_epoch AND s.last_active_at+2592000000>? AND s.absolute_expires_at>?";
-fn shape(name: &str, b: &Value) -> Result<()> {
-    ensure(
-        crate::unified_contracts::validate_named(name, b).is_ok(),
-        400,
-        "INVALID_REQUEST",
-    )
-}
 pub(crate) fn view(s: &Value) -> Value {
     json!({"loginSessionId":s["id"],"applicationId":s["application_id"],"clientId":s["client_id"],"authenticatedAt":iso(&s["authenticated_at"]),"lastActiveAt":iso(&s["last_active_at"]),"idleExpiresAt":iso(&json!(number(s,"last_active_at")+IDLE)),"absoluteExpiresAt":iso(&s["absolute_expires_at"]),"sessionRevision":s["session_revision"]})
 }

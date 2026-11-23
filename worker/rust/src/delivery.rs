@@ -45,6 +45,10 @@ impl Sender for MailSender {
     }
 }
 
+pub(crate) fn supports_invitation_notifications(kind: &Value, mode: &Value) -> bool {
+    mode == "MOCK" && (kind == "LOCAL" || kind == "TEST")
+}
+
 /// Notification metadata is not a login code or an invitation bearer capability.
 pub(crate) fn invitation_notification(
     a: &Auth,
@@ -55,7 +59,7 @@ pub(crate) fn invitation_notification(
     expires: i64,
 ) -> Result<D1PreparedStatement> {
     ensure(
-        c["delivery_mode"] == "MOCK" && (c["kind"] == "LOCAL" || c["kind"] == "TEST"),
+        supports_invitation_notifications(&c["kind"], &c["delivery_mode"]),
         503,
         "UPSTREAM_UNAVAILABLE",
     )?;

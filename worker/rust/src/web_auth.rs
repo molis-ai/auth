@@ -2,7 +2,6 @@
 use crate::{
     http::*,
     security::{challenge, secret},
-    sensitive_transactions::shape,
     web_session::WebSession,
 };
 use serde_json::{Value, json};

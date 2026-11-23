@@ -4,7 +4,6 @@ use crate::{
     identity::Auth,
     login_sessions,
     security::uuid,
-    sensitive_transactions::shape,
     tenant_protocol as protocol,
     tenants::{Action, Context, Service},
 };

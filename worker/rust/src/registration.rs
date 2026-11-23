@@ -5,30 +5,12 @@ use crate::{
     identity::Auth,
     login_sessions::{client, client_guard},
     security::*,
+    unified_policy::default_integer as delivery_limit,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 const TX: i64 = 600000;
 const CODE: i64 = 300000;
-fn delivery_limit(name: &str) -> i64 {
-    static POLICY: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    POLICY.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../contracts/unified-account/policy.json"
-        ))
-        .expect("bundled policy")
-    })["defaults"][name]
-        .as_i64()
-        .expect("delivery limit")
-}
-
-fn shape(name: &str, b: &Value) -> Result<()> {
-    ensure(
-        crate::unified_contracts::validate_named(name, b).is_ok(),
-        400,
-        "INVALID_REQUEST",
-    )
-}
 pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::guard(a, t, n, status);

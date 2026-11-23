@@ -80,6 +80,13 @@ pub fn ensure(condition: bool, status: u16, code: &'static str) -> Result<()> {
         Err(Failure { status, code })
     }
 }
+pub(crate) fn shape(name: &str, value: &Value) -> Result<()> {
+    ensure(
+        crate::unified_contracts::validate_named(name, value).is_ok(),
+        400,
+        "INVALID_REQUEST",
+    )
+}
 pub fn fields(b: &Value, required: &[&str], optional: &[&str]) -> Result<()> {
     ensure(
         b.as_object().is_some_and(|o| {

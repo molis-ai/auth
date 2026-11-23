@@ -278,12 +278,31 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         "test" => "TEST · 远程测试数据",
         _ => "",
     };
-    let mut r = if page && method == Method::Get && !label.is_empty() && r.status_code() == 200 {
-        let body = r.text().await?.replacen(
-            "</head>",
-            &format!("<meta name=\"molis-environment\" content=\"{label}\"></head>"),
-            1,
-        );
+    let mut r = if page && method == Method::Get && r.status_code() == 200 {
+        let config: serde_json::Value = env
+            .var("UNIFIED_ACCOUNT_CONFIG")
+            .ok()
+            .and_then(|binding| serde_json::from_str(&binding.to_string()).ok())
+            .unwrap_or_default();
+        let channels = if crate::delivery::supports_invitation_notifications(
+            &config["kind"],
+            &config["deliveryMode"],
+        ) {
+            "EMAIL PHONE USER"
+        } else {
+            "USER"
+        };
+        let mut metadata =
+            format!("<meta name=\"molis-tenant-invite-channels\" content=\"{channels}\">");
+        if !label.is_empty() {
+            metadata.push_str(&format!(
+                "<meta name=\"molis-environment\" content=\"{label}\">"
+            ));
+        }
+        let body = r
+            .text()
+            .await?
+            .replacen("</head>", &format!("{metadata}</head>"), 1);
         headers.delete("Content-Length")?;
         headers.delete("Content-Encoding")?;
         headers.delete("ETag")?;
