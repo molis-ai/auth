@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, shallowRef } from "vue";
+import { onMounted, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from "vue";
 import {
   AccountClient,
   AuthError,
@@ -14,6 +14,8 @@ import PlatformUsers from "./PlatformUsers.vue";
 import TenantMembers from "./TenantMembers.vue";
 import PlatformClients from "./PlatformClients.vue";
 import { accountErrorMessage } from "./errors.ts";
+import { IdempotentSubmit, refreshAfterWrite } from "./idempotent-submit.ts";
+import { syncCreatedTenant } from "./tenant-selection.ts";
 import logo from "./assets/molis-logo.png";
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
@@ -106,10 +108,38 @@ const securityAction = ref(""),
   binding = ref<Method>(),
   reauth = ref(""),
   newIdentity = ref(false),
+  securityIdentity = ref(""),
   newPassword = ref(""),
   confirmPassword = ref("");
+const submissions = new IdempotentSubmit();
+const refreshIssues = shallowReactive(new Map<string, {
+  page: string;
+  message: string;
+  retry: () => Promise<void>;
+}>());
+watch(() => account.value?.user?.userId, userId => {
+  submissions.setAccount(userId);
+  refreshIssues.clear();
+}, { flush: "sync" });
+watch(() => tenantName.value.trim(), () => submissions.discard("create-tenant"), { flush: "sync" });
+watch(newApplicationName, () => submissions.discard("create-application"), { flush: "sync" });
+watch([appName, appStatus, () => selectedApplication.value?.applicationId, () => selectedApplication.value?.version],
+  () => submissions.discard("edit-application"), { flush: "sync" });
+let securityEdits = 0;
+watch([securityAction, () => binding.value?.bindingId, reauth, securityIdentity, newPassword,
+  () => account.value?.user?.version], () => {
+  securityEdits++;
+  submissions.discard("security");
+}, { flush: "sync" });
 function can(capability: string) {
   return account.value?.capabilities?.includes(capability);
+}
+function expireAccount(error: unknown): boolean {
+  if (!(error instanceof AuthError) ||
+    !["SESSION_EXPIRED", "SESSION_REVOKED", "LOGIN_REQUIRED"].includes(error.code)) return false;
+  clearAccount();
+  account.value = { state: "EXPIRED" };
+  return true;
 }
 async function run(task: () => Promise<void>) {
   if (busy.value) return;
@@ -118,13 +148,7 @@ async function run(task: () => Promise<void>) {
   try {
     await task();
   } catch (e) {
-    if (
-      e instanceof AuthError &&
-      ["SESSION_EXPIRED", "SESSION_REVOKED", "LOGIN_REQUIRED"].includes(e.code)
-    ) {
-      clearAccount();
-      account.value = { state: "EXPIRED" };
-    }
+    expireAccount(e);
     showToast(accountErrorMessage(e));
   } finally {
     busy.value = false;
@@ -148,10 +172,23 @@ async function list<T>(path: string): Promise<T[]> {
   } while (cursor);
   return result;
 }
-async function refresh() {
-  account.value = await client.session();
-  if (account.value.state === "AUTHENTICATED") {
+async function refreshAccount() {
+  const current = await client.session();
+  if (account.value?.user && current.state !== "AUTHENTICATED") {
+    throw new AuthError("SESSION_EXPIRED");
+  }
+  if (account.value?.user && account.value.user.userId !== current.user?.userId) {
+    replaceSession();
+    throw new AuthError("CANCELLED");
+  }
+  account.value = current;
+  if (current.state === "AUTHENTICATED") {
     methods.value = (await client.request<{ loginMethods: Method[] }>("/login-methods")).loginMethods;
+  }
+}
+async function refresh() {
+  await refreshAccount();
+  if (account.value?.state === "AUTHENTICATED") {
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
       kind: "OPEN",
@@ -194,19 +231,65 @@ async function loggedIn() {
 async function selectTenant(t: Tenant) {
   selectedTenant.value = t;
   members.value = [];
-  if (t.status === "ACTIVE")
-    members.value = await list("/tenants/" + t.tenantId + "/members");
+  await loadMembers(t);
 }
-async function mutate(
+async function loadMembers(t: Tenant) {
+  const result = t.status === "ACTIVE" ? await list<Member>("/tenants/" + t.tenantId + "/members") : [];
+  if (selectedTenant.value?.tenantId === t.tenantId) members.value = result;
+}
+interface WriteOptions<T> {
+  after: (result: T) => Promise<void>;
+  committed?: (result: T) => void;
+  action?: string;
+  method?: string;
+  editGeneration?: number;
+  success?: string;
+  refreshMessage?: string;
+}
+async function submitWrite<T>(
   path: string,
   body: unknown,
-  after: () => Promise<void>,
-  method = "POST",
+  options: WriteOptions<T>,
 ) {
-  await run(async () => {
-    await client.request(path, body, method, crypto.randomUUID());
-    await after();
-    showToast("已完成");
+  const {
+    method = "POST", action = method + " " + path, editGeneration, committed, after,
+    success = "已完成", refreshMessage = "操作已完成，但相关数据暂未刷新。",
+  } = options;
+  const section = page.value;
+  await refreshAfterWrite(
+    () => submissions.send(action, method, path, editGeneration ?? body,
+      key => client.request<T>(path, body, method, key)),
+    result => {
+      refreshIssues.delete(action);
+      committed?.(result);
+      showToast(success);
+    },
+    after,
+    (error, retry) => {
+      if (expireAccount(error) || (error instanceof AuthError && error.code === "CANCELLED")) return;
+      refreshIssues.set(action, { page: section, message: refreshMessage, retry });
+    },
+  );
+}
+function mutate<T>(path: string, body: unknown, options: WriteOptions<T>) {
+  return run(() => submitWrite(path, body, options));
+}
+async function submitMemberWrite<T>(path: string, body: unknown, options: WriteOptions<T>) {
+  busy.value = true;
+  clearToast();
+  try {
+    await submitWrite(path, body, options);
+  } finally {
+    busy.value = false;
+  }
+}
+function retryRefresh(action: string) {
+  return run(async () => {
+    const issue = refreshIssues.get(action);
+    if (!issue) return;
+    await issue.retry();
+    refreshIssues.delete(action);
+    showToast("已刷新");
   });
 }
 function openTenantCreate() {
@@ -219,19 +302,64 @@ function closeTenantCreate() {
 async function createTenant() {
   const name = tenantName.value.trim();
   if (!name) return;
-  await run(async () => {
-    const created = await client.request<Tenant>('/tenants', { name }, 'POST', crypto.randomUUID());
-    tenantCreateDialog.value?.close(); tenantName.value = ''; tenantSearch.value = '';
-    tenants.value = await list('/tenants');
-    const tenant = tenants.value.find(t => t.tenantId === created.tenantId);
-    if (tenant) await selectTenant(tenant);
-    showToast('租户已创建');
+  await mutate<Tenant>("/tenants", { name }, {
+    action: "create-tenant",
+    success: "租户已创建",
+    refreshMessage: "租户已创建，但租户列表或成员暂未刷新。",
+    committed: created => {
+      tenantCreateDialog.value?.close();
+      tenantName.value = "";
+      tenantSearch.value = "";
+      tenants.value = [...tenants.value.filter(t => t.tenantId !== created.tenantId), created];
+      selectedTenant.value = created;
+      members.value = [];
+    },
+    after: async created => {
+      tenants.value = await list("/tenants");
+      await syncCreatedTenant(created.tenantId, tenants.value, selectedTenant,
+        () => { members.value = []; }, loadMembers);
+    },
   });
 }
-async function openApplication(a: Application) {
+function openApplication(a: Application) {
   selectedApplication.value = a;
   appName.value = a.name;
   appStatus.value = a.status;
+}
+function createApplication() {
+  return mutate<Application>("/platform/applications", { name: newApplicationName.value }, {
+    action: "create-application",
+    success: "应用已创建",
+    refreshMessage: "应用已创建，但应用列表暂未刷新。",
+    committed: created => {
+      newApplicationName.value = "";
+      applications.value = [...applications.value.filter(a => a.applicationId !== created.applicationId), created];
+    },
+    after: async () => { applications.value = await list("/platform/applications"); },
+  });
+}
+function editApplication() {
+  const application = selectedApplication.value;
+  if (!application) return;
+  return mutate<Application>("/platform/applications/" + application.applicationId, {
+    name: appName.value, status: appStatus.value, expectedVersion: application.version,
+  }, {
+    method: "PATCH",
+    action: "edit-application",
+    success: "应用已保存",
+    refreshMessage: "应用已保存，但应用列表暂未刷新。",
+    committed: saved => {
+      applications.value = applications.value.map(a => a.applicationId === saved.applicationId ? saved : a);
+      openApplication(saved);
+    },
+    after: async saved => {
+      applications.value = await list("/platform/applications");
+      const latest = applications.value.find(a => a.applicationId === saved.applicationId);
+      if (latest && selectedApplication.value?.applicationId === saved.applicationId &&
+        selectedApplication.value.version === saved.version &&
+        appName.value === saved.name && appStatus.value === saved.status) openApplication(latest);
+    },
+  });
 }
 const authorizationPopup = shallowRef<Window | null>(null);
 async function verify(operation: string, item?: Method) {
@@ -242,6 +370,7 @@ async function verify(operation: string, item?: Method) {
   binding.value = item;
   securityAction.value = operation;
   reauth.value = "";
+  securityIdentity.value = "";
   newIdentity.value = false;
 }
 function target(): Record<string, string> {
@@ -256,6 +385,7 @@ async function cancelSecurity() {
   authorizationPopup.value = null;
   const handle = reauth.value;
   reauth.value = "";
+  securityIdentity.value = "";
   securityAction.value = "";
   newIdentity.value = false;
   newPassword.value = "";
@@ -273,6 +403,10 @@ async function verified(value: { handle: string }) {
 }
 async function finishSecurity(identityHandle?: string) {
   const operation = securityAction.value;
+  if (identityHandle) {
+    securityIdentity.value = identityHandle;
+    newIdentity.value = false;
+  }
   const path =
     operation === "CHANGE_PASSWORD"
       ? "/password/change"
@@ -287,19 +421,23 @@ async function finishSecurity(identityHandle?: string) {
     {
       reauthHandle: reauth.value,
       expectedVersion: account.value!.user!.version,
-      ...(identityHandle ? { identityHandle } : {}),
+      ...(securityIdentity.value ? { identityHandle: securityIdentity.value } : {}),
       ...(operation === "CHANGE_PASSWORD"
         ? { newPassword: newPassword.value }
         : {}),
     },
-    async () => {
-      newPassword.value = "";
-      confirmPassword.value = "";
-      securityAction.value = "";
-      await refresh();
-      methods.value = (
-        await client.request<{ loginMethods: Method[] }>("/login-methods")
-      ).loginMethods;
+    {
+      action: "security",
+      editGeneration: securityEdits,
+      refreshMessage: "安全操作已完成，但账号信息暂未刷新。",
+      committed: () => {
+        reauth.value = "";
+        securityIdentity.value = "";
+        newPassword.value = "";
+        confirmPassword.value = "";
+        securityAction.value = "";
+      },
+      after: refreshAccount,
     },
   );
 }
@@ -316,6 +454,8 @@ async function logout(all = false) {
   });
 }
 function clearAccount() {
+  submissions.setAccount(undefined);
+  refreshIssues.clear();
   account.value = { state: 'ANONYMOUS' };
   page.value = 'account'; securityTab.value = 'methods';
   tenantSearch.value = ''; applicationSearch.value = '';
@@ -325,7 +465,7 @@ function clearAccount() {
   tenantCreateDialog.value?.close(); creationMode.value = ''; tenantName.value = '';
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
-  newIdentity.value = false; newPassword.value = ''; confirmPassword.value = '';
+  newIdentity.value = false; securityIdentity.value = ''; newPassword.value = ''; confirmPassword.value = '';
 }
 const sessionChanges = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('molis.auth.session');
 const authenticating = ref(false);
@@ -418,6 +558,12 @@ onBeforeUnmount(() => {
     </aside>
     <div class="workspace-body">
     <main>
+      <template v-for="[action, issue] in refreshIssues" :key="action">
+        <p v-if="issue.page === page" role="status">
+          {{ issue.message }}
+          <button type="button" :disabled="busy" @click="retryRefresh(action)">刷新</button>
+        </p>
+      </template>
       <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); showToast(accountErrorMessage(error)); }">
       </AccountProfile>
       <section v-if="page === 'security'" class="console-card security-page">
@@ -482,9 +628,12 @@ onBeforeUnmount(() => {
         <p v-if="!tenants.length" class="console-muted">还没有租户，可在这里创建或接受邀请。</p>
         </aside><div class="collection-detail">
         <p v-if="!selectedTenant" class="collection-empty">选择一个租户，查看成员与管理设置</p>
-        <TenantMembers v-if="selectedTenant" :key="selectedTenant.tenantId" :tenant="selectedTenant" :members="members" :client="client" :loading="busy" @busy="busy = $event"
-          :reload="() => selectTenant(selectedTenant!)" :refresh-transfers="async () => { transfers = await list('/ownership-transfers'); }"
-          :leave="async () => { selectedTenant = undefined; tenants = await list('/tenants'); }" />
+        <TenantMembers v-if="selectedTenant" :key="selectedTenant.tenantId" :tenant="selectedTenant" :members="members" :loading="busy"
+          :refresh-pending="refreshIssues.has('tenant-member:' + selectedTenant.tenantId)"
+          :submit-write="submitMemberWrite" :discard="action => submissions.discard(action)" @expired="expireAccount"
+          :reload="loadMembers" :refresh-transfers="async () => { transfers = await list('/ownership-transfers'); }"
+          @left="id => { if (selectedTenant?.tenantId === id) selectedTenant = undefined; tenants = tenants.filter(t => t.tenantId !== id); }"
+          :leave="async () => { tenants = await list('/tenants'); }" />
         <div
           v-for="t in transfers.filter((t) => t.status === 'PENDING')"
           :key="t.transferId"
@@ -502,10 +651,16 @@ onBeforeUnmount(() => {
                     ? '/accept'
                     : '/cancel'),
                 { expectedVersion: t.version },
-                async () => {
-                  transfers = await list('/ownership-transfers');
-                  tenants = await list('/tenants');
-                  selectedTenant = undefined;
+                {
+                  committed: () => {
+                    transfers = transfers.filter(item => item.transferId !== t.transferId);
+                    selectedTenant = undefined;
+                  },
+                  after: async () => {
+                    transfers = await list('/ownership-transfers');
+                    tenants = await list('/tenants');
+                  },
+                  refreshMessage: '所有权交接已更新，但交接或租户列表暂未刷新。',
                 },
               )
             "
@@ -533,9 +688,13 @@ onBeforeUnmount(() => {
               mutate(
                 '/invitations/' + i.invitationId + '/accept',
                 { expectedVersion: i.version },
-                async () => {
-                  tenants = await list('/tenants');
-                  invitations = await list('/invitations');
+                {
+                  committed: () => { invitations = invitations.filter(item => item.invitationId !== i.invitationId); },
+                  after: async () => {
+                    tenants = await list('/tenants');
+                    invitations = await list('/invitations');
+                  },
+                  refreshMessage: '已接受邀请，但租户或邀请列表暂未刷新。',
                 },
               )
             "
@@ -547,8 +706,10 @@ onBeforeUnmount(() => {
               mutate(
                 '/invitations/' + i.invitationId + '/decline',
                 { expectedVersion: i.version },
-                async () => {
-                  invitations = await list('/invitations');
+                {
+                  committed: () => { invitations = invitations.filter(item => item.invitationId !== i.invitationId); },
+                  after: async () => { invitations = await list('/invitations'); },
+                  refreshMessage: '已拒绝邀请，但邀请列表暂未刷新。',
                 },
               )
             "
@@ -582,26 +743,18 @@ onBeforeUnmount(() => {
         <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用" />
         <form
           v-if="can('APPLICATION_WRITE')"
-          @submit.prevent="
-            mutate(
-              '/platform/applications',
-              { name: newApplicationName },
-              async () => {
-                applications = await list('/platform/applications');
-                newApplicationName = '';
-              },
-            )
-          "
+          @submit.prevent="createApplication"
         >
           <label
             >应用名称<input
               v-model="newApplicationName"
+              :disabled="busy"
               required
               maxlength="80" /></label
           ><button :disabled="busy">创建应用</button>
         </form>
         <div v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))" :key="a.applicationId" class="v2-row collection-item" :class="{ selected: selectedApplication?.applicationId === a.applicationId }">
-          <button :disabled="busy" @click="run(() => openApplication(a))">
+          <button :disabled="busy" @click="openApplication(a)">
             {{ a.name }}</button
           ><span>{{ a.status }}</span>
         </div>
@@ -611,34 +764,15 @@ onBeforeUnmount(() => {
           <div class="detail-heading"><span class="detail-avatar">{{ selectedApplication.name.slice(0,1) }}</span><div><h2>{{ selectedApplication.name }}</h2><p>{{ selectedApplication.status }}</p></div></div>
           <form
             v-if="can('APPLICATION_WRITE')"
-            @submit.prevent="
-              mutate(
-                '/platform/applications/' + selectedApplication!.applicationId,
-                {
-                  name: appName,
-                  status: appStatus,
-                  expectedVersion: selectedApplication!.version,
-                },
-                async () => {
-                  applications = await list('/platform/applications');
-                  await openApplication(
-                    applications.find(
-                      (a) =>
-                        a.applicationId === selectedApplication!.applicationId,
-                    )!,
-                  );
-                },
-                'PATCH',
-              )
-            "
+            @submit.prevent="editApplication"
           >
-            <label>名称<input v-model="appName" required /></label
+            <label>名称<input v-model="appName" :disabled="busy" required /></label
             ><label
-              >应用状态<select v-model="appStatus" aria-label="应用状态">
+              >应用状态<select v-model="appStatus" :disabled="busy" aria-label="应用状态">
                 <option>ACTIVE</option>
                 <option>DISABLED</option>
               </select></label
-            ><button :disabled="busy">保存应用</button>
+            ><button :disabled="busy || (appName === selectedApplication.name && appStatus === selectedApplication.status)">保存应用</button>
           </form>
           <PlatformClients
             v-if="can('CLIENT_READ') || can('CLIENT_WRITE')"

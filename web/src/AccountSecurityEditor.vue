@@ -35,6 +35,10 @@ const emit = defineEmits<{verified:[value:{handle:string}]; cancel:[]; finish:[h
             @complete="(v) => emit('finish', v.handle)"
             @cancel="emit('cancel')"
           />
+          <div v-else-if="securityAction !== 'CHANGE_PASSWORD'" class="console-actions">
+            <button type="button" :disabled="busy" @click="emit('finish')">确认提交</button>
+            <button type="button" :disabled="busy" @click="emit('cancel')">取消</button>
+          </div>
           <p v-if="error" role="alert">{{ error }}</p><form
             v-if="reauth && securityAction === 'CHANGE_PASSWORD'"
             @submit.prevent="
@@ -46,12 +50,14 @@ const emit = defineEmits<{verified:[value:{handle:string}]; cancel:[]; finish:[h
             <label
               >新密码<input
                 v-model="newPassword"
+                :disabled="busy"
                 type="password"
                 autocomplete="new-password"
                 required /></label
             ><label
               >确认密码<input
                 v-model="confirmPassword"
+                :disabled="busy"
                 type="password"
                 autocomplete="new-password"
                 required /></label

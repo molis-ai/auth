@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 use worker::{Method, Request, RequestInit, Response};
 
 static PRODUCT_ROUTES: &[(Method, &str)] = include!(concat!(env!("OUT_DIR"), "/product_routes.rs"));
+const BUSY_LEASE_MS: i64 = 30_000;
 
 #[wasm_bindgen(module = "/src/runtime/federation.js")]
 extern "C" {
@@ -61,19 +62,82 @@ impl WebSession<'_> {
     pub fn client(&self) -> Result<String> {
         setting(self.a, "AUTH_WEB_CLIENT_ID")
     }
-    pub async fn save(&self) -> Result<()> {
+    async fn payload(&self) -> Result<String> {
         ensure(
             self.data.to_string().len() <= 192000,
             400,
             "INVALID_REQUEST",
         )?;
-        let payload = seal(
+        seal(
             &self.key,
             &json!({"id":self.id,"data":self.data}).to_string(),
         )
         .await
-        .map_err(unavailable)?;
+        .map_err(unavailable)
+    }
+    pub async fn save(&self) -> Result<()> {
+        let payload = self.payload().await?;
         self.a.s.batch(vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')",vec![self.id.clone().into(),self.revision.into()])?,self.a.s.statement("UPDATE auth_web_session SET payload=? WHERE id_hash=?",vec![payload.into(),self.id.clone().into()])?],"VERSION_CONFLICT").await
+    }
+    async fn finish(&self) -> Result<()> {
+        let row = self.a.s.one(
+            "UPDATE auth_web_session SET payload=?,status='READY',busy_until=0 WHERE id_hash=? AND revision=? AND status='BUSY' RETURNING revision",
+            vec![self.payload().await?.into(), self.id.clone().into(), self.revision.into()],
+        ).await?;
+        ensure(!row.is_null(), 409, "VERSION_CONFLICT")
+    }
+    async fn promote(&self, browser_id: &str) -> Result<()> {
+        let payload = seal(
+            &self.key,
+            &json!({"id":browser_id,"data":self.data}).to_string(),
+        )
+        .await
+        .map_err(unavailable)?;
+        let s = &self.a.s;
+        // Rotate authority atomically: the anonymous reference never stores the authenticated payload.
+        s.batch(
+            vec![
+                s.guard(
+                    "EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')",
+                    vec![self.id.clone().into(), self.revision.into()],
+                )?,
+                s.statement(
+                    "INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",
+                    vec![browser_id.into(), payload.into(), (now() + 7776000000_i64).into()],
+                )?,
+                s.statement(
+                    "DELETE FROM auth_web_session WHERE id_hash=? AND revision=?",
+                    vec![self.id.clone().into(), self.revision.into()],
+                )?,
+            ],
+            "VERSION_CONFLICT",
+        )
+        .await
+    }
+    async fn logout(&mut self, body: &Value) -> Result<Value> {
+        let saved = self.data["tokens"].take();
+        self.data["transactions"] = json!({});
+        self.data["loginVerification"] = Value::Null;
+        self.save().await?;
+        let path = if body["scope"] == "ALL_MOLIS_PRODUCTS" {
+            "/api/v2/sessions/logout-all"
+        } else {
+            "/api/v2/sessions/current/logout"
+        };
+        // Logout uses the saved refresh proof; bearer plus refresh proof is rejected.
+        let revoked = self
+            .call(
+                path,
+                Method::Post,
+                Some(json!({"refreshProof":{"clientId":self.client()?,"refreshToken":saved["refreshToken"]}})),
+                None,
+                Some(&self.a.header("Idempotency-Key")),
+            )
+            .await
+            .is_ok();
+        Ok(
+            json!({"localCleared":true,"remoteRevocation":if revoked {"CONFIRMED"} else {"UNCONFIRMED"}}),
+        )
     }
     pub async fn call(
         &self,
@@ -235,7 +299,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let mut cookie = values.first().cloned().unwrap_or_default();
     let mut row = if token(&cookie) {
         a.s.one(
-            "SELECT * FROM auth_web_session WHERE id_hash=? AND expires_at>?",
+            "SELECT revision FROM auth_web_session WHERE id_hash=? AND expires_at>?",
             vec![browser_cookie_hash(a, &cookie).into(), now().into()],
         )
         .await?
@@ -263,19 +327,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         a.s.run("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",vec![id.clone().into(),payload.into(),(now()+7776000000_i64).into()]).await?;
         row =
             a.s.one(
-                "SELECT * FROM auth_web_session WHERE id_hash=?",
+                "SELECT revision FROM auth_web_session WHERE id_hash=?",
                 vec![id.into()],
             )
             .await?;
     }
     let id = browser_cookie_hash(a, &cookie);
-    let revision = number(&row, "revision") + 1;
-    let mut data: Value = serde_json::from_str(
-        &open(&key, &text(&row, "payload"))
-            .await
-            .map_err(unavailable)?,
-    )?;
-    ensure(data["id"] == id, 401, "INVALID_CREDENTIALS")?;
     if method != Method::Get {
         ensure(
             origin == a.origin && a.header("X-CSRF-Token") == csrf(&key, &id),
@@ -302,103 +359,95 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             "INVALID_REQUEST",
         )?;
     }
-    ensure(logout || row["status"] == "READY", 409, "VERSION_CONFLICT")?;
-    a.s.batch(
-        vec![
-            a.s.guard(
-                "EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=?)",
-                vec![id.clone().into(), row["revision"].clone()],
-            )?,
-            a.s.statement(
-                "UPDATE auth_web_session SET status='BUSY',revision=revision+1 WHERE id_hash=?",
-                vec![id.clone().into()],
-            )?,
-        ],
-        "VERSION_CONFLICT",
-    )
-    .await?;
-    let authenticated_before = !data["data"]["tokens"].is_null();
-    let mut session = WebSession {
-        a,
-        id: id.clone(),
-        revision,
-        data: data["data"].take(),
-        key: key.clone(),
-    };
-    let session_read = path == "/api/account/session" && method == Method::Get;
-    let mut result = async { if session_read {
-        session.view().await
-    } else if logout {
-        shape("ProductLogoutRequest", &body)?;
-        let scope = text(&body, "scope");
-        let saved = session.data["tokens"].take();
-        session.data["transactions"] = json!({});
-        session.data["loginVerification"] = Value::Null;
-        session.save().await?;
-        let key = a.header("Idempotency-Key");
-        ensure((16..=128).contains(&key.len()), 400, "INVALID_REQUEST")?;
-        let op = if scope == "ALL_MOLIS_PRODUCTS" {
-            "/api/v2/sessions/logout-all"
-        } else {
-            "/api/v2/sessions/current/logout"
-        };
-        // Logout uses the saved refresh proof only; bearer plus refresh proof is rejected.
-        let revoked=session.call(op,Method::Post,Some(json!({"refreshProof":{"clientId":session.client()?,"refreshToken":saved["refreshToken"]}})),None,Some(&key)).await.is_ok();
-        session.data["tokens"] = Value::Null;
-        Ok(
-            json!({"localCleared":true,"remoteRevocation":if revoked{"CONFIRMED"}else{"UNCONFIRMED"}}),
+    let claimed_at = now();
+    let claimed =
+        a.s.one(
+            "UPDATE auth_web_session SET revision=revision+1,status='BUSY',busy_until=?
+         WHERE id_hash=? AND revision=? AND expires_at>?
+           AND (status='READY' OR (status='BUSY' AND busy_until<=?) OR ?=1)
+         RETURNING revision,payload",
+            vec![
+                (claimed_at + BUSY_LEASE_MS).into(),
+                id.clone().into(),
+                row["revision"].clone(),
+                claimed_at.into(),
+                claimed_at.into(),
+                logout.into(),
+            ],
         )
-    } else if path == "/api/account/reauthentications" || path.starts_with("/api/account/auth/") || path == "/api/account/password/reset" || path == "/api/account/password/change" || path.starts_with("/api/account/login-methods/") || path == "/account/callback" {
-        crate::web_auth::route(&mut session, path, method, &mut body).await
-    } else {
-        management(&mut session, path, method, body).await
-    } }.await;
-    if result.as_ref().err().is_some_and(|failure| {
-        matches!(
-            failure.code,
-            "SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED"
-        )
-    }) {
-        // A rejected central session cannot keep blocking a fresh login behind stale recovery material.
-        session.data["tokens"] = Value::Null;
-        session.data["transactions"] = json!({});
-        session.data["loginVerification"] = Value::Null;
-        if session_read {
-            result = Ok(json!({"state":"EXPIRED"}));
-        }
-    }
-    let promote = !authenticated_before && !session.data["tokens"].is_null() && result.is_ok();
-    if !authenticated_before && result.is_err() {
-        // A failed login must never grant authority to its anonymous browser reference.
-        session.data["tokens"] = Value::Null;
-    }
+        .await?;
+    ensure(!claimed.is_null(), 409, "VERSION_CONFLICT")?;
+    let revision = number(&claimed, "revision");
     let mut browser_id = id.clone();
-    let persisted = async {
-        if !promote {
-            return session.save().await;
+    let completed: Result<Result<Value>> = async {
+        let mut data: Value = serde_json::from_str(
+            &open(&key, &text(&claimed, "payload"))
+                .await
+                .map_err(unavailable)?,
+        )?;
+        ensure(data["id"] == id, 401, "INVALID_CREDENTIALS")?;
+        let authenticated_before = !data["data"]["tokens"].is_null();
+        let mut session = WebSession {
+            a,
+            id: id.clone(),
+            revision,
+            data: data["data"].take(),
+            key: key.clone(),
+        };
+        let session_read = path == "/api/account/session" && method == Method::Get;
+        let mut result = if session_read {
+            session.view().await
+        } else if logout {
+            session.logout(&body).await
+        } else if path == "/api/account/reauthentications"
+            || path.starts_with("/api/account/auth/")
+            || path == "/api/account/password/reset"
+            || path == "/api/account/password/change"
+            || path.starts_with("/api/account/login-methods/")
+            || path == "/account/callback"
+        {
+            crate::web_auth::route(&mut session, path, method, &mut body).await
+        } else {
+            management(&mut session, path, method, body).await
+        };
+        if result.as_ref().err().is_some_and(|failure| {
+            matches!(
+                failure.code,
+                "SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED"
+            )
+        }) {
+            // A rejected central session cannot keep blocking a fresh login behind stale recovery material.
+            session.data["tokens"] = Value::Null;
+            session.data["transactions"] = json!({});
+            session.data["loginVerification"] = Value::Null;
+            if session_read {
+                result = Ok(json!({"state":"EXPIRED"}));
+            }
         }
-        cookie = secret();
-        browser_id = browser_cookie_hash(a, &cookie);
-        let payload = seal(&key, &json!({"id":browser_id,"data":session.data}).to_string())
-            .await.map_err(unavailable)?;
-        // Rotate authority atomically: the anonymous reference never stores the authenticated payload.
-        a.s.batch(vec![
-            a.s.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')", vec![id.clone().into(), revision.into()])?,
-            a.s.statement("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)", vec![browser_id.clone().into(),payload.into(),(now()+7776000000_i64).into()])?,
-            a.s.statement("DELETE FROM auth_web_session WHERE id_hash=? AND revision=?", vec![id.clone().into(),revision.into()])?,
-        ],"VERSION_CONFLICT").await
-    }.await;
-    let released = if promote && persisted.is_ok() {
-        Ok(())
-    } else {
-        a.s.run(
-            "UPDATE auth_web_session SET status='READY' WHERE id_hash=? AND revision=?",
+        let promote = !authenticated_before && !session.data["tokens"].is_null() && result.is_ok();
+        if !authenticated_before && result.is_err() {
+            // A failed login must never grant authority to its anonymous browser reference.
+            session.data["tokens"] = Value::Null;
+        }
+        if promote {
+            cookie = secret();
+            browser_id = browser_cookie_hash(a, &cookie);
+            session.promote(&browser_id).await?;
+        } else {
+            session.finish().await?;
+        }
+        Ok(result)
+    }
+    .await;
+    if completed.is_err() {
+        let released = a.s.one(
+            "UPDATE auth_web_session SET status='READY',busy_until=0 WHERE id_hash=? AND revision=? AND status='BUSY' RETURNING revision",
             vec![id.clone().into(), revision.into()],
         )
-        .await
-    };
-    persisted?;
-    released?;
+        .await?;
+        ensure(!released.is_null(), 409, "VERSION_CONFLICT")?;
+    }
+    let result = completed?;
     let mut response = if path == "/account/callback" {
         let (message, status) = match &result {
             Ok(value) if value["status"] == "CONSUMED" => (
