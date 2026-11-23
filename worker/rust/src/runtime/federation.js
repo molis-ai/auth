@@ -27,21 +27,120 @@ export async function authOpen(key, value) {
     await crypto.subtle.decrypt({ name: 'AES-GCM', iv: dec(iv) }, k, dec(data)),
   )
 }
-export async function authVerify(jwk, input, signature) {
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    JSON.parse(jwk),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify'],
-  )
-  return await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    dec(signature),
-    new TextEncoder().encode(input),
-  )
+const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs'
+const GOOGLE_CERTS_TIMEOUT_MS = 10_000
+const GOOGLE_REFRESH_COOLDOWN_MS = 60_000
+let googleSnapshot
+let googleRefresh
+let googleNextForcedRefresh = 0
+
+function googleCacheTtl(headers) {
+  const directives = headers.get('Cache-Control')?.split(',') ?? []
+  let maxAge
+  for (const directive of directives) {
+    const name = directive.split('=', 1)[0].trim().toLowerCase()
+    if (name === 'no-cache' || name === 'no-store') return 0
+    if (name !== 'max-age') continue
+    const match = /^max-age\s*=\s*(?:"(\d+)"|(\d+))$/i.exec(directive.trim())
+    if (!match || maxAge !== undefined) return 0
+    maxAge = Number(match[1] ?? match[2])
+  }
+  const ageHeader = headers.get('Age')
+  if (ageHeader !== null && !/^\d+$/.test(ageHeader)) return 0
+  const age = Number(ageHeader ?? 0)
+  if (!Number.isSafeInteger(maxAge) || !Number.isSafeInteger(age)) return 0
+  return Math.min(3600, Math.max(0, maxAge - age)) * 1000
 }
+
+async function fetchGoogleKeys() {
+  const response = await fetch(GOOGLE_CERTS, {
+    cache: 'no-store',
+    redirect: 'manual',
+    signal: AbortSignal.timeout(GOOGLE_CERTS_TIMEOUT_MS),
+  })
+  const expiresAt = Date.now() + googleCacheTtl(response.headers)
+  const jwks = JSON.parse(await boundedJson(response))
+  if (!Array.isArray(jwks?.keys)) throw Error('google jwks')
+  const rsaKeys = new Map()
+  for (const jwk of jwks.keys) {
+    if (!jwk || typeof jwk !== 'object' || Array.isArray(jwk)) throw Error('google jwks')
+    if (jwk.kty !== 'RSA' || jwk.alg !== 'RS256' || jwk.use !== 'sig') continue
+    if (typeof jwk.kid !== 'string' || !jwk.kid || rsaKeys.has(jwk.kid)) {
+      throw Error('google jwks')
+    }
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    )
+    rsaKeys.set(jwk.kid, key)
+  }
+  return { keys: rsaKeys, expiresAt }
+}
+
+function startGoogleRefresh(now) {
+  const refresh = { deadline: now + GOOGLE_CERTS_TIMEOUT_MS }
+  googleRefresh = refresh
+  refresh.promise = fetchGoogleKeys()
+    .then((snapshot) => {
+      if (googleRefresh === refresh) {
+        googleSnapshot = snapshot.expiresAt > Date.now() ? snapshot : undefined
+      }
+      return snapshot
+    })
+    .finally(() => {
+      if (googleRefresh === refresh) googleRefresh = undefined
+    })
+  return refresh
+}
+
+async function waitForGoogleRefresh(refresh) {
+  // The request that started the fetch can end before its promise settles.
+  // Give every waiter a deadline in its own request context.
+  let timeout
+  try {
+    return await Promise.race([
+      refresh.promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(Error('google jwks timeout')),
+          Math.max(0, refresh.deadline - Date.now()),
+        )
+      }),
+    ])
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function googleVerify(kid, input, signature) {
+  const now = Date.now()
+  const snapshot = googleSnapshot?.expiresAt > now ? googleSnapshot : undefined
+  let key = snapshot?.keys.get(kid)
+  if (!key) {
+    let refresh = googleRefresh?.deadline > now ? googleRefresh : undefined
+    if (!refresh) {
+      if (snapshot && now < googleNextForcedRefresh) return false
+      if (snapshot) googleNextForcedRefresh = now + GOOGLE_REFRESH_COOLDOWN_MS
+      refresh = startGoogleRefresh(now)
+    }
+    key = (await waitForGoogleRefresh(refresh)).keys.get(kid)
+  }
+  if (!key) return false
+  try {
+    return await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      dec(signature),
+      new TextEncoder().encode(input),
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function authFetchJson(url, form) {
   const r = await fetch(url, {
     method: form ? 'POST' : 'GET',

@@ -1,3 +1,6 @@
+#[path = "src/contract_structure.rs"]
+mod contract_structure;
+
 use serde_json::Value;
 use std::{env, fmt::Write, fs, path::PathBuf};
 
@@ -42,4 +45,27 @@ fn main() {
     routes.push_str("]\n");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"));
     fs::write(output.join("product_routes.rs"), routes).expect("write product route table");
+    generate_contract_patterns(&manifest, output);
+}
+
+fn generate_contract_patterns(manifest: &std::path::Path, output: PathBuf) {
+    const SCHEMAS: &str = "../../contracts/unified-account/schemas.json";
+    const PROFILE: &str = "../../contracts/unified-account/validator-profile.json";
+    for path in [SCHEMAS, PROFILE, "src/contract_structure.rs"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    let read_json = |path| {
+        serde_json::from_slice::<Value>(&fs::read(manifest.join(path)).expect("read schema JSON"))
+            .expect("parse schema JSON")
+    };
+    let document = read_json(SCHEMAS);
+    let profile = read_json(PROFILE);
+    let patterns = contract_structure::compile_document(&document, &profile)
+        .unwrap_or_else(|error| panic!("invalid unified account schema: {error}"));
+    let patterns: Vec<_> = patterns.into_iter().collect();
+    fs::write(
+        output.join("contract_patterns.rs"),
+        format!("&{patterns:#?}"),
+    )
+    .expect("write contract patterns");
 }

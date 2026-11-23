@@ -71,7 +71,14 @@ fn live(s: &Value, n: i64) -> bool {
 pub(crate) fn session_guard(a: &Auth, s: &Value, n: i64) -> Result<D1PreparedStatement> {
     a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id WHERE s.id=? AND s.session_revision=? AND {LIVE})"),vec![s["id"].clone(),s["session_revision"].clone(),n.into(),n.into()])
 }
-async fn credential(a: &Auth, b: &Value) -> Result<(Value, Value, String)> {
+struct Credential {
+    session: Value,
+    token: Value,
+    digest: String,
+    client: Value,
+}
+
+async fn credential(a: &Auth, b: &Value) -> Result<Credential> {
     let refresh = b.get("refreshProof");
     let authorization = a.header("Authorization");
     let (table, raw) = if let Some(p) = refresh {
@@ -101,12 +108,22 @@ async fn credential(a: &Auth, b: &Value) -> Result<(Value, Value, String)> {
         401,
         "INVALID_CREDENTIALS",
     )?;
-    client(a, &text(&s, "client_id")).await?;
-    Ok((s, t, digest))
+    let c = client(a, &text(&s, "client_id")).await?;
+    Ok(Credential {
+        session: s,
+        token: t,
+        digest,
+        client: c,
+    })
 }
 /// A v2 access credential, including its expiry for the final commit guard.
 pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
-    let (mut s, t, digest) = credential(a, &json!({})).await?;
+    let Credential {
+        session: mut s,
+        token: t,
+        digest,
+        client: c,
+    } = credential(a, &json!({})).await?;
     ensure(
         live(&s, now())
             && number(&t, "expires_at") > now()
@@ -115,7 +132,6 @@ pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
         401,
         "SESSION_EXPIRED",
     )?;
-    let c = client(a, &text(&s, "client_id")).await?;
     s["access_hash"] = digest.into();
     s["access_expires_at"] = t["expires_at"].clone();
     Ok((s, c))
@@ -234,7 +250,12 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
 }
 async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
     shape("LogoutRequest", b)?;
-    let (s, t, digest) = credential(a, b).await?;
+    let Credential {
+        session: s,
+        token: t,
+        digest,
+        client: c,
+    } = credential(a, b).await?;
     let n = now();
     let key = a.header("Idempotency-Key");
     ensure((16..=160).contains(&key.len()), 400, "INVALID_REQUEST")?;
@@ -269,7 +290,6 @@ async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
         ensure(!live(&s, n), 401, "INVALID_CREDENTIALS")?;
         return Ok(json!({"revokedScope":scope,"status":"ALREADY_ENDED","loginSessionId":s["id"]}));
     }
-    let c = client(a, &text(&s, "client_id")).await?;
     let mut writes = vec![
         client_guard(a, &c)?,
         session_guard(a, &s, n)?,
@@ -343,7 +363,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         if method == Method::Post {
             shape("ActivityRequest", &b)?;
         }
-        let (s, t, _) = credential(a, &json!({})).await?;
+        let Credential {
+            session: s,
+            token: t,
+            client: c,
+            ..
+        } = credential(a, &json!({})).await?;
         let n = now();
         ensure(
             live(&s, n)
@@ -353,7 +378,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             401,
             "SESSION_EXPIRED",
         )?;
-        let c = client(a, &text(&s, "client_id")).await?;
         let mut writes = vec![client_guard(a, &c)?, session_guard(a, &s, n)?];
         if method == Method::Post {
             writes.push(a.s.statement("UPDATE auth_login_session SET last_active_at=MAX(last_active_at,?) WHERE id=? AND NOT EXISTS(SELECT 1 FROM auth_login_activity WHERE login_session_id=? AND event_id=?)",vec![n.into(),s["id"].clone(),s["id"].clone(),b["eventId"].clone()])?);

@@ -5,6 +5,9 @@ mod billing;
 mod billing_catalog;
 mod billing_seats;
 mod billing_subscriptions;
+mod cleanup;
+#[cfg(test)]
+mod contract_structure;
 mod delivery;
 mod entitlements;
 mod external_login;
@@ -48,20 +51,6 @@ pub async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
 #[event(scheduled)]
 pub async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
-    let result=async {
-        let db=env.d1("DB")?;let now=js_sys::Date::now();
-        let mut statements=vec![];
-        for (table,column) in [("auth_one_use","token_hash"),("auth_rate_bucket","bucket_hash"),("auth_login_access_token","token_hash"),("auth_login_refresh_token","token_hash"),("auth_identity_proof","token_hash"),("auth_logout_receipt","request_key_hash"),("auth_mock_delivery","delivery_id"),("auth_management_result","rowid"),("auth_mock_notification","delivery_id"),("auth_web_session","id_hash"),("auth_management_handoff","id")] {
-            let receipt_protected = table == "auth_login_access_token" || table == "auth_login_refresh_token";
-            let retain = if receipt_protected { format!(" AND NOT EXISTS(SELECT 1 FROM auth_logout_receipt r WHERE r.proof_hash={table}.{column} AND r.expires_at>?)") } else { String::new() };
-            let mut values=vec![wasm_bindgen::JsValue::from_f64(now)];
-            if receipt_protected { values.push(wasm_bindgen::JsValue::from_f64(now)); }
-            statements.push(db.prepare(format!("DELETE FROM {table} WHERE {column} IN (SELECT {column} FROM {table} WHERE expires_at<=?{retain} LIMIT 100)")).bind(&values)?);
-        }
-        db.batch(statements).await?;Ok::<(),worker::Error>(())
-    }.await;
-    if result.is_err() {
-        worker::console_error!("AUTH_CLEANUP_FAILED");
-    }
+    cleanup::run(&env).await;
 }
 mod sync_read_proof;

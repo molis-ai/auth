@@ -10,8 +10,8 @@ pub(crate) const ISSUER: &str = "https://accounts.google.com";
 extern "C" {
     #[wasm_bindgen(catch, js_name = authFetchJson)]
     async fn fetch_json(url: &str, form: &str) -> std::result::Result<String, JsValue>;
-    #[wasm_bindgen(catch, js_name = authVerify)]
-    async fn verify(jwk: &str, input: &str, signature: &str) -> std::result::Result<bool, JsValue>;
+    #[wasm_bindgen(catch, js_name = googleVerify)]
+    async fn verify(kid: &str, input: &str, signature: &str) -> std::result::Result<bool, JsValue>;
 }
 fn unavailable() -> Failure {
     Failure {
@@ -105,26 +105,10 @@ impl Google {
             .filter(|s| !s.is_empty())
             .ok_or_else(invalid)?;
         ensure(header["alg"] == "RS256", 401, "INVALID_CREDENTIALS")?;
-        let raw = fetch_json("https://www.googleapis.com/oauth2/v3/certs", "")
-            .await
-            .map_err(|_| unavailable())?;
-        let keys: Value = serde_json::from_str(&raw).map_err(|_| unavailable())?;
-        let key = keys["keys"]
-            .as_array()
-            .ok_or_else(unavailable)?
-            .iter()
-            .find(|k| {
-                k["kid"] == kid && k["kty"] == "RSA" && k["alg"] == "RS256" && k["use"] == "sig"
-            })
-            .ok_or_else(invalid)?;
         ensure(
-            verify(
-                &key.to_string(),
-                &format!("{}.{}", parts[0], parts[1]),
-                parts[2],
-            )
-            .await
-            .map_err(|_| invalid())?,
+            verify(kid, &format!("{}.{}", parts[0], parts[1]), parts[2])
+                .await
+                .map_err(|_| unavailable())?,
             401,
             "INVALID_CREDENTIALS",
         )?;
