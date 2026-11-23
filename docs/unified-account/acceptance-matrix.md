@@ -67,6 +67,8 @@ PR 检查补查发现 Auth、Club 的 Cloudflare Workers Builds 均失败（K-14
 
 AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X1 及 Club 构建旧路由。其余页面证据引用前阶段已执行记录，未冒充本轮全量重跑；准确命令、测试数量和日期在交付记录中分别列出。K-03/K-04 补齐轮另外复验 E-A11、E-A9、两端帮助浏览器及相关页面回归，未重新运行所有历史证据。
 
+表中保留验收时的路径。仍在维护的 `worker/rust-tests/` 用例现位于 `worker/tests/`。
+
 | 编号 | 文件或脚本（仓库前缀） | 证明范围 |
 | --- | --- | --- |
 | E-A1 | `A:contracts/unified-account/validate.test.ts`、`A:worker/tests/unified-configuration.test.ts`、`A:worker/tests/unified-schema.test.ts`、`A:worker/rust-tests/unified-boundary.test.ts`、`A:worker/rust-tests/unified-policy.test.ts` | 合同、环境、v1/v2 与主体/权限隔离 |

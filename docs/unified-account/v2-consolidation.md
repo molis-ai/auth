@@ -206,7 +206,7 @@ Work 6 个账号/安全/合同文件与 3 个专用 headless 文件已通过，�
 - AUTH-CYCLE-05：全部设备退出与全新无 Cookie 浏览器上下文直接访问。
 - AUTH-CYCLE-06：多标签页并发读取引发 VERSION_CONFLICT 时，SDK 仅对 session 读取最多重试三次；写入不重试；关闭/换代阻止继续重试。
 
-执行入口为 `AUTH_ACCOUNT_CYCLES=1 npm run test:browser`（还需既有 MOLIS_WORK_SOURCE 与测试 Chrome 配置）。断言在 `web/scripts/account-cycles.mjs`、`worker/rust-tests/web-session.test.ts`、SDK 测试中。浏览器功能循环在各次登录前清理隔离夹具的限流桶，专门验证生命周期，不据此宣称真实限流压力已通过。所有账号、数据库、Cookie、浏览器 profile 均为隔离测试数据；不清除用户正在使用的真实浏览器会话。
+执行入口为 `AUTH_ACCOUNT_CYCLES=1 npm run test:browser`（还需既有 MOLIS_WORK_SOURCE 与测试 Chrome 配置）。断言在 `web/scripts/account-cycles.mjs`、`worker/tests/web-session.test.ts`、SDK 测试中。浏览器功能循环在各次登录前清理隔离夹具的限流桶，专门验证生命周期，不据此宣称真实限流压力已通过。所有账号、数据库、Cookie、浏览器 profile 均为隔离测试数据；不清除用户正在使用的真实浏览器会话。
 
 截图本身无法证明匿名越权：有效 Cookie 自动恢复属于正常行为；无 Cookie 或已确认退出的页面不能恢复认证。此前 localhost 自动跳转到 127.0.0.1 时，可能恢复该来源先前已有的会话，不能据截图认定用户具体命中了哪个路径。
 
@@ -245,7 +245,7 @@ PROFILE-05：展示页昵称双击原位编辑，Enter/失焦保存、Esc 取消
 
 2026-11-10 邮箱改由管理员维护（用户批准）：普通用户邮箱只读，自助 BIND/REPLACE/UNLINK 邮箱在事务创建与最终提交均拒绝；注册验证与密码找回保留。新增 USER_EMAIL_WRITE 独立平台权限及 PATCH /platform/users/{userId}/email；管理员填写邮箱和操作原因，原子检查目标版本、邮箱唯一性，替换邮箱并撤销目标账号全部会话，平台审计记录操作者、目标账号和原因。既有管理员须由权限管理者显式授予新权限，不自动提升现有账号权限。
 
-专项验证：`/private/tmp/auth-admin-email-test.log`（权限拒绝、邮箱冲突、版本冲突、成功更新、会话撤销、审计、自助邮箱操作拒绝）、`/private/tmp/auth-admin-email-contract-check.log`、`/private/tmp/auth-admin-email-browser.log`（只读界面、管理员真实保存、注册登录、密码修改）。未跑全量。提 PR 前待同步 `worker/rust-tests/account-management.test.ts` 中以邮箱自助绑定/替换为前提的旧连续场景：迁移到管理员维护邮箱的前置条件，保留证明隔离、最后可用方式、并发与未完成登录失效的断言；本轮新增专项已验证新政策，不能把旧场景当作通过。
+专项验证：`/private/tmp/auth-admin-email-test.log`（权限拒绝、邮箱冲突、版本冲突、成功更新、会话撤销、审计、自助邮箱操作拒绝）、`/private/tmp/auth-admin-email-contract-check.log`、`/private/tmp/auth-admin-email-browser.log`（只读界面、管理员真实保存、注册登录、密码修改）。未跑全量。提 PR 前待同步 `worker/tests/account-management.test.ts` 中以邮箱自助绑定/替换为前提的旧连续场景：迁移到管理员维护邮箱的前置条件，保留证明隔离、最后可用方式、并发与未完成登录失效的断言；本轮新增专项已验证新政策，不能把旧场景当作通过。
 
 
 ### 2026-11-10 会话授权与栏内绑定（按用户最新决定）
@@ -253,7 +253,7 @@ PROFILE-05：展示页昵称双击原位编辑，Enter/失焦保存、Esc 取消
 - AUTH-SESSION：绑定/换绑在对应登录方式栏内展开，取消或完成后收起。当前登录会话有效即可办理，不再以近期验证窗口要求二次输入密码或验证码。
 - 页面请求 `useSession` 授权，后端仍签发操作及目标限定的一次性证明并校验有效会话、用户、会话修订、身份版本、撤销状态；新手机号验证码及第三方账号授权继续保留。操作授权失败只重试或取消，不退回二次登录表单。
 - `0013_recent_identity_verification.sql` 已应用的验证时间字段不再作为上述业务入口的门槛。登录会话本身过期、撤销仍拒绝执行；不放宽邮箱管理员维护策略。
-- 定向验证：`worker/rust-tests/recent-verification.test.ts` 覆盖登录超过原 5 分钟窗口仍可办理、跨用户及跨操作拒绝、会话过期和退出后拒绝；浏览器覆盖栏内取消、旧验证时间不触发二次登录、真实短信绑定及完成收起、密码修改。未跑全量回归。
+- 定向验证：`worker/tests/recent-verification.test.ts` 覆盖登录超过原 5 分钟窗口仍可办理、跨用户及跨操作拒绝、会话过期和退出后拒绝；浏览器覆盖栏内取消、旧验证时间不触发二次登录、真实短信绑定及完成收起、密码修改。未跑全量回归。
 
 ## 2026-11-10 PR 收尾
 

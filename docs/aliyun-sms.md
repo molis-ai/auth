@@ -22,7 +22,7 @@ dev 和 test 都在各自的密钥文件里用 JSON 数组配置收件人，例�
 
 `node worker/scripts/rust-build.mjs`
 
-`node --test --test-concurrency=1 worker/rust-tests/sms-live.test.ts worker/rust-tests/registration.test.ts worker/rust-tests/web-session.test.ts`
+`node --test --test-concurrency=1 worker/tests/sms-live.test.ts worker/tests/registration.test.ts worker/tests/web-session.test.ts`
 
 短信测试使用真实 WASM 和隔离 D1，外部 API 由测试拦截，不发送真实短信。
 

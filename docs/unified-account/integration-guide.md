@@ -90,7 +90,7 @@ Auth 的旧认证、OAuth2、Team 和权限矩阵入口已删除，Work 不读�
 
 ## 共享资源访问合同夹具
 
-K04-01 的 [测试资源 owner](../../worker/rust-tests/shared-resource-fixture.ts) 只由 [真实 Auth 专项](../../worker/rust-tests/entitlements.test.ts) 加载，不进入部署产物，不提供业务共享服务或对象存储。资源记录、内容、账号和订阅都是合成数据，临时 D1 在结束后销毁；外部服务继续 mock。
+K04-01 的 [测试资源 owner](../../worker/tests/shared-resource-fixture.ts) 只由 [真实 Auth 专项](../../worker/tests/entitlements.test.ts) 加载，不进入部署产物，不提供业务共享服务或对象存储。资源记录、内容、账号和订阅都是合成数据，临时 D1 在结束后销毁；外部服务继续 mock。
 
 | 边界 | 约定 |
 | --- | --- |

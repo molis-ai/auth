@@ -25,7 +25,7 @@ Google 授权使用 state、nonce、S256 PKCE；浏览器一次性启动票据�
 
 ## 验证
 
-`node --test --test-concurrency=1 worker/rust-tests/google-live.test.ts worker/rust-tests/github-live.test.ts worker/rust-tests/external-login.test.ts`
+`node --test --test-concurrency=1 worker/tests/google-live.test.ts worker/tests/github-live.test.ts worker/tests/external-login.test.ts`
 
 先运行 `npm --prefix worker run build:rust`。测试使用临时 D1、生成的 RSA 密钥和隔离的 Google 网络响应，覆盖跨产品会话、绑定/替换/再认证、签名及 claims 拒绝、浏览器绑定、回放与取消期间的迟到响应。真实 Google 账号同意授权仍需用户在系统浏览器完成。
 
