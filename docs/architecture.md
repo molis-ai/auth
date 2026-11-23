@@ -26,7 +26,8 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | billing / billing_catalog / billing_subscriptions / billing_seats / entitlements | 套餐、订阅、库存、分配历史及按真实成员/来源判定权益 |
 | web_session / web_auth | Auth 同源 Cookie/CSRF、加密 BFF 会话、认证事务与敏感证明；中央写入绑定 BFF revision |
 | store | 参数化 D1、原子 batch、最终写入守卫与审计 |
-| security / runtime/*.js | 现行密码策略与 PBKDF2、头像实际解码清洗、Web Crypto 和受限外部 HTTP；JS 桥接不决定业务授权 |
+| security / runtime/*.js | 密码策略与编码校验、头像实际解码清洗、Web Crypto 和受限外部 HTTP；JS 桥接不决定业务授权 |
+| password_kdf | 私有、无状态的 `PasswordKdf` Durable Object，通过 RustCrypto 执行密码派生 |
 
 中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因租户 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、独立 Team 与权限矩阵实现已删除。
 
@@ -35,7 +36,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 - Auth Vue 使用 `web/src/account-client.ts` 导出的 `AccountClient`，只调用固定同源 BFF，不自动重放写操作。Work 保留满足本机边界的 Host 请求助手。
 - BFF Cookie 只保存随机引用；`auth_web_session` 的 Token 和临时证明使用稳定的 `AUTH_WEB_SESSION_KEY` 加密并绑定记录 ID。写入要求 Origin/CSRF；退出提高 revision 并先清持久恢复材料，迟到的中央提交与会话保存拒绝。
 - 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
-- 密码使用 PBKDF2-SHA256 600,000 次，由 Workers Web Crypto 执行。无旧密码编码读取或用户映射兼容。
+- 密码派生由私有 `PASSWORD_KDF` 绑定调用 `PasswordKdf` Durable Object，由 RustCrypto 执行 PBKDF2-HMAC-SHA256 600,000 次，使用 16 字节随机盐和 32 字节派生值。Durable Object 使用独立的 CPU 预算，且不持久化密码、盐或派生值。派生不可用时拒绝请求，无重试或本地回退。无旧密码编码读取或用户映射兼容。
 - 头像实际解码再编码；外部身份不按同邮箱自动合并。外部请求不跟随任意重定向，带超时与大小限制。
 - SQL 文件只创建现行 V2 所需表；V1 会话、授权、成员、邀请及服务表已移除，BFF 表由 `0012_web_sessions.sql` 创建。本次只验证全新临时库，不对已有实验库升级或清理；本地体验须使用独立空库。
 
