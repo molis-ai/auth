@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from "vue";
-import { AccountClient } from "../../sdk/browser/src/index.ts";
+import { AccountClient } from "./account-client.ts";
 import { accountErrorMessage } from "./errors.ts";
 const props = defineProps<{
   client: AccountClient;

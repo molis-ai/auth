@@ -53,7 +53,7 @@ function run(command, commandArgs) {
 }
 try {
   await run('npm', ['run', 'build:web'])
-  await run('npm', ['--prefix', 'worker', 'run', 'build:rust'])
+  await run('npm', ['--prefix', 'worker', 'run', local ? 'build:rust' : 'build:rust:production'])
   const db = settings.platform.d1_databases[0]
   console.log(
     `Auth ${name}: ${settings.platform.vars.AUTH_ORIGIN}; D1 ${local && name === 'dev' ? 'local' : 'remote'} ${db.database_name} (${db.database_id})`,

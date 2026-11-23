@@ -183,7 +183,11 @@ async fn dispatch(a: &mut Auth, env: &Env) -> Result<Response> {
         {
             return crate::account_management::route(a, path, method).await;
         }
-        if path.starts_with("/api/v2/auth/external/") || path.starts_with("/api/v2/auth/mock/") {
+        if path.starts_with("/api/v2/auth/external/") {
+            return crate::external_login::browser(a, path, method).await;
+        }
+        #[cfg(feature = "mock-provider")]
+        if path.starts_with("/api/v2/auth/mock/") {
             return crate::external_login::browser(a, path, method).await;
         }
         if path == "/api/v2/auth/capabilities" {

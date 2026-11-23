@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AccountClient } from "../src/index.ts";
+import { AccountClient } from "../src/account-client.ts";
 test("V2U-07 client uses same-origin cookies/CSRF and never installs bearer credentials", async () => {
   const calls: { url: string; init: RequestInit }[] = [];
   const client = new AccountClient({

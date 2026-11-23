@@ -4,11 +4,11 @@
 
 本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](delivery-manifest.json)只记录当时交付。
 
-## 入口与 SDK 选择
+## 入口与客户端选择
 
 Work 使用 `horizontal/account` 及 Host 的账号入口；Auth 自身页面使用同源 BFF。邮箱/手机直接在当前页面完成，Google/GitHub 则回到登记的精确回调。当前隔离验证明确使用模拟提供方。Club 的历史接入使用 `lib/account` BFF，其当前代码不在本次验证范围。
 
-`sdk/browser` 现行导出为 `AccountClient`，用于 Auth 的同源 `/api/account` BFF；不保存中央 Token，不再导出旧 `AuthClient`。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本；没有发布新的通用 npm 包。
+Auth 的 `web/src/account-client.ts` 导出 `AccountClient`，用于同源 `/api/account` BFF。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本。
 
 | 层 | 使用的入口 | 身份与存储 |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ Auth Vue 页面也调用同源 `/api/account`。`AUTH_WEB_CLIENT_ID` 必须登�
 
 登录成功后，BFF 在同一 guarded batch 中创建新的加密会话引用并删除匿名引用，响应更新 Cookie 和 CSRF。旧匿名 Cookie 不获得登录后的权限，旧 CSRF 不能写入新会话；失败的登录不向匿名引用保存认证材料。浏览器仍只接触 opaque Cookie，中央 Token 不进入响应。
 
-浏览器 SDK 为 `AccountClient`，只发同源 Cookie/CSRF 请求。`request` 不自动重试写入；退出中止旧 generation。服务票据及无消费者的服务凭据管理已退役，没有对应产品映射；用户会话 Token 仍不向浏览器交付。
+`AccountClient` 只发同源 Cookie/CSRF 请求。`request` 不自动重试写入；退出中止旧 generation。服务票据及无消费者的服务凭据管理已退役，没有对应产品映射；用户会话 Token 仍不向浏览器交付。
 
 ## 登录能力与 P1 一致性
 

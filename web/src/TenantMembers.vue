@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import type { AccountClient } from '../../sdk/browser/src/index.ts';
+import type { AccountClient } from './account-client.ts';
 import { accountErrorMessage } from './errors.ts';
 type Member = { displayName: string; email: string | null; membershipId: string; userId: string; role: string; status: string; version: number };
 type Tenant = { tenantId: string; name: string; status: string; myRole: string; membershipId: string; version: number };

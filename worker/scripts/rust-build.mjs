@@ -13,7 +13,9 @@ const binary = join(
 )
 if (!existsSync(binary))
   throw new Error('Run npm run setup first to install the pinned Rust toolchain and worker-build')
-execFileSync(binary, ['--release', '--locked', '--no-opt'], {
+const args = ['--release', '--no-opt', '.', '--locked']
+if (process.argv.includes('--no-mock-provider')) args.push('--no-default-features')
+execFileSync(binary, args, {
   cwd,
   stdio: 'inherit',
   env: rustEnvironment(),

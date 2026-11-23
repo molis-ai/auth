@@ -1,6 +1,6 @@
 # Molis Auth
 
-统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，Vue 管理界面，以及面向同源 Host/BFF 的浏览器 SDK。中央 API 只使用 `/api/v2`；Auth 自己的页面使用 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
+统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，以及 Vue 管理界面。中央 API 只使用 `/api/v2`；Auth 页面通过 `AccountClient` 调用同源 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
 
 ## 当前模型
 
@@ -33,7 +33,7 @@ npm run build
 npm run contracts:check
 ```
 
-`npm test` 包含合同校验、Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束、Web 和 SDK 用例。测试只创建临时数据。旧测试的职责迁移见 [V2 回归范围](docs/unified-account/v2-test-transition.md)。
+`npm test` 包含合同校验、两种 Cargo feature 配置的 Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束，以及包含 `AccountClient` 的 Web 用例。测试只创建临时数据。旧测试的职责迁移见 [V2 回归范围](docs/unified-account/v2-test-transition.md)。
 
 真实页面专项在构建 Auth 与 Work 后运行 `MOLIS_WORK_SOURCE=/absolute/path/to/molis-work npm run test:browser`。它借用 Work 的公开 Chrome test-kit 和机器测试槽，创建临时 D1、随机端口与独立浏览器 profile，验证注册登录、租户创建、资料、再次验证、绑定邮箱、改密、会话撤销后重新登录及退出；投递明确为 mock。截图默认写临时目录，可用 `AUTH_BROWSER_EVIDENCE_DIR` 指定。该命令不访问已有浏览器或数据库，不计为 LIVE 供应商验收。
 

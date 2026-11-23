@@ -43,7 +43,7 @@ jobs:
           echo "WASM_BINDGEN_BIN=$RUNNER_TEMP/auth-wasm-tools/bin/wasm-bindgen" >> "$GITHUB_ENV"
       - name: Check contracts and run isolated tests
         run: npm test
-      - name: Build web and browser SDK
-        run: npm run build:web && npm --prefix sdk/browser run build
+      - name: Build web
+        run: npm run build:web
       # npm test already builds the Worker WASM. No deploy, versions upload,
       # preview, remote D1 operation, artifact upload, or production secret.

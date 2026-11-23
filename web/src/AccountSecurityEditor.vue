@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { AccountClient } from '../../sdk/browser/src/index.ts';
+import type { AccountClient } from './account-client.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
 defineProps<{client: AccountClient; authorizationPopup?: Window | null; securityAction: string; reauth: string; newIdentity: boolean; binding?: {bindingId:string;type:string}; target: Record<string,string>; busy:boolean}>();
 const newPassword = defineModel<string>('newPassword', {default:''});

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue';
-import { AccountClient } from '../../sdk/browser/src/index.ts';
+import { AccountClient } from './account-client.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
 import { accountErrorMessage } from './errors.ts';
 import { entryText } from './entry-copy.ts';

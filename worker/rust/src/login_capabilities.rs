@@ -6,7 +6,7 @@ use worker::{Method, Response};
 pub(crate) fn available(a: &Auth, c: &Value) -> Vec<&'static str> {
     let mock = matches!(c["kind"].as_str(), Some("LOCAL" | "TEST"));
     let delivery = mock && c["delivery_mode"] == "MOCK";
-    let provider = mock && c["provider_mode"] == "MOCK";
+    let provider = cfg!(feature = "mock-provider") && mock && c["provider_mode"] == "MOCK";
     let state_key = crate::external_login::configured(a);
     let mut methods = vec!["ACCOUNT_PASSWORD"];
     if delivery || (c["delivery_mode"] == "LIVE" && crate::mail_delivery::configured(a)) { methods.push("EMAIL_CODE"); }

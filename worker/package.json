@@ -8,6 +8,7 @@
   "scripts": {
     "setup:rust": "node scripts/rust-setup.mjs",
     "build:rust": "node scripts/rust-build.mjs",
+    "build:rust:production": "node scripts/rust-build.mjs --no-mock-provider",
     "format": "node scripts/rust-check.mjs format && prettier --write tests scripts rust-tests rust/src/runtime *.json *.jsonc migrations/*.sql --ignore-unknown",
     "format:check": "node scripts/rust-check.mjs format:check && prettier --check tests scripts rust-tests rust/src/runtime *.json *.jsonc --ignore-unknown",
     "dev": "node scripts/environment-command.mjs start",

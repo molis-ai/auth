@@ -1,8 +1,6 @@
 # Dependencies and generated artifacts
 node_modules/
 web/dist/
-sdk/browser/dist/
-sdk/browser/*.tgz
 worker/dist/
 coverage/
 *.log
