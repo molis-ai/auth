@@ -7,7 +7,7 @@ import { importJWK, jwtVerify, type JWK } from 'jose'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { secret, hash, challenge } from './fixtures.ts'
 
-test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation and pending-code boundary', async () => {
+test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation and pending-code boundary', async (suite) => {
   const origin = 'http://127.0.0.1:8787',
     work = 'molis-work-unified-local',
     club = 'molis-club-unified-local'
@@ -194,9 +194,9 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .bind(hash(c.accessToken))
       .run()
     assert.equal((await call('/sessions/current', undefined, c.accessToken)).status, 401)
-    const logout = await call('/sessions/current/logout', {
-      refreshProof: { clientId: work, refreshToken: c.refreshToken },
-    })
+    const refreshLogoutKey = secret()
+    const refreshProof = { refreshProof: { clientId: work, refreshToken: c.refreshToken } }
+    const logout = await call('/sessions/current/logout', refreshProof, undefined, refreshLogoutKey)
     assert.equal(logout.status, 200)
     assert.equal((await call('/sessions/current', undefined, b.accessToken)).status, 200)
     assert.equal(
@@ -238,6 +238,99 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
         .first(),
     )
     assert.equal((await call('/sessions/logout-all', {}, b.accessToken, key)).status, 200)
+    await suite.test(
+      'cleanup catches up in rounds and respects proofs, grace and replays',
+      async () => {
+        await db
+          .prepare('UPDATE auth_login_refresh_token SET expires_at=created_at+1 WHERE token_hash=?')
+          .bind(hash(c.refreshToken))
+          .run()
+        await db
+          .prepare(
+            "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<501) INSERT INTO auth_one_use SELECT 'cleanup-'||n,'fixture','fixture','{}',0 FROM numbers",
+          )
+          .run()
+        const old = await code()
+        const grace = await code()
+        const ids = await Promise.all(
+          [old, grace].map(
+            async ({ code }) =>
+              (
+                await db
+                  .prepare('SELECT transaction_id FROM auth_identity_proof WHERE token_hash=?')
+                  .bind(hash(code))
+                  .first()
+              ).transaction_id,
+          ),
+        )
+        const [oldId, graceId] = ids
+        await db
+          .prepare('UPDATE auth_product_transaction SET created_at=0,expires_at=1 WHERE id=?')
+          .bind(oldId)
+          .run()
+        await db
+          .prepare('UPDATE auth_product_transaction SET created_at=0,expires_at=? WHERE id=?')
+          .bind(Date.now() - 3_600_000, graceId)
+          .run()
+        await db
+          .prepare('DELETE FROM auth_identity_proof WHERE transaction_id=?')
+          .bind(graceId)
+          .run()
+        await db
+          .prepare(
+            "INSERT INTO auth_verification_challenge (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at) VALUES ('cleanup',?,'EMAIL','fixture','fixture','cleanup','ACCEPTED',5,0,?,0)",
+          )
+          .bind(oldId, Date.now() + 60_000)
+          .run()
+        const backlog = async () =>
+          (
+            await db
+              .prepare("SELECT COUNT(*) n FROM auth_one_use WHERE token_hash LIKE 'cleanup-%'")
+              .first()
+          ).n
+        const exists = async (table: string, column: string, id: unknown) =>
+          Boolean(await db.prepare(`SELECT 1 FROM ${table} WHERE ${column}=?`).bind(id).first())
+        const plan = (
+          await db
+            .prepare(
+              'EXPLAIN QUERY PLAN SELECT 1 FROM auth_logout_receipt WHERE proof_hash=? AND expires_at>?',
+            )
+            .bind(hash(c.refreshToken), Date.now())
+            .all()
+        ).results
+          .map(({ detail }) => detail)
+          .join('\n')
+        assert.match(plan, /USING COVERING INDEX ix_logout_receipt_proof_expiry/)
+        assert.equal((await p.scheduled()).outcome, 'ok')
+        assert.equal(await backlog(), 51)
+        assert.equal(await exists('auth_product_transaction', 'id', oldId), true)
+        assert.equal(await exists('auth_verification_challenge', 'id', 'cleanup'), true)
+        assert.equal(
+          (await call('/sessions/current/logout', refreshProof, undefined, refreshLogoutKey))
+            .status,
+          200,
+        )
+        assert.equal((await call('/sessions/logout-all', {}, b.accessToken, key)).status, 200)
+
+        await db
+          .prepare("UPDATE auth_verification_challenge SET expires_at=1 WHERE id='cleanup'")
+          .run()
+        assert.equal((await p.scheduled()).outcome, 'ok')
+        assert.equal(await backlog(), 0)
+        assert.equal(await exists('auth_verification_challenge', 'id', 'cleanup'), false)
+        assert.equal(await exists('auth_product_transaction', 'id', oldId), true)
+        await db
+          .prepare(
+            'UPDATE auth_identity_proof SET created_at=0,expires_at=1 WHERE transaction_id=?',
+          )
+          .bind(oldId)
+          .run()
+        assert.equal((await p.scheduled()).outcome, 'ok')
+        assert.equal(await exists('auth_product_transaction', 'id', oldId), false)
+        assert.equal(await exists('auth_product_transaction', 'id', graceId), true)
+        assert.deepEqual((await db.prepare('PRAGMA foreign_key_check').all()).results, [])
+      },
+    )
     const fresh = await login()
     assert.equal((await call('/sessions/current', undefined, fresh.accessToken)).status, 200)
     const oneUse = await code()

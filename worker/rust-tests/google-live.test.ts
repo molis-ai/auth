@@ -19,6 +19,17 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
     alg: 'RS256',
     use: 'sig',
   }
+  const rotatedJwk = {
+    ...jwk,
+    ...(await exportJWK(wrongPair.publicKey)),
+    kid: 'google-rotated-key',
+  }
+  let keys = [jwk]
+  let signingKid = jwk.kid
+  let certs = 0
+  let certsStatus = 200
+  let certsHeaders: Record<string, string> = { 'Cache-Control': 'public, max-age=600', Age: '10' }
+  let ip = '192.0.2.1'
   let mutation: Record<string, unknown> = {}
   let wrongSignature = false
   let beforeToken: (() => Promise<void>) | undefined
@@ -39,7 +50,9 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
     },
     async (request: Request) => {
       if (request.url === 'https://www.googleapis.com/oauth2/v3/certs') {
-        return Response.json({ keys: [jwk] })
+        assert.equal(request.method, 'GET')
+        certs++
+        return Response.json({ keys }, { status: certsStatus, headers: certsHeaders })
       }
       assert.equal(request.url, 'https://oauth2.googleapis.com/token')
       exchanges++
@@ -69,14 +82,18 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         picture: 'https://lh3.googleusercontent.com/test-avatar',
         ...mutation,
       })
-        .setProtectedHeader({ alg: 'RS256', kid: 'google-test-key' })
-        .sign(wrongSignature ? wrongPair.privateKey : pair.privateKey)
+        .setProtectedHeader({ alg: 'RS256', kid: signingKid })
+        .sign(
+          wrongSignature !== (signingKid === rotatedJwk.kid)
+            ? wrongPair.privateKey
+            : pair.privateKey,
+        )
       return Response.json({ id_token: jwt, access_token: 'unused' })
     },
   )
   try {
     await initializeLocalRuntime(p, false)
-    const db = p.env.DB
+    let db = p.env.DB
     const seed = readFileSync(new URL('./fixtures/oauth-live.sql', import.meta.url), 'utf8')
     for (const sql of seed
       .replace(/^--[^\n]*$/gm, '')
@@ -92,6 +109,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'CF-Connecting-IP': ip,
             'Idempotency-Key': secret(),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
             ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
@@ -266,13 +284,16 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
     assert.equal(exchanges, 0)
 
     const signedInUsers = []
-    for (const flow of [work, (await start('club'))!]) {
-      await verify(flow)
+    const club = await start('club')
+    const firstFlows = [work, club]
+    await Promise.all(firstFlows.map(verify))
+    for (const flow of firstFlows) {
       signedInUsers.push(await finish(flow))
       assert.equal((await sendCallback(flow)).status, 401)
     }
     assert.equal(new Set(signedInUsers.map(({ userId }) => userId)).size, 1)
     assert.equal(exchanges, 2)
+    assert.equal(certs, 1)
     const identity = await db.prepare('SELECT issuer, subject FROM auth_external_identity').all()
     assert.deepEqual(identity.results, [
       { issuer: 'https://accounts.google.com', subject: '1234567' },
@@ -444,8 +465,10 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         }
         mutation = {}
         wrongSignature = true
+        const certsBeforeBadSignature = certs
         assert.equal((await sendCallback(await start('work', 'google', 999999))).status, 401)
         wrongSignature = false
+        assert.equal(certs, certsBeforeBadSignature)
         const after = await db.prepare('SELECT COUNT(*) n FROM auth_external_identity').first()
         assert.deepEqual(after, before)
       },
@@ -549,6 +572,62 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         mutation = {}
       }
     })
+    await suite.test('refreshes once for rotation and removes retired keys', async () => {
+      const before = certs
+      keys = [rotatedJwk]
+      signingKid = rotatedJwk.kid
+      try {
+        const flows = [await start('work'), await start('club')]
+        await Promise.all(flows.map(verify))
+        assert.equal(certs, before + 1)
+        for (const kid of [jwk.kid, 'unknown-one', 'unknown-two']) {
+          signingKid = kid
+          const response = await sendCallback(await start('work'))
+          assert.equal(response.status, 401)
+        }
+        assert.equal(certs, before + 1)
+      } finally {
+        keys = [jwk]
+        signingKid = jwk.kid
+      }
+    })
+    await suite.test(
+      'does not reuse expired or uncacheable responses and surfaces outages',
+      async () => {
+        ip = '192.0.2.2'
+        try {
+          const uncacheable: Record<string, string>[] = [
+            {},
+            { 'Cache-Control': 'max-age=10', Age: '10' },
+            { 'Cache-Control': 'max-age=0' },
+            { 'Cache-Control': 'max-age=600, no-cache' },
+            { 'Cache-Control': 'max-age=600, no-store' },
+            { 'Cache-Control': 'max-age=600, max-age=601' },
+            { 'Cache-Control': 'max-age=invalid' },
+          ]
+          for (const headers of uncacheable) {
+            certsHeaders = headers
+            db = await p.updateBindings({ UNIFIED_GOOGLE_CLIENT_SECRET: key })
+            const before = certs
+            await verify(await start('work'))
+            await verify(await start('work'))
+            assert.equal(certs, before + 2, JSON.stringify(headers))
+          }
+          const before = await db.prepare('SELECT COUNT(*) n FROM auth_external_identity').first()
+          certsStatus = 500
+          assert.equal((await sendCallback(await start('work', 'google', 999999))).status, 503)
+          assert.deepEqual(
+            await db.prepare('SELECT COUNT(*) n FROM auth_external_identity').first(),
+            before,
+          )
+          certsStatus = 200
+          await verify(await start('work'))
+        } finally {
+          certsStatus = 200
+          certsHeaders = { 'Cache-Control': 'max-age=600' }
+        }
+      },
+    )
     await suite.test(
       'ENV-10/11: test requires an admitted verified Google email for new identities',
       async () => {

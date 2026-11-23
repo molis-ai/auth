@@ -29,6 +29,7 @@ png = "0.18"
 url = "2"
 
 [build-dependencies]
+regex = "1"
 serde_json = "1"
 
 [profile.release]
