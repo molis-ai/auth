@@ -504,13 +504,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 let (s, c) = login_sessions::active(a).await?;
                 service = Service { a, s, c };
             }
-            if action.op == "member.leave" {
-                if let Some(result) =
+            if action.op == "member.leave"
+                && let Some(result) =
                     crate::tenant_membership::replay_leave(&service, &action, &b, &key).await?
-                {
-                    output = Some(result);
-                    break;
-                }
+            {
+                output = Some(result);
+                break;
             }
             let ctx = match service.authorize(&action).await {
                 Ok(ctx) => ctx,

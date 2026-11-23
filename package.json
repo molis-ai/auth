@@ -14,6 +14,7 @@
     "build": "npm run build:web && npm --prefix worker run build",
     "format": "npm --prefix worker run format",
     "format:check": "npm --prefix worker run format:check",
+    "clippy": "npm --prefix worker run clippy",
     "admin": "npm --prefix worker run admin",
     "test:password": "npm --prefix worker run test:password",
     "contracts:generate": "node contracts/unified-account/generate.ts",

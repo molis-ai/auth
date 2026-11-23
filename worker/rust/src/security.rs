@@ -102,7 +102,7 @@ pub async fn encode(raw: &str, env: &worker::Env) -> Result<String> {
     ];
     let lower = value.to_lowercase();
     let digest = hash(&lower);
-    if value.chars().all(|c| Some(c) == value.chars().next())
+    if value.chars().all(|c| value.starts_with(c))
         || common.contains(&lower.as_str())
         || include_str!("password-blocklist.txt")
             .lines()
