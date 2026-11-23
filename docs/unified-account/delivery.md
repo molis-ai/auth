@@ -161,12 +161,9 @@ npm test
 node scripts/account-contracts.mjs --check
 # 已有完整本地构建才执行；该脚本不加载 .dev.vars
 node scripts/test-account-routes.mjs
-
-# Auth：只读核对当前源码、合同及矩阵
-node worker/scripts/account-delivery.mjs check /absolute/path/work /absolute/path/club
 ```
 
-`snapshot` 模式只更新本仓库的交付 JSON；在审核源码/证据改变后才使用，不把重写摘要当作修复失败测试。所有真实迁移、发布和灰度执行仍是单独任务。
+交付摘要工具的 `check` 和 `snapshot` 调用见[历史验证记录](validation-results.json)。所有真实迁移、发布和灰度执行仍是单独任务。
 
 
 K-03/K-04 的定向复现（同样遵守构建和机器槽位规则）：

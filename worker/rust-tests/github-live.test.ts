@@ -61,7 +61,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
     await initializeLocalRuntime(p, false)
     const db = p.env.DB
     const seed = readFileSync(
-      new URL('../deploy/staging/seed.sql', import.meta.url),
+      new URL('./fixtures/oauth-live.sql', import.meta.url),
       'utf8',
     ).replaceAll('https://auth-staging.molis.ai', origin)
     for (const sql of seed
