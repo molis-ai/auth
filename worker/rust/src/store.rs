@@ -78,6 +78,10 @@ impl Store {
             }
         }
     }
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep each audit event field explicit at call sites"
+    )]
     pub fn audit(
         &self,
         action: &str,

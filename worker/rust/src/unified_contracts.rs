@@ -50,19 +50,18 @@ fn compile_schema(document: &Value, schema: &Value) -> Result<(), String> {
         }
         definition(document, name)?;
     }
-    if let Some(kind) = map.get("type") {
-        if ![
+    if let Some(kind) = map.get("type")
+        && ![
             "object", "array", "string", "integer", "number", "boolean", "null",
         ]
         .contains(&kind.as_str().unwrap_or(""))
-        {
-            return Err("contract: unsupported type".into());
-        }
+    {
+        return Err("contract: unsupported type".into());
     }
-    if let Some(format) = map.get("format") {
-        if !supported("formats", format.as_str().unwrap_or("")) {
-            return Err("contract: unsupported format".into());
-        }
+    if let Some(format) = map.get("format")
+        && !supported("formats", format.as_str().unwrap_or(""))
+    {
+        return Err("contract: unsupported format".into());
     }
     if let Some(pattern) = map.get("pattern") {
         let text = pattern.as_str().ok_or("contract: pattern must be string")?;
@@ -121,10 +120,10 @@ fn compile_schema(document: &Value, schema: &Value) -> Result<(), String> {
             compile_schema(document, child)?;
         }
     }
-    if let Some(child) = map.get("additionalProperties") {
-        if !child.is_boolean() {
-            compile_schema(document, child)?;
-        }
+    if let Some(child) = map.get("additionalProperties")
+        && !child.is_boolean()
+    {
+        compile_schema(document, child)?;
     }
     for key in ["oneOf", "anyOf", "allOf"] {
         if let Some(children) = map.get(key) {
@@ -228,12 +227,11 @@ fn json_equal(left: &Value, right: &Value) -> bool {
     }
 }
 fn matches(document: &Value, schema: &Value, value: &Value) -> bool {
-    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
-        if !definition(document, reference.trim_start_matches("#/$defs/"))
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str)
+        && !definition(document, reference.trim_start_matches("#/$defs/"))
             .is_ok_and(|s| matches(document, s, value))
-        {
-            return false;
-        }
+    {
+        return false;
     }
     if schema.get("const").is_some_and(|v| !json_equal(v, value)) {
         return false;
@@ -304,11 +302,11 @@ fn matches(document: &Value, schema: &Value, value: &Value) -> bool {
             return false;
         }
     }
-    if let Some(number) = value.as_f64() {
-        if number < bound("minimum", f64::NEG_INFINITY) || number > bound("maximum", f64::INFINITY)
-        {
-            return false;
-        }
+    if let Some(number) = value.as_f64()
+        && (number < bound("minimum", f64::NEG_INFINITY)
+            || number > bound("maximum", f64::INFINITY))
+    {
+        return false;
     }
     if let Some(items) = value.as_array() {
         if (items.len() as f64) < bound("minItems", 0.0)
@@ -326,10 +324,10 @@ fn matches(document: &Value, schema: &Value, value: &Value) -> bool {
                 }
             }
         }
-        if let Some(item_schema) = schema.get("items") {
-            if !items.iter().all(|v| matches(document, item_schema, v)) {
-                return false;
-            }
+        if let Some(item_schema) = schema.get("items")
+            && !items.iter().all(|v| matches(document, item_schema, v))
+        {
+            return false;
         }
     }
     if let Some(values) = value.as_object() {
@@ -361,12 +359,11 @@ fn matches(document: &Value, schema: &Value, value: &Value) -> bool {
                 if !matches(document, property, child) {
                     return false;
                 }
-            } else if let Some(additional) = schema.get("additionalProperties") {
-                if additional == &Value::Bool(false)
-                    || (additional.is_object() && !matches(document, additional, child))
-                {
-                    return false;
-                }
+            } else if let Some(additional) = schema.get("additionalProperties")
+                && (additional == &Value::Bool(false)
+                    || (additional.is_object() && !matches(document, additional, child)))
+            {
+                return false;
             }
         }
     }

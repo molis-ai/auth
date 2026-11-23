@@ -7,14 +7,18 @@ const env = rustEnvironment()
 const action = process.argv[2] || 'check'
 const commands = {
   check: ['check', '--locked', '--target', 'wasm32-unknown-unknown'],
+  clippy: ['clippy', '--locked', '--lib', '--target', 'wasm32-unknown-unknown'],
   test: ['test', '--locked', '--lib'],
   format: ['fmt'],
   'format:check': ['fmt', '--check'],
 }
 if (!commands[action]) throw new Error('Unknown Rust action')
-execFileSync('cargo', commands[action], { cwd, env, stdio: 'inherit' })
-if (action === 'check' || action === 'test')
-  execFileSync('cargo', [...commands[action], '--no-default-features'], {
+const featureConfigs = ['check', 'clippy', 'test'].includes(action)
+  ? [[], ['--no-default-features']]
+  : [[]]
+const clippyArgs = action === 'clippy' ? ['--', '-D', 'warnings'] : []
+for (const features of featureConfigs)
+  execFileSync('cargo', [...commands[action], ...features, ...clippyArgs], {
     cwd,
     env,
     stdio: 'inherit',

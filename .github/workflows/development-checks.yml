@@ -35,6 +35,11 @@ jobs:
         run: npm run setup
       - name: Check formatting
         run: npm run format:check
+      - name: Install Clippy and check both feature configurations
+        run: |
+          toolchain=$(node --input-type=module -e "import { installedToolchain } from './worker/scripts/rust-toolchain.mjs'; process.stdout.write(installedToolchain())")
+          rustup component add --toolchain "$toolchain" clippy
+          npm run clippy
       - name: Build the locked wasm-bindgen CLI
         run: |
           # worker-build otherwise fetches a prebuilt binary from GitHub Releases.
@@ -47,5 +52,23 @@ jobs:
         run: npm test
       - name: Build web
         run: npm run build:web
-      # npm test already builds the Worker WASM. No deploy, versions upload,
-      # preview, remote D1 operation, artifact upload, or production secret.
+      - name: Verify production WASM and Wrangler dry-run bundle
+        run: node worker/scripts/verify-production-bundle.mjs
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.1
+      - name: Audit Worker dependencies including dev dependencies
+        continue-on-error: true
+        run: npm --prefix worker audit --include=dev --audit-level=high || { echo "::warning title=Worker dependency audit::High/critical advisories found in worker dependencies (non-blocking visibility check)"; exit 1; }
+      - name: Audit web production dependencies
+        continue-on-error: true
+        run: npm --prefix web audit --omit=dev --audit-level=high || { echo "::warning title=Web dependency audit::High/critical advisories found in web production dependencies (non-blocking visibility check)"; exit 1; }

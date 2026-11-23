@@ -8,6 +8,9 @@ use crate::{
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use worker::{Method, Request, RequestInit, Response};
+
+static PRODUCT_ROUTES: &[(Method, &str)] = include!(concat!(env!("OUT_DIR"), "/product_routes.rs"));
+
 #[wasm_bindgen(module = "/src/runtime/federation.js")]
 extern "C" {
     #[wasm_bindgen(catch,js_name=authSeal)]
@@ -436,6 +439,35 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     )?;
     Ok(response)
 }
+fn is_product_route(path: &str, method: &Method) -> bool {
+    PRODUCT_ROUTES.iter().any(|(declared, template)| {
+        if declared != method {
+            return false;
+        }
+        let mut parts = path.split('/');
+        template.split('/').all(|part| {
+            parts
+                .next()
+                .is_some_and(|value| part.starts_with('{') || part == value)
+        }) && parts.next().is_none()
+    })
+}
+
+fn product_target(path: &str, query: Option<&str>) -> String {
+    let suffix = path.strip_prefix("/api/account").expect("prefix");
+    let prefix = if suffix.starts_with("/subscriptions") {
+        "/api/v2/users/me"
+    } else {
+        "/api/v2"
+    };
+    let mut target = format!("{prefix}{suffix}");
+    if let Some(query) = query {
+        target.push('?');
+        target.push_str(query);
+    }
+    target
+}
+
 async fn management(
     s: &mut WebSession<'_>,
     path: &str,
@@ -456,43 +488,9 @@ async fn management(
             .await;
     }
     // Only declared noncredential product operations are forwarded. No user-selected URL or headers.
-    let doc: Value = serde_json::from_str(include_str!(
-        "../../../contracts/unified-account/openapi.json"
-    ))
-    .expect("contract");
     let url = s.a.request.url()?;
-    for (template, operations) in doc["paths"].as_object().expect("paths") {
-        if !template.starts_with("/api/account/") {
-            continue;
-        }
-        let Some(declaration) = operations.get(method.to_string().to_lowercase()) else {
-            continue;
-        };
-        let operation = text(declaration, "operationId");
-        if !operation.starts_with("product_") {
-            continue;
-        }
-        let parts: Vec<_> = path.split('/').collect();
-        let pattern: Vec<_> = template.split('/').collect();
-        if parts.len() != pattern.len()
-            || !pattern
-                .iter()
-                .zip(&parts)
-                .all(|(t, v)| t.starts_with('{') || t == v)
-        {
-            continue;
-        }
-        let suffix = path.strip_prefix("/api/account").expect("prefix");
-        let central = if suffix.starts_with("/subscriptions") {
-            format!("/users/me{suffix}")
-        } else {
-            suffix.into()
-        };
-        let mut target = format!("/api/v2{central}");
-        if let Some(query) = url.query() {
-            target.push('?');
-            target.push_str(query);
-        }
+    if is_product_route(path, &method) {
+        let target = product_target(path, url.query());
         let key = s.a.header("Idempotency-Key");
         return s
             .call(
@@ -528,4 +526,73 @@ async fn management(
         status: 404,
         code: "NOT_FOUND",
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn product_routes_equal_the_original_openapi_lookup() {
+        let doc: Value = serde_json::from_str(include_str!(
+            "../../../contracts/unified-account/openapi.json"
+        ))
+        .expect("contract");
+        let mut methods = Method::all();
+        methods.sort_by_key(|method| method.to_string().to_lowercase());
+        let mut expected = Vec::new();
+        for (template, operations) in doc["paths"].as_object().expect("paths") {
+            if !template.starts_with("/api/account/") {
+                continue;
+            }
+            for method in &methods {
+                let Some(declaration) = operations.get(method.to_string().to_lowercase()) else {
+                    continue;
+                };
+                if text(declaration, "operationId").starts_with("product_") {
+                    expected.push((method.clone(), template.as_str()));
+                }
+            }
+        }
+        assert_eq!(PRODUCT_ROUTES, expected.as_slice());
+    }
+
+    #[test]
+    fn product_matching_preserves_methods_and_path_segments() {
+        for (method, path, matches) in [
+            (Method::Get, "/api/account/me", true),
+            (Method::Head, "/api/account/me", false),
+            (Method::Post, "/api/account/me", false),
+            (Method::Get, "/api/account/me/", false),
+            (Method::Get, "/api/account/tenants/", true),
+            (Method::Get, "/api/account/tenants//members", true),
+            (Method::Get, "/api/account/tenants/%2F/members", true),
+            (Method::Get, "/api/account/tenants/members/", false),
+            (Method::Get, "/api/account/tenants/one/members/", false),
+        ] {
+            assert_eq!(is_product_route(path, &method), matches, "{method} {path}");
+        }
+    }
+
+    #[test]
+    fn product_targets_preserve_the_request_path_and_query() {
+        use url::Url;
+
+        let origin = "https://auth.example";
+        for (request, target) in [
+            ("/api/account/me", "/api/v2/me"),
+            ("/api/account/me?", "/api/v2/me?"),
+            (
+                "/api/account/subscriptions",
+                "/api/v2/users/me/subscriptions",
+            ),
+            (
+                "/api/account/tenants/%2F/members?x=%2F&x=+",
+                "/api/v2/tenants/%2F/members?x=%2F&x=+",
+            ),
+        ] {
+            let url = Url::parse(&format!("{origin}{request}")).expect("request URL");
+            assert_eq!(product_target(url.path(), url.query()), target);
+        }
+    }
 }

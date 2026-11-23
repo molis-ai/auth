@@ -9,6 +9,6 @@
     "test": "node --test tests/*.test.ts"
   },
   "engines": { "node": ">=22.18.0" },
-  "dependencies": { "vue": "3.5.42", "element-plus": "2.14.5" },
+  "dependencies": { "vue": "3.5.42" },
   "devDependencies": { "@vitejs/plugin-vue": "6.0.9", "vite": "8.3.0", "typescript": "5.9.3", "vue-tsc": "3.3.11" }
 }
