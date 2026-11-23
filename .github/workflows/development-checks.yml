@@ -59,7 +59,6 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
         with:
@@ -68,7 +67,8 @@ jobs:
         with:
           node-version: 24.22.1
       - name: Audit Worker dependencies including dev dependencies
-        run: npm --prefix worker audit --include=dev --audit-level=high
+        continue-on-error: true
+        run: npm --prefix worker audit --include=dev --audit-level=high || { echo "::warning title=Worker dependency audit::High/critical advisories found in worker dependencies (non-blocking visibility check)"; exit 1; }
       - name: Audit web production dependencies
-        if: ${{ !cancelled() }}
-        run: npm --prefix web audit --omit=dev --audit-level=high
+        continue-on-error: true
+        run: npm --prefix web audit --omit=dev --audit-level=high || { echo "::warning title=Web dependency audit::High/critical advisories found in web production dependencies (non-blocking visibility check)"; exit 1; }
