@@ -280,7 +280,7 @@ Club 可拆为 BFF 会话、账号页面、租户商业页面、旧数据映射�
 | --- | --- |
 | 产品规则、范围与未决项 | [需求文档](requirements.md)及本计划第 10 节；继续使用外部 mock、合成数据和隔离环境，支付、业务付费拦截与真实共享另期 |
 | 已实现与已验证的范围 | [验收矩阵](acceptance-matrix.md)、[交付记录](delivery.md)与[验证记录](validation-results.json)；39 项隔离通过、3 项部分完成，K-01 至 K-05 已有修复或补齐证据；这不等于完成真实环境验收 |
-| 证据对应哪份代码 | [版本摘要](delivery-manifest.json)及[摘要检查工具](../../worker/scripts/account-delivery.mjs)；本指引形成时实现尚未提交，T-01 接续后以交付台账中的源码基准提交和摘要为准。摘要检查只证明一致性，不证明测试已通过 |
+| 证据对应哪份代码 | [版本摘要](delivery-manifest.json)和[历史验证记录](validation-results.json)；本指引形成时实现尚未提交，T-01 接续后以交付台账中的源码基准提交和摘要为准。摘要检查只证明一致性，不证明测试已通过 |
 | 平台授权为何仍有后续工作 | [中央权限守卫](../../worker/rust/src/tenants.rs)读取 `auth_platform_permission` 并在提交时检查权限版本；目前授权写入见隔离测试，首个 v2 管理员的受控授予/回收工具尚未交付。旧 v1 管理员不是 v2 授权来源，见[接入说明](integration-guide.md#平台与租户管理) |
 | 套餐发布可以复用什么 | [商业权限入口](../../worker/rust/src/billing.rs)要求 `CATALOG_WRITE`，[套餐目录](../../worker/rust/src/billing_catalog.rs)按版本追加发布；复用这些合同及既有两端管理页，不另建产品自己的套餐事实 |
 | mock 与正式环境的边界 | [环境校验](../../worker/rust/src/unified_policy.rs)拒绝生产环境启用 mock；真实发送、官方 OAuth 和目标环境验证仍须另补证据，不能只切换配置就宣称可上线 |

@@ -77,7 +77,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
   try {
     await initializeLocalRuntime(p, false)
     const db = p.env.DB
-    const seed = readFileSync(new URL('../deploy/staging/seed.sql', import.meta.url), 'utf8')
+    const seed = readFileSync(new URL('./fixtures/oauth-live.sql', import.meta.url), 'utf8')
     for (const sql of seed
       .replace(/^--[^\n]*$/gm, '')
       .split(';')
