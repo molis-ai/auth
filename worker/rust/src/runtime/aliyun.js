@@ -73,7 +73,7 @@ async function readBody(response) {
   return new TextDecoder().decode(all)
 }
 
-export async function aliyunRpc(keyId, keySecret, action, input) {
+export async function aliyunRpc(keyId, keySecret, action, input, requestId, environment) {
   if (!['SendSmsVerifyCode', 'CheckSmsVerifyCode', 'SingleSendMail'].includes(action))
     throw Error('upstream')
   const params = {
@@ -128,14 +128,20 @@ export async function aliyunRpc(keyId, keySecret, action, input) {
     }
   }
 
-  console.log({
-    event: 'auth.aliyun.request',
-    action,
-    outcome: result.outcome,
-    duration_ms: Math.round(performance.now() - started),
-    ...(response && { http_status: response.status }),
-    ...(result.verification_result && { verification_result: result.verification_result }),
-  })
+  console.log(
+    JSON.stringify({
+      schema: 1,
+      service: 'molis-auth',
+      env: ['prod', 'test', 'dev'].includes(environment) ? environment : 'unknown',
+      event: 'auth.aliyun.request',
+      request_id: requestId,
+      action,
+      outcome: result.outcome,
+      duration_ms: Math.round(performance.now() - started),
+      ...(response && { http_status: response.status }),
+      ...(result.verification_result && { verification_result: result.verification_result }),
+    }),
+  )
   if (!result.reply) throw Error('upstream')
   return result.reply
 }

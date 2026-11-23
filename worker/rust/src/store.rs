@@ -6,20 +6,29 @@ use worker::{D1Database, D1PreparedStatement};
 pub struct Store {
     pub db: D1Database,
     pub web_owner: Option<(String, i64)>,
+    log_env: &'static str,
     request_id: String,
     route: &'static str,
 }
 impl Store {
-    pub fn new(db: D1Database, request_id: String, route: &'static str) -> Self {
+    pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
             db,
             web_owner: None,
-            request_id,
-            route,
+            log_env: log.env,
+            request_id: log.id.to_owned(),
+            route: log.route,
         }
     }
     pub(crate) fn log_failure(&self, phase: &'static str, failure: &Failure, started: i64) {
-        log_failure(&self.request_id, self.route, phase, failure, started);
+        log_failure(
+            self.log_env,
+            &self.request_id,
+            self.route,
+            phase,
+            failure,
+            started,
+        );
     }
     fn database_failure(&self, error: worker::Error, phase: &'static str, started: i64) -> Failure {
         let failure = Failure::from(error);
@@ -27,16 +36,22 @@ impl Store {
         failure
     }
     pub fn statement(&self, sql: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
-        let args: Vec<JsValue> = values
+        let args = values
             .into_iter()
-            .map(|v| match v {
-                Value::Null => JsValue::NULL,
-                Value::String(s) => JsValue::from(s),
-                Value::Number(n) => JsValue::from_f64(n.as_f64().unwrap()),
-                Value::Bool(b) => JsValue::from_f64(if b { 1.0 } else { 0.0 }),
-                _ => JsValue::from(v.to_string()),
+            .map(|v| {
+                Ok(match v {
+                    Value::Null => JsValue::NULL,
+                    Value::String(s) => JsValue::from(s),
+                    Value::Number(n) => JsValue::from_f64(
+                        n.as_f64()
+                            .filter(|n| n.is_finite())
+                            .ok_or_else(Failure::unavailable)?,
+                    ),
+                    Value::Bool(b) => JsValue::from_f64(if b { 1.0 } else { 0.0 }),
+                    _ => JsValue::from(v.to_string()),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let started = now();
         self.db
             .prepare(sql)

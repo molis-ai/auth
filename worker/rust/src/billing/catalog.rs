@@ -8,8 +8,14 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 
 pub const PLANS: &str = "SELECT p.*,json_array(p.plan_id,p.plan_version) id,'immutable' stamp,json_object('planId',p.plan_id,'planVersion',p.plan_version,'name',p.name,'personalFeatureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_personal_feature WHERE plan_id=p.plan_id AND plan_version=p.plan_version ORDER BY feature_id))),'seatTypes',json((SELECT json_group_array(json(item)) FROM (SELECT json_object('seatTypeId',t.seat_type_id,'name',t.name,'featureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_seat_feature WHERE plan_id=t.plan_id AND plan_version=t.plan_version AND seat_type_id=t.seat_type_id ORDER BY feature_id)))) item FROM billing_plan_seat_type t WHERE t.plan_id=p.plan_id AND t.plan_version=p.plan_version ORDER BY t.seat_type_id)))) definition FROM billing_plan_version p";
-pub fn plan_view(r: &Value) -> Value {
-    serde_json::from_str(r["definition"].as_str().expect("catalog JSON")).expect("database JSON")
+fn plan_view(r: &Value) -> Result<Value> {
+    let plan: Value = stored_json(r, "definition")?;
+    ensure(
+        plan["personalFeatureIds"].is_array() && plan["seatTypes"].is_array(),
+        503,
+        "AUTH_UNAVAILABLE",
+    )?;
+    Ok(plan)
 }
 pub fn feature_view(r: &Value) -> Value {
     json!({"featureId":r["id"],"product":r["product"],"name":r["name"]})
@@ -25,7 +31,7 @@ impl Service<'_> {
             )
             .await?;
         ensure(!p.is_null(), 404, "NOT_FOUND")?;
-        Ok(plan_view(&p))
+        plan_view(&p)
     }
     pub async fn catalog_read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
         if action.op == "catalog.features" {
@@ -39,7 +45,7 @@ impl Service<'_> {
             )
             .await
         } else {
-            protocol::page(self, action, ctx, PLANS, vec![], plan_view).await
+            protocol::try_page(self, action, ctx, PLANS, vec![], plan_view).await
         }
     }
     pub async fn catalog_change(&self, action: &Action, b: &Value) -> Result<Change> {
@@ -64,17 +70,26 @@ impl Service<'_> {
         ensure(!text(b, "name").trim().is_empty(), 400, "INVALID_REQUEST")?;
         let mut ids = HashSet::new();
         let mut features = HashSet::new();
-        for f in b["personalFeatureIds"].as_array().unwrap() {
-            features.insert(f.clone().as_str().unwrap().to_owned());
+        for f in b["personalFeatureIds"]
+            .as_array()
+            .ok_or_else(Failure::invalid_request)?
+        {
+            features.insert(f.as_str().ok_or_else(Failure::invalid_request)?);
         }
-        for t in b["seatTypes"].as_array().unwrap() {
+        for t in b["seatTypes"]
+            .as_array()
+            .ok_or_else(Failure::invalid_request)?
+        {
             ensure(
                 ids.insert(text(t, "seatTypeId")) && !text(t, "name").trim().is_empty(),
                 400,
                 "INVALID_REQUEST",
             )?;
-            for f in t["featureIds"].as_array().unwrap() {
-                features.insert(f.as_str().unwrap().to_owned());
+            for f in t["featureIds"]
+                .as_array()
+                .ok_or_else(Failure::invalid_request)?
+            {
+                features.insert(f.as_str().ok_or_else(Failure::invalid_request)?);
             }
         }
         let refs = json!(features.into_iter().collect::<Vec<_>>()).to_string();
@@ -91,23 +106,26 @@ impl Service<'_> {
         w.push(self.a.s.statement("INSERT INTO billing_plan_seat_type(plan_id,plan_version,seat_type_id,name) SELECT ?,?,json_extract(value,'$.seatTypeId'),json_extract(value,'$.name') FROM json_each(?)",vec![id.clone(),b["planVersion"].clone(),types.clone().into()])?);
         w.push(self.a.s.statement("INSERT INTO billing_plan_seat_feature SELECT ?,?,json_extract(t.value,'$.seatTypeId'),f.value FROM json_each(?) t,json_each(json_extract(t.value,'$.featureIds')) f",vec![id.clone(),b["planVersion"].clone(),types.into()])?);
         let mut result = b.clone();
-        result.as_object_mut().unwrap().remove("reason");
+        result
+            .as_object_mut()
+            .ok_or_else(Failure::invalid_request)?
+            .remove("reason");
         result["planId"] = id;
         // Canonical ordering agrees with subsequent catalog reads.
         result["personalFeatureIds"]
             .as_array_mut()
-            .unwrap()
+            .ok_or_else(Failure::invalid_request)?
             .sort_by_key(Value::to_string);
-        for t in result["seatTypes"].as_array_mut().unwrap() {
+        let seat_types = result["seatTypes"]
+            .as_array_mut()
+            .ok_or_else(Failure::invalid_request)?;
+        for t in seat_types.iter_mut() {
             t["featureIds"]
                 .as_array_mut()
-                .unwrap()
+                .ok_or_else(Failure::invalid_request)?
                 .sort_by_key(Value::to_string);
         }
-        result["seatTypes"]
-            .as_array_mut()
-            .unwrap()
-            .sort_by_key(|t| text(t, "seatTypeId"));
+        seat_types.sort_by_key(|t| text(t, "seatTypeId"));
         Ok(Change::new(result, w))
     }
 }

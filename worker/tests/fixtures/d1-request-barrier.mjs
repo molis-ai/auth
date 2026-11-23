@@ -11,6 +11,7 @@ const points = {
   'refresh-used': ['first', 'SELECT * FROM auth_login_refresh_token WHERE token_hash='],
   'refresh-race': ['batch', 'UPDATE auth_login_refresh_token SET used_at='],
   promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
+  'first-phone-binding': ['first', 'FROM auth_user_phone p JOIN auth_user u', 'after'],
 }
 
 class D1Database {
@@ -26,7 +27,9 @@ class D1Database {
       bind: (...args) => this.prepare(sql, statement.bind(...args)),
       first: async (...args) => {
         await this.pause('first', [sql])
-        return statement.first(...args)
+        const result = await statement.first(...args)
+        await this.pause('first', [sql], 'after')
+        return result
       },
       all: (...args) => statement.all(...args),
       run: (...args) => statement.run(...args),
@@ -47,10 +50,17 @@ export default {
     const tag = request.headers.get('X-Fixture-Barrier')
     if (!tag) return worker.prototype.fetch.call({ env, ctx }, request)
     const [point] = tag.split('/')
-    const [phase, fragment] = points[point]
+    const [phase, fragment, timing = 'before'] = points[point]
     let paused = false
-    const DB = new D1Database(env.DB, async (operation, statements) => {
-      if (paused || operation !== phase || !statements.some((sql) => sql.includes(fragment))) return
+    const DB = new D1Database(env.DB, async (operation, statements, moment = 'before') => {
+      if (
+        paused ||
+        operation !== phase ||
+        moment !== timing ||
+        !statements.some((sql) => sql.includes(fragment))
+      ) {
+        return
+      }
       paused = true
       const response = await fetch('https://lease-fixture.invalid/' + tag)
       if (!response.ok) throw new Error('Test barrier failed: ' + tag)

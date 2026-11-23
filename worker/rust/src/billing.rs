@@ -119,10 +119,17 @@ fn action(path: &str, method: Method) -> Result<Action> {
         schema,
     })
 }
-fn audit_view(r: &Value) -> Value {
-    let summary: Value =
-        serde_json::from_str(r["change_summary"].as_str().unwrap_or("{}")).expect("audit JSON");
-    json!({"auditEventId":r["id"],"actorUserId":r["actor_user_id"],"operation":r["operation"],"target":{"kind":r["target_type"],"id":r["target_id"]},"tenantId":r["tenant_id"],"occurredAt":iso(&r["occurred_at"]),"result":if r["outcome"]=="SUCCESS"{"SUCCEEDED"}else{"DENIED"},"changes":summary["changes"]})
+fn audit_view(r: &Value) -> Result<Value> {
+    let changes = if r["change_summary"].is_null() {
+        Value::Null
+    } else {
+        let summary: Value = stored_json(r, "change_summary")?;
+        ensure(summary.is_object(), 503, "AUTH_UNAVAILABLE")?;
+        summary["changes"].clone()
+    };
+    Ok(
+        json!({"auditEventId":r["id"],"actorUserId":r["actor_user_id"],"operation":r["operation"],"target":{"kind":r["target_type"],"id":r["target_id"]},"tenantId":r["tenant_id"],"occurredAt":iso(&r["occurred_at"]),"result":if r["outcome"]=="SUCCESS"{"SUCCEEDED"}else{"DENIED"},"changes":changes}),
+    )
 }
 impl Service<'_> {
     async fn billing_context(&self, action: &Action) -> Result<Context> {
@@ -178,7 +185,7 @@ impl Service<'_> {
         } else if action.op.starts_with("billing.") {
             let sql = "SELECT *, 'immutable' stamp FROM auth_management_audit";
             if action.op == "billing.tenant-audit" {
-                protocol::page(
+                protocol::try_page(
                     self,
                     action,
                     ctx,
@@ -188,7 +195,7 @@ impl Service<'_> {
                 )
                 .await
             } else {
-                protocol::page(self, action, ctx, sql, vec![], audit_view).await
+                protocol::try_page(self, action, ctx, sql, vec![], audit_view).await
             }
         } else {
             self.subscription_read(action, ctx).await
@@ -234,26 +241,24 @@ impl Service<'_> {
             }
         }
         if let Some(q) = b.get("seatQuantities") {
-            let brief = |v: &Value| -> Value {
+            let brief = |v: &Value| -> Result<Value> {
                 if v.is_null() {
-                    return Value::Null;
+                    return Ok(Value::Null);
                 }
                 let text = v.to_string();
                 if text.chars().count() <= 1000 {
-                    json!(text)
-                } else {
-                    json!(format!(
-                        "{} types, {} seats",
-                        v.as_object().unwrap().len(),
-                        v.as_object()
-                            .unwrap()
-                            .values()
-                            .map(|x| x.as_i64().unwrap())
-                            .sum::<i64>()
-                    ))
+                    return Ok(json!(text));
                 }
+                let quantities = v.as_object().ok_or_else(Failure::unavailable)?;
+                let seats = quantities
+                    .values()
+                    .try_fold(0i64, |total, quantity| {
+                        total.checked_add(quantity.as_i64()?)
+                    })
+                    .ok_or_else(Failure::unavailable)?;
+                Ok(json!(format!("{} types, {seats} seats", quantities.len())))
             };
-            changes.push(json!({"field":"seatQuantities","before":brief(before_quantities),"after":brief(q)}));
+            changes.push(json!({"field":"seatQuantities","before":brief(before_quantities)?,"after":brief(q)?}));
         }
         self.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) VALUES (?,?,?,?,?,?,?,'SUCCESS',?,?,?,?)",vec![uuid().into(),self.user(),self.s["client_id"].clone(),tenant,action.op.into(),kind.into(),id,b["reason"].clone(),json!({"before":before,"after":after,"beforeSeatQuantities":before_quantities,"requestedSeatQuantities":b["seatQuantities"],"changes":changes}).to_string().into(),self.a.request_id.clone().into(),now().into()])
     }

@@ -168,7 +168,7 @@ pub async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Re
         .map(str::to_owned)
         .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
     ensure(
-        matches(&text(b, "password"), &encoded, &a.env).await? && !candidate.is_null(),
+        matches(&text(b, "password"), &encoded, a).await? && !candidate.is_null(),
         401,
         "INVALID_CREDENTIALS",
     )?;

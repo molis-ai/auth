@@ -1,22 +1,44 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { once } from 'node:events'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { secret, hash, challenge } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 test('AUTH-04 email/password and phone: real verification, isolated mock deliveries and one-use credentials', async () => {
   const origin = 'http://127.0.0.1:8787'
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const bothIdentityReads = new EventTarget()
+  let identityReads = 0
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    async (request) => {
+      assert.equal(new URL(request.url).pathname, '/first-phone-binding')
+      identityReads += 1
+      if (identityReads === 2) {
+        bothIdentityReads.dispatchEvent(new Event('ready'))
+      } else {
+        await once(bothIdentityReads, 'ready', { signal: AbortSignal.timeout(5000) })
+      }
+      return new Response('continue')
+    },
+    undefined,
+    {
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
+  )
   try {
     await initializeLocalRuntime(p)
     const db = p.env.DB
@@ -30,7 +52,13 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
       .filter(Boolean))
       await db.prepare(s).run()
     const password = 'Fixture-Neptune-7-Cloud'
-    async function call(path: string, body?: unknown, proof?: string, access?: string) {
+    async function call(
+      path: string,
+      body?: unknown,
+      proof?: string,
+      access?: string,
+      barrier?: string,
+    ) {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
           method: body === undefined ? 'GET' : 'POST',
@@ -38,6 +66,7 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
             ...(access ? { Authorization: 'Bearer ' + access } : {}),
+            ...(barrier ? { 'X-Fixture-Barrier': barrier } : {}),
             'Idempotency-Key': secret(),
           },
           body: body === undefined ? undefined : JSON.stringify(body),
@@ -358,9 +387,22 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
     const d2 = await send(second, '+8613800000002', 'SMS')
     const p2 = await verify(second, d2)
     const racing = await Promise.all([
-      call(first.path + '/phone', { verificationProof: p1 }, first.proof),
-      call(second.path + '/phone', { verificationProof: p2 }, second.proof),
+      call(
+        first.path + '/phone',
+        { verificationProof: p1 },
+        first.proof,
+        undefined,
+        'first-phone-binding',
+      ),
+      call(
+        second.path + '/phone',
+        { verificationProof: p2 },
+        second.proof,
+        undefined,
+        'first-phone-binding',
+      ),
     ])
+    assert.equal(identityReads, 2)
     assert.deepEqual(
       racing.map((x) => x.status),
       [200, 200],
@@ -373,8 +415,10 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
       ).n,
       1,
     )
+    assert.equal((await db.prepare('SELECT count(*) n FROM auth_user').first()).n, 3)
     const s1 = await finish(first),
       s2 = await finish(second)
+    assert.notEqual(s1.session.loginSessionId, s2.session.loginSessionId)
     const owners = await db
       .prepare('SELECT DISTINCT user_id FROM auth_login_session WHERE id IN (?,?)')
       .bind(s1.session.loginSessionId, s2.session.loginSessionId)

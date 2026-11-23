@@ -86,11 +86,13 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
         json!({"transactionId":id,"status":"PENDING","nextStep":if b["method"]=="EMAIL_PASSWORD" || b["method"]=="ACCOUNT_PASSWORD"{"PASSWORD_LOGIN"}else if b["method"]=="GOOGLE" || b["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},"expiresAt":iso(&json!(n+TX))}),
     )
 }
-fn otp() -> String {
+fn otp() -> Result<String> {
     loop {
-        let value = u32::from_str_radix(&hash(&secret())[..8], 16).unwrap();
+        let digest = hash(&secret());
+        let prefix = digest.get(..8).ok_or_else(Failure::unavailable)?;
+        let value = u32::from_str_radix(prefix, 16).map_err(|_| Failure::unavailable())?;
         if value < 4_294_000_000 {
-            return format!("{:06}", value % 1_000_000);
+            return Ok(format!("{:06}", value % 1_000_000));
         }
     }
 }
@@ -153,7 +155,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let n = now();
     let id = uuid();
     let delivery = uuid();
-    let credential = otp();
+    let credential = otp()?;
     let expires = (n + CODE).min(number(t, "expires_at"));
     let m = Message {
         #[cfg(feature = "mock-delivery")]
@@ -314,8 +316,28 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::identify(a, t, c, op, b).await;
     }
+    if let Some(result) = identify_once(a, t, c, op, b, true).await? {
+        return Ok(result);
+    }
+    // The failed batch left this transaction's proof unused. Retry only against
+    // an existing binding, keeping the ordinary proof and commit-time checks.
+    identify_once(a, t, c, op, b, false).await?.ok_or(Failure {
+        status: 409,
+        code: "ALREADY_EXISTS",
+    })
+}
+
+async fn identify_once(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    op: &str,
+    b: &Value,
+    allow_new_code_identity: bool,
+) -> Result<Option<Value>> {
     let n = now();
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, n, "PENDING")?];
+    let mut creating_code_identity = false;
     let user: String;
     let epoch: i64;
     if op == "password" {
@@ -327,14 +349,15 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             "INVALID_REQUEST",
         )?;
         let identifier = b.get("identifier").unwrap_or(&b["email"]);
-        let is_phone = identifier.as_str().is_some_and(|v| v.starts_with("+86"));
+        let raw_identifier = identifier.as_str().ok_or_else(Failure::invalid_request)?;
+        let is_phone = raw_identifier.starts_with("+86");
         ensure(
             !is_phone || t["method"] == "ACCOUNT_PASSWORD",
             400,
             "INVALID_REQUEST",
         )?;
         let address = if is_phone {
-            identifier.as_str().unwrap().to_owned()
+            raw_identifier.to_owned()
         } else {
             email(identifier)?
         };
@@ -352,8 +375,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             .map(str::to_owned)
             .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
         ensure(
-            matches(&text(b, "password"), &encoded, &a.env).await?
-                && candidate["status"] == "ACTIVE",
+            matches(&text(b, "password"), &encoded, a).await? && candidate["status"] == "ACTIVE",
             401,
             "INVALID_CREDENTIALS",
         )?;
@@ -401,7 +423,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
                 400,
                 "INVALID_REQUEST",
             )?;
-            let encoded = encode(&text(b, "password"), &a.env).await.map_err(|e| {
+            let encoded = encode(&text(b, "password"), a).await.map_err(|e| {
                 if e.code == "INVALID_PASSWORD" || e.code == "PASSWORD_BLOCKED" {
                     Failure {
                         status: 400,
@@ -437,6 +459,8 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             )?;
             let existing = code_identity(a, is_email, &target).await?;
             if existing.is_null() {
+                ensure(allow_new_code_identity, 409, "ALREADY_EXISTS")?;
+                creating_code_identity = true;
                 user = uuid();
                 epoch = 0;
                 writes.extend(new_user(a, &user, n)?);
@@ -491,8 +515,13 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
         Value::Null,
         false,
     )?);
-    a.s.batch(writes, "VERSION_CONFLICT").await?;
-    Ok(json!({"status":"VERIFIED","nextStep":"COMPLETE"}))
+    match a.s.batch(writes, "VERSION_CONFLICT").await {
+        Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(None),
+        result => {
+            result?;
+            Ok(Some(json!({"status":"VERIFIED","nextStep":"COMPLETE"})))
+        }
+    }
 }
 pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {

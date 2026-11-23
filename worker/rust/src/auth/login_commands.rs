@@ -40,16 +40,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         )
         .await?;
         let input = json!({"verificationProof":proof["verificationProof"]});
-        match registration::identify(a, &t, &c, "code", &input).await {
-            // Another verified request may have created the same identity. The failed
-            // atomic batch did not consume our proof; retry against its committed owner.
-            Err(e) if e.code == "ALREADY_EXISTS" => {
-                registration::identify(a, &t, &c, "code", &input).await?;
-            }
-            other => {
-                other?;
-            }
-        }
+        registration::identify(a, &t, &c, "code", &input).await?;
         finish(a, &id).await?
     } else {
         let password = path == "/api/v2/auth/login/password";

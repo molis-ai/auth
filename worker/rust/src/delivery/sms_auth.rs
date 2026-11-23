@@ -10,6 +10,8 @@ extern "C" {
         secret: &str,
         action: &str,
         input: &str,
+        request_id: &str,
+        env: &str,
     ) -> std::result::Result<String, JsValue>;
 }
 fn unavailable() -> Failure {
@@ -47,9 +49,16 @@ pub(crate) fn scheme(id: &str) -> String {
 }
 async fn call(a: &Auth, action: &str, body: Value) -> Result<String> {
     let (id, key) = credentials(a)?;
-    let reply = rpc(&id, &key, action, &body.to_string())
-        .await
-        .map_err(|_| unavailable())?;
+    let reply = rpc(
+        &id,
+        &key,
+        action,
+        &body.to_string(),
+        &a.request_id,
+        log_env(&a.env),
+    )
+    .await
+    .map_err(|_| unavailable())?;
     match reply.as_str() {
         "invalid_credentials" => Err(Failure {
             status: 401,

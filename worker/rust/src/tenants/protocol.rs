@@ -73,6 +73,16 @@ pub async fn page(
     args: Vec<Value>,
     view: fn(&Value) -> Value,
 ) -> Result<Value> {
+    filtered_page(s, action, ctx, sql, args, |row| Ok(view(row)), &json!({})).await
+}
+pub async fn try_page(
+    s: &Service<'_>,
+    action: &Action,
+    ctx: &mut Context,
+    sql: &str,
+    args: Vec<Value>,
+    view: fn(&Value) -> Result<Value>,
+) -> Result<Value> {
     filtered_page(s, action, ctx, sql, args, view, &json!({})).await
 }
 // Filters must already be validated by the domain. Include their canonical values
@@ -83,7 +93,7 @@ pub async fn filtered_page(
     ctx: &mut Context,
     sql: &str,
     args: Vec<Value>,
-    view: fn(&Value) -> Value,
+    view: impl Fn(&Value) -> Result<Value>,
     filters: &Value,
 ) -> Result<Value> {
     let q = form(s.a.request.url()?.query().unwrap_or_default())?;
@@ -91,7 +101,7 @@ pub async fn filtered_page(
     allowed.extend(
         filters
             .as_object()
-            .expect("domain filters")
+            .ok_or_else(Failure::unavailable)?
             .keys()
             .map(String::as_str),
     );
@@ -129,6 +139,7 @@ pub async fn filtered_page(
             .await?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
+    let items = rows.iter().map(view).collect::<Result<Vec<_>>>()?;
     if !rows.is_empty() {
         let stamps: Vec<_> = rows
             .iter()
@@ -138,22 +149,20 @@ pub async fn filtered_page(
         bind.extend(args);
         ctx.guards.push(s.a.s.guard(&format!("NOT EXISTS(SELECT 1 FROM json_each(?) expected WHERE NOT EXISTS(SELECT 1 FROM ({sql}) live WHERE live.id=json_extract(expected.value,'$.id') AND live.stamp=json_extract(expected.value,'$.stamp')))"),bind)?);
     }
-    let cursor = if more {
+    let cursor = if let Some(last) = rows.last().filter(|_| more) {
         let raw = secret();
         ctx.guards.push(s.a.s.statement(
             "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR',?,?,?)",
             vec![
-                    hash(&raw).into(),
-                    scope.into(),
-                    json!({"after":rows.last().unwrap()["id"]})
-                        .to_string()
-                        .into(),
-                    (now() + 900000).into(),
-                ],
+                hash(&raw).into(),
+                scope.into(),
+                json!({"after":last["id"]}).to_string().into(),
+                (now() + 900000).into(),
+            ],
         )?);
         Value::String(raw)
     } else {
         Value::Null
     };
-    Ok(json!({"items":rows.iter().map(view).collect::<Vec<_>>(),"nextCursor":cursor}))
+    Ok(json!({"items":items,"nextCursor":cursor}))
 }

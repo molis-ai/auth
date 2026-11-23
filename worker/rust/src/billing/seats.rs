@@ -69,7 +69,16 @@ impl Service<'_> {
             sql.push_str(" AND a.user_id=?");
             args.push(self.user());
         }
-        protocol::filtered_page(self, action, ctx, &sql, args, view, &json!({"state":state})).await
+        protocol::filtered_page(
+            self,
+            action,
+            ctx,
+            &sql,
+            args,
+            |row| Ok(view(row)),
+            &json!({"state":state}),
+        )
+        .await
     }
     pub async fn seat_change(&self, action: &Action, ctx: &Context, b: &Value) -> Result<Change> {
         let assign = action.op == "seat.assign";

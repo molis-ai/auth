@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { pbkdf2Sync } from 'node:crypto'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret, challenge } from './fixtures.ts'
+import { captureAuthFailures, secret, challenge } from './fixtures.ts'
 
 test('private Durable Object derives 600k SHA-256 correctly and rejects custom parameters', async () => {
   const proxy = await getRustProxy({ AUTH_ORIGIN: 'http://127.0.0.1:8787' })
@@ -54,6 +54,7 @@ test('private Durable Object derives 600k SHA-256 correctly and rejects custom p
 
 test('missing KDF fails closed without creating accounts or authenticating a transaction', async () => {
   const origin = 'http://127.0.0.1:8787'
+  const failures = captureAuthFailures()
   const proxy = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
@@ -69,6 +70,7 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
     undefined,
     {
       passwordKdf: false,
+      handleStructuredLogs: failures.handleStructuredLogs,
     },
   )
   try {
@@ -106,7 +108,22 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
       proof,
     )
     assert.equal(login.status, 503)
-    assert.equal((await login.json()).error.code, 'AUTH_UNAVAILABLE')
+    const { error, requestId } = await login.json()
+    assert.equal(error.code, 'AUTH_UNAVAILABLE')
+    const logs = await failures.forRequest(requestId, ['password.kdf', 'dispatch'])
+    assert.deepEqual(
+      logs.map((log) => log.phase),
+      ['password.kdf', 'dispatch'],
+    )
+    for (const log of logs) {
+      assert.equal(log.schema, 1)
+      assert.equal(log.service, 'molis-auth')
+      assert.equal(log.env, 'unknown')
+      assert.equal(log.code, 'AUTH_UNAVAILABLE')
+      assert.equal(log.route, '/api/v2/auth/transactions/{transactionId}/password')
+    }
+    for (const value of [password, proof, 'failure@example.test', data.transactionId])
+      assert.ok(failures.lines.every((line) => !line.includes(value)))
     const transaction = await proxy.env.DB.prepare(
       'SELECT status FROM auth_product_transaction',
     ).first()

@@ -453,9 +453,12 @@ async fn login_command(
     )?;
     let mut t = json!({"proof":secret(),"verifier":secret(),"state":secret()});
     let mut input = b.clone();
-    for (key,value) in json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))}).as_object().unwrap() {
-        input[key]=value.clone();
-    }
+    input["clientId"] = s.client()?.into();
+    input["redirectUri"] = format!("{}/account/callback", s.a.origin).into();
+    input["state"] = t["state"].clone();
+    input["codeChallenge"] = challenge(&text(&t, "verifier")).into();
+    input["codeChallengeMethod"] = "S256".into();
+    input["initiatorChallenge"] = challenge(&text(&t, "proof")).into();
     let result = s
         .call(
             if sending {
