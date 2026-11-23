@@ -61,7 +61,7 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 | API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
 | API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
 
-当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/login_sessions.rs)、[资料与安全](../../worker/rust/src/account_management.rs)和[租户](../../worker/rust/src/tenants.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、Team 和权限矩阵实现已删除，不保留别名或失败降级。
+当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account_management.rs)和[租户](../../worker/rust/src/tenants.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、Team 和权限矩阵实现已删除，不保留别名或失败降级。
 
 V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 V2 用户与租户，不读取或自动转换旧 TEAM。
 

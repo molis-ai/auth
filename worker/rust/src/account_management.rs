@@ -1,6 +1,6 @@
 //! AUTH-06 account views and atomic, proof-bound mutations.
 use crate::{
-    http::*, identity::Auth, login_sessions as sessions, registration, security::*,
+    auth::login_sessions as sessions, auth::registration, http::*, identity::Auth, security::*,
     sensitive_transactions as sensitive,
 };
 use serde_json::{Value, json};
@@ -72,17 +72,17 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
         "PHONE" => {
             verified
                 && (c["delivery_mode"] == "MOCK"
-                    || (c["delivery_mode"] == "LIVE" && crate::sms_auth::configured(a)))
+                    || (c["delivery_mode"] == "LIVE" && crate::delivery::sms_auth::configured(a)))
         }
         "GOOGLE" if c["provider_mode"] == "LIVE" => {
             verified
-                && row["issuer"] == crate::google_login::ISSUER
-                && crate::google_login::Google::configured(a).is_ok()
+                && row["issuer"] == crate::auth::google_login::ISSUER
+                && crate::auth::google_login::Google::configured(a).is_ok()
         }
         "GITHUB" if c["provider_mode"] == "LIVE" => {
             verified
-                && row["issuer"] == crate::github_login::ISSUER
-                && crate::github_login::Github::configured(a).is_ok()
+                && row["issuer"] == crate::auth::github_login::ISSUER
+                && crate::auth::github_login::Github::configured(a).is_ok()
         }
         _ => {
             cfg!(feature = "mock-provider")
@@ -307,7 +307,7 @@ async fn mutation(
             }
         }
         if matches!(text(&identity, "type").as_str(), "GOOGLE" | "GITHUB") {
-            writes.extend(crate::external_profile::save(a, &identity, &user)?);
+            writes.extend(crate::auth::external_profile::save(a, &identity, &user)?);
         }
         let row = json!({"provider_username":identity["profile"]["username"],"provider_email":identity["profile"]["email"],"id":binding_id,"type":identity["type"],"target":if identity.get("target").is_some(){identity["target"].clone()}else{identity["subject"].clone()},"issuer":identity["issuer"],"verified_at":n});
         list.push(method_view(a, &row, c, password_enabled(a, &user).await?));

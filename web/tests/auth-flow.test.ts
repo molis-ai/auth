@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AuthFlow, FlowCancelled } from "../src/auth-flow.ts";
+import { AuthFlow, FlowCancelled } from "../src/lib/auth-flow.ts";
 for (const outcome of ["resolve", "reject"] as const)
   test(`cancel fences a delayed ${outcome} and leaves the next operation usable`, async () => {
     const flow = new AuthFlow();

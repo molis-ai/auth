@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const { parse, compileStyle } = require('vue/compiler-sfc');
 
 test('tenant member styles stay scoped after Vue compilation, including override rules', () => {
-  const { descriptor } = parse(readFileSync(new URL('../src/TenantMembers.vue', import.meta.url), 'utf8'));
+  const { descriptor } = parse(readFileSync(new URL('../src/components/TenantMembers.vue', import.meta.url), 'utf8'));
   for (const style of descriptor.styles) {
     assert.equal(style.scoped, true);
     const result = compileStyle({ source: style.content, filename: 'TenantMembers.vue', id: 'data-v-isolation', scoped: true });

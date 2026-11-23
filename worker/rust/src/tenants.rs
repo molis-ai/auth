@@ -1,5 +1,12 @@
 //! AUTH-07 managed tenants, membership roles, and platform authorization.
-use crate::{http::*, identity::Auth, login_sessions, security::uuid, tenant_protocol as protocol};
+
+pub(crate) mod creation;
+pub(crate) mod invitations;
+pub(crate) mod membership;
+pub(crate) mod protocol;
+pub(crate) mod transfers;
+
+use crate::{auth::login_sessions, http::*, identity::Auth, security::uuid};
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 pub(crate) struct Service<'a> {
@@ -164,7 +171,7 @@ impl Service<'_> {
             }
             "tenant.self-create" => {
                 ensure(
-                    crate::tenant_creation::policy(&self.a.env)? == "SELF_SERVICE",
+                    crate::tenants::creation::policy(&self.a.env)? == "SELF_SERVICE",
                     403,
                     "FORBIDDEN",
                 )?;
@@ -223,7 +230,7 @@ impl Service<'_> {
     }
     async fn read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
         match action.op {
-            "tenant.creation-policy" => Ok(json!({"mode":crate::tenant_creation::policy(&self.a.env)?})),
+            "tenant.creation-policy" => Ok(json!({"mode":crate::tenants::creation::policy(&self.a.env)?})),
             "tenant.get"=>{let mut t=ctx.tenant.clone();t["role"]=ctx.member["role"].clone();t["membership_id"]=ctx.member["id"].clone();Ok(tenant_view(&t))},
             "tenant.platform-get"=>Ok(platform_view(&ctx.tenant)),
             "tenant.platform-list"=>protocol::page(self,action,ctx,TENANTS,vec![],platform_view).await,
@@ -334,7 +341,7 @@ impl Service<'_> {
                 })
             }
             "member.leave" | "member.remove" => {
-                let plan = crate::tenant_membership::prepare_exit(self, action, ctx, b)?;
+                let plan = crate::tenants::membership::prepare_exit(self, action, ctx, b)?;
                 let mut writes = plan.guards;
                 writes.extend(plan.writes);
                 Ok(Change {
@@ -503,7 +510,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
             if action.op == "member.leave"
                 && let Some(result) =
-                    crate::tenant_membership::replay_leave(&service, &action, &b, &key).await?
+                    crate::tenants::membership::replay_leave(&service, &action, &b, &key).await?
             {
                 output = Some(result);
                 break;
@@ -514,7 +521,8 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     // Another same-key leave can finish between the receipt read and
                     // membership lookup. Re-read only its committed result.
                     if let Some(result) =
-                        crate::tenant_membership::replay_leave(&service, &action, &b, &key).await?
+                        crate::tenants::membership::replay_leave(&service, &action, &b, &key)
+                            .await?
                     {
                         output = Some(result);
                         break;

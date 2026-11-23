@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AccountClient, AuthError } from "../src/account-client.ts";
-import { IdempotentSubmit, refreshAfterWrite } from "../src/idempotent-submit.ts";
-import { syncCreatedTenant } from "../src/tenant-selection.ts";
+import { AccountClient, AuthError } from "../src/lib/account-client.ts";
+import { IdempotentSubmit, refreshAfterWrite } from "../src/lib/idempotent-submit.ts";
+import { syncCreatedTenant } from "../src/lib/tenant-selection.ts";
 
 test("uncertain create results replay the exact request against one committed tenant", async (t) => {
   const scenarios = [

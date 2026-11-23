@@ -1,6 +1,6 @@
 # 阿里云短信认证
 
-Auth 网页与 Molis Work 使用同一套 V2 challenge / verify / phone / complete 接口。唯一短信认证适配位于 `worker/rust/src/sms_auth.rs`；Workers HTTP 与 RPC 签名位于 `runtime/aliyun.js`。不调用 Dysmsapi，不使用普通短信套餐。
+Auth 网页与 Molis Work 使用同一套 V2 challenge / verify / phone / complete 接口。唯一短信认证适配位于 `worker/rust/src/delivery/sms_auth.rs`；Workers HTTP 与 RPC 签名位于 `runtime/aliyun.js`。不调用 Dysmsapi，不使用普通短信套餐。
 
 ## 部署配置
 
@@ -30,6 +30,6 @@ dev 和 test 都在各自的密钥文件里用 JSON 数组配置收件人，例�
 
 ## 验证码邮件文案
 
-`worker/rust/src/mail_templates.rs` 是五种用途文案的唯一维护位置：`EMAIL_SIGNUP`（注册）、`PASSWORD_RESET`（重置密码）、`BIND`（绑定邮箱）、`REPLACE`（更换邮箱）、`REAUTH`（确认身份）。标题、正文、品牌和公共安全提示集中维护；验证码及事务到期时间由认证流程传入，模板按发送前剩余时长显示，不固定写五分钟。投递模块只负责调用模板和云服务，Work 不复制文案。
+`worker/rust/src/delivery/mail_templates.rs` 是五种用途文案的唯一维护位置：`EMAIL_SIGNUP`（注册）、`PASSWORD_RESET`（重置密码）、`BIND`（绑定邮箱）、`REPLACE`（更换邮箱）、`REAUTH`（确认身份）。标题、正文、品牌和公共安全提示集中维护；验证码及事务到期时间由认证流程传入，模板按发送前剩余时长显示，不固定写五分钟。投递模块只负责调用模板和云服务，Work 不复制文案。
 
 模板存在不表示对应认证能力已启用：当前真实邮件仅开放注册；其余四种用途须先接通对应权限与验证流程，再调用模板。确认身份必须验证已绑定邮箱并约束到敏感操作，不能仅靠选择模板获得授权。

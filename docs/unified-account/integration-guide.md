@@ -8,7 +8,7 @@
 
 Work 使用 `horizontal/account` 及 Host 的账号入口；Auth 自身页面使用同源 BFF。邮箱/手机直接在当前页面完成，Google/GitHub 则回到登记的精确回调。当前隔离验证明确使用模拟提供方。Club 的历史接入使用 `lib/account` BFF，其当前代码不在本次验证范围。
 
-Auth 的 `web/src/account-client.ts` 导出 `AccountClient`，用于同源 `/api/account` BFF。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本。
+Auth 的 `web/src/lib/account-client.ts` 导出 `AccountClient`，用于同源 `/api/account` BFF。Work 继续使用自己的 Host 请求助手以满足本机控制令牌、安装登录和一次性键要求。中央公共合同是 `contracts/unified-account`，Work 使用带 SHA-256 的固定副本。
 
 | 层 | 使用的入口 | 身份与存储 |
 | --- | --- | --- |

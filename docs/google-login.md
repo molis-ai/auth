@@ -1,6 +1,6 @@
 # Google 登录
 
-Google 的真实 OIDC 适配由 Auth 持有；Auth 页面与 Work 网页、桌面客户端共用统一账号事务接口。桌面端通过系统浏览器打开授权地址，不内嵌 Google 登录、不携带 Google Client Secret。
+Google 的真实 OIDC 适配位于 Auth 的 [google_login.rs](../worker/rust/src/auth/google_login.rs)；Auth 页面与 Work 网页、桌面客户端共用统一账号事务接口。桌面端通过系统浏览器打开授权地址，不内嵌 Google 登录、不携带 Google Client Secret。
 
 ## 配置
 

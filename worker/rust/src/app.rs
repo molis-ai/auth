@@ -144,10 +144,10 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         || path == "/account/handoff/start"
         || path == "/account/handoff/finish"
     {
-        return crate::management_handoff::route(a, path, method).await;
+        return crate::auth::management_handoff::route(a, path, method).await;
     }
     if path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback" {
-        return crate::web_session::route(a, path, method).await;
+        return crate::web::web_session::route(a, path, method).await;
     }
     if path == "/api/v2/readiness" && method == Method::Get {
         ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
@@ -159,8 +159,8 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             a.s.all(query, vec![]).await?;
         }
         if env.var("MOLIS_ENVIRONMENT").is_ok() {
-            let client = crate::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
-            let registration = crate::login_sessions::registered_client(a, &client).await?;
+            let client = crate::web::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
+            let registration = crate::auth::login_sessions::registered_client(a, &client).await?;
             ensure(
                 contains(
                     &parsed(&registration, "redirects")?,
@@ -171,8 +171,11 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             )?;
             crate::test_admission::Admission::load(a)?;
             ensure(
-                crate::login_capabilities::available(a, &registration).len() == 5
-                    && token(&crate::web_session::setting(a, "AUTH_WEB_SESSION_KEY")?),
+                crate::auth::login_capabilities::available(a, &registration).len() == 5
+                    && token(&crate::web::web_session::setting(
+                        a,
+                        "AUTH_WEB_SESSION_KEY",
+                    )?),
                 503,
                 "UNIFIED_CONFIGURATION_INVALID",
             )?;
@@ -181,11 +184,11 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
     }
     // Every account entry uses the same current protocol.
     if path == "/api/v2" || path.starts_with("/api/v2/") {
-        if crate::platform_management::matches(path) {
-            return crate::platform_management::route(a, path, method).await;
+        if crate::platform::platform_management::matches(path) {
+            return crate::platform::platform_management::route(a, path, method).await;
         }
         if path == "/api/v2/entitlements/check" {
-            return crate::entitlements::route(a, method).await;
+            return crate::billing::entitlements::route(a, method).await;
         }
         if crate::billing::matches(path) {
             return crate::billing::route(a, path, method).await;
@@ -209,14 +212,14 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             return crate::account_management::route(a, path, method).await;
         }
         if path.starts_with("/api/v2/auth/external/") {
-            return crate::external_login::browser(a, path, method).await;
+            return crate::auth::external_login::browser(a, path, method).await;
         }
         #[cfg(feature = "mock-provider")]
         if path.starts_with("/api/v2/auth/mock/") {
-            return crate::external_login::browser(a, path, method).await;
+            return crate::auth::external_login::browser(a, path, method).await;
         }
         if path == "/api/v2/auth/capabilities" {
-            return crate::login_capabilities::route(a, method).await;
+            return crate::auth::login_capabilities::route(a, method).await;
         }
         if matches!(
             path,
@@ -224,12 +227,12 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
                 | "/api/v2/auth/login/code"
                 | "/api/v2/auth/verification-codes"
         ) {
-            return crate::login_commands::route(a, path, method).await;
+            return crate::auth::login_commands::route(a, path, method).await;
         }
         if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
-            return crate::registration::route(a, path, method).await;
+            return crate::auth::registration::route(a, path, method).await;
         }
-        return crate::login_sessions::route(a, path, method).await;
+        return crate::auth::login_sessions::route(a, path, method).await;
     }
     ensure(
         !path.starts_with("/api/")

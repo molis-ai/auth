@@ -182,7 +182,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 8 AUTH-03 实施记录
 
-已实现 [login_sessions.rs](../../../worker/rust/src/login_sessions.rs)，复用 AUTH-02 的表结构，无新增迁移。新增中央入口：
+已实现 [login_sessions.rs](../../../worker/rust/src/auth/login_sessions.rs)，复用 AUTH-02 的表结构，无新增迁移。新增中央入口：
 
 | 路径 | 行为 |
 | --- | --- |
@@ -205,7 +205,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 9 AUTH-04 实施记录
 
-已实现 [registration.rs](../../../worker/rust/src/registration.rs)：产品事务创建/查询/取消、挑战发送及验证、邮箱验证注册、邮箱密码登录、+86 手机验证码自动注册登录和完成换码。客户端直接取得 JSON 结果并调用 AUTH-03，不插入额外 Auth 确认页。支持 Work/Club 各自的精确客户端和回调登记，邮箱规范化；新账号默认昵称不包含邮箱或手机号。
+已实现 [registration.rs](../../../worker/rust/src/auth/registration.rs)：产品事务创建/查询/取消、挑战发送及验证、邮箱验证注册、邮箱密码登录、+86 手机验证码自动注册登录和完成换码。客户端直接取得 JSON 结果并调用 AUTH-03，不插入额外 Auth 确认页。支持 Work/Club 各自的精确客户端和回调登记，邮箱规范化；新账号默认昵称不包含邮箱或手机号。
 
 [delivery.rs](../../../worker/rust/src/delivery.rs)提供 MailSender/SmsSender 投递端口。当前适配器将挑战和 mock 收件记录原子入库，只允许显式 LOCAL/TEST + MOCK；LIVE 尚未配置实际适配器时明确失败，不回退 mock。接入真实供应商时应实现持久投递任务和外部发送适配，不能将外部网络发送误认为可与 D1 一起回滚。
 
@@ -222,7 +222,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 10 AUTH-05 实施记录
 
-已实现 [external_login.rs](../../../worker/rust/src/external_login.rs)，支持 LOGIN + GOOGLE/GITHUB；注册与轮询沿用 AUTH-04 的事务，完成后接入 AUTH-03 的独立登录会话。Work/Club 各自的客户端与精确回调已通过真实 HTTP、WASM 和隔离 D1 验证；产品页面与 Host/BFF 适配仍按 WORK-04、CLUB-03 后续接入。本轮不把后端协议测试记作两个产品页面已交付。
+已实现 [external_login.rs](../../../worker/rust/src/auth/external_login.rs)，支持 LOGIN + GOOGLE/GITHUB；注册与轮询沿用 AUTH-04 的事务，完成后接入 AUTH-03 的独立登录会话。Work/Club 各自的客户端与精确回调已通过真实 HTTP、WASM 和隔离 D1 验证；产品页面与 Host/BFF 适配仍按 WORK-04、CLUB-03 后续接入。本轮不把后端协议测试记作两个产品页面已交付。
 
 提供方当前使用受控 mock，支持成功、取消和失败页面。浏览器只能选择隔离数据库中预置的测试账号 ID；提供方、环境、稳定 subject 和可选邮箱均由服务端取得，不接受前端自报身份。Google 模拟断言验证 issuer、audience、nonce、PKCE 与时效；GitHub 模拟响应验证客户端、环境、PKCE 与稳定用户 ID，不将 GitHub 当作 OIDC。模拟 issuer 分别为 `https://mock.google.invalid/{environmentId}` 和 `https://mock.github.invalid/{environmentId}`，与正式提供方身份隔离。
 
@@ -281,7 +281,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 12 AUTH-07 实施记录
 
-已实现 [tenants.rs](../../../worker/rust/src/tenants.rs)、[tenant_invitations.rs](../../../worker/rust/src/tenant_invitations.rs)、[tenant_transfers.rs](../../../worker/rust/src/tenant_transfers.rs) 和 [tenant_protocol.rs](../../../worker/rust/src/tenant_protocol.rs)，通过现有 Rust/WASM、D1 和 v2 独立登录提供 API-05。本轮交付中央后端；Work/Club 的租户页面仍按 WORK-06、CLUB-05 接入。
+已实现 [tenants.rs](../../../worker/rust/src/tenants.rs)、[tenant_invitations.rs](../../../worker/rust/src/tenants/invitations.rs)、[tenant_transfers.rs](../../../worker/rust/src/tenants/transfers.rs) 和 [tenant_protocol.rs](../../../worker/rust/src/tenants/protocol.rs)，通过现有 Rust/WASM、D1 和 v2 独立登录提供 API-05。本轮交付中央后端；Work/Club 的租户页面仍按 WORK-06、CLUB-05 接入。
 
 平台与成员权限：
 
@@ -307,7 +307,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 - 列表使用 15 分钟随机游标，绑定用户、客户端、路由、页大小及权限/成员快照。每次查询检查当前权限，返回前检查结果的可见性与版本；权限已撤销时不能继续翻页或重取管理回执。
 - 管理写入要求 expectedVersion（创建除外）和 16–128 字符 Idempotency-Key，作用域为用户、客户端、操作及目标路径；24 小时结果只保存请求摘要和无凭据 DTO。业务变化、审计与回执原子提交，重复键不同请求拒绝；相同键重取结果前重新鉴权，已退出的登录不能重放。
-- [tenant_membership.rs](../../../worker/rust/src/tenant_membership.rs)提供退出/移除的领域事务计划：校验角色/版本、结束当前成员、取消相关待处理交接并推进权益版本。计划尚不单独提交；AUTH-10 须追加商业领域的全部席位释放，在同一事务收口后开放接口。目前合法的非 OWNER 退出/移除返回 501，且不改变成员或席位，OWNER 退出返回 OWNER_TRANSFER_REQUIRED。
+- [tenant_membership.rs](../../../worker/rust/src/tenants/membership.rs)提供退出/移除的领域事务计划：校验角色/版本、结束当前成员、取消相关待处理交接并推进权益版本。计划尚不单独提交；AUTH-10 须追加商业领域的全部席位释放，在同一事务收口后开放接口。目前合法的非 OWNER 退出/移除返回 501，且不改变成员或席位，OWNER 退出返回 OWNER_TRANSFER_REQUIRED。
 
 [专项集成测试](../../../worker/tests/tenants.test.ts)使用真实认证接口建立不同产品登录，并在隔离 D1 验证 UAS-12、13、14（边界及预留合同）、16、26、28、34、35、40、42：平台权限、并发创建幂等、身份定向及未验证邮箱拒绝、角色和跨租户边界、拒绝/撤销/到期、竞争接受、通知事务故障、交接唯一性与中途失败回滚、原所有者角色和席位保留、历史 membership 不能接管、启停记录保留、分页范围和权限撤销、通知清理及已撤销会话不能写入。早期边界测试同步更新为断言已开放路由拒绝匿名/v1 凭据；未来路由仍明确不可用。
 
@@ -318,7 +318,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 13 AUTH-08 实施记录
 
-已实现 [billing.rs](../../../worker/rust/src/billing.rs)、[billing_catalog.rs](../../../worker/rust/src/billing_catalog.rs) 与 [billing_subscriptions.rs](../../../worker/rust/src/billing_subscriptions.rs)。沿用 v2 独立会话、现行 JSON Schema、管理幂等回执和权限绑定游标；本轮交付中央 API，Work/Club 页面按各自任务接入。支付及具体业务收费入口未纳入本轮。
+已实现 [billing.rs](../../../worker/rust/src/billing.rs)、[billing_catalog.rs](../../../worker/rust/src/billing/catalog.rs) 与 [billing_subscriptions.rs](../../../worker/rust/src/billing/subscriptions.rs)。沿用 v2 独立会话、现行 JSON Schema、管理幂等回执和权限绑定游标；本轮交付中央 API，Work/Club 页面按各自任务接入。支付及具体业务收费入口未纳入本轮。
 
 目录与套餐版本：
 
@@ -358,7 +358,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 14 AUTH-09 实施记录
 
-已实现 [billing_seats.rs](../../../worker/rust/src/billing_seats.rs)，通过已有 billing 路由提供席位分配、回收、换绑与当前/历史查询；复用 AUTH-08 的订阅与池模型、AUTH-07 的当前租户权限和管理请求协议。本轮为中央 API 交付，两产品页面仍按 WORK-07、CLUB-06 接入；成员退出/移除及权益判断继续由 AUTH-10 完成。
+已实现 [billing_seats.rs](../../../worker/rust/src/billing/seats.rs)，通过已有 billing 路由提供席位分配、回收、换绑与当前/历史查询；复用 AUTH-08 的订阅与池模型、AUTH-07 的当前租户权限和管理请求协议。本轮为中央 API 交付，两产品页面仍按 WORK-07、CLUB-06 接入；成员退出/移除及权益判断继续由 AUTH-10 完成。
 
 操作与权限：
 
@@ -389,7 +389,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 15 AUTH-10 实施记录
 
-已实现 [tenant_membership.rs](../../../worker/rust/src/tenant_membership.rs) 与 [entitlements.rs](../../../worker/rust/src/entitlements.rs)，开放成员退出、移除及 `POST /api/v2/entitlements/check`。成员服务调用 [billing_seats.rs](../../../worker/rust/src/billing_seats.rs) 提供的释放计划，沿用 AUTH-07 的管理协议和 AUTH-08/09 的商业事实。外部认证、短信和邮件仍使用隔离 mock。
+已实现 [tenant_membership.rs](../../../worker/rust/src/tenants/membership.rs) 与 [entitlements.rs](../../../worker/rust/src/billing/entitlements.rs)，开放成员退出、移除及 `POST /api/v2/entitlements/check`。成员服务调用 [billing_seats.rs](../../../worker/rust/src/billing/seats.rs) 提供的释放计划，沿用 AUTH-07 的管理协议和 AUTH-08/09 的商业事实。外部认证、短信和邮件仍使用隔离 mock。
 
 成员联动：
 

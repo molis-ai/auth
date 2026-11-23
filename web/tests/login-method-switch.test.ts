@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 
 test('switching after a throttled challenge cancels the transaction before changing method', async()=>{
-  const source=readFileSync(new URL('../src/AuthenticationPanel.vue',import.meta.url),'utf8');
+  const source=readFileSync(new URL('../src/components/AuthenticationPanel.vue',import.meta.url),'utf8');
   const fn=source.slice(source.indexOf('async function chooseMethod('),source.indexOf('\nlet active ='));
   const js=ts.transpileModule(fn,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   const ref=(value:unknown)=>({value});
