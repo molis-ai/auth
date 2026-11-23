@@ -27,16 +27,22 @@ impl Store {
         failure
     }
     pub fn statement(&self, sql: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
-        let args: Vec<JsValue> = values
+        let args = values
             .into_iter()
-            .map(|v| match v {
-                Value::Null => JsValue::NULL,
-                Value::String(s) => JsValue::from(s),
-                Value::Number(n) => JsValue::from_f64(n.as_f64().unwrap()),
-                Value::Bool(b) => JsValue::from_f64(if b { 1.0 } else { 0.0 }),
-                _ => JsValue::from(v.to_string()),
+            .map(|v| {
+                Ok(match v {
+                    Value::Null => JsValue::NULL,
+                    Value::String(s) => JsValue::from(s),
+                    Value::Number(n) => JsValue::from_f64(
+                        n.as_f64()
+                            .filter(|n| n.is_finite())
+                            .ok_or_else(Failure::unavailable)?,
+                    ),
+                    Value::Bool(b) => JsValue::from_f64(if b { 1.0 } else { 0.0 }),
+                    _ => JsValue::from(v.to_string()),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let started = now();
         self.db
             .prepare(sql)

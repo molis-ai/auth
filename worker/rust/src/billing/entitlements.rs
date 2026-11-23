@@ -53,6 +53,9 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
             )
             .await?;
     }
+    let feature_ids = b["featureIds"]
+        .as_array()
+        .ok_or_else(Failure::invalid_request)?;
     let requested = b["featureIds"].to_string();
     let features =
         a.s.all(
@@ -61,7 +64,7 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
         )
         .await?;
     ensure(
-        features.len() == b["featureIds"].as_array().unwrap().len()
+        features.len() == feature_ids.len()
             && features
                 .iter()
                 .all(|f| f["product"] == "SHARED" || f["product"] == product["product"]),
@@ -105,7 +108,7 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
     }
     ensure(until > n, 401, "SESSION_EXPIRED")?;
     let mut decisions = vec![];
-    for feature in b["featureIds"].as_array().unwrap() {
+    for feature in feature_ids {
         let sources: Vec<_> = rows
             .iter()
             .filter(|r| r["feature_id"] == *feature && number(r, "starts_at") <= n)

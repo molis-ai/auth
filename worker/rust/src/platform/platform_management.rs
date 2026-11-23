@@ -24,8 +24,12 @@ const CLIENTS: &str = "SELECT c.*,p.environment_id,p.allowed_origins,p.version p
 fn application_view(v: &Value) -> Value {
     json!({"applicationId":v["id"],"name":v["name"],"status":v["status"],"version":v["version"]})
 }
-fn client_view(v: &Value) -> Value {
-    json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":serde_json::from_str::<Value>(v["allowed_origins"].as_str().expect("stored origins")).expect("origin JSON"),"redirectAllowlist":serde_json::from_str::<Value>(v["redirects"].as_str().expect("stored redirects")).expect("redirect JSON"),"product":v["product"]})
+fn client_view(v: &Value) -> Result<Value> {
+    let origins: Vec<String> = stored_json(v, "allowed_origins")?;
+    let redirects: Vec<String> = stored_json(v, "redirects")?;
+    Ok(
+        json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":origins,"redirectAllowlist":redirects,"product":v["product"]}),
+    )
 }
 fn action(path: &str, method: Method) -> Result<Action> {
     let p: Vec<_> = path.trim_start_matches('/').split('/').collect();
@@ -131,9 +135,9 @@ impl Service<'_> {
                 protocol::page(self, action, ctx, APPLICATIONS, vec![], application_view).await
             }
             "application.get" => Ok(application_view(&ctx.record)),
-            "client.get" => Ok(client_view(&ctx.record)),
+            "client.get" => client_view(&ctx.record),
             _ => {
-                protocol::page(
+                protocol::try_page(
                     self,
                     action,
                     ctx,
@@ -244,15 +248,15 @@ impl Service<'_> {
             )?);
             writes.push(self.a.s.statement("UPDATE auth_client_policy SET allowed_origins=?,version=version+1,updated_at=? WHERE client_id=?",vec![row["allowed_origins"].clone(),n.into(),row["client_id"].clone()])?);
         }
-        Ok(Change::new(client_view(&row), writes))
+        Ok(Change::new(client_view(&row)?, writes))
     }
 }
 fn validate_redirects(b: &Value) -> Result<()> {
     for redirect in b["redirectAllowlist"]
         .as_array()
-        .expect("validated redirects")
+        .ok_or_else(Failure::invalid_request)?
     {
-        let raw = redirect.as_str().expect("validated URL");
+        let raw = redirect.as_str().ok_or_else(Failure::invalid_request)?;
         let url = worker::Url::parse(raw).map_err(|_| Failure {
             status: 400,
             code: "INVALID_REQUEST",

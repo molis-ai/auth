@@ -115,13 +115,15 @@ impl Service<'_> {
             }
             Value::Object(map)
         });
-        for key in quantities.as_object().unwrap().keys() {
+        let quantities_by_type = quantities
+            .as_object()
+            .ok_or_else(Failure::invalid_request)?;
+        let seat_types = plan["seatTypes"]
+            .as_array()
+            .ok_or_else(Failure::unavailable)?;
+        for key in quantities_by_type.keys() {
             ensure(
-                plan["seatTypes"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|t| t["seatTypeId"] == key.as_str()),
+                seat_types.iter().any(|t| t["seatTypeId"] == key.as_str()),
                 400,
                 "INVALID_REQUEST",
             )?;

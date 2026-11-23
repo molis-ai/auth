@@ -142,8 +142,8 @@ pub fn avatar(value: &serde_json::Value) -> Result<serde_json::Value> {
         400,
         "INVALID_AVATAR",
     )?;
-    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+    let width = u32::from_be_bytes(bytes[16..20].try_into().map_err(|_| error())?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().map_err(|_| error())?);
     ensure(
         (1..=256).contains(&width) && (1..=256).contains(&height),
         400,

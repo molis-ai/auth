@@ -8,20 +8,28 @@ pub struct Failure {
     pub status: u16,
     pub code: &'static str,
 }
-impl From<worker::Error> for Failure {
-    fn from(_: worker::Error) -> Self {
+impl Failure {
+    pub(crate) fn unavailable() -> Self {
         Self {
             status: 503,
             code: "AUTH_UNAVAILABLE",
         }
     }
-}
-impl From<serde_json::Error> for Failure {
-    fn from(_: serde_json::Error) -> Self {
+    pub(crate) fn invalid_request() -> Self {
         Self {
             status: 400,
             code: "INVALID_REQUEST",
         }
+    }
+}
+impl From<worker::Error> for Failure {
+    fn from(_: worker::Error) -> Self {
+        Self::unavailable()
+    }
+}
+impl From<serde_json::Error> for Failure {
+    fn from(_: serde_json::Error) -> Self {
+        Self::invalid_request()
     }
 }
 pub(crate) fn matches_route_template(path: &str, template: &str) -> bool {
@@ -115,6 +123,10 @@ pub fn number(v: &Value, k: &str) -> i64 {
 pub fn parsed(v: &Value, k: &str) -> Result<Value> {
     Ok(serde_json::from_str(string(&v[k], 200_000)?)?)
 }
+pub(crate) fn stored_json<T: serde::de::DeserializeOwned>(v: &Value, k: &str) -> Result<T> {
+    let serialized = v[k].as_str().ok_or_else(Failure::unavailable)?;
+    serde_json::from_str(serialized).map_err(|_| Failure::unavailable())
+}
 pub fn contains(v: &Value, needle: &Value) -> bool {
     v.as_array().is_some_and(|a| a.contains(needle))
 }
@@ -124,6 +136,10 @@ pub fn token(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 pub fn email(v: &Value) -> Result<String> {
+    #[allow(
+        clippy::unwrap_used,
+        reason = "fixed pattern covered by canonical_email"
+    )]
     static RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$").unwrap()
     });

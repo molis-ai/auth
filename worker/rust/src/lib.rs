@@ -1,4 +1,6 @@
 //! Cloudflare Workers backend. Business logic lives in Rust; bindings remain at the edge.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 mod account_management;
 mod app;
 mod auth;

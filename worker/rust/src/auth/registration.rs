@@ -86,11 +86,13 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
         json!({"transactionId":id,"status":"PENDING","nextStep":if b["method"]=="EMAIL_PASSWORD" || b["method"]=="ACCOUNT_PASSWORD"{"PASSWORD_LOGIN"}else if b["method"]=="GOOGLE" || b["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},"expiresAt":iso(&json!(n+TX))}),
     )
 }
-fn otp() -> String {
+fn otp() -> Result<String> {
     loop {
-        let value = u32::from_str_radix(&hash(&secret())[..8], 16).unwrap();
+        let digest = hash(&secret());
+        let prefix = digest.get(..8).ok_or_else(Failure::unavailable)?;
+        let value = u32::from_str_radix(prefix, 16).map_err(|_| Failure::unavailable())?;
         if value < 4_294_000_000 {
-            return format!("{:06}", value % 1_000_000);
+            return Ok(format!("{:06}", value % 1_000_000));
         }
     }
 }
@@ -147,7 +149,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let n = now();
     let id = uuid();
     let delivery = uuid();
-    let credential = otp();
+    let credential = otp()?;
     let expires = (n + CODE).min(number(t, "expires_at"));
     let m = Message {
         id: &delivery,
@@ -326,14 +328,15 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             "INVALID_REQUEST",
         )?;
         let identifier = b.get("identifier").unwrap_or(&b["email"]);
-        let is_phone = identifier.as_str().is_some_and(|v| v.starts_with("+86"));
+        let raw_identifier = identifier.as_str().ok_or_else(Failure::invalid_request)?;
+        let is_phone = raw_identifier.starts_with("+86");
         ensure(
             !is_phone || t["method"] == "ACCOUNT_PASSWORD",
             400,
             "INVALID_REQUEST",
         )?;
         let address = if is_phone {
-            identifier.as_str().unwrap().to_owned()
+            raw_identifier.to_owned()
         } else {
             email(identifier)?
         };
