@@ -1,5 +1,5 @@
 //! Configuration readiness for one registered client; never a provider health probe or authorization grant.
-use crate::{http::*, identity::Auth, login_sessions::client, sensitive_transactions::shape};
+use crate::{http::*, identity::Auth, login_sessions::client};
 use serde_json::{Value, json};
 use worker::{Method, Response};
 

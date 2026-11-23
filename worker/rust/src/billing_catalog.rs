@@ -60,7 +60,7 @@ impl Service<'_> {
             ));
         }
         let id = json!(action.id);
-        crate::sensitive_transactions::shape("Id", &id)?;
+        crate::http::shape("Id", &id)?;
         ensure(!text(b, "name").trim().is_empty(), 400, "INVALID_REQUEST")?;
         let mut ids = HashSet::new();
         let mut features = HashSet::new();

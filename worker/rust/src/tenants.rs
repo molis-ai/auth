@@ -1,8 +1,5 @@
 //! AUTH-07 managed tenants, membership roles, and platform authorization.
-use crate::{
-    http::*, identity::Auth, login_sessions, security::uuid, sensitive_transactions::shape,
-    tenant_protocol as protocol,
-};
+use crate::{http::*, identity::Auth, login_sessions, security::uuid, tenant_protocol as protocol};
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 pub(crate) struct Service<'a> {

@@ -1,7 +1,5 @@
 //! Public login commands; verification state and credential issuance stay in Auth.
-use crate::{
-    http::*, identity::Auth, registration, security::challenge, sensitive_transactions::shape,
-};
+use crate::{http::*, identity::Auth, registration, security::challenge};
 use serde_json::{Value, json};
 use worker::{Method, Response};
 

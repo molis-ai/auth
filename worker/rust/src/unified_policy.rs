@@ -1,7 +1,20 @@
 //! Foundation boundary for the unified account protocol. No v2 login is issued here.
 use crate::http::*;
 use serde_json::Value;
+use std::sync::OnceLock;
 use worker::{Env, Url};
+
+pub(crate) fn default_integer(name: &str) -> i64 {
+    static POLICY: OnceLock<Value> = OnceLock::new();
+    POLICY.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../contracts/unified-account/policy.json"
+        ))
+        .expect("bundled policy")
+    })["defaults"][name]
+        .as_i64()
+        .expect("integer policy default")
+}
 
 pub fn validate_configuration(value: &Value, auth_origin: &str) -> Result<()> {
     let invalid = || Failure {

@@ -10,16 +10,7 @@ use serde_json::{Value, json};
 use worker::D1PreparedStatement;
 
 pub fn ttl(name: &str) -> i64 {
-    static POLICY: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    POLICY.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../../contracts/unified-account/policy.json"
-        ))
-        .expect("bundled policy")
-    })["defaults"][name]
-        .as_i64()
-        .expect("policy TTL")
-        * 1000
+    crate::unified_policy::default_integer(name) * 1000
 }
 pub fn base(s: &Service<'_>) -> Result<Vec<D1PreparedStatement>> {
     Ok(vec![

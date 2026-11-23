@@ -74,3 +74,13 @@ export async function refreshAfterWrite<T>(
     refreshFailed(error, retry);
   }
 }
+
+export interface WriteOptions<T> {
+  after: (result: T) => Promise<void>;
+  committed?: (result: T) => void;
+  action?: string;
+  method?: string;
+  editGeneration?: number;
+  success?: string;
+  refreshMessage?: string;
+}

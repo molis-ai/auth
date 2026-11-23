@@ -39,7 +39,7 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         (["platform", "users", u, "permissions", cap], Method::Patch) => {
             id = (*u).into();
             target = (*cap).into();
-            crate::sensitive_transactions::shape("PlatformCapability", &json!(cap))?;
+            crate::http::shape("PlatformCapability", &json!(cap))?;
             ("permission.set", Some("PlatformPermissionRequest"))
         }
         _ => {
@@ -50,7 +50,7 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         }
     };
     if !id.is_empty() {
-        crate::sensitive_transactions::shape("Id", &json!(id))?;
+        crate::http::shape("Id", &json!(id))?;
     }
     Ok(Action {
         op,

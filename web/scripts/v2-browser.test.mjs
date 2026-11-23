@@ -33,6 +33,8 @@ mkdirSync(evidence, { recursive: true });
 const profile = mkdtempSync(join(tmpdir(), "auth-v2-chrome-"));
 let proxy, browser, page, origin;
 const requests = [];
+const scripts = new Set();
+const memberReads = [];
 const server = http.createServer(async (req, res) => {
   try {
     const parts = [];
@@ -46,7 +48,12 @@ const server = http.createServer(async (req, res) => {
           : { body: Buffer.concat(parts) }),
       }),
     );
-    requests.push({method:req.method,path:new URL(origin+req.url).pathname,status:r.status});
+    const url = new URL(origin + req.url);
+    requests.push({method:req.method,path:url.pathname,status:r.status});
+    if (r.ok && url.pathname.endsWith(".js")) scripts.add(url.pathname);
+    if (req.method === "GET" && /^\/api\/account\/tenants\/[^/]+\/members$/.test(url.pathname)) {
+      memberReads.push(url.searchParams);
+    }
     if(requests.length>30)requests.shift();
     res.writeHead(r.status, Object.fromEntries(r.headers));
     res.end(Buffer.from(await r.arrayBuffer()));
@@ -194,6 +201,49 @@ try {
     1,
   );
   console.log("PASS browser self-service tenant");
+  assert.ok([...scripts].some(path => path.includes("/TenantPage-")));
+  assert.ok([...scripts].every(path => !/Platform(?:Users|Clients)-/.test(path)));
+  const testTenant = await db.prepare("SELECT space_id FROM auth_managed_tenant").first();
+  const membersCte = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<12)";
+  await db.batch([
+    db.prepare(membersCte + " INSERT INTO auth_user(id,display_name,status,created_at,updated_at) SELECT 'qa-page-user-'||n,'QA 成员 '||n,'ACTIVE',0,0 FROM numbers"),
+    db.prepare(membersCte + " INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT 'qa-page-member-'||n,?,'qa-page-user-'||n,'MEMBER','ACTIVE',0 FROM numbers").bind(testTenant.space_id),
+  ]);
+  await click("个人资料");
+  memberReads.length = 0;
+  await click("租户");
+  await page.wait("!document.querySelector('[aria-label=下一页]')?.disabled && document.querySelectorAll('.tm-table-wrap tbody tr').length===10");
+  assert.equal(memberReads.length, 1);
+  assert.equal(memberReads[0].get("limit"), "10");
+  assert.equal(memberReads[0].has("cursor"), false);
+  assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /角色/);
+  await page.click(".tm-table-wrap th:first-child button");
+  assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /用户/);
+  await page.click("[aria-label=下一页]");
+  await page.wait("document.querySelector('.tm-pagination')?.textContent.includes('第 2 页') && document.querySelectorAll('.tm-table-wrap tbody tr').length===3");
+  assert.equal(memberReads.length, 2);
+  assert.ok(memberReads[1].has("cursor"));
+  await page.click("[aria-label=上一页]");
+  await page.wait("document.querySelector('.tm-pagination')?.textContent.includes('第 1 页')");
+  assert.equal(memberReads.length, 2);
+  await click("＋ 邀请成员");
+  assert.equal(await page.evaluate("document.querySelector('.tm-dialog[open] select')?.value"), "EMAIL");
+  await page.click(".tm-dialog[open] button[aria-label=关闭]");
+  await click("个人资料");
+  await page.evaluate("document.querySelector('meta[name=molis-tenant-invite-channels]').content='USER'");
+  await click("租户");
+  await click("＋ 邀请成员");
+  assert.deepEqual(await page.evaluate(`(() => {
+    const dialog = document.querySelector('.tm-dialog[open]');
+    return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim()];
+  })()`), [false, "账号 ID"]);
+  await page.click(".tm-dialog[open] button[aria-label=关闭]");
+  await db.batch([
+    db.prepare("DELETE FROM auth_tenant_membership WHERE id LIKE 'qa-page-member-%'"),
+    db.prepare("DELETE FROM auth_user WHERE id LIKE 'qa-page-user-%'"),
+  ]);
+  console.log("PASS browser member cursor, invitation channels, and active sort accessibility");
+
   // CONSOLE-01: original sidebar and list/detail composition at desktop and phone widths.
   await page.wait("Boolean(document.querySelector('.tm-heading'))");
   for (const width of [1440, 1024, 390]) {
@@ -232,6 +282,18 @@ try {
     );
     await page.screenshot(join(evidence, "security-" + width + ".png"));
   }
+  await click("登录会话");
+  await click("退出所有产品和设备");
+  assert.equal(await page.evaluate(`(() => {
+    const dialog = document.querySelector('.logout-confirm[open]');
+    return document.getElementById(dialog.getAttribute('aria-labelledby')).textContent.trim()
+      + '/' + document.activeElement.textContent.trim();
+  })()`), "退出所有产品和设备？/取消");
+  await page.click(".logout-confirm[open] button[autofocus]");
+  await page.wait("document.activeElement?.textContent.trim()==='退出所有产品和设备'");
+  console.log("PASS browser logout confirmation label and restored focus");
+  await click("登录方式");
+
   const verifyCurrentPhone = async () => {
     await db.prepare("UPDATE auth_rate_bucket SET expires_at=0").run();
     if(await page.evaluate("Boolean(document.querySelector('.auth-entry'))")) await click('手机验证');
@@ -348,6 +410,9 @@ try {
     );
   }
   console.log("PASS browser application creation, rename and status changes");
+  await page.wait("Boolean(document.querySelector('.v2-client-create'))");
+  assert.ok([...scripts].some(path => path.includes("/PlatformClients-")));
+  assert.ok([...scripts].every(path => !path.includes("/PlatformUsers-")));
   await fillLabel("客户端 ID", "qa-v2-client", ".v2-client-create");
   await fillLabel("环境 ID", "unified-local", ".v2-client-create");
   await fillLabel("产品来源", "http://127.0.0.1:43999", ".v2-client-create");
@@ -414,6 +479,7 @@ try {
   await page.wait(
     "Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='QA 目标用户'&&!b.disabled)",
   );
+  assert.ok([...scripts].some(path => path.includes("/PlatformUsers-")));
   for (const [button, status] of [
     ["停用账号", "DISABLED"],
     ["恢复账号", "ACTIVE"],

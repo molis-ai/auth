@@ -12,13 +12,6 @@ use worker::D1PreparedStatement;
 pub fn protected(t: &Value) -> bool {
     matches!(text(t, "purpose").as_str(), "REAUTH" | "BIND" | "REPLACE")
 }
-pub fn shape(n: &str, b: &Value) -> Result<()> {
-    ensure(
-        crate::unified_contracts::validate_named(n, b).is_ok(),
-        400,
-        "INVALID_REQUEST",
-    )
-}
 pub fn guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction t JOIN auth_login_session s ON s.id=t.login_session_id JOIN auth_user_security us ON us.user_id=t.user_id JOIN auth_user u ON u.id=t.user_id WHERE t.id=? AND t.status=? AND t.expires_at>? AND s.user_id=t.user_id AND s.client_id=t.client_id AND s.revoked_at IS NULL AND s.user_epoch=t.user_epoch AND us.session_epoch=t.user_epoch AND s.session_revision=t.session_revision AND us.identity_version=t.identity_version AND s.last_active_at+2592000000>? AND s.absolute_expires_at>? AND u.status='ACTIVE' AND COALESCE(us.revoked_before_seq,0)<t.created_seq AND (? IS NULL OR EXISTS(SELECT 1 FROM auth_login_access_token a WHERE a.token_hash=? AND a.login_session_id=s.id AND a.expires_at>? AND a.user_epoch=s.user_epoch AND a.session_revision=s.session_revision)))",vec![t["id"].clone(),status.into(),n.into(),n.into(),n.into(),t["_access_hash"].clone(),t["_access_hash"].clone(),n.into()])
 }

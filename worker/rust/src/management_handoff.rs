@@ -4,7 +4,6 @@ use crate::{
     identity::Auth,
     login_sessions as sessions,
     security::{challenge, hash, secret, uuid},
-    sensitive_transactions::shape,
     web_session,
 };
 use serde_json::{Value, json};

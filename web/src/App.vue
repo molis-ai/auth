@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from "vue";
+import { defineAsyncComponent, onMounted, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from "vue";
 import {
   AccountClient,
   AuthError,
@@ -10,13 +10,12 @@ import AuthEntry from "./AuthEntry.vue";
 import AccountProfile from "./AccountProfile.vue";
 import { entryText } from "./entry-copy.ts";
 import { entryLanguage, rememberEmail } from "./entry-preferences.ts";
-import PlatformUsers from "./PlatformUsers.vue";
-import TenantMembers from "./TenantMembers.vue";
-import PlatformClients from "./PlatformClients.vue";
 import { accountErrorMessage } from "./errors.ts";
-import { IdempotentSubmit, refreshAfterWrite } from "./idempotent-submit.ts";
-import { syncCreatedTenant } from "./tenant-selection.ts";
+import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./idempotent-submit.ts";
 import logo from "./assets/molis-logo.png";
+const PlatformUsers = defineAsyncComponent(() => import("./PlatformUsers.vue"));
+const PlatformClients = defineAsyncComponent(() => import("./PlatformClients.vue"));
+const TenantPage = defineAsyncComponent(() => import("./TenantPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -29,20 +28,12 @@ function showToast(text: string) {
 const securityTab = ref('methods');
 async function selectSecurityTab(value: string) { await run(async () => { await cancelSecurity(); securityTab.value = value; }); }
 const logoutDialog = ref<HTMLDialogElement>();
-const tenantCreateDialog = ref<HTMLDialogElement>();
-const tenantSearch = ref(""), applicationSearch = ref("");
+const logoutTrigger = ref<HTMLButtonElement>();
+const applicationSearch = ref("");
 const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
   page = ref("account");
-interface Tenant {
-  tenantId: string;
-  name: string;
-  status: string;
-  myRole: string;
-  membershipId: string;
-  version: number;
-}
 interface Application {
   applicationId: string;
   name: string;
@@ -56,43 +47,10 @@ interface Method {
   verified: boolean;
   usableForLogin: boolean;
 }
-interface Member {
-  displayName: string;
-  email: string | null;
-  membershipId: string;
-  userId: string;
-  role: string;
-  status: string;
-  version: number;
-}
-const tenants = ref<Tenant[]>([]),
-  selectedTenant = ref<Tenant>(),
-  members = ref<Member[]>([]),
-  applications = ref<Application[]>([]),
+const applications = ref<Application[]>([]),
   selectedApplication = ref<Application>(),
-  methods = ref<Method[]>([]),
-  invitations = ref<
-    {
-      invitationId: string;
-      tenantId: string;
-      targetSummary: string;
-      status: string;
-      version: number;
-    }[]
-  >([]);
-const transfers = ref<
-    {
-      transferId: string;
-      tenantId: string;
-      fromMembershipId: string;
-      toMembershipId: string;
-      status: string;
-      version: number;
-    }[]
-  >([]);
-const creationMode = ref(""),
-  tenantName = ref(""),
-  newApplicationName = ref(""),
+  methods = ref<Method[]>([]);
+const newApplicationName = ref(""),
   appName = ref(""),
   appStatus = ref("ACTIVE"),
   subscriptions = ref<
@@ -121,7 +79,6 @@ watch(() => account.value?.user?.userId, userId => {
   submissions.setAccount(userId);
   refreshIssues.clear();
 }, { flush: "sync" });
-watch(() => tenantName.value.trim(), () => submissions.discard("create-tenant"), { flush: "sync" });
 watch(newApplicationName, () => submissions.discard("create-application"), { flush: "sync" });
 watch([appName, appStatus, () => selectedApplication.value?.applicationId, () => selectedApplication.value?.version],
   () => submissions.discard("edit-application"), { flush: "sync" });
@@ -199,7 +156,6 @@ async function navigate(target: string) {
   await cancelSecurity();
   page.value = target;
   if (target === 'security') securityTab.value = 'methods';
-  selectedTenant.value = undefined;
   selectedApplication.value = undefined;
   securityAction.value = "";
   await run(async () => {
@@ -208,15 +164,6 @@ async function navigate(target: string) {
         "/login-methods",
       );
       methods.value = data.loginMethods;
-    } else if (target === "tenants") {
-      const policy = await client.request<{ mode: string }>(
-        "/tenant-creation-policy",
-      );
-      creationMode.value = policy.mode;
-      tenants.value = await list("/tenants");
-      invitations.value = await list("/invitations");
-      transfers.value = await list("/ownership-transfers");
-      if (tenants.value[0]) await selectTenant(tenants.value[0]);
     } else if (target === "applications")
       applications.value = await list("/platform/applications");
     else if (target === "subscriptions")
@@ -227,24 +174,6 @@ async function loggedIn() {
   clearToast();
   await run(refresh);
   if (account.value?.state === 'AUTHENTICATED') sessionChanges?.postMessage('changed');
-}
-async function selectTenant(t: Tenant) {
-  selectedTenant.value = t;
-  members.value = [];
-  await loadMembers(t);
-}
-async function loadMembers(t: Tenant) {
-  const result = t.status === "ACTIVE" ? await list<Member>("/tenants/" + t.tenantId + "/members") : [];
-  if (selectedTenant.value?.tenantId === t.tenantId) members.value = result;
-}
-interface WriteOptions<T> {
-  after: (result: T) => Promise<void>;
-  committed?: (result: T) => void;
-  action?: string;
-  method?: string;
-  editGeneration?: number;
-  success?: string;
-  refreshMessage?: string;
 }
 async function submitWrite<T>(
   path: string,
@@ -292,34 +221,13 @@ function retryRefresh(action: string) {
     showToast("已刷新");
   });
 }
-function openTenantCreate() {
-  tenantName.value = ''; clearToast();
-  tenantCreateDialog.value?.showModal();
+function handleTenantError(error: unknown) {
+  if (expireAccount(error)) showToast(accountErrorMessage(error));
 }
-function closeTenantCreate() {
-  if (!busy.value) { tenantCreateDialog.value?.close(); tenantName.value = ''; clearToast(); }
-}
-async function createTenant() {
-  const name = tenantName.value.trim();
-  if (!name) return;
-  await mutate<Tenant>("/tenants", { name }, {
-    action: "create-tenant",
-    success: "租户已创建",
-    refreshMessage: "租户已创建，但租户列表或成员暂未刷新。",
-    committed: created => {
-      tenantCreateDialog.value?.close();
-      tenantName.value = "";
-      tenantSearch.value = "";
-      tenants.value = [...tenants.value.filter(t => t.tenantId !== created.tenantId), created];
-      selectedTenant.value = created;
-      members.value = [];
-    },
-    after: async created => {
-      tenants.value = await list("/tenants");
-      await syncCreatedTenant(created.tenantId, tenants.value, selectedTenant,
-        () => { members.value = []; }, loadMembers);
-    },
-  });
+function disposeTenantPage() {
+  for (const [action, issue] of refreshIssues) {
+    if (issue.page === "tenants") refreshIssues.delete(action);
+  }
 }
 function openApplication(a: Application) {
   selectedApplication.value = a;
@@ -458,11 +366,9 @@ function clearAccount() {
   refreshIssues.clear();
   account.value = { state: 'ANONYMOUS' };
   page.value = 'account'; securityTab.value = 'methods';
-  tenantSearch.value = ''; applicationSearch.value = '';
-  tenants.value = []; selectedTenant.value = undefined; members.value = [];
+  applicationSearch.value = '';
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
-  invitations.value = []; transfers.value = []; subscriptions.value = [];
-  tenantCreateDialog.value?.close(); creationMode.value = ''; tenantName.value = '';
+  subscriptions.value = [];
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
   newIdentity.value = false; securityIdentity.value = ''; newPassword.value = ''; confirmPassword.value = '';
@@ -573,8 +479,8 @@ onBeforeUnmount(() => {
             <button v-for="[id,label] in [['methods','登录方式'],['password','登录密码'],['sessions','登录会话']]" :key="id" :aria-current="securityTab === id ? 'page' : undefined" :disabled="busy" @click="selectSecurityTab(id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/><path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/><path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/></svg>{{ label }}</button>
           </nav>
           <div class="collection-detail">
-            <section v-if="securityTab === 'sessions'" class="session-actions"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
-            <dialog ref="logoutDialog" class="logout-confirm"><h2>退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
+            <section v-if="securityTab === 'sessions'" class="session-actions"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button ref="logoutTrigger" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
+            <dialog ref="logoutDialog" class="logout-confirm" aria-labelledby="logout-confirm-title" @close="logoutTrigger?.focus()"><h2 id="logout-confirm-title">退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button autofocus @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
             <section v-if="securityTab === 'password'"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
             <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
               <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method" :class="{ 'is-editing-phone': type === 'PHONE' && binding?.type === 'PHONE' && securityAction === 'BIND_METHOD' }">
@@ -604,121 +510,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <section v-if="page === 'tenants'" class="console-card collection-page tenant-page">
-        <h1>我的租户</h1>
-        <div class="collection-layout"><aside class="collection-list" aria-label="租户列表">
-        <input v-model="tenantSearch" type="search" aria-label="搜索租户" placeholder="搜索租户" />
-        <button v-if="creationMode === 'SELF_SERVICE'" class="tenant-create-trigger" :disabled="busy" @click="openTenantCreate">＋ 创建租户</button>
-        <p v-else>租户由平台创建并分配。</p>
-        <dialog ref="tenantCreateDialog" class="tenant-create-dialog" aria-labelledby="tenant-create-title" @cancel.prevent="closeTenantCreate">
-          <form @submit.prevent="createTenant">
-            <header><h2 id="tenant-create-title">创建租户</h2><button type="button" aria-label="关闭创建租户" :disabled="busy" @click="closeTenantCreate">×</button></header>
-            <label for="tenant-create-name">租户名称</label>
-            <input id="tenant-create-name" v-model="tenantName" maxlength="80" required autofocus autocomplete="off" :disabled="busy" placeholder="例如：产品研发团队" />
-            <p>创建后，你将成为该租户的所有者，可以邀请成员加入。</p>
-            <footer><button type="button" :disabled="busy" @click="closeTenantCreate">取消</button><button type="submit" :disabled="busy || !tenantName.trim()">{{ busy ? '正在创建…' : '创建' }}</button></footer>
-          </form>
-        </dialog>
-        <nav class="tenant-directory" aria-label="选择租户">
-        <button v-for="t in tenants.filter(t => t.name.toLowerCase().includes(tenantSearch.toLowerCase()))" :key="t.tenantId" class="v2-row collection-item tenant-choice" :class="{ selected: selectedTenant?.tenantId === t.tenantId }" :aria-current="selectedTenant?.tenantId === t.tenantId ? 'true' : undefined" :disabled="busy" @click="run(() => selectTenant(t))">
-          <span class="tenant-choice-name">{{ t.name }}</span>
-          <span>{{ ({OWNER:'所有者',ADMIN:'管理员',MEMBER:'成员'} as Record<string,string>)[t.myRole] }} · {{ t.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
-        </button>
-        </nav>
-        <p v-if="!tenants.length" class="console-muted">还没有租户，可在这里创建或接受邀请。</p>
-        </aside><div class="collection-detail">
-        <p v-if="!selectedTenant" class="collection-empty">选择一个租户，查看成员与管理设置</p>
-        <TenantMembers v-if="selectedTenant" :key="selectedTenant.tenantId" :tenant="selectedTenant" :members="members" :loading="busy"
-          :refresh-pending="refreshIssues.has('tenant-member:' + selectedTenant.tenantId)"
-          :submit-write="submitMemberWrite" :discard="action => submissions.discard(action)" @expired="expireAccount"
-          :reload="loadMembers" :refresh-transfers="async () => { transfers = await list('/ownership-transfers'); }"
-          @left="id => { if (selectedTenant?.tenantId === id) selectedTenant = undefined; tenants = tenants.filter(t => t.tenantId !== id); }"
-          :leave="async () => { tenants = await list('/tenants'); }" />
-        <div
-          v-for="t in transfers.filter((t) => t.status === 'PENDING')"
-          :key="t.transferId"
-          class="v2-row"
-        >
-          <span>租户 {{ t.tenantId }} 所有权交接</span
-          ><button
-            :disabled="busy"
-            @click="
-              mutate(
-                '/ownership-transfers/' +
-                  t.transferId +
-                  (tenants.find((x) => x.tenantId === t.tenantId)
-                    ?.membershipId === t.toMembershipId
-                    ? '/accept'
-                    : '/cancel'),
-                { expectedVersion: t.version },
-                {
-                  committed: () => {
-                    transfers = transfers.filter(item => item.transferId !== t.transferId);
-                    selectedTenant = undefined;
-                  },
-                  after: async () => {
-                    transfers = await list('/ownership-transfers');
-                    tenants = await list('/tenants');
-                  },
-                  refreshMessage: '所有权交接已更新，但交接或租户列表暂未刷新。',
-                },
-              )
-            "
-          >
-            {{
-              tenants.find((x) => x.tenantId === t.tenantId)?.membershipId ===
-              t.toMembershipId
-                ? "接受交接"
-                : "取消交接"
-            }}
-          </button>
-        </div>
-        <h2 v-if="invitations.some((i) => i.status === 'PENDING')">
-          收到的邀请
-        </h2>
-        <div
-          v-for="i in invitations.filter((i) => i.status === 'PENDING')"
-          :key="i.invitationId"
-          class="v2-row"
-        >
-          <span>{{ i.targetSummary }}</span
-          ><button
-            :disabled="busy"
-            @click="
-              mutate(
-                '/invitations/' + i.invitationId + '/accept',
-                { expectedVersion: i.version },
-                {
-                  committed: () => { invitations = invitations.filter(item => item.invitationId !== i.invitationId); },
-                  after: async () => {
-                    tenants = await list('/tenants');
-                    invitations = await list('/invitations');
-                  },
-                  refreshMessage: '已接受邀请，但租户或邀请列表暂未刷新。',
-                },
-              )
-            "
-          >
-            加入</button
-          ><button
-            :disabled="busy"
-            @click="
-              mutate(
-                '/invitations/' + i.invitationId + '/decline',
-                { expectedVersion: i.version },
-                {
-                  committed: () => { invitations = invitations.filter(item => item.invitationId !== i.invitationId); },
-                  after: async () => { invitations = await list('/invitations'); },
-                  refreshMessage: '已拒绝邀请，但邀请列表暂未刷新。',
-                },
-              )
-            "
-          >
-            拒绝
-          </button>
-        </div>
-        </div></div>
-      </section>
+      <TenantPage
+        v-if="page === 'tenants'"
+        :client="client"
+        :busy="busy"
+        :mutate="mutate"
+        :submit-write="submitMemberWrite"
+        :discard="action => submissions.discard(action)"
+        :refresh-pending="action => refreshIssues.has(action)"
+        @expired="handleTenantError"
+        @dispose="disposeTenantPage"
+        @clear-toast="clearToast"
+      />
       <section v-if="page === 'subscriptions'" class="console-card">
         <h1>个人订阅</h1>
         <p v-if="!subscriptions.length">暂无订阅。</p>
