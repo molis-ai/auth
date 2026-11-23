@@ -1,21 +1,27 @@
-use crate::{http::*, identity::Auth, security::uuid};
+use crate::{
+    http::*,
+    identity::{Auth, DEFAULT_RETRY_AFTER},
+    security::uuid,
+};
 use serde_json::json;
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    handle_inner(req, env, None).await
+    handle_inner(req, env, None, None).await
 }
 pub(crate) async fn handle_internal(
     req: Request,
     env: Env,
     owner: (String, i64),
+    client_ip: String,
 ) -> worker::Result<Response> {
-    Box::pin(handle_inner(req, env, Some(owner))).await
+    Box::pin(handle_inner(req, env, Some(owner), Some(client_ip))).await
 }
 async fn handle_inner(
     req: Request,
     env: Env,
     owner: Option<(String, i64)>,
+    client_ip: Option<String>,
 ) -> worker::Result<Response> {
     let id = uuid();
     if req.method() == Method::Get {
@@ -24,21 +30,25 @@ async fn handle_inner(
             return with_security_headers(health_response(&id)?, &id, url.scheme() == "https");
         }
     }
-    let mut a = match Auth::new(req, &env, id.clone()) {
+    let mut a = match Auth::new(req, &env, id.clone(), client_ip) {
         Ok(a) => a,
         Err(e) => return error_response(e, &id),
     };
     a.s.web_owner = owner;
     let result = dispatch(&mut a, &env).await;
+    let retry_after = a.retry_after.get().unwrap_or(DEFAULT_RETRY_AFTER);
     let mut response = match result {
         Ok(r) => r,
         Err(e) => {
             if e.status >= 500 {
                 worker::console_error!("AUTH_SERVER_FAILURE request_id={} code={}", id, e.code);
             }
-            if e.status == 429 && a.request.url()?.path().starts_with("/api/v2/") {
+            if e.status == 429 && {
+                let path = a.request.path();
+                path.starts_with("/api/v2/") || path.starts_with("/api/account/")
+            } {
                 json_response(
-                    json!({"error":{"code":e.code,"retryAfterSeconds":60},"requestId":id}),
+                    json!({"error":{"code":e.code,"retryAfterSeconds":retry_after},"requestId":id}),
                     429,
                 )?
             } else {
@@ -52,7 +62,9 @@ async fn handle_inner(
         }
     }
     if response.status_code() == 429 {
-        response.headers_mut().set("Retry-After", "60")?;
+        response
+            .headers_mut()
+            .set("Retry-After", &retry_after.to_string())?;
     }
     with_security_headers(response, &id, a.origin.starts_with("https:"))
 }

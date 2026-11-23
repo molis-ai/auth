@@ -1,7 +1,7 @@
 //! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
 use crate::{
     http::*,
-    identity::Auth,
+    identity::{Auth, DEFAULT_RETRY_AFTER},
     security::{hash, secret},
     sensitive_transactions::shape,
 };
@@ -106,10 +106,27 @@ impl WebSession<'_> {
             request,
             self.a.env.clone(),
             (self.id.clone(), self.revision),
+            self.a.client_ip.clone(),
         )
         .await?;
         let value: Value = response.json().await?;
-        if response.status_code() >= 400 {
+        let status = response.status_code();
+        if status == 429 {
+            let retry_after = value["error"]["retryAfterSeconds"]
+                .as_u64()
+                .or_else(|| {
+                    response
+                        .headers()
+                        .get("Retry-After")
+                        .ok()
+                        .flatten()?
+                        .parse()
+                        .ok()
+                })
+                .unwrap_or(DEFAULT_RETRY_AFTER);
+            self.a.retry_after.set(Some(retry_after));
+        }
+        if status >= 400 {
             // Return a bounded, declared code, never an upstream body or secret-bearing message.
             let code = text(&value["error"], "code");
             let known: [&'static str; 15] = [
@@ -130,7 +147,7 @@ impl WebSession<'_> {
                 "CAPACITY_CONFLICT",
             ];
             return Err(Failure {
-                status: response.status_code(),
+                status,
                 code: known
                     .into_iter()
                     .find(|v| *v == code)
