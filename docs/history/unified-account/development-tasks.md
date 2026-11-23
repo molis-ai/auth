@@ -1,6 +1,6 @@
 # Molis 统一账号开发任务
 
-状态：2026-11-05，AUTH-01 至 AUTH-10、WORK-01 至 WORK-09、CLUB-01 至 CLUB-09 已实现并完成各阶段本地隔离验证。AUTH-11 的盘点工具、方案和合成演练见第 24 节；WORK-09 / CLUB-09 的旧入口切换与联合证据见第 25 节。按本轮范围未读取真实数据，实际存量与 D-09 凭据接续仍待确认，方案见[账号迁移](account-migration-plan.md)。AUTH-12 已完成[验收矩阵](acceptance-matrix.md)、[版本与交付记录](delivery.md)汇总，已知问题及真实环境待办见该记录；没有将其标为全部上线完成。本文将[需求](requirements.md)和[接口合同](api-contracts.md)拆为可独立评审的仓库任务；P0 至 P5 的阶段定义沿用[实施计划](implementation-plan.md)。任务表列的是各任务的完成标准；未列出的业务验收尚未执行。短信、邮件与 Google/GitHub 按 C-36 至 C-38 使用本地/隔离环境中的外部 mock，中央身份、成员、订阅、席位和权益必须真实实现。
+状态：2026-11-05，AUTH-01 至 AUTH-10、WORK-01 至 WORK-09、CLUB-01 至 CLUB-09 已实现并完成各阶段本地隔离验证。AUTH-11 的盘点工具、方案和合成演练见第 24 节；WORK-09 / CLUB-09 的旧入口切换与联合证据见第 25 节。按本轮范围未读取真实数据，实际存量与 D-09 凭据接续仍待确认，方案见[账号迁移](../../unified-account/account-migration-plan.md)。AUTH-12 已完成[验收矩阵](../../unified-account/acceptance-matrix.md)、[版本与交付记录](delivery.md)汇总，已知问题及真实环境待办见该记录；没有将其标为全部上线完成。本文将[需求](../../unified-account/requirements.md)和[接口合同](../../unified-account/api-contracts.md)拆为可独立评审的仓库任务；P0 至 P5 的阶段定义沿用[实施计划](implementation-plan.md)。任务表列的是各任务的完成标准；未列出的业务验收尚未执行。短信、邮件与 Google/GitHub 按 C-36 至 C-38 使用本地/隔离环境中的外部 mock，中央身份、成员、订阅、席位和权益必须真实实现。
 
 接续当前阶段按[实施计划第 11 节](implementation-plan.md#11-后续执行指引)执行；T-01 至 T-07 的状态与完成标准统一在[交付台账](delivery.md#6-剩余待办与依赖顺序)维护。下面的 AUTH/WORK/CLUB 任务表及分阶段证据继续保留，不因收尾重新编号。
 
@@ -144,15 +144,15 @@ UAS-30 的备份/恢复与迁移停止条件另外记录实际演练证据；失
 
 AUTH-01/02 交付限定在 Auth 的合同、存储和策略边界。两产品的账号页面，以及 AUTH-03 起的独立登录、发送与提供方 mock、成员和商业领域服务仍按任务表继续实现。
 
-- AUTH-01：[可执行合同包](../../contracts/unified-account/README.md)提供 OpenAPI 3.1、JSON Schema、权限/状态机/默认值与同源正反夹具；Rust 与 TypeScript 校验同一份夹具。它可供 Work/Club 适配使用，本轮未修改两产品或宣称已完成三端集成。
-- AUTH-02：[增量迁移](../../worker/migrations/0005_unified_account.sql)新增独立会话、认证证明、服务端撤销序号、纳管租户/成员历史、平台权限、套餐/订阅/席位、幂等结果与审计。旧表列、账号和凭据保持原样，旧 TEAM 不自动纳管；用户安全版本、账号并发版本与登录会话版本独立。
+- AUTH-01：[可执行合同包](../../../contracts/unified-account/README.md)提供 OpenAPI 3.1、JSON Schema、权限/状态机/默认值与同源正反夹具；Rust 与 TypeScript 校验同一份夹具。它可供 Work/Club 适配使用，本轮未修改两产品或宣称已完成三端集成。
+- AUTH-02：[增量迁移](../../../worker/migrations/0005_unified_account.sql)新增独立会话、认证证明、服务端撤销序号、纳管租户/成员历史、平台权限、套餐/订阅/席位、幂等结果与审计。旧表列、账号和凭据保持原样，旧 TEAM 不自动纳管；用户安全版本、账号并发版本与登录会话版本独立。
 - 客户端策略由 `auth_client_policy` 持久登记，关联公开 `auth_client.client_id`。新策略不能通过 v1 事务、旧 access/refresh/code 或迟到提供方回调继续操作。纳管租户在旧团队、邀请、授权和审计入口均受保护，提交时再次检查；未纳管团队保留旧行为。
 - 新平台权限独立存储，不从 OWNER/ADMIN 推导。跨行规则（例如始终恰有一个 OWNER、实际席位容量、期限续期和权益并集）由后续领域服务负责，本轮只有结构约束与回滚验证，不把表结构当作已完成功能。
 - AUTH-02 交付时 `/api/v2` 业务入口统一返回 `501 UNIFIED_ACCOUNT_NOT_IMPLEMENTED`，不会转入旧处理器。AUTH-03 已开放下面实施记录中的会话路径，其他路径仍保持这个边界。
 
 本地配置与执行顺序：先对目标数据库应用迁移，再运行使用新表的后端。开发测试使用隔离 D1，不对现有 `.wrangler` 数据或远程数据库执行迁移。本轮未部署。
 
-[可选本地登记 SQL](../../worker/unified-account-local-seed.sql)单独提供 `unified-local` mock 环境及 Work/Club 客户端，未接入旧自动 seed；无用户、平台权限、租户或订阅种子。回调分别登记为 `http://127.0.0.1:4207/account/callback` 与 `http://127.0.0.1:3000/account/callback`，只是后续适配的精确本地登记，不代表两端回调已实现。反复执行不覆盖已有配置。当前 seed 已由 AUTH-10 增加产品登记，使用现行文件时须先应用截至 0011 的全部迁移，见 §15。
+[可选本地登记 SQL](../../../worker/unified-account-local-seed.sql)单独提供 `unified-local` mock 环境及 Work/Club 客户端，未接入旧自动 seed；无用户、平台权限、租户或订阅种子。回调分别登记为 `http://127.0.0.1:4207/account/callback` 与 `http://127.0.0.1:3000/account/callback`，只是后续适配的精确本地登记，不代表两端回调已实现。反复执行不覆盖已有配置。当前 seed 已由 AUTH-10 增加产品登记，使用现行文件时须先应用截至 0011 的全部迁移，见 §15。
 
 Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
@@ -182,7 +182,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 8 AUTH-03 实施记录
 
-已实现 [login_sessions.rs](../../worker/rust/src/login_sessions.rs)，复用 AUTH-02 的表结构，无新增迁移。新增中央入口：
+已实现 [login_sessions.rs](../../../worker/rust/src/login_sessions.rs)，复用 AUTH-02 的表结构，无新增迁移。新增中央入口：
 
 | 路径 | 行为 |
 | --- | --- |
@@ -198,31 +198,31 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 本轮验证使用真实会话服务和隔离 D1，预先写入可信的已验证授权码夹具。没有新增可让客户端自报用户的 mock 登录入口。AUTH-04/05 负责创建和验证认证事务、签发 LOGIN_CODE；签发前须初始化该用户的 `auth_user_security`、绑定真实 user/client/redirect/PKCE，并在识别用户及签发时核对 `revoked_before_seq`。AUTH-03 交付时公开注册、密码验证、短信和提供方入口尚未实现（邮箱/手机现已由 AUTH-04 接入），外部服务保持 mock 方案。
 
-[隔离 HTTP 回归](../../worker/rust-tests/login-sessions.test.ts)覆盖：独立产品/同产品多次登录、30/90 天截止、Token DTO 校验、活动去重及拒绝后台/客户端时间、刷新重放及并发、刷新与退出竞态、过期 access 的 refresh 撤销、当前退出隔离、全局退出及回执重试、旧匿名事务边界、一次性换码、错误 PKCE/客户端/Origin、过期证明和停用客户端，以及触发真实 scheduled 清理后退出回执仍可重试。生命周期默认值另由 Rust 单元测试对照共享合同。
+[隔离 HTTP 回归](../../../worker/rust-tests/login-sessions.test.ts)覆盖：独立产品/同产品多次登录、30/90 天截止、Token DTO 校验、活动去重及拒绝后台/客户端时间、刷新重放及并发、刷新与退出竞态、过期 access 的 refresh 撤销、当前退出隔离、全局退出及回执重试、旧匿名事务边界、一次性换码、错误 PKCE/客户端/Origin、过期证明和停用客户端，以及触发真实 scheduled 清理后退出回执仍可重试。生命周期默认值另由 Rust 单元测试对照共享合同。
 
 最终验证：`npm test` 通过（184 项：合同 7、Rust 20、隔离后端/模型 39、Web 91、SDK 27）；Web/SDK/WASM 与 Wrangler dry-run 构建通过。本轮未执行真实数据库迁移或部署。本轮修改文件格式检查通过；全仓仍有 §7 中 security.rs、password-kdf.test.ts、wrangler.jsonc 的 3 个既有格式问题。local-runtime.mjs 因新增 scheduled 测试入口已一并格式化。
 
 
 ## 9 AUTH-04 实施记录
 
-已实现 [registration.rs](../../worker/rust/src/registration.rs)：产品事务创建/查询/取消、挑战发送及验证、邮箱验证注册、邮箱密码登录、+86 手机验证码自动注册登录和完成换码。客户端直接取得 JSON 结果并调用 AUTH-03，不插入额外 Auth 确认页。支持 Work/Club 各自的精确客户端和回调登记，邮箱规范化；新账号默认昵称不包含邮箱或手机号。
+已实现 [registration.rs](../../../worker/rust/src/registration.rs)：产品事务创建/查询/取消、挑战发送及验证、邮箱验证注册、邮箱密码登录、+86 手机验证码自动注册登录和完成换码。客户端直接取得 JSON 结果并调用 AUTH-03，不插入额外 Auth 确认页。支持 Work/Club 各自的精确客户端和回调登记，邮箱规范化；新账号默认昵称不包含邮箱或手机号。
 
-[delivery.rs](../../worker/rust/src/delivery.rs)提供 MailSender/SmsSender 投递端口。当前适配器将挑战和 mock 收件记录原子入库，只允许显式 LOCAL/TEST + MOCK；LIVE 尚未配置实际适配器时明确失败，不回退 mock。接入真实供应商时应实现持久投递任务和外部发送适配，不能将外部网络发送误认为可与 D1 一起回滚。
+[delivery.rs](../../../worker/rust/src/delivery.rs)提供 MailSender/SmsSender 投递端口。当前适配器将挑战和 mock 收件记录原子入库，只允许显式 LOCAL/TEST + MOCK；LIVE 尚未配置实际适配器时明确失败，不回退 mock。接入真实供应商时应实现持久投递任务和外部发送适配，不能将外部网络发送误认为可与 D1 一起回滚。
 
-[0006 迁移](../../worker/migrations/0006_mock_delivery.sql)仅新增隔离 mock 收件表，不修改现有账号、邮箱验证状态或凭据。开发者通过获准的本地/隔离 D1 查询 `auth_mock_delivery` 获取测试验证码；没有公开收件箱 HTTP 路由，验证码不出现在 API 成功响应或审计中。mock 表临时保存投递内容用于测试收件，过期记录由定时任务删除；生产配置拒绝 mock。测试从真实随机 mock 邮件/短信中取码再走正常验证，未提供万能码或自报用户入口。
+[0006 迁移](../../../worker/migrations/0006_mock_delivery.sql)仅新增隔离 mock 收件表，不修改现有账号、邮箱验证状态或凭据。开发者通过获准的本地/隔离 D1 查询 `auth_mock_delivery` 获取测试验证码；没有公开收件箱 HTTP 路由，验证码不出现在 API 成功响应或审计中。mock 表临时保存投递内容用于测试收件，过期记录由定时任务删除；生产配置拒绝 mock。测试从真实随机 mock 邮件/短信中取码再走正常验证，未提供万能码或自报用户入口。
 
 事务 10 分钟、挑战 5 分钟、最多 5 次错误；同目标重发间隔 60 秒。IP/目标/客户端小时发送限额分别为 60/10/1000，读取共享 `policy.json` 中明确的工程默认值；另有每分钟请求限流。重发同时废弃旧挑战和旧验证证明，正确验证、开户、事务完成、换码各自一次性消费。密码计算后重新检查事务及证明是否过期，提交时复核客户端/当前邮箱绑定/密码摘要、用户状态和撤销边界。手机号并发首登由唯一约束裁决，竞争失败者重新读取已建身份，两个成功事务归同一用户。
 
 找回挑战只投递到已有账号的已验证邮箱；未知目标返回相同受理形状，不投递、不开户。验证及完成得到 RESET_PROOF，绑定用户、原邮箱 bindingId、身份版本及撤销 epoch，不能换成登录码；实际改密、C-39 撤销及 REAUTH/BIND/REPLACE 已由 AUTH-06 接入（见 §11），Google/GitHub 已由 AUTH-05 接入（见下节），未开放的组合仍明确拒绝。
 
-[集成测试](../../worker/rust-tests/registration.test.ts)覆盖两产品注册登录闭环、发起方证明、未验证拒绝开户、大小写邮箱、手机无邮箱账号、并发首登、错误次数/过期/重放/重发与用途串用、轮询下一步骤、取消、找回未知邮箱及绑定版本变化、旧事务遇全局撤销、审计无密码或验证码。旧 AUTH-02 的“所有 v2 均未实现”用例保留对未开放路径的验证，已开放路径由本测试验证。
+[集成测试](../../../worker/rust-tests/registration.test.ts)覆盖两产品注册登录闭环、发起方证明、未验证拒绝开户、大小写邮箱、手机无邮箱账号、并发首登、错误次数/过期/重放/重发与用途串用、轮询下一步骤、取消、找回未知邮箱及绑定版本变化、旧事务遇全局撤销、审计无密码或验证码。旧 AUTH-02 的“所有 v2 均未实现”用例保留对未开放路径的验证，已开放路径由本测试验证。
 
 验证：`npm test` 共 185 项通过（合同 7、Rust 20、隔离后端/模型 40、Web 91、SDK 27）；完整 Web/SDK/WASM 与 Wrangler dry-run 构建通过。本轮新增和修改文件格式检查、`git diff --check` 通过。全仓仍有前述 3 个既有格式问题；没有操作真实数据库、发送真实邮件短信或部署。新增 0006 迁移需在部署这版后端前应用，本轮只在隔离测试中应用。
 
 
 ## 10 AUTH-05 实施记录
 
-已实现 [external_login.rs](../../worker/rust/src/external_login.rs)，支持 LOGIN + GOOGLE/GITHUB；注册与轮询沿用 AUTH-04 的事务，完成后接入 AUTH-03 的独立登录会话。Work/Club 各自的客户端与精确回调已通过真实 HTTP、WASM 和隔离 D1 验证；产品页面与 Host/BFF 适配仍按 WORK-04、CLUB-03 后续接入。本轮不把后端协议测试记作两个产品页面已交付。
+已实现 [external_login.rs](../../../worker/rust/src/external_login.rs)，支持 LOGIN + GOOGLE/GITHUB；注册与轮询沿用 AUTH-04 的事务，完成后接入 AUTH-03 的独立登录会话。Work/Club 各自的客户端与精确回调已通过真实 HTTP、WASM 和隔离 D1 验证；产品页面与 Host/BFF 适配仍按 WORK-04、CLUB-03 后续接入。本轮不把后端协议测试记作两个产品页面已交付。
 
 提供方当前使用受控 mock，支持成功、取消和失败页面。浏览器只能选择隔离数据库中预置的测试账号 ID；提供方、环境、稳定 subject 和可选邮箱均由服务端取得，不接受前端自报身份。Google 模拟断言验证 issuer、audience、nonce、PKCE 与时效；GitHub 模拟响应验证客户端、环境、PKCE 与稳定用户 ID，不将 GitHub 当作 OIDC。模拟 issuer 分别为 `https://mock.google.invalid/{environmentId}` 和 `https://mock.github.invalid/{environmentId}`，与正式提供方身份隔离。
 
@@ -236,9 +236,9 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 4. `/api/v2/auth/external/{provider}/callback` 验证 state、Cookie、提供方响应、客户端/环境状态及启动时配置版本，并原子消费短期提供方码。回产品的 URL 仅有 `transactionId,state,result`；result 为 VERIFIED/CANCELLED/FAILED。失败与取消使事务进入 CANCELLED，重试须新建事务；未知或不匹配回调直接拒绝，不重定向到请求给出的地址。
 5. 原 BFF/Host 用发起方证明完成事务，再用原 PKCE 换码。重复回调、取消/过期事务和全局撤销之前的旧回调不能恢复登录。成功及取消清除浏览器 Cookie、加密上下文；产品主动取消也清除加密上下文。会话与提供方凭据不进入回跳 URL 或审计。
 
-本地启用：先应用包括 [0007](../../worker/migrations/0007_mock_provider_accounts.sql) 的迁移，再执行现有[统一账号本地登记](../../worker/unified-account-local-seed.sql)及[可选提供方测试账号 SQL](../../worker/mock-provider-local-seed.sql)。0007 只新增测试身份表，seed 只在 `unified-local` 的 LOCAL + MOCK 环境插入两个合成账号，不授予平台权限。保留 §7 的 `UNIFIED_ACCOUNT_CONFIG`，另外通过环境密钥绑定配置 `PROVIDER_STATE_KEY`（密码学随机 32 字节的 base64url，每个环境独立）。测试通过内存绑定生成随机密钥，仓库不保存固定密钥。LIVE 未实现对应适配器或缺少密钥时明确失败，不回退 mock；正式环境仍拒绝 MOCK。
+本地启用：先应用包括 [0007](../../../worker/migrations/0007_mock_provider_accounts.sql) 的迁移，再执行现有[统一账号本地登记](../../../worker/unified-account-local-seed.sql)及[可选提供方测试账号 SQL](../../../worker/mock-provider-local-seed.sql)。0007 只新增测试身份表，seed 只在 `unified-local` 的 LOCAL + MOCK 环境插入两个合成账号，不授予平台权限。保留 §7 的 `UNIFIED_ACCOUNT_CONFIG`，另外通过环境密钥绑定配置 `PROVIDER_STATE_KEY`（密码学随机 32 字节的 base64url，每个环境独立）。测试通过内存绑定生成随机密钥，仓库不保存固定密钥。LIVE 未实现对应适配器或缺少密钥时明确失败，不回退 mock；正式环境仍拒绝 MOCK。
 
-[AUTH-05 集成用例](../../worker/rust-tests/external-login.test.ts)覆盖 UAS-05、11、28、40：两客户端/两提供方的完整换码、稳定身份与独立会话、无邮箱及同邮箱不合并、模拟与正式 issuer 隔离、发起方证明、启动票据重放、state/Cookie/CSRF/Origin/提供方码串用、前端自报 subject 拒绝、取消/失败/过期、客户端与环境/配置版本变化、错误 nonce/issuer/audience/PKCE、撤销后的迟到回调及完成、并发开户、审计脱敏，以及 LIVE/缺密钥时不回退。测试默认拒绝一切出站网络请求。
+[AUTH-05 集成用例](../../../worker/rust-tests/external-login.test.ts)覆盖 UAS-05、11、28、40：两客户端/两提供方的完整换码、稳定身份与独立会话、无邮箱及同邮箱不合并、模拟与正式 issuer 隔离、发起方证明、启动票据重放、state/Cookie/CSRF/Origin/提供方码串用、前端自报 subject 拒绝、取消/失败/过期、客户端与环境/配置版本变化、错误 nonce/issuer/audience/PKCE、撤销后的迟到回调及完成、并发开户、审计脱敏，以及 LIVE/缺密钥时不回退。测试默认拒绝一切出站网络请求。
 
 最终验证：`npm test` 共 196 项通过（合同 7、Rust 20、隔离后端/模型 51、Web 91、SDK 27），其中新增 AUTH-05 用例 11 项。`npm run build` 的 Web/SDK/WASM 与 Wrangler dry-run 通过。通过随机回环端口和临时内存 D1 运行现有 `npm run test:e2e`，注册、PKCE、资料/团队、邀请、刷新重放、恢复和退出全部通过，结束后销毁隔离服务与数据库。该 E2E 为旧协议回归；AUTH-05 的两产品客户端链路证据来自上述新隔离 HTTP 用例，不包含产品 UI 验收。
 
@@ -246,7 +246,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 11 AUTH-06 实施记录
 
-已实现 [account_management.rs](../../worker/rust/src/account_management.rs) 和 [sensitive_transactions.rs](../../worker/rust/src/sensitive_transactions.rs)，接入现有会话、邮箱/手机验证及 Google/GitHub mock 流程。API-03 的账号资料、登录方式列表、再次验证、绑定/换绑/解绑、设置/修改密码和邮箱找回完成入口均已开放。Work/Club 使用同一中央服务；本轮交付后端协议，两个产品的账号页面仍按 WORK-05、CLUB-04 实施。
+已实现 [account_management.rs](../../../worker/rust/src/account_management.rs) 和 [sensitive_transactions.rs](../../../worker/rust/src/sensitive_transactions.rs)，接入现有会话、邮箱/手机验证及 Google/GitHub mock 流程。API-03 的账号资料、登录方式列表、再次验证、绑定/换绑/解绑、设置/修改密码和邮箱找回完成入口均已开放。Work/Club 使用同一中央服务；本轮交付后端协议，两个产品的账号页面仍按 WORK-05、CLUB-04 实施。
 
 资料与读取：
 
@@ -270,9 +270,9 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 资料与账号管理写入使用 16–128 字符的 Idempotency-Key，原子保存业务变更、审计和 24 小时的无凭据结果。相同键和请求可在原登录仍有效时重取结果，包含证明已消费或并发请求的情形；同键不同请求拒绝。不同登录不能借回执读取旧操作结果。只保存规范请求摘要与必要结果，不保存原始密码/证明/令牌；过期回执由 scheduled 清理。找回完成仍为一次性证明操作。
 
-[0008 迁移](../../worker/migrations/0008_sensitive_identity_transactions.sql)只在产品事务上新增身份版本与已验证身份快照，不改写既有账号。部署这版后端前需应用迁移；本轮只在临时 D1 应用。外部服务配置沿用 AUTH-04/05：邮件和短信继续使用隔离 outbox，新绑定验证使用 IDENTITY_VERIFY、再次验证使用 REAUTH 模板标记；Google/GitHub 继续通过受控模拟提供方，没有万能码、前端自报身份或真实服务回退。
+[0008 迁移](../../../worker/migrations/0008_sensitive_identity_transactions.sql)只在产品事务上新增身份版本与已验证身份快照，不改写既有账号。部署这版后端前需应用迁移；本轮只在临时 D1 应用。外部服务配置沿用 AUTH-04/05：邮件和短信继续使用隔离 outbox，新绑定验证使用 IDENTITY_VERIFY、再次验证使用 REAUTH 模板标记；Google/GitHub 继续通过受控模拟提供方，没有万能码、前端自报身份或真实服务回退。
 
-[新增集成测试](../../worker/rust-tests/account-management.test.ts)覆盖 UAS-03、06、07、08、26、28、33、41：资料共享版本与图片清洗/移除、平台权限读取、四种方式再次验证、证明类型/账号/登录/目标串用拒绝、无密码账号设密、最后方式保护、换绑冲突回滚、并发争抢同一身份、并发解绑、并发改密幂等、旧事务失效、新旧协议版本共存、改密保留期限及刷新、找回全局撤销（包括旧协议登录）、回执清理、审计及回执无凭据。旧 AUTH-02 测试继续检查未来路由为 501；已开放的 `/users/me` 改为明确断言匿名及 v1 凭据被拒绝。
+[新增集成测试](../../../worker/rust-tests/account-management.test.ts)覆盖 UAS-03、06、07、08、26、28、33、41：资料共享版本与图片清洗/移除、平台权限读取、四种方式再次验证、证明类型/账号/登录/目标串用拒绝、无密码账号设密、最后方式保护、换绑冲突回滚、并发争抢同一身份、并发解绑、并发改密幂等、旧事务失效、新旧协议版本共存、改密保留期限及刷新、找回全局撤销（包括旧协议登录）、回执清理、审计及回执无凭据。旧 AUTH-02 测试继续检查未来路由为 501；已开放的 `/users/me` 改为明确断言匿名及 v1 凭据被拒绝。
 
 最终验证：`npm test` 共 210 项通过（合同 7、Rust 20、隔离后端/模型 65、Web 91、SDK 27），其中 AUTH-06 新增 14 项计数。完整 Web/SDK/WASM 与 Wrangler dry-run 构建通过；在随机回环端口和临时 D1 运行现有 `npm run test:e2e`，旧注册、资料/团队、邀请、刷新重放与退出均通过，结束后销毁隔离环境。新旧协议共用账号的版本变化和旧登录被找回撤销，另由新增用例实际走两套 HTTP 接口验证。
 
@@ -281,7 +281,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 12 AUTH-07 实施记录
 
-已实现 [tenants.rs](../../worker/rust/src/tenants.rs)、[tenant_invitations.rs](../../worker/rust/src/tenant_invitations.rs)、[tenant_transfers.rs](../../worker/rust/src/tenant_transfers.rs) 和 [tenant_protocol.rs](../../worker/rust/src/tenant_protocol.rs)，通过现有 Rust/WASM、D1 和 v2 独立登录提供 API-05。本轮交付中央后端；Work/Club 的租户页面仍按 WORK-06、CLUB-05 接入。
+已实现 [tenants.rs](../../../worker/rust/src/tenants.rs)、[tenant_invitations.rs](../../../worker/rust/src/tenant_invitations.rs)、[tenant_transfers.rs](../../../worker/rust/src/tenant_transfers.rs) 和 [tenant_protocol.rs](../../../worker/rust/src/tenant_protocol.rs)，通过现有 Rust/WASM、D1 和 v2 独立登录提供 API-05。本轮交付中央后端；Work/Club 的租户页面仍按 WORK-06、CLUB-05 接入。
 
 平台与成员权限：
 
@@ -294,7 +294,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 - 支持 EMAIL、+86 PHONE 和现有 USER；默认 7 天，注册与加入分开，未注册目标先完成正常注册。接受或拒绝时匹配当前账号的已验证邮箱、手机号或稳定 userId，并复核邀请版本、期限与租户启用状态；知道邀请 ID 不构成权限。
 - 接受时原子结束邀请并建立 MEMBER；已有有效成员沿用其 membershipId 和角色，不因重复邀请降级或重复入租户。历史成员资格不复活，重新加入产生新的 membershipId。
 - EMAIL/SMS 通知经 `delivery::invitation_notification` 写入隔离的 `auth_mock_notification`；USER 邀请通过本人待处理列表读取。通知只含邀请 ID、租户名及期限，不含登录验证码或可直接接受邀请的凭据。适配入口仅接受 LOCAL/TEST + MOCK，未配置真实发送时明确失败，不回退伪造成功。
-- [0009 迁移](../../worker/migrations/0009_mock_tenant_notifications.sql)新增通知 outbox 及过期索引，不改写原账号或租户数据。通知和邀请、审计、幂等回执一起提交；故障时一起回滚，scheduled 清理过期通知。部署该版前需要应用迁移，本轮仅在临时 D1 应用。
+- [0009 迁移](../../../worker/migrations/0009_mock_tenant_notifications.sql)新增通知 outbox 及过期索引，不改写原账号或租户数据。通知和邀请、审计、幂等回执一起提交；故障时一起回滚，scheduled 清理过期通知。部署该版前需要应用迁移，本轮仅在临时 D1 应用。
 
 所有权交接与启停：
 
@@ -307,9 +307,9 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 - 列表使用 15 分钟随机游标，绑定用户、客户端、路由、页大小及权限/成员快照。每次查询检查当前权限，返回前检查结果的可见性与版本；权限已撤销时不能继续翻页或重取管理回执。
 - 管理写入要求 expectedVersion（创建除外）和 16–128 字符 Idempotency-Key，作用域为用户、客户端、操作及目标路径；24 小时结果只保存请求摘要和无凭据 DTO。业务变化、审计与回执原子提交，重复键不同请求拒绝；相同键重取结果前重新鉴权，已退出的登录不能重放。
-- [tenant_membership.rs](../../worker/rust/src/tenant_membership.rs)提供退出/移除的领域事务计划：校验角色/版本、结束当前成员、取消相关待处理交接并推进权益版本。计划尚不单独提交；AUTH-10 须追加商业领域的全部席位释放，在同一事务收口后开放接口。目前合法的非 OWNER 退出/移除返回 501，且不改变成员或席位，OWNER 退出返回 OWNER_TRANSFER_REQUIRED。
+- [tenant_membership.rs](../../../worker/rust/src/tenant_membership.rs)提供退出/移除的领域事务计划：校验角色/版本、结束当前成员、取消相关待处理交接并推进权益版本。计划尚不单独提交；AUTH-10 须追加商业领域的全部席位释放，在同一事务收口后开放接口。目前合法的非 OWNER 退出/移除返回 501，且不改变成员或席位，OWNER 退出返回 OWNER_TRANSFER_REQUIRED。
 
-[专项集成测试](../../worker/rust-tests/tenants.test.ts)使用真实认证接口建立不同产品登录，并在隔离 D1 验证 UAS-12、13、14（边界及预留合同）、16、26、28、34、35、40、42：平台权限、并发创建幂等、身份定向及未验证邮箱拒绝、角色和跨租户边界、拒绝/撤销/到期、竞争接受、通知事务故障、交接唯一性与中途失败回滚、原所有者角色和席位保留、历史 membership 不能接管、启停记录保留、分页范围和权限撤销、通知清理及已撤销会话不能写入。早期边界测试同步更新为断言已开放路由拒绝匿名/v1 凭据；未来路由仍明确不可用。
+[专项集成测试](../../../worker/rust-tests/tenants.test.ts)使用真实认证接口建立不同产品登录，并在隔离 D1 验证 UAS-12、13、14（边界及预留合同）、16、26、28、34、35、40、42：平台权限、并发创建幂等、身份定向及未验证邮箱拒绝、角色和跨租户边界、拒绝/撤销/到期、竞争接受、通知事务故障、交接唯一性与中途失败回滚、原所有者角色和席位保留、历史 membership 不能接管、启停记录保留、分页范围和权限撤销、通知清理及已撤销会话不能写入。早期边界测试同步更新为断言已开放路由拒绝匿名/v1 凭据；未来路由仍明确不可用。
 
 最终验证：`npm test` 共 222 项通过（合同 7、Rust 20、隔离后端/模型 77、Web 91、SDK 27），其中 AUTH-07 新增 12 项计数（父测试及 11 个子测试）。完整 Web/SDK/WASM 和 Wrangler dry-run 构建通过；随机回环端口与临时内存 D1 上的现有 `npm run test:e2e` 通过注册/PKCE、资料/团队头像、邀请/角色、刷新重放及退出流程，结束后销毁隔离环境。新租户流程的验收证据来自真实 v2 HTTP 专项测试，不包含两产品 UI 验收。
 
@@ -318,7 +318,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 13 AUTH-08 实施记录
 
-已实现 [billing.rs](../../worker/rust/src/billing.rs)、[billing_catalog.rs](../../worker/rust/src/billing_catalog.rs) 与 [billing_subscriptions.rs](../../worker/rust/src/billing_subscriptions.rs)。沿用 v2 独立会话、现行 JSON Schema、管理幂等回执和权限绑定游标；本轮交付中央 API，Work/Club 页面按各自任务接入。支付及具体业务收费入口未纳入本轮。
+已实现 [billing.rs](../../../worker/rust/src/billing.rs)、[billing_catalog.rs](../../../worker/rust/src/billing_catalog.rs) 与 [billing_subscriptions.rs](../../../worker/rust/src/billing_subscriptions.rs)。沿用 v2 独立会话、现行 JSON Schema、管理幂等回执和权限绑定游标；本轮交付中央 API，Work/Club 页面按各自任务接入。支付及具体业务收费入口未纳入本轮。
 
 目录与套餐版本：
 
@@ -347,9 +347,9 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 - 业务写入、用户/租户权益版本、商业审计及 24 小时幂等结果在同一事务提交。个人订阅版本单独保存在 billing_user_revision，不修改账号资料版本或撤销登录；租户订阅推进纳管租户的 entitlement_revision。AUTH-10 将读取这些版本及最新订阅/成员事实。
 - 重取幂等结果前再次验证当前登录和平台权限；同键不同请求拒绝。列表复用用户、客户端、路由、页大小及当前权限/成员快照绑定的随机游标，返回前复核可见结果。
 - 商业审计存储 auth_management_audit，包含操作者、客户端、目标、原因和前后摘要；不写入认证凭据。平台 AUDIT_READ 可查全局商业事件，租户 OWNER/ADMIN 只读本租户事件。此入口目前覆盖目录和订阅管理，不将既有身份/租户审计伪装成已迁移。公开容量摘要超过字段长度时只显示类型数与总量，内部记录保留完整映射。
-- [0010 迁移](../../worker/migrations/0010_subscription_lifecycle.sql)新增个人订阅权益版本表，并为已有套餐席位类型保存当前名称快照；保留账号、订阅、期限、启停、功能关系和分配。该版本运行前需应用迁移，本轮仅在隔离 D1/内存 SQLite 应用，没有操作真实数据。
+- [0010 迁移](../../../worker/migrations/0010_subscription_lifecycle.sql)新增个人订阅权益版本表，并为已有套餐席位类型保存当前名称快照；保留账号、订阅、期限、启停、功能关系和分配。该版本运行前需应用迁移，本轮仅在隔离 D1/内存 SQLite 应用，没有操作真实数据。
 
-[专项集成测试](../../worker/rust-tests/subscriptions.test.ts)通过真实 mock 手机认证和 v2 HTTP 接口覆盖 UAS-17、19、20、21、22、26、32、33、35、36、37：平台权限、目录引用及不可覆盖、不同版本名称快照、并发开通幂等、个人/租户隔离、时间及状态、跨套餐变更、续期保留、到期分配容量、退役及重新增加类型不复活历史、提交阶段新增分配引发整笔回滚、审计失败回滚、并发版本冲突、停用租户、分页边界、撤权与退出后不得重放。另由[迁移测试](../../worker/tests/subscription-migration.test.ts)验证 UAS-28/30 的旧记录保留及名称快照；早期匿名/v1 凭据边界测试同步覆盖新路由。
+[专项集成测试](../../../worker/rust-tests/subscriptions.test.ts)通过真实 mock 手机认证和 v2 HTTP 接口覆盖 UAS-17、19、20、21、22、26、32、33、35、36、37：平台权限、目录引用及不可覆盖、不同版本名称快照、并发开通幂等、个人/租户隔离、时间及状态、跨套餐变更、续期保留、到期分配容量、退役及重新增加类型不复活历史、提交阶段新增分配引发整笔回滚、审计失败回滚、并发版本冲突、停用租户、分页边界、撤权与退出后不得重放。另由[迁移测试](../../../worker/tests/subscription-migration.test.ts)验证 UAS-28/30 的旧记录保留及名称快照；早期匿名/v1 凭据边界测试同步覆盖新路由。
 
 最终验证：`npm test` 共 232 项通过（合同 7、Rust 20、隔离后端/模型 87、Web 91、SDK 27），AUTH-08 新增 10 项计数（集成父测试、8 个子测试及 1 个迁移测试）。完整 Web/SDK/Rust-WASM 和 Wrangler dry-run 构建通过；在随机回环端口、临时内存 D1 运行现有 `npm run test:e2e`，旧注册/PKCE、资料/团队头像、邀请/角色、刷新重放和退出均通过，结束后销毁服务与数据库。新套餐/订阅验收来自真实 v2 HTTP 专项测试，不包含 Work/Club 页面或支付验收。
 
@@ -358,7 +358,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 14 AUTH-09 实施记录
 
-已实现 [billing_seats.rs](../../worker/rust/src/billing_seats.rs)，通过已有 billing 路由提供席位分配、回收、换绑与当前/历史查询；复用 AUTH-08 的订阅与池模型、AUTH-07 的当前租户权限和管理请求协议。本轮为中央 API 交付，两产品页面仍按 WORK-07、CLUB-06 接入；成员退出/移除及权益判断继续由 AUTH-10 完成。
+已实现 [billing_seats.rs](../../../worker/rust/src/billing_seats.rs)，通过已有 billing 路由提供席位分配、回收、换绑与当前/历史查询；复用 AUTH-08 的订阅与池模型、AUTH-07 的当前租户权限和管理请求协议。本轮为中央 API 交付，两产品页面仍按 WORK-07、CLUB-06 接入；成员退出/移除及权益判断继续由 AUTH-10 完成。
 
 操作与权限：
 
@@ -381,7 +381,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 - 商业审计沿用 auth_management_audit，记录 seat.assign/seat.release/seat.reassign、操作者、目标、可选回收/换绑原因及前后分配。租户管理者只读本租户，平台查询仍需 AUDIT_READ，不记录认证凭据。
 - 本轮无需新增数据库迁移，沿用 0005 的席位历史与唯一约束、0010 的商业版本表；测试仅使用临时 D1，外部认证和投递继续走既有 mock。
 
-[席位专项测试](../../worker/rust-tests/seats.test.ts)覆盖 UAS-18 至 UAS-22、26、33、35、36、37：权限与跨租户、池版本及重复分配、满池换绑、同键并发/重试、当前历史范围与游标、到期/停用/未生效限制、减量前回收、类型退役再加入不复活历史、最后库存并发争抢、分配与减量/删类型竞争，以及插入/审计故障时分配、池、权益版本、回执整体回滚。同时覆盖目标成员/账号失效时拒绝分配与换绑、管理员仍能回收保留分配；匿名和 v1 凭据边界用例也增加了席位路由。
+[席位专项测试](../../../worker/rust-tests/seats.test.ts)覆盖 UAS-18 至 UAS-22、26、33、35、36、37：权限与跨租户、池版本及重复分配、满池换绑、同键并发/重试、当前历史范围与游标、到期/停用/未生效限制、减量前回收、类型退役再加入不复活历史、最后库存并发争抢、分配与减量/删类型竞争，以及插入/审计故障时分配、池、权益版本、回执整体回滚。同时覆盖目标成员/账号失效时拒绝分配与换绑、管理员仍能回收保留分配；匿名和 v1 凭据边界用例也增加了席位路由。
 
 最终验证：`npm test` 共 242 项通过（合同 7、Rust 20、隔离后端/模型 97、Web 91、SDK 27），AUTH-09 新增 10 项计数（父测试和 9 个子测试）。完整 Web/SDK/Rust-WASM 及 Wrangler dry-run 构建通过；随机回环端口与临时内存 D1 上的现有 `npm run test:e2e` 通过旧注册/PKCE、资料/团队、邀请/角色、刷新重放及退出流程，结束后销毁隔离服务与数据库。独立只读代码审查未发现阻断缺陷，租户级版本竞争的取舍已在上文记录。
 
@@ -389,7 +389,7 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 ## 15 AUTH-10 实施记录
 
-已实现 [tenant_membership.rs](../../worker/rust/src/tenant_membership.rs) 与 [entitlements.rs](../../worker/rust/src/entitlements.rs)，开放成员退出、移除及 `POST /api/v2/entitlements/check`。成员服务调用 [billing_seats.rs](../../worker/rust/src/billing_seats.rs) 提供的释放计划，沿用 AUTH-07 的管理协议和 AUTH-08/09 的商业事实。外部认证、短信和邮件仍使用隔离 mock。
+已实现 [tenant_membership.rs](../../../worker/rust/src/tenant_membership.rs) 与 [entitlements.rs](../../../worker/rust/src/entitlements.rs)，开放成员退出、移除及 `POST /api/v2/entitlements/check`。成员服务调用 [billing_seats.rs](../../../worker/rust/src/billing_seats.rs) 提供的释放计划，沿用 AUTH-07 的管理协议和 AUTH-08/09 的商业事实。外部认证、短信和邮件仍使用隔离 mock。
 
 成员联动：
 
@@ -410,11 +410,11 @@ Worker 的可选 `UNIFIED_ACCOUNT_CONFIG` 是部署 JSON 字符串，例如：
 
 迁移与配置：
 
-- 新增 [0011 迁移](../../worker/migrations/0011_entitlement_client_product.sql)，仅建立 `auth_client_product(client_id,product,version)`；不修改旧账号、成员或订阅，不按客户端名称自动纳入旧应用。
-- 现行[本地登记 SQL](../../worker/unified-account-local-seed.sql)在截至 0011 的全部迁移后执行，只为两个精确的 LOCAL 客户端登记 WORK/CLUB，反复执行不覆盖现存映射。其他环境须在可信部署配置中明确登记客户端产品；变更映射时推进其 version，不由产品表单指定。本轮没有应用真实数据库迁移。
+- 新增 [0011 迁移](../../../worker/migrations/0011_entitlement_client_product.sql)，仅建立 `auth_client_product(client_id,product,version)`；不修改旧账号、成员或订阅，不按客户端名称自动纳入旧应用。
+- 现行[本地登记 SQL](../../../worker/unified-account-local-seed.sql)在截至 0011 的全部迁移后执行，只为两个精确的 LOCAL 客户端登记 WORK/CLUB，反复执行不覆盖现存映射。其他环境须在可信部署配置中明确登记客户端产品；变更映射时推进其 version，不由产品表单指定。本轮没有应用真实数据库迁移。
 - 公共请求响应继续使用 AUTH-01 合同，无需产品侧增加 subjectUserId 或 product 字段。两端 Host/BFF 与账号页面按 WORK-01 至 WORK-09、CLUB-01 至 CLUB-09 接入；AUTH-11 存量盘点、AUTH-12 跨仓库集成及真实外部服务仍待完成。
 
-[专项集成测试](../../worker/rust-tests/entitlements.test.ts)覆盖 UAS-14、16 至 UAS-24、26、33、35、38：可信产品与请求拒绝、个人/当前租户并集和来源隔离、角色不授予付费功能、订阅/席位/套餐/租户变化、正负结果时间边界、无数据库写入的真实时间生效/到期、退出多类型席位、到期/停用分配释放、个人和其他租户保留、交接取消、退出/移除幂等及重入版本、故障整笔回滚、分配与离开竞争、停用/撤销后拒绝。既有[租户](../../worker/rust-tests/tenants.test.ts)和[席位](../../worker/rust-tests/seats.test.ts)用例同步接入真实退出；[迁移测试](../../worker/tests/entitlement-migration.test.ts)验证 UAS-28/30 的存量保留、显式登记及 seed 不覆盖，匿名/v1 边界测试已覆盖权益接口。
+[专项集成测试](../../../worker/rust-tests/entitlements.test.ts)覆盖 UAS-14、16 至 UAS-24、26、33、35、38：可信产品与请求拒绝、个人/当前租户并集和来源隔离、角色不授予付费功能、订阅/席位/套餐/租户变化、正负结果时间边界、无数据库写入的真实时间生效/到期、退出多类型席位、到期/停用分配释放、个人和其他租户保留、交接取消、退出/移除幂等及重入版本、故障整笔回滚、分配与离开竞争、停用/撤销后拒绝。既有[租户](../../../worker/rust-tests/tenants.test.ts)和[席位](../../../worker/rust-tests/seats.test.ts)用例同步接入真实退出；[迁移测试](../../../worker/tests/entitlement-migration.test.ts)验证 UAS-28/30 的存量保留、显式登记及 seed 不覆盖，匿名/v1 边界测试已覆盖权益接口。
 
 验证结果：
 
@@ -669,7 +669,7 @@ Club 类型、lint、76 项单元测试及完整 Vinext 构建已通过；真实
 
 ## 24 AUTH-11 实施记录（2026-11-05）
 
-按用户要求，本轮完成存量盘点工具、账号接续/切换/回退方案，并仅用合成数据隔离演练。操作与待确认事项见[账号迁移方案](account-migration-plan.md)。真实部署版本、账号数量、MySQL 是否仍使用、Work personal 实际使用情况均未观察；没有把代码结构或 mock 测试当成真实存量已盘点。
+按用户要求，本轮完成存量盘点工具、账号接续/切换/回退方案，并仅用合成数据隔离演练。操作与待确认事项见[账号迁移方案](../../unified-account/account-migration-plan.md)。真实部署版本、账号数量、MySQL 是否仍使用、Work personal 实际使用情况均未观察；没有把代码结构或 mock 测试当成真实存量已盘点。
 
 新增 `account:migration`：只读盘点已知 Auth/Club SQLite 表结构，支持 v2 升级前 Auth；分类密码格式、可信度、身份冲突与旧 TEAM，不输出邮箱、密码哈希、Token、subject 或留言。`rehearse` 只写自己新建的合成目录，生成一致备份、审核计划、切换/回退回执及独立离线恢复验证，不提供远程执行或任意数据库写入模式。
 
@@ -732,7 +732,7 @@ Club 类型、lint、76 项单元测试及完整 Vinext 构建已通过；真实
 
 ## 26 AUTH-12 验收汇总与交付记录（2026-11-05）
 
-本轮完成[42 项 UAS 验收矩阵](acceptance-matrix.md)、[代码/合同版本摘要](delivery-manifest.json)、[已执行验证记录](validation-results.json)、[交付结论和剩余待办](delivery.md)，并更新[Host/BFF 接入与平台管理说明](integration-guide.md)。当前 37 项在明确的隔离范围通过，5 项部分完成；不会把所有行标为完成来替代未知存量或缺失的页面/资源证据。
+本轮完成[42 项 UAS 验收矩阵](../../unified-account/acceptance-matrix.md)、[代码/合同版本摘要](delivery-manifest.json)、[已执行验证记录](validation-results.json)、[交付结论和剩余待办](delivery.md)，并更新[Host/BFF 接入与平台管理说明](../../unified-account/integration-guide.md)。当前 37 项在明确的隔离范围通过，5 项部分完成；不会把所有行标为完成来替代未知存量或缺失的页面/资源证据。
 
 三仓库均在已有功能分支且包含未提交代码。基础 Git SHA 不能标识完整功能，因此 `worker/scripts/account-delivery.mjs` 记录并核对声明范围内的源码摘要、六份冻结合同和迁移文件，并检查 42 个编号、24 个证据组及对应路径。不会读取环境密钥、运行数据库、Home 或浏览器材料；静态检查不推断测试通过。合同仍为 1.1.0，没有新增迁移或变更产品运行逻辑。
 

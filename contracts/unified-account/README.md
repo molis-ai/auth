@@ -2,7 +2,7 @@
 
 状态：AUTH-01 合同与结构校验已实现；本目录不实现登录、租户、订阅或权益服务。业务语义来自 [API-01 至 API-10](../../docs/unified-account/api-contracts.md)，产品决定来自[需求文档](../../docs/unified-account/requirements.md)。OpenAPI 每个操作均标记 `CONTRACT_ONLY`，不能用合同存在代替运行中的接口验收。
 
-运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/unified-account/delivery.md)。
+运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/history/unified-account/delivery.md)。
 
 ## 文件与使用
 

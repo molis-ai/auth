@@ -4,7 +4,7 @@
 
 状态：2026-11-05，盘点工具、切换与回退方案、合成数据隔离演练已完成。按本轮授权，未读取真实数据库、真实 Home、浏览器凭据或部署配置，未执行远程迁移。真实部署版本、账号数量和凭据接续覆盖率仍为 `NOT_OBSERVED`；D-09 尚未完成实际存量确认。
 
-本文件承接[需求](requirements.md)中的 UAS-27 至 UAS-30、[开发任务](development-tasks.md)的 AUTH-11，以及用户确定的“允许重新登录、保留旧账号和历史数据”。短信、邮件、Google/GitHub 继续 mock；支付与业务数据共享不在本次范围。
+本文件承接[需求](requirements.md)中的 UAS-27 至 UAS-30、[开发任务](../history/unified-account/development-tasks.md)的 AUTH-11，以及用户确定的“允许重新登录、保留旧账号和历史数据”。短信、邮件、Google/GitHub 继续 mock；支付与业务数据共享不在本次范围。
 
 ## 1 已核对的代码与待盘点事实
 

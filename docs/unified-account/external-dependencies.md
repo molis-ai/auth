@@ -2,7 +2,7 @@
 
 状态：2026-11-08，Work 网页、Work Tauri 分发包和 Club 已通过真实 GitHub staging 登录和回跳。[Work #1975](https://github.com/molis-ai/molis-work/pull/1975) 已合入 `main`。[Auth #3](https://github.com/molis-ai/auth/pull/3) 的 GitHub LIVE 适配与实测 staging 配置已通过 CI 并合入 Auth `main`（`99c28b3`），Cloudflare 生产构建关闭，合入后生产仍由 `b6e35a45` 承载。Work Tauri 无代理回跳和 Club 真实再次验证已复测，GitHub 成功绑定与换绑由隔离 WASM/D1 的不同夹具身份覆盖。两个隔离域名已绑定，阿里云短信申请材料已准备，Titan Pro Light 已核实。短信资质和模板申请、Titan 专用发件邮箱和试投、Google 项目确认和真实联调待推进。Cloudflare Email Sending 暂缓。
 
-本台账供统一账号主流程认领和交接，承接 [T-03](delivery.md#6-剩余待办与依赖顺序) 和 [X-01 至 X-03](development-tasks.md)。盘点版本为 Auth `67904ef`、Work `d20f07c98`、Club `9ad3a66` 的 `origin/main`。Work 主线包含 [桌面回跳修复 #1965](https://github.com/molis-ai/molis-work/pull/1965)，Club 主线包含 [Cloudflare mock 预览 #28](https://github.com/molis-ai/molis-club/pull/28)。
+本台账供统一账号主流程认领和交接，承接 [T-03](../history/unified-account/delivery.md#6-剩余待办与依赖顺序) 和 [X-01 至 X-03](../history/unified-account/development-tasks.md)。盘点版本为 Auth `67904ef`、Work `d20f07c98`、Club `9ad3a66` 的 `origin/main`。Work 主线包含 [桌面回跳修复 #1965](https://github.com/molis-ai/molis-work/pull/1965)，Club 主线包含 [Cloudflare mock 预览 #28](https://github.com/molis-ai/molis-club/pull/28)。
 
 ## 盘点与认领
 

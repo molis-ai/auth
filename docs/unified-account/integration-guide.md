@@ -2,7 +2,7 @@
 
 > 2026-11-08：尚未上线，直接使用 V2，不保留旧账号、协议或 SDK 兼容。Auth 与 Work 的实现、验证及剩余验收见 [V2 整合方案](v2-consolidation.md)。Club 未在本次两个检出核对，不以历史记录代替当前验收。
 
-本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](delivery-manifest.json)只记录当时交付。
+本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](../history/unified-account/delivery-manifest.json)只记录当时交付。
 
 ## 入口与客户端选择
 
@@ -50,7 +50,7 @@ X-CSRF-Token: <本次浏览器会话的 CSRF>
 - Club：`MOLIS_CLUB_ACCOUNT_CONFIG` 与独立运行时 `MOLIS_CLUB_ACCOUNT_KEY`，见 Club `docs/AUTH-SETUP.md`。密钥为随机 32 字节的无填充 base64url，重启保持相同，不进入普通构建变量。
 - 本轮 LOCAL/MOCK 采用临时 D1/Home；测试从隔离 mock 投递记录取验证码，不提供万能验证码或正常产品接口返回验证码。真实配置缺失不自动回退 mock；PRODUCTION 拒绝 MOCK。
 
-不要为复验运行会写既有本地状态的 `npm run dev`、`admin`、`db:seed` 或对真实服务运行历史 HTTP 写入脚本。使用 [交付记录](delivery.md) 点名的隔离命令，它们创建自己的合成数据。未授权读取真实 `.dev.vars`、Home、浏览器凭据或 `.wrangler/state`。
+不要为复验运行会写既有本地状态的 `npm run dev`、`admin`、`db:seed` 或对真实服务运行历史 HTTP 写入脚本。使用 [交付记录](../history/unified-account/delivery.md) 点名的隔离命令，它们创建自己的合成数据。未授权读取真实 `.dev.vars`、Home、浏览器凭据或 `.wrangler/state`。
 
 ## 平台与租户管理
 
