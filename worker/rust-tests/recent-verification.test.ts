@@ -147,32 +147,82 @@ test('AUTH-SESSION active session authorization and operation proof isolation', 
       ok(await call(t.path + '/password', { email: address, password }, undefined, t.proof))
       return exchange(t, (await complete(t)).code)
     }
-    const a = await phoneLogin('+8613800000991');
-    const b = await phoneLogin('+8613800000992');
-    const fresh = await db.prepare('SELECT identity_verified_at t FROM auth_login_session WHERE id=?').bind(a.session.loginSessionId).first();
-    const options = {operation:'BIND_METHOD',target:{method:'PHONE'},useSession:true};
-    const recent = await begin('REAUTH','EMAIL_PASSWORD',a,options);
-    const ready = ok(await call(recent.path,undefined,a,recent.proof));
-    assert.equal(ready.status,'VERIFIED');
-    const proof = await complete(recent);
-    assert.equal(proof.kind,'OPERATION_PROOF');
-    assert.ok(Date.parse(proof.expiresAt)>Date.now());
-    assert.equal((await db.prepare('SELECT identity_verified_at t FROM auth_login_session WHERE id=?').bind(a.session.loginSessionId).first()).t,fresh.t);
-    const bView=await me(b);
-    assert.equal((await call('/users/me/password/change',{operationProof:proof.operationProof,newPassword:'Synthetic-Recent-Jupiter-94',expectedVersion:bView.user.version},b)).status,401);
-    const aView=await me(a);
-    assert.equal((await call('/users/me/password/change',{operationProof:proof.operationProof,newPassword:'Synthetic-Recent-Jupiter-94',expectedVersion:aView.user.version},a)).status,403);
-    const expiresDuring = await begin('REAUTH','EMAIL_PASSWORD',a,options);
-    await db.prepare('UPDATE auth_login_session SET identity_verified_at=? WHERE id=?').bind(Date.now()-300001,a.session.loginSessionId).run();
-    assert.equal((await call(expiresDuring.path+'/complete',{},a,expiresDuring.proof)).status,200);
-    const expired = await begin('REAUTH','PHONE_OTP',a,options);
-    assert.equal(ok(await call(expired.path,undefined,a,expired.proof)).status,'VERIFIED');
-    await complete(expired);
-    const renewed = await begin('REAUTH','EMAIL_PASSWORD',a,options);
-    assert.equal(ok(await call(renewed.path,undefined,a,renewed.proof)).status,'VERIFIED');
-    await db.prepare('UPDATE auth_login_session SET authenticated_at=authenticated_at-7776000001,last_active_at=last_active_at-7776000001,absolute_expires_at=absolute_expires_at-7776000001 WHERE id=?').bind(b.session.loginSessionId).run();
-    assert.equal((await call('/users/me',undefined,b)).status,401);
-    ok(await call('/sessions/current/logout',{},a));
-    assert.equal((await call(renewed.path+'/complete',{},a,renewed.proof)).status,401);
-  } finally { await p.dispose(); }
-});
+    const a = await phoneLogin('+8613800000991')
+    const b = await phoneLogin('+8613800000992')
+    const fresh = await db
+      .prepare('SELECT identity_verified_at t FROM auth_login_session WHERE id=?')
+      .bind(a.session.loginSessionId)
+      .first()
+    const options = { operation: 'BIND_METHOD', target: { method: 'PHONE' }, useSession: true }
+    const recent = await begin('REAUTH', 'EMAIL_PASSWORD', a, options)
+    const ready = ok(await call(recent.path, undefined, a, recent.proof))
+    assert.equal(ready.status, 'VERIFIED')
+    const proof = await complete(recent)
+    assert.equal(proof.kind, 'OPERATION_PROOF')
+    assert.ok(Date.parse(proof.expiresAt) > Date.now())
+    assert.equal(
+      (
+        await db
+          .prepare('SELECT identity_verified_at t FROM auth_login_session WHERE id=?')
+          .bind(a.session.loginSessionId)
+          .first()
+      ).t,
+      fresh.t,
+    )
+    const bView = await me(b)
+    assert.equal(
+      (
+        await call(
+          '/users/me/password/change',
+          {
+            operationProof: proof.operationProof,
+            newPassword: 'Synthetic-Recent-Jupiter-94',
+            expectedVersion: bView.user.version,
+          },
+          b,
+        )
+      ).status,
+      401,
+    )
+    const aView = await me(a)
+    assert.equal(
+      (
+        await call(
+          '/users/me/password/change',
+          {
+            operationProof: proof.operationProof,
+            newPassword: 'Synthetic-Recent-Jupiter-94',
+            expectedVersion: aView.user.version,
+          },
+          a,
+        )
+      ).status,
+      403,
+    )
+    const expiresDuring = await begin('REAUTH', 'EMAIL_PASSWORD', a, options)
+    await db
+      .prepare('UPDATE auth_login_session SET identity_verified_at=? WHERE id=?')
+      .bind(Date.now() - 300001, a.session.loginSessionId)
+      .run()
+    assert.equal(
+      (await call(expiresDuring.path + '/complete', {}, a, expiresDuring.proof)).status,
+      200,
+    )
+    const expired = await begin('REAUTH', 'PHONE_OTP', a, options)
+    assert.equal(ok(await call(expired.path, undefined, a, expired.proof)).status, 'VERIFIED')
+    await complete(expired)
+    const renewed = await begin('REAUTH', 'EMAIL_PASSWORD', a, options)
+    assert.equal(ok(await call(renewed.path, undefined, a, renewed.proof)).status, 'VERIFIED')
+    await db
+      .prepare(
+        'UPDATE auth_login_session SET authenticated_at=authenticated_at-7776000001,last_active_at=last_active_at-7776000001,absolute_expires_at=absolute_expires_at-7776000001 WHERE id=?',
+      )
+      .bind(b.session.loginSessionId)
+      .run()
+    assert.equal((await call('/users/me', undefined, b)).status, 401)
+    ok(await call('/sessions/current/logout', {}, a))
+    assert.equal((await call(renewed.path + '/complete', {}, a, renewed.proof)).status, 401)
+  } finally {
+    await p.dispose()
+  }
+})

@@ -19,9 +19,15 @@ fn unavailable() -> Failure {
     }
 }
 pub(crate) fn configured(a: &Auth) -> bool {
-    ["ALIYUN_ACCESS_KEY_ID", "ALIYUN_ACCESS_KEY_SECRET"].iter().all(|k| a.env.secret(k).is_ok_and(|v| !v.to_string().is_empty()))
-        && a.env.var("ALIYUN_MAIL_REGION").is_ok_and(|v| v.to_string() == "cn-hangzhou")
-        && a.env.var("ALIYUN_MAIL_ACCOUNT_NAME").is_ok_and(|v| !v.to_string().is_empty())
+    ["ALIYUN_ACCESS_KEY_ID", "ALIYUN_ACCESS_KEY_SECRET"]
+        .iter()
+        .all(|k| a.env.secret(k).is_ok_and(|v| !v.to_string().is_empty()))
+        && a.env
+            .var("ALIYUN_MAIL_REGION")
+            .is_ok_and(|v| v.to_string() == "cn-hangzhou")
+        && a.env
+            .var("ALIYUN_MAIL_ACCOUNT_NAME")
+            .is_ok_and(|v| !v.to_string().is_empty())
 }
 pub(crate) async fn send(a: &Auth, m: &Message<'_>) -> Result<()> {
     ensure(m.expires > now(), 503, "UPSTREAM_UNAVAILABLE")?;

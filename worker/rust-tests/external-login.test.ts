@@ -518,8 +518,14 @@ test('UAS-40: matching LIVE configuration or missing mock key fails closed witho
         .filter(Boolean))
         await p.env.DB.prepare(sql).run()
       await p.env.DB.prepare('UPDATE auth_environment SET provider_mode=?').bind(providerMode).run()
-      const capabilities = await p.fetch(new Request(origin+'/api/v2/auth/capabilities?clientId=molis-work-unified-local'))
-      assert.deepEqual((await capabilities.json()).data.methods, ['ACCOUNT_PASSWORD','EMAIL_CODE','PHONE_OTP'], 'missing state key or provider credentials hide external methods')
+      const capabilities = await p.fetch(
+        new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+      )
+      assert.deepEqual(
+        (await capabilities.json()).data.methods,
+        ['ACCOUNT_PASSWORD', 'EMAIL_CODE', 'PHONE_OTP'],
+        'missing state key or provider credentials hide external methods',
+      )
       const proof = secret()
       async function post(path: string, body: unknown) {
         return p.fetch(
