@@ -1,6 +1,9 @@
 //! Password derivation runs in a private Durable Object with a separate CPU budget.
 //! The existing 600k-iteration credential format and policy are unchanged.
-use crate::http::{Failure, Result};
+use crate::{
+    http::{Failure, Result, now},
+    identity::Auth,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
@@ -27,17 +30,19 @@ pub fn normalized(raw: &str) -> Option<String> {
     let value: String = raw.nfc().collect();
     (raw.encode_utf16().count() <= 512 && value.chars().count() <= 128).then_some(value)
 }
-async fn bits(raw: &str, salt: &[u8], env: &worker::Env) -> Result<Vec<u8>> {
-    crate::password_kdf::remote_derive(raw, salt, env)
+async fn bits(raw: &str, salt: &[u8], auth: &Auth) -> Result<Vec<u8>> {
+    let started = now();
+    crate::password_kdf::remote_derive(raw, salt, &auth.env)
         .await
-        .map_err(|_| Failure {
-            status: 503,
-            code: "AUTH_UNAVAILABLE",
+        .map_err(|error| {
+            let failure = Failure::from(error);
+            auth.s.log_failure("password.kdf", &failure, started);
+            failure
         })
 }
-pub async fn matches(raw: &str, encoded: &str, env: &worker::Env) -> Result<bool> {
+pub async fn matches(raw: &str, encoded: &str, auth: &Auth) -> Result<bool> {
     let Some(value) = normalized(raw) else {
-        bits("invalid-password-input", &[0; 16], env).await?;
+        bits("invalid-password-input", &[0; 16], auth).await?;
         return Ok(false);
     };
     let Some(raw_hex) = encoded.strip_prefix(VERSION) else {
@@ -49,14 +54,14 @@ pub async fn matches(raw: &str, encoded: &str, env: &worker::Env) -> Result<bool
     if bytes.len() != 48 || raw_hex.bytes().any(|b| b.is_ascii_uppercase()) {
         return Ok(false);
     }
-    let actual = bits(&value, &bytes[..16], env).await?;
+    let actual = bits(&value, &bytes[..16], auth).await?;
     let diff = actual
         .iter()
         .zip(&bytes[16..])
         .fold(0u8, |a, (b, c)| a | (b ^ c));
     Ok(actual.len() == 32 && diff == 0)
 }
-pub async fn encode(raw: &str, env: &worker::Env) -> Result<String> {
+pub async fn encode(raw: &str, auth: &Auth) -> Result<String> {
     let value = normalized(raw).ok_or(Failure {
         status: 400,
         code: "INVALID_PASSWORD",
@@ -117,7 +122,7 @@ pub async fn encode(raw: &str, env: &worker::Env) -> Result<String> {
     Ok(format!(
         "{VERSION}{}{}",
         hex::encode(&salt),
-        hex::encode(bits(&value, &salt, env).await?)
+        hex::encode(bits(&value, &salt, auth).await?)
     ))
 }
 

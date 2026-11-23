@@ -1,3 +1,7 @@
+use crate::{
+    http::{log_env, log_event},
+    security::uuid,
+};
 use serde_json::json;
 use wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, Env, Result};
@@ -97,16 +101,16 @@ pub(crate) async fn run(env: &Env) {
         .zip(totals)
         .map(|(&(table, _), count)| (table.to_owned(), json!(count)))
         .collect();
-    let summary = json!({
-        "event": "AUTH_CLEANUP",
-        "rounds": rounds,
-        "deleted": deleted,
-        "elapsedMs": (js_sys::Date::now() - cutoff) as u64,
-        "stopReason": reason,
-    });
-    if matches!(reason, "database_error" | "missing_counts") {
-        worker::console_error!("{summary}");
-    } else {
-        worker::console_log!("{summary}");
-    }
+    log_event(
+        "auth.cleanup",
+        log_env(env),
+        &uuid(),
+        [
+            ("rounds", json!(rounds)),
+            ("deleted", json!(deleted)),
+            ("duration_ms", json!((js_sys::Date::now() - cutoff) as u64)),
+            ("stop_reason", json!(reason)),
+        ],
+        matches!(reason, "database_error" | "missing_counts"),
+    );
 }

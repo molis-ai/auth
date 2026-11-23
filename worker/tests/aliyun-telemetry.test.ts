@@ -6,13 +6,22 @@ import { aliyunRpc } from '../rust/src/runtime/aliyun.js'
 const mail = 'SingleSendMail'
 const send = 'SendSmsVerifyCode'
 const check = 'CheckSmsVerifyCode'
+const requestId = crypto.randomUUID()
 const input = JSON.stringify({
   PhoneNumber: '13800000000',
   ToAddress: 'private@example.test',
   VerifyCode: '123456',
 })
 
-test('Aliyun logs one sanitized event per request and reports the provider result', async (t) => {
+function readEvent(args: unknown[]) {
+  assert.equal(args.length, 1)
+  const [line] = args
+  assert.equal(typeof line, 'string')
+  assert.doesNotMatch(line as string, /[\r\n]/)
+  return JSON.parse(line as string)
+}
+
+test('AC-AUTH-02/03 Aliyun logs one sanitized JSON event per request and reports the provider result', async (t) => {
   const cases = [
     {
       action: mail,
@@ -79,16 +88,20 @@ test('Aliyun logs one sanitized event per request and reports the provider resul
           : Response.json({ ...body, Message: 'private' }, { status }),
       )
       const log = t.mock.method(console, 'log', () => {})
-      const call = aliyunRpc('fixture-key', 'fixture-secret', action, input)
+      const call = aliyunRpc('fixture-key', 'fixture-secret', action, input, requestId, 'test')
       if (reply) assert.equal(await call, reply)
       else await assert.rejects(call, { message: 'upstream' })
 
       assert.equal(fetch.mock.callCount(), 1)
       assert.equal(log.mock.callCount(), 1)
-      const [{ duration_ms, ...event }] = log.mock.calls[0].arguments
+      const { duration_ms, ...event } = readEvent(log.mock.calls[0].arguments)
       assert.ok(Number.isInteger(duration_ms) && duration_ms >= 0)
       assert.deepEqual(event, {
+        schema: 1,
+        service: 'molis-auth',
+        env: 'test',
         event: 'auth.aliyun.request',
+        request_id: requestId,
         action,
         outcome,
         http_status: status,
@@ -104,19 +117,20 @@ test('Aliyun separates network failures and timeouts from calls rejected before 
     throw new TypeError('private connection details')
   })
 
-  await assert.rejects(aliyunRpc('key', 'secret', 'UnknownAction', input))
+  await assert.rejects(aliyunRpc('key', 'secret', 'UnknownAction', input, requestId, 'prod'))
   assert.equal(fetch.mock.callCount(), 0)
   assert.equal(log.mock.callCount(), 0)
 
-  await assert.rejects(aliyunRpc('key', 'secret', send, input))
-  assert.equal(log.mock.calls[0].arguments[0].outcome, 'network_error')
+  await assert.rejects(aliyunRpc('key', 'secret', send, input, requestId, 'prod'))
+  assert.equal(readEvent(log.mock.calls[0].arguments).outcome, 'network_error')
 
   const timeout = t.mock.method(AbortSignal, 'timeout', () => AbortSignal.abort())
-  await assert.rejects(aliyunRpc('key', 'secret', send, input))
+  await assert.rejects(aliyunRpc('key', 'secret', send, input, requestId, 'private-env'))
   assert.equal(timeout.mock.calls[0].arguments[0], 10000)
   assert.equal(log.mock.callCount(), 2)
-  assert.equal(log.mock.calls[1].arguments[0].outcome, 'timeout')
-  for (const call of log.mock.calls) assert.equal(call.arguments[0].http_status, undefined)
+  assert.equal(readEvent(log.mock.calls[1].arguments).outcome, 'timeout')
+  assert.equal(readEvent(log.mock.calls[1].arguments).env, 'unknown')
+  for (const call of log.mock.calls) assert.equal(readEvent(call.arguments).http_status, undefined)
 })
 
 test('Aliyun latency includes reading the response body', async (t) => {
@@ -129,6 +143,6 @@ test('Aliyun latency includes reading the response body', async (t) => {
   })
   t.mock.method(globalThis, 'fetch', async () => new Response(body))
   const log = t.mock.method(console, 'log', () => {})
-  assert.equal(await aliyunRpc('key', 'secret', send, input), 'accepted')
-  assert.ok(log.mock.calls[0].arguments[0].duration_ms >= 15)
+  assert.equal(await aliyunRpc('key', 'secret', send, input, requestId, 'dev'), 'accepted')
+  assert.ok(readEvent(log.mock.calls[0].arguments).duration_ms >= 15)
 })

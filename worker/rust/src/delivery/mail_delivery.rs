@@ -10,6 +10,8 @@ extern "C" {
         secret: &str,
         action: &str,
         input: &str,
+        request_id: &str,
+        env: &str,
     ) -> std::result::Result<String, JsValue>;
 }
 fn unavailable() -> Failure {
@@ -60,8 +62,15 @@ pub(crate) async fn send(a: &Auth, m: &Message<'_>) -> Result<()> {
         crate::delivery::mail_templates::render(m.template, m.credential, m.expires, now())
             .ok_or_else(unavailable)?;
     let body = json!({"AccountName":account,"AddressType":1,"ReplyToAddress":"false","ToAddress":m.target,"FromAlias":content.sender_name,"Subject":content.subject,"TextBody":content.text});
-    let reply = rpc(&id, &secret, "SingleSendMail", &body.to_string())
-        .await
-        .map_err(|_| unavailable())?;
+    let reply = rpc(
+        &id,
+        &secret,
+        "SingleSendMail",
+        &body.to_string(),
+        &a.request_id,
+        log_env(&a.env),
+    )
+    .await
+    .map_err(|_| unavailable())?;
     ensure(reply == "accepted", 503, "UPSTREAM_UNAVAILABLE")
 }

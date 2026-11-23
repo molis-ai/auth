@@ -46,6 +46,8 @@ pub(crate) fn failure_route(path: &str) -> &'static str {
     match path {
         "/api/v2/health" => "/api/v2/health",
         "/api/v2/readiness" => "/api/v2/readiness",
+        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
+        "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
         "/account/handoff/start" => "/account/handoff/start",
         "/account/handoff/finish" => "/account/handoff/finish",
         "/account/callback" => "/account/callback",
@@ -59,7 +61,48 @@ pub(crate) fn failure_route(path: &str) -> &'static str {
     }
 }
 
+pub(crate) fn log_env(env: &worker::Env) -> &'static str {
+    env.var("MOLIS_ENVIRONMENT")
+        .ok()
+        .map(|value| match value.to_string().as_str() {
+            "prod" => "prod",
+            "test" => "test",
+            "dev" => "dev",
+            _ => "unknown",
+        })
+        .unwrap_or("unknown")
+}
+
+pub(crate) fn log_event<const N: usize>(
+    event: &'static str,
+    env: &'static str,
+    request_id: &str,
+    fields: [(&'static str, Value); N],
+    error: bool,
+) {
+    let envelope = [
+        ("schema", json!(1)),
+        ("service", json!("molis-auth")),
+        ("env", json!(env)),
+        ("event", json!(event)),
+        ("request_id", json!(request_id)),
+    ];
+    let message = Value::Object(
+        fields
+            .into_iter()
+            .chain(envelope)
+            .map(|(name, value)| (name.into(), value))
+            .collect(),
+    );
+    if error {
+        worker::console_error!("{message}");
+    } else {
+        worker::console_log!("{message}");
+    }
+}
+
 pub(crate) fn log_failure(
+    env: &'static str,
     request_id: &str,
     route: &'static str,
     phase: &'static str,
@@ -69,16 +112,51 @@ pub(crate) fn log_failure(
     if failure.status < 500 {
         return;
     }
-    let message = json!({
-        "event": "auth.request.failure",
-        "request_id": request_id,
-        "route": route,
-        "phase": phase,
-        "code": failure.code,
-        "status": failure.status,
-        "elapsed_ms": (now() - started).max(0),
-    });
-    worker::console_error!("{message}");
+    log_event(
+        "auth.request.failure",
+        env,
+        request_id,
+        [
+            ("route", json!(route)),
+            ("phase", json!(phase)),
+            ("code", json!(failure.code)),
+            ("status", json!(failure.status)),
+            ("duration_ms", json!((now() - started).max(0))),
+        ],
+        true,
+    );
+}
+
+pub(crate) struct RequestLog<'a> {
+    pub env: &'static str,
+    pub id: &'a str,
+    pub route: &'static str,
+    pub method: &'a str,
+    pub started: i64,
+}
+
+impl RequestLog<'_> {
+    pub fn finish(&self, status: u16, error_code: Option<&'static str>) {
+        if matches!(self.route, "/api/v2/health" | "/auth-ui/{asset}")
+            && (200..400).contains(&status)
+        {
+            return;
+        }
+        let error_code = error_code.unwrap_or(if status < 400 { "none" } else { "http_error" });
+        log_event(
+            "auth.http.request",
+            self.env,
+            self.id,
+            [
+                ("method", json!(self.method)),
+                ("route", json!(self.route)),
+                ("status", json!(status)),
+                ("error_code", json!(error_code)),
+                ("duration_ms", json!((now() - self.started).max(0))),
+            ],
+            status >= 500,
+        );
+    }
 }
 
 pub fn ensure(condition: bool, status: u16, code: &'static str) -> Result<()> {

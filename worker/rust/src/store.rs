@@ -6,20 +6,29 @@ use worker::{D1Database, D1PreparedStatement};
 pub struct Store {
     pub db: D1Database,
     pub web_owner: Option<(String, i64)>,
+    log_env: &'static str,
     request_id: String,
     route: &'static str,
 }
 impl Store {
-    pub fn new(db: D1Database, request_id: String, route: &'static str) -> Self {
+    pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
             db,
             web_owner: None,
-            request_id,
-            route,
+            log_env: log.env,
+            request_id: log.id.to_owned(),
+            route: log.route,
         }
     }
     pub(crate) fn log_failure(&self, phase: &'static str, failure: &Failure, started: i64) {
-        log_failure(&self.request_id, self.route, phase, failure, started);
+        log_failure(
+            self.log_env,
+            &self.request_id,
+            self.route,
+            phase,
+            failure,
+            started,
+        );
     }
     fn database_failure(&self, error: worker::Error, phase: &'static str, started: i64) -> Failure {
         let failure = Failure::from(error);

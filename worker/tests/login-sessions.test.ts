@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { generateKeyPairSync } from 'node:crypto'
 import { importJWK, jwtVerify, type JWK } from 'jose'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret, hash, challenge } from './fixtures.ts'
+import { captureAuthLogs, secret, hash, challenge } from './fixtures.ts'
 
 test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation and pending-code boundary', async (suite) => {
   const origin = 'http://127.0.0.1:8787',
@@ -18,14 +18,18 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     deliveryMode: 'MOCK',
     providerMode: 'MOCK',
   }
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
-    SYNC_READ_SIGNING_JWK: JSON.stringify({
-      ...generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' }),
-      kid: 'synthetic-sync',
-    }),
-  })
+  const signingKey = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
+  const logs = captureAuthLogs()
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
+      SYNC_READ_SIGNING_JWK: JSON.stringify({ ...signingKey, kid: 'synthetic-sync' }),
+    },
+    undefined,
+    undefined,
+    logs,
+  )
   try {
     await initializeLocalRuntime(p)
     const db = p.env.DB
@@ -137,6 +141,22 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(claims.token_sha256, hash(a.accessToken))
     assert.equal(claims.scope, 'molis-sync:read')
     assert.ok(Number(claims.exp) - Number(claims.iat) <= 30)
+    // AC-AUTH-01/03: proof and JWKS endpoints use route templates and omit key and grant data.
+    for (const route of ['/api/v2/auth/sync-read-proof', '/.well-known/molis-sync-jwks.json']) {
+      const log = await logs.waitFor(
+        (event) => event.event === 'auth.http.request' && event.route === route,
+      )
+      assert.equal(log.status, 200)
+      assert.equal(log.error_code, 'none')
+    }
+    for (const value of [
+      a.accessToken,
+      a.refreshToken,
+      signed.data.proof,
+      signingKey.d!,
+      JSON.stringify(claims.sub),
+    ])
+      assert.ok(logs.lines.every((line) => !line.includes(value)))
     const before = current.data.lastActiveAt
     const refreshed = await call('/auth/token', {
       grantType: 'refresh_token',
@@ -229,8 +249,25 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .prepare('UPDATE auth_login_access_token SET expires_at=0 WHERE token_hash=?')
       .bind(hash(b.accessToken))
       .run()
+    const countAccessTokens = () =>
+      db.prepare('SELECT count(*) AS n FROM auth_login_access_token').first<number>('n')
+    const accessTokensBeforeCleanup = await countAccessTokens()
     const cleanup = await p.scheduled()
     assert.equal(cleanup.outcome, 'ok')
+    // AC-AUTH-02/03: cron records an independent correlation ID and aggregate counts.
+    const summary = await logs.waitFor((record) => record.event === 'auth.cleanup')
+    assert.equal(summary.schema, 1)
+    assert.equal(summary.service, 'molis-auth')
+    assert.equal(summary.env, 'unknown')
+    assert.match(summary.request_id, /^[0-9a-f-]{36}$/)
+    assert.ok(Number.isInteger(summary.duration_ms) && summary.duration_ms >= 0)
+    assert.equal(summary.rounds, 1)
+    assert.equal(summary.stop_reason, 'drained')
+    assert.equal(
+      summary.deleted?.auth_login_access_token,
+      accessTokensBeforeCleanup! - (await countAccessTokens())!,
+    )
+    assert.equal(JSON.stringify(summary).includes(hash(b.accessToken)), false)
     assert.ok(
       await db
         .prepare('SELECT token_hash FROM auth_login_access_token WHERE token_hash=?')

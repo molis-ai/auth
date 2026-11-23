@@ -58,36 +58,29 @@ impl DurableObject for PasswordKdf {
 }
 
 pub async fn remote_derive(password: &str, salt: &[u8], env: &Env) -> Result<Vec<u8>> {
-    let result = async {
-        let namespace = env.durable_object("PASSWORD_KDF")?;
-        // A new stateless instance per computation avoids serializing all logins
-        // behind one object. No password, salt or derived key is persisted.
-        let stub = namespace.unique_id()?.get_stub()?;
-        let body = serde_json::to_string(&Derivation {
-            password: password.to_owned(),
-            salt: hex::encode(salt),
-        })?;
-        let mut init = RequestInit::new();
-        init.with_method(Method::Post).with_body(Some(body.into()));
-        let request = Request::new_with_init("https://password-kdf.internal/derive", &init)?;
-        // No retry or local fallback: an unavailable KDF must fail closed.
-        let mut response = stub.fetch_with_request(request).await?;
-        if response.status_code() != 200 {
-            return Err(Error::RustError("AUTH_PASSWORD_KDF_UNAVAILABLE".into()));
-        }
-        let bytes = response.bytes().await?;
-        if bytes.len() != KEY_BYTES {
-            return Err(Error::RustError(
-                "AUTH_PASSWORD_KDF_INVALID_RESPONSE".into(),
-            ));
-        }
-        Ok(bytes)
+    let namespace = env.durable_object("PASSWORD_KDF")?;
+    // A new stateless instance per computation avoids serializing all logins
+    // behind one object. No password, salt or derived key is persisted.
+    let stub = namespace.unique_id()?.get_stub()?;
+    let body = serde_json::to_string(&Derivation {
+        password: password.to_owned(),
+        salt: hex::encode(salt),
+    })?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post).with_body(Some(body.into()));
+    let request = Request::new_with_init("https://password-kdf.internal/derive", &init)?;
+    // No retry or local fallback: an unavailable KDF must fail closed.
+    let mut response = stub.fetch_with_request(request).await?;
+    if response.status_code() != 200 {
+        return Err(Error::RustError("AUTH_PASSWORD_KDF_UNAVAILABLE".into()));
     }
-    .await;
-    if result.is_err() {
-        console_error!("AUTH_PASSWORD_KDF_UNAVAILABLE");
+    let bytes = response.bytes().await?;
+    if bytes.len() != KEY_BYTES {
+        return Err(Error::RustError(
+            "AUTH_PASSWORD_KDF_INVALID_RESPONSE".into(),
+        ));
     }
-    result
+    Ok(bytes)
 }
 
 #[cfg(test)]

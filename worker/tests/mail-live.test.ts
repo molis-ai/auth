@@ -280,7 +280,20 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       assert.equal(logs[0].code, 'UPSTREAM_UNAVAILABLE')
       assert.equal(logs[0].status, 503)
       assert.equal(logs[0].route, '/api/v2/auth/transactions/{transactionId}/challenges')
-      if (timeout) assert.ok(logs[0].elapsed_ms >= 9_000)
+      if (timeout) assert.ok(logs[0].duration_ms >= 9_000)
+      const http = await failures.waitFor(
+        (log) => log.event === 'auth.http.request' && log.request_id === knownReply.requestId,
+      )
+      const upstream = await failures.waitFor(
+        (log) => log.event === 'auth.aliyun.request' && log.request_id === knownReply.requestId,
+      )
+      assert.equal(http.status, 200)
+      assert.equal(http.error_code, 'none')
+      assert.equal(upstream.schema, 1)
+      assert.equal(upstream.service, 'molis-auth')
+      assert.equal(upstream.env, 'dev')
+      assert.equal(upstream.action, 'SingleSendMail')
+      assert.equal(upstream.outcome, timeout ? 'timeout' : 'upstream_error')
       for (const value of [
         'alice@example.test',
         known.proof,
@@ -288,7 +301,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
         known.id,
         knownReply.data.challengeId,
       ]) {
-        assert.equal(JSON.stringify(logs).includes(value), false)
+        assert.equal(JSON.stringify([...logs, upstream, http]).includes(value), false)
       }
     }
   } finally {

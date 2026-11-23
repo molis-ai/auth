@@ -164,7 +164,7 @@ pub(crate) fn revoke_password(a: &Auth, user: &str, keep: Option<&Value>) -> Res
     Ok(w)
 }
 async fn encoded_password(a: &Auth, b: &Value) -> Result<String> {
-    encode(&text(b, "newPassword"), &a.env).await.map_err(|e| {
+    encode(&text(b, "newPassword"), a).await.map_err(|e| {
         if e.status == 400 {
             Failure {
                 status: 400,

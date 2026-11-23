@@ -23,8 +23,7 @@ impl Auth {
     pub fn new(
         request: Request,
         env: &Env,
-        request_id: String,
-        route: &'static str,
+        log: &RequestLog<'_>,
         client_ip: Option<String>,
     ) -> Result<Self> {
         let origin = env.var("AUTH_ORIGIN")?.to_string();
@@ -40,10 +39,10 @@ impl Auth {
                 .unwrap_or_else(|| "local".to_owned())
         });
         Ok(Self {
-            s: Store::new(env.d1("DB")?, request_id.clone(), route),
+            s: Store::new(env.d1("DB")?, log),
             origin,
             request,
-            request_id,
+            request_id: log.id.to_owned(),
             client_ip,
             retry_after_at: Cell::new(None),
             cookies: vec![],

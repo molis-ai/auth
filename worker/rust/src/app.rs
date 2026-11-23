@@ -33,28 +33,74 @@ async fn handle_inner(
     client_ip: Option<String>,
     id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
-    let started = now();
-    let url = req.url()?;
-    if req.method() == Method::Get && url.path() == "/api/v2/health" {
-        let response = with_security_headers(health_response(&id)?, &id, url.scheme() == "https")?;
-        return Ok((response, None));
-    }
-    let route = failure_route(url.path());
+    let method = req.method();
+    let log = RequestLog {
+        started: now(),
+        env: log_env(&env),
+        id: &id,
+        route: failure_route(&req.path()),
+        // The SDK maps unknown methods to GET. Keep the actual outcome label bounded.
+        method: if method == Method::Get && req.inner().method() != "GET" {
+            "OTHER"
+        } else {
+            method.as_ref()
+        },
+    };
     let external = owner.is_none();
-    let mut a = match Auth::new(req, &env, id.clone(), route, client_ip) {
+    let url = req.url();
+    let https = url.as_ref().is_ok_and(|url| url.scheme() == "https");
+    let result = match url {
+        Ok(url) => handle_response(req, &env, url, owner, client_ip, &log).await,
+        Err(error) => Err(error),
+    };
+    let (response, retry_after_at, error_code) = match result {
+        Ok(outcome) => outcome,
+        Err(error) if external => {
+            let failure = Failure::from(error);
+            log_failure(log.env, &id, log.route, "respond", &failure, log.started);
+            let code = failure.code;
+            let response = with_security_headers(error_response(failure, &id)?, &id, https)?;
+            (response, None, Some(code))
+        }
+        Err(error) => return Err(error),
+    };
+    if external {
+        log.finish(response.status_code(), error_code);
+    }
+    Ok((response, retry_after_at))
+}
+
+async fn handle_response(
+    req: Request,
+    env: &Env,
+    url: worker::Url,
+    owner: Option<(String, i64)>,
+    client_ip: Option<String>,
+    log: &RequestLog<'_>,
+) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
+    let id = log.id;
+    if req.method() == Method::Get && url.path() == "/api/v2/health" {
+        let response = with_security_headers(health_response(id)?, id, url.scheme() == "https")?;
+        return Ok((response, None, None));
+    }
+    let external = owner.is_none();
+    let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
-            log_failure(&id, route, "initialize", &e, started);
-            return Ok((error_response(e, &id)?, None));
+            log_failure(log.env, id, log.route, "initialize", &e, log.started);
+            let code = e.code;
+            let response =
+                with_security_headers(error_response(e, id)?, id, url.scheme() == "https")?;
+            return Ok((response, None, Some(code)));
         }
     };
     a.s.web_owner = owner;
-    let result = dispatch(&mut a, &env, url).await;
+    let result = dispatch(&mut a, env, url).await;
     let retry_after_at = a.retry_after_at.get();
-    let status = match &result {
-        Ok(response) => response.status_code(),
-        Err(e) => e.status,
-    };
+    let status = result
+        .as_ref()
+        .map_or_else(|e| e.status, Response::status_code);
+    let error_code = result.as_ref().err().map(|e| e.code);
     // Internal calls carry the deadline through BFF session cleanup to the public response.
     let retry_after = (external && status == 429).then(|| {
         retry_after_at
@@ -65,7 +111,7 @@ async fn handle_inner(
         Ok(r) => r,
         Err(e) => {
             let phase = if external { "dispatch" } else { "internal" };
-            log_failure(&id, route, phase, &e, started);
+            log_failure(log.env, id, log.route, phase, &e, log.started);
             if let Some(retry_after) = retry_after.filter(|_| {
                 let path = a.request.path();
                 path.starts_with("/api/v2/") || path.starts_with("/api/account/")
@@ -75,7 +121,7 @@ async fn handle_inner(
                     429,
                 )?
             } else {
-                error_response(e, &id)?
+                error_response(e, id)?
             }
         }
     };
@@ -89,8 +135,8 @@ async fn handle_inner(
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
     }
-    let response = with_security_headers(response, &id, a.origin.starts_with("https:"))?;
-    Ok((response, retry_after_at))
+    let response = with_security_headers(response, id, a.origin.starts_with("https:"))?;
+    Ok((response, retry_after_at, error_code))
 }
 
 fn health_response(id: &str) -> worker::Result<Response> {

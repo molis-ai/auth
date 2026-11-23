@@ -354,8 +354,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
             .map(str::to_owned)
             .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
         ensure(
-            matches(&text(b, "password"), &encoded, &a.env).await?
-                && candidate["status"] == "ACTIVE",
+            matches(&text(b, "password"), &encoded, a).await? && candidate["status"] == "ACTIVE",
             401,
             "INVALID_CREDENTIALS",
         )?;
@@ -403,7 +402,7 @@ pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value
                 400,
                 "INVALID_REQUEST",
             )?;
-            let encoded = encode(&text(b, "password"), &a.env).await.map_err(|e| {
+            let encoded = encode(&text(b, "password"), a).await.map_err(|e| {
                 if e.code == "INVALID_PASSWORD" || e.code == "PASSWORD_BLOCKED" {
                     Failure {
                         status: 400,

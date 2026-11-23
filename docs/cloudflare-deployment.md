@@ -21,7 +21,62 @@ npm start -- --env dev
 
 要将 Auth 日志导出到 Grafana Cloud，在 Cloudflare Observability 的 Destinations 中创建 Logs 目标，使用 Grafana 的 OTLP `/v1/logs` 地址和 `Authorization` 请求头。把目标名称写入对应环境的 `config/test.properties` 或 `config/prod.properties`，例如 `grafanaLogsDestination=molis-grafana-logs`，然后重新部署。认证头保存在 Cloudflare。导出启用后，Worker 应用日志全量导出，关闭自动请求日志和 Cloudflare 日志留存，并隐藏请求 URL 的查询参数。[Cloudflare 配置说明](https://developers.cloudflare.com/observability/export/opentelemetry/grafana-cloud/)
 
-在 Grafana Explore 的 Loki 数据源中查找 `auth.aliyun.request`。按 `action` 统计总调用数和 `outcome=success` 的比例，用 `duration_ms` 计算耗时。发送成功表示供应商接受了请求。短信校验成功表示供应商返回了校验结果，`verification_result` 标记验证码是否匹配。
+### Grafana Loki 查询
+
+Auth 的应用日志使用单行 JSON。公共字段为 `schema=1`、`service=molis-auth`、`env`、`event` 和 `request_id`。环境为 `prod`、`test`、`dev` 或 `unknown`。每个外部响应记录一条 `auth.http.request`，含 `method`、归一化的 `route`、`status`、`error_code` 和 `duration_ms`。成功响应的错误码为 `none`，没有业务错误码的失败响应使用 `http_error`。探活和静态资源的 2xx、3xx 响应跳过这条日志。BFF 的内部调用与外部响应共用请求 ID，内部调用的 5xx 仍可在 `auth.request.failure` 中按 `phase` 检索。失败诊断的错误字段为 `code`，耗时统一为 `duration_ms`。
+
+`auth.aliyun.request` 使用同一个请求 ID。按 `action` 统计总调用数及 `outcome=success` 的比例，用 `duration_ms` 计算耗时。发送成功表示供应商接受了请求。短信校验成功表示供应商返回了校验结果，`verification_result` 标记验证码是否匹配。`auth.cleanup` 为每次定时运行生成独立的请求 ID，只记录清理轮数、按表汇总的删除数、耗时和停止原因。
+
+在 Grafana Explore 选择 Loki 数据源。先按 Cloudflare 提供的 `cloudflare_script_name` 筛 Worker，再解析 Auth 记录中的服务和环境。下面的写法兼容应用 JSON 作为日志行和 Cloudflare 在 `message` 中包装应用 JSON 两种情况。现有阿里云查询可沿用相同的解析步骤，再按 `action` 和 `outcome` 过滤。正式环境已登记导出目的地。测试环境启用导出后，将 Worker 改为 `molis-auth-test`，环境改为 `test`。[Cloudflare Workers 日志格式](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) · [Grafana OTLP 日志格式](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/)
+
+核心 API 服务端可用率按 2xx、3xx 与 5xx 计算，排除 4xx（包括 429）。窗口内无符合条件的请求时显示无数据，有请求且无 5xx 时为 100%。
+
+```logql
+1 - (
+  (sum(count_over_time(
+    {service_name=~".+"} |= "auth.http.request"
+    | cloudflare_script_name="molis-auth-production"
+    | json cf_message="message"
+    | line_format `{{ .cf_message | default (__line__) }}`
+    | drop cf_message
+    | json auth_service="service", auth_env="env", auth_event="event", route="route", status="status"
+    | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
+    | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+    | status >= 500 | __error__=""
+    [5m]
+  )) or vector(0))
+  /
+  sum(count_over_time(
+    {service_name=~".+"} |= "auth.http.request"
+    | cloudflare_script_name="molis-auth-production"
+    | json cf_message="message"
+    | line_format `{{ .cf_message | default (__line__) }}`
+    | drop cf_message
+    | json auth_service="service", auth_env="env", auth_event="event", route="route", status="status"
+    | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
+    | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+    | status=~"[235][0-9]{2}"
+    [5m]
+  ))
+)
+```
+
+按路由查看核心 API 的 P95 响应耗时（毫秒），包含失败响应。
+
+```logql
+quantile_over_time(0.95,
+  {service_name=~".+"} |= "auth.http.request"
+  | cloudflare_script_name="molis-auth-production"
+  | json cf_message="message"
+  | line_format `{{ .cf_message | default (__line__) }}`
+  | drop cf_message
+  | json auth_service="service", auth_env="env", auth_event="event", route="route", duration_ms="duration_ms"
+  | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
+  | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+  | unwrap duration_ms | __error__=""
+  [5m]
+) by (route)
+```
 
 部署前记录当前 Worker 版本、路由和客户端登记。回滚时使用 Cloudflare 已部署版本恢复能力，并核对当时的域名、客户端登记、D1 绑定和供应商回调。恢复 Worker 版本不回滚数据库。
 

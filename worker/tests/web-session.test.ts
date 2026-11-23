@@ -669,7 +669,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       )
     }
     await t.test(
-      'correlates a BFF response, V2 dispatch and D1 failure without inputs',
+      'AC-AUTH-01/03 correlates a BFF response, V2 dispatch and D1 failure without inputs',
       async () => {
         ok(await call('/api/account/session'))
         const tx = ok(
@@ -690,6 +690,13 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           'internal',
           'dispatch',
         ])
+        const isHttp = (event: (typeof failures.records)[number]) =>
+          event.event === 'auth.http.request' && event.request_id === failure.requestId
+        const http = await failures.waitFor(isHttp)
+        assert.equal(failures.records.filter(isHttp).length, 1)
+        assert.equal(http.route, '/api/account/auth/transactions/{handle}/submit')
+        assert.equal(http.status, 503)
+        assert.equal(http.error_code, 'AUTH_UNAVAILABLE')
         const reportedRoutes = new Map(logs.map(({ phase, route }) => [phase, route]))
         assert.equal(
           reportedRoutes.get('dispatch'),
@@ -704,18 +711,24 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         for (const log of logs) {
           assert.equal(log.code, 'AUTH_UNAVAILABLE')
           assert.equal(log.status, 503)
-          assert.ok(log.elapsed_ms >= 0)
+          assert.ok(log.duration_ms >= 0)
+          assert.equal(log.schema, 1)
+          assert.equal(log.service, 'molis-auth')
+          assert.equal(log.env, 'unknown')
           assert.deepEqual(Object.keys(log).sort(), [
             'code',
-            'elapsed_ms',
+            'duration_ms',
+            'env',
             'event',
             'phase',
             'request_id',
             'route',
+            'schema',
+            'service',
             'status',
           ])
         }
-        const raw = JSON.stringify(logs)
+        const raw = JSON.stringify([...logs, http])
         for (const value of [phone, tx.handle, cookie, csrf, fixturePassword, 'auth_rate_bucket']) {
           assert.equal(raw.includes(value), false)
         }
