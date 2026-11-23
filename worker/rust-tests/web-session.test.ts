@@ -3,10 +3,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { hash, secret } from './fixtures.ts'
+import { challenge, hash, secret } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
-test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async () => {
+test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async (t) => {
   const origin = 'http://127.0.0.1:8787',
     bffKey = secret()
   const fixturePassword = secret() + 'aA!5'
@@ -523,6 +523,122 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
       assert.equal((await call('/api/account/login-methods')).status, 401)
     }
+    await t.test(
+      'BFF uses per-IP password and delivery buckets, and both APIs report the D1 expiry',
+      async () => {
+        const ipA = '192.0.2.1',
+          ipB = '192.0.2.2',
+          ipC = '192.0.2.3'
+        const sendPath = '/api/account/auth/verification-codes'
+        const sendBody = (address: string) => ({ purpose: 'LOGIN', channel: 'EMAIL', address })
+        async function browser(ip: string) {
+          const bootstrap = await p.fetch(
+            new Request(origin + '/api/account/session', {
+              headers: { Origin: origin, 'CF-Connecting-IP': ip },
+            }),
+          )
+          assert.equal(bootstrap.status, 200)
+          assert.equal((await bootstrap.json()).data.state, 'ANONYMOUS')
+          const cookie = bootstrap.headers.get('Set-Cookie')?.split(';')[0]
+          const csrf = bootstrap.headers.get('X-CSRF-Token')
+          assert.ok(cookie && csrf)
+          return {
+            cookie,
+            post: (path: string, body: unknown) =>
+              p.fetch(
+                new Request(origin + path, {
+                  method: 'POST',
+                  headers: {
+                    Origin: origin,
+                    Cookie: cookie,
+                    'X-CSRF-Token': csrf,
+                    'Content-Type': 'application/json',
+                    'CF-Connecting-IP': ip,
+                  },
+                  body: JSON.stringify(body),
+                }),
+              ),
+          }
+        }
+        function direct(ip: string, address: string) {
+          const proof = secret()
+          return p.fetch(
+            new Request(origin + '/api/v2/auth/verification-codes', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'CF-Connecting-IP': ip,
+                'X-Auth-Initiator-Proof': proof,
+              },
+              body: JSON.stringify({
+                ...sendBody(address),
+                clientId: 'auth-web',
+                redirectUri: origin + '/account/callback',
+                state: secret(),
+                codeChallenge: challenge(secret()),
+                codeChallengeMethod: 'S256',
+                initiatorChallenge: challenge(proof),
+              }),
+            }),
+          )
+        }
+        const first = await browser(ipA),
+          second = await browser(ipA),
+          other = await browser(ipB)
+        assert.notEqual(first.cookie, second.cookie)
+        const hourlyBucket = (ip: string) => hash(`v2-delivery-ip-hour:${ip}`)
+        // Put IP A one send below the hourly quota with a partially elapsed window.
+        const expiresAt = Date.now() + 1_800_750
+        await db
+          .prepare('INSERT INTO auth_rate_bucket(bucket_hash,hits,expires_at) VALUES (?,59,?)')
+          .bind(hourlyBucket(ipA), expiresAt)
+          .run()
+
+        async function assertThrottled(send: () => ReturnType<typeof direct>) {
+          const before = Date.now()
+          const response = await send()
+          const after = Date.now()
+          const body = await response.json()
+          assert.equal(response.status, 429, JSON.stringify(body))
+          assert.ok(validateNamed('Error429', body))
+          const seconds = body.error.retryAfterSeconds
+          assert.equal(response.headers.get('Retry-After'), String(seconds))
+          assert.ok(seconds > 60 && seconds <= 3600)
+          assert.ok(seconds >= Math.ceil((expiresAt - after) / 1000))
+          assert.ok(seconds <= Math.ceil((expiresAt - before) / 1000))
+        }
+
+        const accepted = await first.post(sendPath, sendBody('quota-first@example.test'))
+        assert.equal(accepted.status, 200, await accepted.text())
+        await assertThrottled(() => second.post(sendPath, sendBody('quota-same-ip@example.test')))
+        const otherIp = await other.post(sendPath, sendBody('quota-other-ip@example.test'))
+        assert.equal(otherIp.status, 200, await otherIp.text())
+        await assertThrottled(() => direct(ipA, 'quota-direct-same@example.test'))
+        const directOther = await direct(ipC, 'quota-direct-other@example.test')
+        assert.equal(directOther.status, 200, await directOther.text())
+
+        const bucketHits = async (bucketHash: string) =>
+          (
+            await db
+              .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
+              .bind(bucketHash)
+              .first()
+          )?.hits
+        assert.equal(await bucketHits(hourlyBucket(ipA)), 62)
+        assert.equal(await bucketHits(hourlyBucket(ipB)), 1)
+        assert.equal(await bucketHits(hourlyBucket(ipC)), 1)
+
+        const localPasswordBucket = hash('v2-password:local')
+        const localPasswordHits = await bucketHits(localPasswordBucket)
+        const badPassword = await first.post('/api/account/auth/login/password', {
+          identifier: 'quota-password@example.test',
+          password: 'incorrect-test-password',
+        })
+        assert.equal(badPassword.status, 401, await badPassword.text())
+        assert.equal(await bucketHits(hash(`v2-password:${ipA}`)), 1)
+        assert.equal(await bucketHits(localPasswordBucket), localPasswordHits)
+      },
+    )
     // V2-04: reload the same worker bindings, then change the local session generation twice.
     await p.updateBindings({ MOLIS_LOCAL_GENERATION: 'fixture-dev-first' })
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')

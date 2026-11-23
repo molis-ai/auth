@@ -141,9 +141,8 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let channel = text(b, "channel");
     let subject = format!("{channel}:{target}");
     a.rate_ip("v2-delivery-ip", 60).await?;
-    a.rate(
+    a.rate_ip_window(
         "v2-delivery-ip-hour",
-        &a.header("CF-Connecting-IP"),
         delivery_limit("sendQuotaPerIp"),
         delivery_limit("sendQuotaWindowSeconds") * 1000,
     )

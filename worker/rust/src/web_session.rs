@@ -102,14 +102,19 @@ impl WebSession<'_> {
         if let Some(key) = key {
             h.set("Idempotency-Key", key)?;
         }
-        let mut response = crate::app::handle_internal(
+        let (mut response, retry_after_at) = crate::app::handle_internal(
             request,
             self.a.env.clone(),
             (self.id.clone(), self.revision),
+            self.a.client_ip.clone(),
         )
         .await?;
         let value: Value = response.json().await?;
-        if response.status_code() >= 400 {
+        let status = response.status_code();
+        if status == 429 {
+            self.a.retry_after_at.set(retry_after_at);
+        }
+        if status >= 400 {
             // Return a bounded, declared code, never an upstream body or secret-bearing message.
             let code = text(&value["error"], "code");
             let known: [&'static str; 15] = [
@@ -130,7 +135,7 @@ impl WebSession<'_> {
                 "CAPACITY_CONFLICT",
             ];
             return Err(Failure {
-                status: response.status_code(),
+                status,
                 code: known
                     .into_iter()
                     .find(|v| *v == code)
