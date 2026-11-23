@@ -4,7 +4,7 @@ import { accountErrorMessage } from "./errors.ts";
 import { onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { entryText } from "./entry-copy.ts";
 import { rememberedEmail, rememberEmail } from "./entry-preferences.ts";
-import { AccountClient } from "../../sdk/browser/src/index.ts";
+import { AccountClient } from "./account-client.ts";
 const props = defineProps<{
   client: AccountClient;
   authorizationPopup?: Window | null;

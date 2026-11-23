@@ -53,12 +53,20 @@ fn provider(p: &str) -> Result<&'static str> {
         }),
     }
 }
+#[cfg(feature = "mock-provider")]
 fn mock(c: &Value) -> Result<()> {
     ensure(
         c["provider_mode"] == "MOCK" && (c["kind"] == "LOCAL" || c["kind"] == "TEST"),
         503,
         "UPSTREAM_UNAVAILABLE",
     )
+}
+#[cfg(not(feature = "mock-provider"))]
+fn mock(_: &Value) -> Result<()> {
+    Err(Failure {
+        status: 503,
+        code: "UPSTREAM_UNAVAILABLE",
+    })
 }
 fn check_provider(a: &Auth, c: &Value, p: &str) -> Result<()> {
     if c["provider_mode"] == "LIVE" && p == "github" {
@@ -95,6 +103,7 @@ fn redirect(url: &str) -> Result<Response> {
 fn q(a: &Auth) -> Result<Value> {
     form(a.request.url()?.query().unwrap_or_default())
 }
+#[cfg(feature = "mock-provider")]
 fn escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -170,8 +179,7 @@ async fn checked(a: &Auth, t: &Value, p: &str) -> Result<(Value, Value)> {
     )?;
     Ok((c, ctx))
 }
-async fn flow(a: &Auth, p: &str, state: &str) -> Result<(Value, Value, Value, String)> {
-    ensure(token(state), 400, "INVALID_REQUEST")?;
+async fn flow(a: &Auth, p: &str, state: &str, browser: &str) -> Result<(Value, Value, Value)> {
     let t =
         a.s.one(
             "SELECT * FROM auth_product_transaction WHERE provider_state_hash=? AND method=?",
@@ -179,13 +187,12 @@ async fn flow(a: &Auth, p: &str, state: &str) -> Result<(Value, Value, Value, St
         )
         .await?;
     let (c, ctx) = checked(a, &t, p).await?;
-    let browser = cookie_value(a, state);
     ensure(
-        token(&browser) && t["browser_hash"] == hash(&browser) && ctx["state"] == state,
+        token(browser) && t["browser_hash"] == hash(browser) && ctx["state"] == state,
         401,
         "INVALID_CREDENTIALS",
     )?;
-    Ok((t, c, ctx, browser))
+    Ok((t, c, ctx))
 }
 async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     let b = q(a)?;
@@ -207,25 +214,27 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), &browser, 600));
-    if c["provider_mode"] == "LIVE" {
-        let url = if p == "google" {
-            Google::configured(a)?.authorize_url(
-                &state,
-                &text(&ctx, "verifier"),
-                &text(&ctx, "nonce"),
-            )?
-        } else {
-            Github::configured(a)?.authorize_url(&state, &text(&ctx, "verifier"))?
-        };
-        return redirect(url.as_str());
+    #[cfg(feature = "mock-provider")]
+    if c["provider_mode"] == "MOCK" {
+        return redirect(&format!(
+            "{}/api/v2/auth/mock/{p}/authorize?state={state}",
+            a.origin
+        ));
     }
-    redirect(&format!(
-        "{}/api/v2/auth/mock/{p}/authorize?state={state}",
-        a.origin
-    ))
+    let url = if p == "google" {
+        Google::configured(a)?.authorize_url(
+            &state,
+            &text(&ctx, "verifier"),
+            &text(&ctx, "nonce"),
+        )?
+    } else {
+        Github::configured(a)?.authorize_url(&state, &text(&ctx, "verifier"))?
+    };
+    redirect(url.as_str())
 }
 // These mock adapters intentionally use separate issuers per environment. They can
 // never authenticate a real Google/GitHub identity already stored in the database.
+#[cfg(feature = "mock-provider")]
 fn normalize(p: &str, v: &Value, t: &Value, ctx: &Value) -> Result<Value> {
     ensure(
         v["aud"] == t["client_id"]
@@ -257,6 +266,7 @@ fn normalize(p: &str, v: &Value, t: &Value, ctx: &Value) -> Result<Value> {
     ensure(!subject.is_empty(), 401, "INVALID_CREDENTIALS")?;
     Ok(json!({"issuer":format!("{issuer}/{}",text(t,"environment_id")),"subject":subject}))
 }
+#[cfg(feature = "mock-provider")]
 async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<Response> {
     let b = if method == Method::Get {
         q(a)?
@@ -283,7 +293,9 @@ async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<Response> {
         &[],
     )?;
     let state = text(&b, "state");
-    let (t, c, ctx, browser) = flow(a, p, &state).await?;
+    ensure(token(&state), 400, "INVALID_REQUEST")?;
+    let browser = cookie_value(a, &state);
+    let (t, c, ctx) = flow(a, p, &state, &browser).await?;
     mock(&c)?;
     if method == Method::Get {
         let accounts=a.s.all("SELECT id,label FROM auth_mock_provider_account WHERE environment_id=? AND provider=? ORDER BY id LIMIT 50",vec![c["environment_id"].clone(),provider(p)?.into()]).await?;
@@ -388,7 +400,7 @@ async fn commit_identity(
     t: &Value,
     c: &Value,
     identity: &Value,
-    mock_code: Option<(&str, &str)>,
+    #[cfg(feature = "mock-provider")] mock_code: Option<&(String, String)>,
 ) -> Result<()> {
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, now(), "PENDING")?];
     if crate::sensitive_transactions::protected(t) {
@@ -447,11 +459,12 @@ async fn commit_identity(
             false,
         )?);
     }
+    #[cfg(feature = "mock-provider")]
     if let Some((digest, binding)) = mock_code {
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.into(),binding.into(),now().into()])?);
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.as_str().into(),binding.as_str().into(),now().into()])?);
         writes.push(a.s.statement(
             "DELETE FROM auth_one_use WHERE token_hash=?",
-            vec![digest.into()],
+            vec![digest.as_str().into()],
         )?);
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
@@ -462,7 +475,8 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
     let mut b = q(a)?;
     let state = text(&b, "state");
     ensure(token(&state), 400, "INVALID_REQUEST")?;
-    let (t, c, ctx, browser) = flow(a, p, &state).await?;
+    let browser = cookie_value(a, &state);
+    let (t, c, ctx) = flow(a, p, &state, &browser).await?;
     let live = c["provider_mode"] == "LIVE";
     if live {
         if p == "github" && b.get("iss").is_some() {
@@ -515,42 +529,52 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
         }
     } else {
         let raw = text(&b, "code");
-        let digest = hash(&raw);
-        let binding = hash(&format!("{p}:{state}:{browser}"));
-        let (identity, mock_code) = if live {
-            (
-                if p == "google" {
-                    Google::configured(a)?
-                        .exchange(&raw, &text(&ctx, "verifier"), &text(&ctx, "nonce"))
-                        .await?
-                } else {
-                    Github::configured(a)?
-                        .exchange(&raw, &text(&ctx, "verifier"))
-                        .await?
-                },
-                None,
-            )
-        } else {
-            let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.clone().into(),binding.clone().into(),now().into()]).await?;
-            ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
-            let claims = opened(
-                a,
-                parsed(&code, "payload")?.as_str().ok_or(Failure {
-                    status: 400,
-                    code: "INVALID_REQUEST",
-                })?,
-            )
-            .await?;
-            (
-                normalize(p, &claims, &t, &ctx)?,
-                Some((digest.as_str(), binding.as_str())),
-            )
+        #[cfg(feature = "mock-provider")]
+        let mut mock_code = None;
+        let identity = match p {
+            #[cfg(feature = "mock-provider")]
+            _ if !live => {
+                let digest = hash(&raw);
+                let binding = hash(&format!("{p}:{state}:{browser}"));
+                let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.as_str().into(),binding.as_str().into(),now().into()]).await?;
+                ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
+                let claims = opened(
+                    a,
+                    parsed(&code, "payload")?.as_str().ok_or(Failure {
+                        status: 400,
+                        code: "INVALID_REQUEST",
+                    })?,
+                )
+                .await?;
+                mock_code = Some((digest, binding));
+                normalize(p, &claims, &t, &ctx)?
+            }
+            "google" => {
+                Google::configured(a)?
+                    .exchange(&raw, &text(&ctx, "verifier"), &text(&ctx, "nonce"))
+                    .await?
+            }
+            _ => {
+                Github::configured(a)?
+                    .exchange(&raw, &text(&ctx, "verifier"))
+                    .await?
+            }
         };
         // A concurrent first login can win the identity insert. Retry only the
         // guarded local commit, keeping the provider's one-time exchange out of the retry.
-        match commit_identity(a, &t, &c, &identity, mock_code).await {
+        let commit = || {
+            commit_identity(
+                a,
+                &t,
+                &c,
+                &identity,
+                #[cfg(feature = "mock-provider")]
+                mock_code.as_ref(),
+            )
+        };
+        match commit().await {
             Err(e) if e.code == "ALREADY_EXISTS" => {
-                commit_identity(a, &t, &c, &identity, mock_code).await?;
+                commit().await?;
             }
             result => result?,
         }
@@ -567,11 +591,26 @@ pub async fn browser(a: &mut Auth, path: &str, method: Method) -> Result<Respons
     provider(parts[4])?;
     match (parts[3], parts[5], method) {
         ("external", "browser-start", Method::Get) => browser_start(a, parts[4]).await,
+        #[cfg(feature = "mock-provider")]
         ("mock", "authorize", m) => authorize(a, parts[4], m).await,
         ("external", "callback", Method::Get) => callback(a, parts[4]).await,
         _ => Err(Failure {
             status: 405,
             code: "INVALID_REQUEST",
         }),
+    }
+}
+
+#[cfg(all(test, not(feature = "mock-provider")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_provider_is_unavailable_in_local_and_test_environments() {
+        for kind in ["LOCAL", "TEST"] {
+            let error = mock(&json!({"kind": kind, "provider_mode": "MOCK"})).unwrap_err();
+            assert_eq!(error.status, 503);
+            assert_eq!(error.code, "UPSTREAM_UNAVAILABLE");
+        }
     }
 }

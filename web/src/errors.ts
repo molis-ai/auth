@@ -1,4 +1,4 @@
-import { AuthError } from "../../sdk/browser/src/index.ts";
+import { AuthError } from "./account-client.ts";
 
 const messages: Record<string, string> = {
   INVALID_REQUEST: "请检查填写的信息后重试。",

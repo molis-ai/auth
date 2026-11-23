@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref } from 'vue';
-import { AccountClient, AuthError, type AccountView } from '../../sdk/browser/src/index.ts';
+import { AccountClient, AuthError, type AccountView } from './account-client.ts';
 import AvatarCropper from './AvatarCropper.vue';
 import { accountErrorMessage } from './errors.ts';
 const props = defineProps<{ user: NonNullable<AccountView['user']>; githubAccount?: string; client: AccountClient; onSaved: () => Promise<void> }>();

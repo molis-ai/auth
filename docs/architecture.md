@@ -32,7 +32,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 
 ## 会话与安全
 
-- 浏览器 SDK 现行导出 `AccountClient`，只调用固定同源 BFF，不自动重放写操作。Auth Vue 使用该 SDK；Work 保留满足本机边界的 Host 请求助手。
+- Auth Vue 使用 `web/src/account-client.ts` 导出的 `AccountClient`，只调用固定同源 BFF，不自动重放写操作。Work 保留满足本机边界的 Host 请求助手。
 - BFF Cookie 只保存随机引用；`auth_web_session` 的 Token 和临时证明使用稳定的 `AUTH_WEB_SESSION_KEY` 加密并绑定记录 ID。写入要求 Origin/CSRF；退出提高 revision 并先清持久恢复材料，迟到的中央提交与会话保存拒绝。
 - 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
 - 密码使用 PBKDF2-SHA256 600,000 次，由 Workers Web Crypto 执行。无旧密码编码读取或用户映射兼容。
@@ -43,9 +43,9 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 
 `npm run setup` 安装固定 Rust 1.96.0、wasm32-unknown-unknown 与 worker-build 0.8.6；不改变已有默认工具链。worker-build 位于忽略的 `worker/rust/.tools/`，Cargo.lock 纳入版本管理。
 
-`npm test` 包括可执行合同、Rust 单元、真实 WASM + workerd + 隔离 D1、Web 与 SDK 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归范围变更](unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](unified-account/v2-consolidation.md)。
+`npm test` 包括可执行合同、两种 Cargo feature 配置的 Rust 单元测试、真实 WASM + workerd + 隔离 D1，以及包含 `AccountClient` 的 Web 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归范围变更](unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](unified-account/v2-consolidation.md)。
 
-`npm run build` 构建页面和 SDK，并对 Worker 执行 dry-run。它不部署，也不证明 LIVE 邮件、短信、提供方、线上 CPU 配额或真实环境初始化已验收。正式环境配置与授权步骤见[部署说明](cloudflare-deployment.md)。
+`npm run build` 构建页面，并使用本地夹具对 Worker 执行 dry-run。部署入口使用 `build:rust:production`，编译时关闭 `mock-provider`，保留线上 `test` 白名单准入。正式环境配置与授权步骤见[部署说明](cloudflare-deployment.md)。
 
 ## 浏览器认证流程边界
 

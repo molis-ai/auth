@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { accountErrorMessage } from "./errors.ts";
 import { onMounted, onBeforeUnmount, ref } from "vue";
-import { AccountClient } from "../../sdk/browser/src/index.ts";
+import { AccountClient } from "./account-client.ts";
 import policy from "../../contracts/unified-account/policy.json";
 const props = defineProps<{ client: AccountClient; capabilities: string[] }>();
 interface User {

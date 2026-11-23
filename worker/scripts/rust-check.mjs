@@ -13,3 +13,9 @@ const commands = {
 }
 if (!commands[action]) throw new Error('Unknown Rust action')
 execFileSync('cargo', commands[action], { cwd, env, stdio: 'inherit' })
+if (action === 'check' || action === 'test')
+  execFileSync('cargo', [...commands[action], '--no-default-features'], {
+    cwd,
+    env,
+    stdio: 'inherit',
+  })

@@ -4,7 +4,7 @@ import {
   AccountClient,
   AuthError,
   type AccountView,
-} from "../../sdk/browser/src/index.ts";
+} from "./account-client.ts";
 import AccountSecurityEditor from "./AccountSecurityEditor.vue";
 import AuthEntry from "./AuthEntry.vue";
 import AccountProfile from "./AccountProfile.vue";

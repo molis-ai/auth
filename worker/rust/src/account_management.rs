@@ -88,7 +88,8 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
                 && crate::github_login::Github::configured(a).is_ok()
         }
         _ => {
-            c["provider_mode"] == "MOCK"
+            cfg!(feature = "mock-provider")
+                && c["provider_mode"] == "MOCK"
                 && row["issuer"]
                     == format!(
                         "https://mock.{}.invalid/{}",
