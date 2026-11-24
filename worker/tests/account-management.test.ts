@@ -8,17 +8,27 @@ import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1', async (suite) => {
   const origin = 'http://127.0.0.1:8787'
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    PROVIDER_STATE_KEY: secret(),
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      PROVIDER_STATE_KEY: secret(),
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    undefined,
+    undefined,
+    {
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
+  )
   try {
     await initializeLocalRuntime(p)
     const db = p.env.DB
@@ -36,6 +46,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       proof?: string,
       key = secret(),
       method = body === undefined ? 'GET' : 'POST',
+      trace = false,
     ) {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
@@ -45,11 +56,17 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
             'Idempotency-Key': key,
             ...(actor ? { Authorization: 'Bearer ' + actor.accessToken } : {}),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
+            ...(trace ? { 'X-Fixture-Barrier': 'd1-trace' } : {}),
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
       )
-      return { status: r.status, ...(await r.json()) }
+      const d1Calls = r.headers.get('X-Fixture-D1-Calls')
+      return {
+        status: r.status,
+        ...(await r.json()),
+        ...(d1Calls && { d1Calls: JSON.parse(d1Calls) }),
+      }
     }
     function ok(r: any, schema?: string) {
       assert.equal(r.status, 200, JSON.stringify(r))
@@ -58,6 +75,20 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
     }
     async function me(actor: any) {
       return ok(await call('/users/me', undefined, actor), 'MeView')
+    }
+    async function loginMethods(actor: any) {
+      const reply = await call(
+        '/users/me/login-methods',
+        undefined,
+        actor,
+        undefined,
+        undefined,
+        'GET',
+        true,
+      )
+      const view = ok(reply, 'LoginMethodsView')
+      assert.deepEqual(reply.d1Calls, { read: 1, write: 0 })
+      return view
     }
     async function begin(purpose: string, method: string, actor?: any, extra = {}, club = false) {
       await db.prepare('DELETE FROM auth_rate_bucket').run()
@@ -279,6 +310,11 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       async () => {
         const initial = await me(a)
         assert.equal(initial.loginMethods[0].maskedLabel, '+86 138****0011')
+        assert.deepEqual(await loginMethods(a), {
+          loginMethods: initial.loginMethods,
+          version: initial.user.version,
+        })
+        assert.equal((await loginMethods(b)).loginMethods[0].maskedLabel, '+86 138****0012')
         phoneBinding = initial.loginMethods[0].bindingId
         await db
           .prepare(
@@ -481,6 +517,10 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         const view = await me(a)
         assert.equal(view.passwordEnabled, true)
         assert.equal(view.loginMethods.find((x: any) => x.type === 'EMAIL').usableForLogin, true)
+        assert.deepEqual(await loginMethods(a), {
+          loginMethods: view.loginMethods,
+          version: view.user.version,
+        })
         await me(b)
         await passwordLogin('alice@example.test', password, true)
       },

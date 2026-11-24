@@ -20,15 +20,29 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
   }
   const signingKey = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
   const logs = captureAuthLogs()
+  const credentialRead = Promise.withResolvers<void>()
+  const resumeActivity = Promise.withResolvers<void>()
+  const activityBarrier = 'activity-credential-after/' + crypto.randomUUID()
   const p = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
       SYNC_READ_SIGNING_JWK: JSON.stringify({ ...signingKey, kid: 'synthetic-sync' }),
     },
+    async (request) => {
+      assert.equal(new URL(request.url).pathname, '/' + activityBarrier)
+      credentialRead.resolve()
+      await resumeActivity.promise
+      return new Response('continue')
+    },
     undefined,
-    undefined,
-    logs,
+    {
+      ...logs,
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
   )
   try {
     await initializeLocalRuntime(p)
@@ -57,6 +71,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       access?: string,
       key = secret(),
       requestOrigin?: string,
+      fixture?: { trace: boolean; barrier?: string },
     ) => {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
@@ -65,12 +80,20 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             ...(access ? { Authorization: 'Bearer ' + access } : {}),
             ...(requestOrigin ? { Origin: requestOrigin } : {}),
+            ...(fixture?.trace
+              ? { 'X-Fixture-Barrier': fixture.barrier ?? 'd1-trace', 'X-Fixture-D1-Trace': '1' }
+              : {}),
             'Idempotency-Key': key,
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
       )
-      return { status: r.status, ...(await r.json()) }
+      const d1Calls = r.headers.get('X-Fixture-D1-Calls')
+      return {
+        status: r.status,
+        ...(await r.json()),
+        ...(d1Calls && { d1Calls: JSON.parse(d1Calls) }),
+      }
     }
     // Trusted verification output fixture only. No public endpoint accepts a claimed user.
     async function code(client = work) {
@@ -127,10 +150,22 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       Date.parse(a.session.absoluteExpiresAt) - Date.parse(a.session.authenticatedAt),
       90 * 86400000,
     )
-    const current = await call('/sessions/current', undefined, a.accessToken)
+    const current = await call(
+      '/sessions/current',
+      undefined,
+      a.accessToken,
+      undefined,
+      undefined,
+      {
+        trace: true,
+      },
+    )
     assert.equal(current.status, 200)
+    assert.deepEqual(current.data, a.session)
+    assert.deepEqual(current.d1Calls, { read: 1, write: 0 })
+    const accountReads = ['/sessions/current', '/users/me', '/users/me/login-methods']
     await suite.test('credential joins preserve lookup and policy error codes', async () => {
-      for (const path of ['/sessions/current', '/users/me']) {
+      for (const path of accountReads) {
         const unknown = await call(path, undefined, secret())
         assert.equal(unknown.status, 401)
         assert.equal(unknown.error.code, 'INVALID_CREDENTIALS')
@@ -211,11 +246,60 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     )
     assert.equal((await call('/sessions/current', undefined, b.accessToken)).status, 200)
     const event = { eventId: 'event-one', kind: 'INTERACT' }
-    const active = await call('/sessions/current/activity', event, b.accessToken)
-    assert.equal(active.status, 200)
-    assert.equal(
-      (await call('/sessions/current/activity', event, b.accessToken)).data.lastActiveAt,
-      active.data.lastActiveAt,
+    const activity = (body: typeof event, barrier?: string) =>
+      call('/sessions/current/activity', body, b.accessToken, undefined, undefined, {
+        trace: true,
+        barrier,
+      })
+    await suite.test(
+      'activity returns the latest guarded value on a concurrent replay',
+      async () => {
+        const active = await activity(event)
+        assert.equal(active.status, 200)
+        assert.deepEqual(active.d1Calls, { read: 1, write: 1 })
+        const replay = await activity(event)
+        assert.equal(replay.status, 200)
+        assert.equal(replay.data.lastActiveAt, active.data.lastActiveAt)
+        assert.deepEqual(replay.d1Calls, { read: 1, write: 1 })
+
+        const pending = activity(event, activityBarrier)
+        try {
+          await Promise.race([
+            credentialRead.promise,
+            pending.then((r) =>
+              assert.fail(`Missing activity credential barrier: ${JSON.stringify(r)}`),
+            ),
+          ])
+          const later = Date.parse(active.data.lastActiveAt) + 120_000
+          await db
+            .prepare('UPDATE auth_login_session SET last_active_at=? WHERE id=?')
+            .bind(later, b.session.loginSessionId)
+            .run()
+          const committed = await activity({ ...event, eventId: 'event-two' })
+          assert.equal(committed.status, 200)
+          assert.equal(committed.data.lastActiveAt, new Date(later).toISOString())
+          assert.deepEqual(committed.d1Calls, { read: 1, write: 1 })
+          resumeActivity.resolve()
+          const duplicate = await pending
+          assert.equal(duplicate.status, 200)
+          assert.deepEqual(duplicate.data, committed.data)
+          assert.deepEqual(duplicate.d1Calls, { read: 1, write: 1 })
+          const receipts = await db
+            .prepare(
+              'SELECT event_id,received_at FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',
+            )
+            .bind(b.session.loginSessionId)
+            .all()
+          assert.deepEqual(
+            receipts.results.map((r) => r.event_id),
+            ['event-one', 'event-two'],
+          )
+          assert.equal(receipts.results[0].received_at, Date.parse(active.data.lastActiveAt))
+        } finally {
+          resumeActivity.resolve()
+          await pending
+        }
+      },
     )
     assert.equal(
       (await call('/sessions/current/activity', { ...event, timestamp: n }, b.accessToken)).status,
@@ -236,7 +320,11 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .prepare('UPDATE auth_login_access_token SET expires_at=0 WHERE token_hash=?')
       .bind(hash(c.accessToken))
       .run()
-    assert.equal((await call('/sessions/current', undefined, c.accessToken)).status, 401)
+    for (const path of accountReads) {
+      const expired = await call(path, undefined, c.accessToken)
+      assert.equal(expired.status, 401)
+      assert.equal(expired.error.code, 'SESSION_EXPIRED')
+    }
     const refreshLogoutKey = secret()
     const refreshProof = { refreshProof: { clientId: work, refreshToken: c.refreshToken } }
     const logout = await call('/sessions/current/logout', refreshProof, undefined, refreshLogoutKey)
@@ -258,7 +346,15 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal((await call('/sessions/logout-all', {}, b.accessToken, key)).status, 200)
     assert.equal((await call('/sessions/logout-all', {}, b.accessToken)).status, 401)
     assert.equal((await call('/auth/sync-read-proof', undefined, b.accessToken)).status, 401)
-    assert.equal((await call('/sessions/current', undefined, other.accessToken)).status, 401)
+    for (const path of accountReads) {
+      const revoked = await call(path, undefined, other.accessToken)
+      assert.equal(revoked.status, 401)
+      assert.equal(revoked.error.code, 'SESSION_EXPIRED')
+    }
+    const revokedActivity = await activity({ ...event, eventId: 'after-revocation' })
+    assert.equal(revokedActivity.status, 401)
+    assert.equal(revokedActivity.error.code, 'SESSION_EXPIRED')
+    assert.deepEqual(revokedActivity.d1Calls, { read: 1, write: 0 })
     assert.equal((await call('/auth/token', pending)).status, 409)
     // Even if future verification stamps a fresh epoch, an old anonymous transaction is blocked by sequence.
     await db
@@ -444,7 +540,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .prepare("UPDATE auth_client SET status='DISABLED',version=version+1 WHERE client_id=?")
       .bind(club)
       .run()
-    for (const path of ['/sessions/current', '/users/me']) {
+    for (const path of accountReads) {
       const denied = await call(path, undefined, disabled.accessToken)
       assert.equal(denied.status, 403)
       assert.equal(denied.error.code, 'POLICY_MISMATCH')
@@ -486,7 +582,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       )
       .bind(n - 31 * 86400000, n - 31 * 86400000, n + 59 * 86400000, idle.session.loginSessionId)
       .run()
-    for (const path of ['/sessions/current', '/users/me']) {
+    for (const path of accountReads) {
       const expired = await call(path, undefined, idle.accessToken)
       assert.equal(expired.status, 401)
       assert.equal(expired.error.code, 'SESSION_EXPIRED')

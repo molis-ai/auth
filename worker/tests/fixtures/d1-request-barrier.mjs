@@ -13,6 +13,7 @@ const points = {
   promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
   'session-read-after': ['first', 'SELECT revision,status,busy_until,payload', 'after'],
   'account-read-after': ['batch', 'credential_session', 'after'],
+  'activity-credential-after': ['first', 'credential_session', 'after'],
   'cursor-write': ['batch', "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR'"],
   'managed-list-before': ['batch', 'WITH actor AS (SELECT'],
   'managed-list-after': ['batch', 'WITH actor AS (SELECT', 'after'],
@@ -69,26 +70,35 @@ export default {
       const { UNIFIED_ACCOUNT_CONFIG, ...bindings } = env
       return worker.prototype.fetch.call({ env: bindings, ctx }, request)
     }
-    if (
-      [
-        'managed-list-trace',
-        'managed-list-poison',
-        'managed-list-broken',
-        'web-session-trace',
-      ].includes(tag)
-    ) {
-      const counts = { read: 0, write: 0 }
-      let protectedQueries = 0
-      const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
+    const traceTag = [
+      'managed-list-trace',
+      'managed-list-poison',
+      'managed-list-broken',
+      'web-session-trace',
+      'd1-trace',
+    ].includes(tag)
+    const trace = traceTag || request.headers.get('X-Fixture-D1-Trace') === '1'
+    const counts = { read: 0, write: 0 }
+    let protectedQueries = 0
+    const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
+    const count = (statements, moment) => {
+      if (!trace || moment !== 'before') return
+      const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql.trimStart()))
+      counts[isRead ? 'read' : 'write']++
+      protectedQueries += statements.filter(isProtected).length
+    }
+    const respond = async (DB) => {
+      const response = await worker.prototype.fetch.call({ env: { ...env, DB }, ctx }, request)
+      if (trace) {
+        response.headers.set('X-Fixture-D1-Calls', JSON.stringify(counts))
+        response.headers.set('X-Fixture-Protected-Queries', String(protectedQueries))
+      }
+      return response
+    }
+    if (traceTag) {
       const DB = new D1Database(
         env.DB,
-        (_operation, statements, moment = 'before') => {
-          if (moment === 'before') {
-            const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql))
-            counts[isRead ? 'read' : 'write']++
-            protectedQueries += statements.filter(isProtected).length
-          }
-        },
+        (_operation, statements, moment = 'before') => count(statements, moment),
         (sql) => {
           if (!isProtected(sql)) return sql
           if (tag === 'managed-list-poison')
@@ -101,15 +111,13 @@ export default {
           return sql
         },
       )
-      const response = await worker.prototype.fetch.call({ env: { ...env, DB }, ctx }, request)
-      response.headers.set('X-Fixture-D1-Calls', JSON.stringify(counts))
-      response.headers.set('X-Fixture-Protected-Queries', String(protectedQueries))
-      return response
+      return respond(DB)
     }
     const [point] = tag.split('/')
     const [phase, fragment, timing = 'before'] = points[point]
     let paused = false
     const DB = new D1Database(env.DB, async (operation, statements, moment = 'before') => {
+      count(statements, moment)
       if (
         paused ||
         operation !== phase ||
@@ -122,6 +130,6 @@ export default {
       const response = await fetch('https://lease-fixture.invalid/' + tag)
       if (!response.ok) throw new Error('Test barrier failed: ' + tag)
     })
-    return worker.prototype.fetch.call({ env: { ...env, DB }, ctx }, request)
+    return respond(DB)
   },
 }

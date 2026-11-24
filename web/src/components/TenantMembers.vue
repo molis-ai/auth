@@ -90,10 +90,7 @@ async function submit() {
       },
       after: async () => {
         if (kind === 'leave') await props.leave();
-        else {
-          await props.reload(tenant);
-          await props.refreshTransfers();
-        }
+        else await Promise.all([props.reload(tenant), props.refreshTransfers()]);
       },
     });
   } catch(e) {

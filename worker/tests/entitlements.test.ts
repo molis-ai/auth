@@ -8,16 +8,35 @@ import { sharedResourceFixture } from './shared-resource-fixture.ts'
 
 test('AUTH-10 membership exit and entitlement union over real subscriptions and seats', async (suite) => {
   const origin = 'http://127.0.0.1:8787'
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const clockBarrier = {
+    reached: Promise.withResolvers<void>(),
+    proceed: Promise.withResolvers<void>(),
+  }
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    async (request) => {
+      assert.equal(new URL(request.url).pathname, '/account-read-after/entitlement-clock')
+      clockBarrier.reached.resolve()
+      await clockBarrier.proceed.promise
+      return new Response('continue')
+    },
+    undefined,
+    {
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
+  )
   try {
     await initializeLocalRuntime(p)
     const db = p.env.DB
@@ -38,6 +57,7 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
       method = body === undefined ? 'GET' : 'POST',
       proof?: string,
     ) {
+      const trace = path === '/entitlements/check' && actor
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
           method,
@@ -46,10 +66,14 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
             'Idempotency-Key': key,
             ...(actor ? { Authorization: 'Bearer ' + actor.accessToken } : {}),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
+            ...(trace ? { 'X-Fixture-Barrier': 'd1-trace' } : {}),
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
       )
+      if (trace) {
+        assert.deepEqual(JSON.parse(r.headers.get('X-Fixture-D1-Calls')!), { read: 1, write: 0 })
+      }
       return { status: r.status, ...(await r.json()) }
     }
     function ok(r: any, schema?: string) {
@@ -540,6 +564,78 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
       },
     )
     await suite.test(
+      'UAS-23/24/26: credentials and policy take precedence over malformed entitlement requests',
+      async () => {
+        async function malformed(
+          code: string,
+          status: number,
+          accessToken?: string,
+          contentType = 'application/json',
+          body = '{',
+        ) {
+          const response = await p.fetch(
+            new Request(origin + '/api/v2/entitlements/check', {
+              method: 'POST',
+              headers: {
+                'Content-Type': contentType,
+                'X-Fixture-Barrier': 'd1-trace',
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+              },
+              body,
+            }),
+          )
+          assert.equal(response.status, status)
+          assert.equal((await response.json()).error.code, code)
+          assert.deepEqual(JSON.parse(response.headers.get('X-Fixture-D1-Calls')!), {
+            read: !accessToken || accessToken === 'bad' ? 0 : 1,
+            write: 0,
+          })
+        }
+        await malformed('INVALID_CREDENTIALS', 401)
+        await malformed('INVALID_CREDENTIALS', 401, 'bad', 'text/plain')
+        await malformed('INVALID_CREDENTIALS', 401, secret(), 'application/json', 'a'.repeat(32769))
+        await malformed(
+          'INVALID_REQUEST',
+          413,
+          owner.accessToken,
+          'application/json',
+          'a'.repeat(32769),
+        )
+        await malformed('INVALID_REQUEST', 400, owner.accessToken)
+        await malformed('INVALID_REQUEST', 400, owner.accessToken, 'text/plain')
+
+        const expiry = await db
+          .prepare('SELECT expires_at FROM auth_login_access_token WHERE token_hash=?')
+          .bind(hash(owner.accessToken))
+          .first<number>('expires_at')
+        assert.ok(expiry)
+        const setExpiry = (at: number) =>
+          db
+            .prepare('UPDATE auth_login_access_token SET expires_at=? WHERE token_hash=?')
+            .bind(at, hash(owner.accessToken))
+            .run()
+        await setExpiry(Date.now() - 1)
+        try {
+          await malformed('SESSION_EXPIRED', 401, owner.accessToken)
+          assert.equal((await check(owner, personalScope)).error.code, 'SESSION_EXPIRED')
+        } finally {
+          await setExpiry(expiry)
+        }
+
+        const clientStatus = (status: string) =>
+          db
+            .prepare("UPDATE auth_client SET status=? WHERE client_id='molis-work-unified-local'")
+            .bind(status)
+            .run()
+        await clientStatus('DISABLED')
+        try {
+          await malformed('POLICY_MISMATCH', 403, owner.accessToken)
+        } finally {
+          await clientStatus('ACTIVE')
+        }
+      },
+    )
+    await suite.test(
       'UAS-23/24/26: entitlement inputs and trusted product registration reject impersonation, unknown features and wrong products',
       async () => {
         assert.equal((await check(undefined, personalScope)).status, 401)
@@ -581,6 +677,15 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
             (await check(owner, personalScope, ['demo.shared'])).error.code,
             'POLICY_MISMATCH',
           )
+          assert.equal(
+            (await check(owner, { kind: 'TENANT', tenantId: 'missing' }, ['unknown'])).error.code,
+            'POLICY_MISMATCH',
+          )
+          assert.equal(
+            (await call('/entitlements/check', { scope: personalScope, featureIds: [] }, owner))
+              .error.code,
+            'INVALID_REQUEST',
+          )
         } finally {
           await db
             .prepare('INSERT INTO auth_client_product(client_id,product,version) VALUES (?,?,?)')
@@ -590,7 +695,7 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
       },
     )
     await suite.test(
-      'UAS-17/23/24/33: personal and current-tenant sources form a union without cross-tenant grants or role privileges',
+      'UAS-17/23/24/33: personal and tenant entitlement reads each use one D1 read and zero writes',
       async () => {
         const a = await tenant('Union alpha'),
           b = await tenant('Union beta'),
@@ -633,12 +738,63 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
         const ownerView = ok(await check(owner, scope(a)), 'EntitlementCheckResult')
         assert.ok(ownerView.decisions.every((d: any) => !d.allowed && d.sources.length === 0))
         assert.equal((await check(outsider, scope(a))).status, 404)
+        assert.equal((await check(outsider, scope(a), ['unknown'])).error.code, 'NOT_FOUND')
         assert.equal((await check(owner, { kind: 'TENANT', tenantId: 'missing' })).status, 404)
         const club = ok(
           await check(aliceClub, personalScope, ['demo.club', 'demo.shared']),
           'EntitlementCheckResult',
         )
         assert.ok(club.decisions.every((d: any) => d.allowed))
+      },
+    )
+    await suite.test(
+      'UAS-23/24: exact feature and source limits succeed; overflow is rejected',
+      async () => {
+        const featureIds = Array.from({ length: 100 }, (_, i) => 'demo.limit.' + i)
+        const n = Date.now()
+        await db
+          .prepare(
+            "INSERT INTO billing_feature(id,product,name,created_at) SELECT value,'SHARED',value,? FROM json_each(?)",
+          )
+          .bind(n, JSON.stringify(featureIds))
+          .run()
+        const maxFeatures = ok(
+          await check(owner, personalScope, featureIds),
+          'EntitlementCheckResult',
+        )
+        assert.deepEqual(
+          maxFeatures.decisions.map((item: any) => item.featureId),
+          featureIds,
+        )
+        const featureOverflow = await check(owner, personalScope, [...featureIds, 'demo.shared'])
+        assert.equal(featureOverflow.status, 400)
+        assert.equal(featureOverflow.error.code, 'INVALID_REQUEST')
+
+        // Use the real schema and production read path while seeding the large boundary in one write.
+        await db
+          .prepare(
+            `WITH RECURSIVE number(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM number WHERE i<1001)
+         INSERT INTO billing_subscription
+           (id,owner_user_id,plan_id,plan_version,enabled,starts_at,ends_at,created_at,updated_at)
+         SELECT 'source-limit-'||i,?,'demo.personal',1,i<=1000,?,?,?,? FROM number`,
+          )
+          .bind(owner.userId, n - 1000, n + 60000, n, n)
+          .run()
+        try {
+          const maxSources = ok(
+            await check(owner, personalScope, ['demo.personal']),
+            'EntitlementCheckResult',
+          )
+          assert.equal(maxSources.decisions[0].sources.length, 1000)
+          await db
+            .prepare("UPDATE billing_subscription SET enabled=1 WHERE id='source-limit-1001'")
+            .run()
+          const sourceOverflow = await check(owner, personalScope, ['demo.personal'])
+          assert.equal(sourceOverflow.status, 503)
+          assert.equal(sourceOverflow.error.code, 'AUTH_UNAVAILABLE')
+        } finally {
+          await db.prepare("DELETE FROM billing_subscription WHERE id LIKE 'source-limit-%'").run()
+        }
       },
     )
     await suite.test(
@@ -687,6 +843,7 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
           ),
         )
         assert.equal((await check(bob, scope(t))).error.code, 'TENANT_DISABLED')
+        assert.equal((await check(bob, scope(t), ['unknown'])).error.code, 'TENANT_DISABLED')
         assert.equal(decision(ok(await check(bob, personalScope)), 'demo.personal').allowed, true)
         ok(
           await call(
@@ -749,7 +906,37 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
         assert.equal(before.decisions[0].allowed, false)
         const waitUntil = (at: number) =>
           new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, at - Date.now())))
-        await waitUntil(starts + 75)
+        const crossed = p.fetch(
+          new Request(origin + '/api/v2/entitlements/check', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${clockUser.accessToken}`,
+              'X-Fixture-Barrier': 'account-read-after/entitlement-clock',
+              'X-Fixture-D1-Trace': '1',
+            },
+            body: JSON.stringify({ scope: personalScope, featureIds: ['demo.personal'] }),
+          }),
+        )
+        try {
+          await Promise.race([
+            clockBarrier.reached.promise,
+            crossed.then((response) =>
+              assert.fail(`Expected D1 snapshot barrier, got ${response.status}`),
+            ),
+          ])
+          assert.ok(Date.now() < starts, 'snapshot completed before activation')
+          await waitUntil(starts + 75)
+        } finally {
+          clockBarrier.proceed.resolve()
+        }
+        const conflict = await crossed
+        assert.equal(conflict.status, 409)
+        assert.equal((await conflict.json()).error.code, 'VERSION_CONFLICT')
+        assert.deepEqual(JSON.parse(conflict.headers.get('X-Fixture-D1-Calls')!), {
+          read: 1,
+          write: 0,
+        })
         const active = ok(
           await check(clockUser, personalScope, ['demo.personal']),
           'EntitlementCheckResult',
@@ -1058,6 +1245,11 @@ test('AUTH-10 membership exit and entitlement union over real subscriptions and 
         ok(await call('/sessions/current/logout', {}, bobClub))
         assert.equal((await leave(t, m, bobClub, key)).status, 401)
         assert.equal((await check(bobClub, personalScope, ['demo.shared'])).status, 401)
+        assert.equal(
+          (await call('/entitlements/check', { scope: personalScope, featureIds: [] }, bobClub))
+            .error.code,
+          'SESSION_EXPIRED',
+        )
         assert.ok(decision(ok(await check(bob, personalScope)), 'demo.personal').allowed)
       },
     )

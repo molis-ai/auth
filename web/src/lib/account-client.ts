@@ -48,10 +48,16 @@ function isIdempotentRead(path: string): boolean {
     /^\/tenants\/[A-Za-z0-9_-]+$/.test(path);
 }
 
-function isTenantFirstPage(path: string): boolean {
+function isConcurrentFirstPage(path: string): boolean {
   // First pages can issue a separate cursor. Only a conflict before dispatch
   // warrants retrying one.
-  return /^\/(tenants|invitations|ownership-transfers)(\?limit=([1-9][0-9]?|100))?$/.test(path);
+  const query = path.indexOf("?");
+  if (query !== -1 && !/^\?limit=([1-9][0-9]?|100)$/.test(path.slice(query))) return false;
+  const resource = query === -1 ? path : path.slice(0, query);
+  // These console collections also use web_session::read_without_lease.
+  return /^\/(tenants|invitations|ownership-transfers|subscriptions|platform\/(applications|users))$/.test(resource) ||
+    /^\/tenants\/[A-Za-z0-9_-]+\/(members|invitations)$/.test(resource) ||
+    /^\/platform\/(applications\/[A-Za-z0-9_-]+\/clients|users\/[A-Za-z0-9_-]+\/permissions)$/.test(resource);
 }
 
 function settled(result: Promise<unknown>): Promise<void> {
@@ -138,7 +144,7 @@ export class AccountClient {
       );
     }
     const idempotent = get && isIdempotentRead(path);
-    const firstPage = get && isTenantFirstPage(path);
+    const firstPage = get && isConcurrentFirstPage(path);
     // Session can create a browser session when its cookie
     // expires, even when the client still holds a CSRF token.
     const concurrent = Boolean(this.csrf) && (idempotent || firstPage);

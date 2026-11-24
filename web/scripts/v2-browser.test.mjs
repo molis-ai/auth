@@ -127,25 +127,42 @@ try {
   await loginEntryChecks({ page, origin, fixtures: entryFixtures, evidence });
   await page.command("Page.addScriptToEvaluateOnNewDocument", {source: `{
     const original = window.fetch;
-    const trace = window.__authPerformance = {requests: [], gates: {}};
+    const trace = window.__authPerformance = {requests: [], gates: {}, holdNext: []};
     const firstDocument = location.search === '?check=startup-failure';
     const authenticatedProbe = location.search === '?check=authenticated-startup';
-    const hold = async (name) => {
-      await new Promise(resolve => { trace.gates[name] = resolve; });
-      delete trace.gates[name];
+    const logoutProbe = location.search === '?check=logout-activity';
+    const hold = async (name, signal) => {
+      let cancel;
+      try {
+        await new Promise((resolve, reject) => {
+          cancel = () => reject(signal.reason);
+          signal?.throwIfAborted();
+          signal?.addEventListener('abort', cancel, {once: true});
+          trace.gates[name] = resolve;
+        });
+      } finally {
+        signal?.removeEventListener('abort', cancel);
+        delete trace.gates[name];
+      }
     };
     window.fetch = async (url, options) => {
       const path = new URL(url, location.href).pathname.replace(/^\\/api\\/account/, '');
-      const entry = {path, started: performance.now()};
+      const entry = {path, method: options?.method ?? 'GET', started: performance.now()};
       trace.requests.push(entry);
       if (firstDocument && path === '/session' && trace.requests.length === 1) {
-        await hold('startup');
+        await hold('startup', options?.signal);
         return Response.json({error: {code: 'AUTH_UNAVAILABLE'}}, {status: 503});
       }
+      const scheduled = entry.method === 'GET' ? trace.holdNext.indexOf(path) : -1;
+      if (scheduled !== -1) trace.holdNext.splice(scheduled, 1);
       const response = await original(url, options);
-      if (authenticatedProbe && ['/activity', '/login-methods'].includes(path) &&
-          trace.requests.filter(item => item.path === path).length === 1) {
-        await hold(path);
+      entry.status = response.status;
+      if (scheduled !== -1 || ((authenticatedProbe && ['/activity', '/login-methods'].includes(path) ||
+          logoutProbe && path === '/activity') && trace.requests.filter(item => item.path === path).length === 1)) {
+        const abort = () => { entry.aborted = performance.now(); };
+        options?.signal?.addEventListener('abort', abort, {once: true});
+        try { await hold(path, options?.signal); }
+        finally { options?.signal?.removeEventListener('abort', abort); }
       }
       entry.finished = performance.now();
       return response;
@@ -173,8 +190,10 @@ try {
     await page.click("[data-qa-click]");
   };
   const fillLabel = async (text, value, scope = "main") => {
+    const field = `[...document.querySelectorAll(${JSON.stringify(scope + ' label')})].find(label => label.textContent.trim() === ${JSON.stringify(text)})?.querySelector('input,textarea')`;
+    await page.wait(`(() => { const input = ${field}; return input && !input.disabled && input.getClientRects().length; })()`);
     await page.evaluate(
-      `{const label=Array.from(document.querySelectorAll(${JSON.stringify(scope)}+' label')).find(l=>l.textContent.trim()===${JSON.stringify(text)});const input=label?.querySelector('input,textarea');if(!input)throw Error('Missing input '+${JSON.stringify(text)});document.querySelectorAll('[data-qa-input]').forEach(e=>e.removeAttribute('data-qa-input'));input.dataset.qaInput='';}`,
+      `{const input=${field};document.querySelectorAll('[data-qa-input]').forEach(e=>e.removeAttribute('data-qa-input'));input.dataset.qaInput='';}`,
     );
     await page.fill("[data-qa-input]", value);
   };
@@ -250,11 +269,22 @@ try {
   ]);
   await click("个人资料");
   memberReads.length = 0;
+  const tenantStart = await page.evaluate("window.__authPerformance.requests.length");
+  await page.evaluate("window.__authPerformance.holdNext.push('/tenants', '/invitations', '/ownership-transfers')");
   await click("租户");
+  await page.wait("['/tenants', '/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
+  assert.equal(memberReads.length, 0, 'members wait for the tenant directory response');
+  await page.evaluate("window.__authPerformance.gates['/tenants']()");
   await page.wait("!document.querySelector('[aria-label=下一页]')?.disabled && document.querySelectorAll('.tm-table-wrap tbody tr').length===10");
   assert.equal(memberReads.length, 1);
   assert.equal(memberReads[0].get("limit"), "10");
   assert.equal(memberReads[0].has("cursor"), false);
+  assert.ok(await page.evaluate("['/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])"));
+  const tenantFirstPage = await page.evaluate(`window.__authPerformance.requests.slice(${tenantStart})`);
+  const tenantFinished = tenantFirstPage.find(request => request.path === '/tenants').finished;
+  const memberStart = tenantFirstPage.find(request => request.path.endsWith('/members')).started;
+  assert.ok(tenantFinished <= memberStart);
+  await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
   assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /角色/);
   await page.click(".tm-table-wrap th:first-child button");
   assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /用户/);
@@ -269,6 +299,13 @@ try {
   assert.equal(await page.evaluate("document.querySelector('.tm-dialog[open] select')?.value"), "EMAIL");
   await page.click(".tm-dialog[open] button[aria-label=关闭]");
   await click("个人资料");
+  const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.space_id).first();
+  const invite = db.prepare("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,'USER',?,?,'PENDING',?,?)");
+  const invitedAt = Date.now();
+  await db.batch([
+    invite.bind("qa-current-invitation", testTenant.space_id, tenantOwner.user_id, tenantOwner.id, invitedAt, invitedAt + 600_000),
+    invite.bind("qa-other-invitation", testTenant.space_id, "qa-page-user-2", tenantOwner.id, invitedAt, invitedAt + 600_000),
+  ]);
   await page.evaluate("document.querySelector('meta[name=molis-tenant-invite-channels]').content='USER'");
   await click("租户");
   await click("＋ 邀请成员");
@@ -277,11 +314,60 @@ try {
     return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim()];
   })()`), [false, "账号 ID"]);
   await page.click(".tm-dialog[open] button[aria-label=关闭]");
+  await page.wait("[...document.querySelectorAll('button')].filter(button => button.textContent.trim() === '加入').length === 1");
+  assert.equal(await page.evaluate("document.querySelector('.tm-heading h2')?.textContent"), 'QA 自助租户');
+  const earlierTenants = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<20)";
   await db.batch([
+    db.prepare(earlierTenants + " INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) SELECT '0-qa-tenant-'||n,'QA 前页租户 '||n,'TEAM','ACTIVE',0,0 FROM numbers"),
+    db.prepare("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) SELECT id,'ACTIVE',?,0,0 FROM auth_space WHERE id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
+    db.prepare("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT space_id,space_id,?,'OWNER','ACTIVE',0 FROM auth_managed_tenant WHERE space_id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
+    db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的租户', testTenant.space_id),
+  ]);
+  const tenantDetailPath = '/tenants/' + testTenant.space_id;
+  const invitationStart = await page.evaluate("window.__authPerformance.requests.length");
+  await page.evaluate("window.__authPerformance.holdNext.push('/tenants')");
+  await click('加入');
+  await page.wait(`Boolean(window.__authPerformance.gates['/tenants']) && window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === '/invitations' && request.finished && request.status === 200)`);
+  await page.evaluate("window.__authPerformance.gates['/tenants']()");
+  await page.wait("document.querySelector('.tm-heading h2')?.textContent === 'QA 刷新后的租户' && document.querySelector('[aria-current=true] .tenant-choice-name')?.textContent === 'QA 刷新后的租户'");
+  assert.ok(await page.evaluate(`window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === ${JSON.stringify(tenantDetailPath)} && request.finished && request.status === 200)`));
+  assert.equal(await page.evaluate("document.querySelector('.tm-table-wrap .tm-self')?.textContent"), '（我）');
+  assert.equal(await page.evaluate("[...document.querySelectorAll('button')].some(button => button.textContent.trim() === '加入')"), false);
+  assert.deepEqual((await db.prepare("SELECT status,accepted_membership_id FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation') ORDER BY id").all()).results, [
+    { status: 'ACCEPTED', accepted_membership_id: tenantOwner.id },
+    { status: 'PENDING', accepted_membership_id: null },
+  ]);
+  await page.evaluate(`{
+    document.querySelectorAll('[data-qa-click]').forEach(button => button.removeAttribute('data-qa-click'));
+    const row = [...document.querySelectorAll('.tm-table-wrap tbody tr')].find(row => row.querySelector('strong')?.textContent === 'QA 成员 1');
+    const button = [...row.querySelectorAll('button')].find(button => button.textContent.trim() === '修改角色');
+    button.dataset.qaClick = '';
+  }`);
+  await page.click('[data-qa-click]');
+  await page.evaluate(`{
+    const select = document.querySelector('.tm-dialog[open] select');
+    select.value = 'ADMIN';
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+  }`);
+  const memberPath = tenantDetailPath + '/members';
+  const memberWriteStart = await page.evaluate("window.__authPerformance.requests.length");
+  await page.evaluate(`window.__authPerformance.holdNext.push(${JSON.stringify(memberPath)})`);
+  await click('确认');
+  await page.wait(`Boolean(window.__authPerformance.gates[${JSON.stringify(memberPath)}]) && window.__authPerformance.requests.slice(${memberWriteStart}).some(request => request.path === '/ownership-transfers' && request.finished && request.status === 200)`);
+  await page.evaluate(`window.__authPerformance.gates[${JSON.stringify(memberPath)}]()`);
+  await page.wait("[...document.querySelectorAll('.tm-table-wrap tbody tr')].some(row => row.querySelector('strong')?.textContent === 'QA 成员 1' && row.cells[2].textContent === '管理员')");
+  await db.batch([
+    db.prepare("DELETE FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation')"),
     db.prepare("DELETE FROM auth_tenant_membership WHERE id LIKE 'qa-page-member-%'"),
+    db.prepare("DELETE FROM auth_tenant_membership WHERE tenant_id LIKE '0-qa-tenant-%'"),
+    db.prepare("DELETE FROM auth_managed_tenant WHERE space_id LIKE '0-qa-tenant-%'"),
+    db.prepare("DELETE FROM auth_space WHERE id LIKE '0-qa-tenant-%'"),
     db.prepare("DELETE FROM auth_user WHERE id LIKE 'qa-page-user-%'"),
   ]);
-  console.log("PASS browser member cursor, invitation channels, and active sort accessibility");
+  await click("个人资料");
+  await click("租户");
+  console.log(`PASS browser member first page started ${(memberStart - tenantFinished).toFixed(2)} ms after tenants, with both invitation and transfer responses held`);
+  console.log("PASS parallel post-write refresh uses the current account, fresh detail for the selected tenant outside page one, and the updated member role");
 
   // CONSOLE-01: original sidebar and list/detail composition at desktop and phone widths.
   await page.wait("Boolean(document.querySelector('.tm-heading'))");
@@ -636,7 +722,7 @@ try {
   assert.equal(await page.evaluate("document.querySelector('.profile-email')?.textContent"),'entry-union@example.test');
   assert.equal(await page.evaluate("document.querySelector('.account-menu-email')?.textContent"),'entry-union@example.test');
   await page.screenshot(join(evidence,'sidebar-email.png'));
-  await page.wait(`window.__authPerformance.requests.slice(${passwordStart}).some(item => item.path === '/login-methods' && item.finished)`);
+  await page.wait(`['/login-methods', '/activity'].every(path => window.__authPerformance.requests.slice(${passwordStart}).some(item => item.path === path && item.finished))`);
   const password = await page.evaluate(`window.__authPerformance.requests.slice(${passwordStart}).map(item => item.path)`);
   assert.equal(password.filter(path => path === '/auth/login/password').length, 1);
   assert.equal(password.filter(path => path === '/session').length, 0);
@@ -646,18 +732,20 @@ try {
   const previousEntryLanguage = await page.evaluate("localStorage.getItem('molis.auth.locale')");
   await page.evaluate("localStorage.setItem('molis.auth.locale', 'en')");
   await page.command('Page.navigate', {url: origin + '/?check=authenticated-startup'});
-  await page.wait("Boolean(window.__authPerformance?.gates['/activity']) && Boolean(document.querySelector('.profile-inline-name [role=button]'))");
+  await page.wait("Boolean(window.__authPerformance?.gates['/login-methods']) && Boolean(document.querySelector('.profile-inline-name [role=button]'))");
+  assert.equal(await page.evaluate("window.__authPerformance.requests.some(item => item.path === '/activity')"), false);
   assert.equal(await page.evaluate('document.documentElement.lang'), 'zh-CN');
   assert.ok(await page.evaluate("[...document.querySelectorAll('.console-tabs button')].every(button => !button.disabled)"));
   await page.click('.profile-inline-name [role=button]');
   await page.wait("Boolean(document.querySelector('.profile-inline-name input'))");
   const profileInteractiveAt = await page.evaluate("performance.now()");
-  await page.evaluate("document.querySelector('.profile-inline-name input').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'})); window.__authPerformance.gates['/activity']()");
-  await page.wait("Boolean(window.__authPerformance.gates['/login-methods'])");
+  await page.evaluate("document.querySelector('.profile-inline-name input').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}))");
   await click('租户');
   await page.wait("document.querySelector('.console-tabs [aria-current=page]')?.textContent === '租户'");
   const navigationInteractiveAt = await page.evaluate("performance.now()");
   await page.evaluate("window.__authPerformance.gates['/login-methods']()");
+  await page.wait("Boolean(window.__authPerformance.gates['/activity'])");
+  await page.evaluate("window.__authPerformance.gates['/activity']()");
   await page.wait("document.querySelector('main')?.textContent.includes('创建租户')");
   await click('个人资料');
   await page.wait("Boolean(document.querySelector('.profile-inline-name [role=button]'))");
@@ -675,6 +763,9 @@ try {
   assert.equal(startupPaths.filter(path => path === '/auth/capabilities').length, 0);
   assert.equal(startupPaths.filter(path => path === '/activity').length, 1);
   assert.equal(startupPaths.filter(path => path === '/login-methods').length, 1);
+  const methodsToActivity = authenticatedStartup.requests.find(item => item.path === '/activity').started -
+    authenticatedStartup.requests.find(item => item.path === '/login-methods').finished;
+  assert.ok(methodsToActivity >= 0);
   assert.ok(profileInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/activity').finished);
   assert.ok(navigationInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/login-methods').finished);
   for (const extension of ['.js', '.css', '.png']) {
@@ -684,7 +775,7 @@ try {
   writeFileSync(join(evidence, 'p0-performance.json'), JSON.stringify({
     password, authenticatedStartup, profileInteractiveAt, navigationInteractiveAt,
   }, null, 2) + '\n');
-  console.log('PASS P0-1/2/3/4/5 password and cookie request counts, live interactions before background responses, cooldown and Chrome cache');
+  console.log(`PASS password and cookie request counts, activity started ${methodsToActivity.toFixed(2)} ms after first-screen login-methods, live interactions and Chrome cache`);
   await authenticatedLoginEntryCheck({ page, origin, fixtures: entryFixtures });
   assert.equal(await page.evaluate("localStorage.getItem('molis.auth.locale')"), 'en');
   await page.evaluate(previousEntryLanguage === null
@@ -718,7 +809,15 @@ try {
   assert.equal((await db.prepare('SELECT e.canonical_email email FROM auth_user_phone p JOIN auth_user_email e ON e.user_id=p.user_id WHERE p.canonical_phone=?').bind('+8613800000888').first()).email,'entry-union@example.test');
   console.log('PASS inline phone binding verifies new phone and collapses after save');
 
-  await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
+  await page.command('Page.navigate', {url: origin + '/?check=logout-activity'});
+  await page.wait("Boolean(window.__authPerformance?.gates['/activity'])");
+  await click('退出登录');
+  await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
+  const logoutTrace = await page.evaluate("window.__authPerformance.requests.filter(item => ['/activity', '/logout'].includes(item.path))");
+  assert.deepEqual(logoutTrace.map(item => item.path), ['/activity', '/logout']);
+  assert.ok(logoutTrace[0].aborted && logoutTrace[0].aborted <= logoutTrace[1].started);
+  assert.equal(logoutTrace[0].finished, undefined);
+  console.log(`PASS logout aborted the held activity response ${(logoutTrace[1].started - logoutTrace[0].aborted).toFixed(2)} ms before dispatch`);
   assert.equal(await page.evaluate("localStorage.getItem('molis.auth.remembered-email')"),null,'explicit logout clears remembered account data');
   await db.prepare('UPDATE auth_rate_bucket SET expires_at=0').run();
   await click('找回密码');await page.fill('input[type=email]','entry-union@example.test');await click('发送验证码');
@@ -729,9 +828,17 @@ try {
   await fillLabel('新密码','Synthetic-Entry-Password-50');await fillLabel('确认新密码','Synthetic-Entry-Password-50');await click('重设密码');
   await page.wait("Boolean(document.querySelector('input[autocomplete=current-password]'))");
   assert.ok(await page.evaluate("[...document.querySelectorAll('.entry-footer button')].every(b=>!b.disabled)"),'reset completion releases the entry navigation');
-  await page.fill('input[autocomplete=username]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-50');await click('登录');
-  await page.wait("Boolean(document.querySelector('.console-tabs'))");
-  await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
+  await page.fill('input[autocomplete=username]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-50');
+  const switchStart = await page.evaluate("window.__authPerformance.requests.length");
+  await page.evaluate("window.__authPerformance.holdNext.push('/login-methods')");
+  await click('登录');
+  await page.wait("Boolean(document.querySelector('.console-tabs') && window.__authPerformance.gates['/login-methods'])");
+  await click('切换账号');
+  await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
+  const switchTrace = await page.evaluate(`window.__authPerformance.requests.slice(${switchStart}).filter(item => ['/login-methods', '/activity', '/logout'].includes(item.path))`);
+  assert.deepEqual(switchTrace.map(item => item.path), ['/login-methods', '/logout']);
+  assert.ok(switchTrace[0].aborted && switchTrace[0].aborted <= switchTrace[1].started);
+  console.log(`PASS account switch aborted the old login-methods read ${(switchTrace[1].started - switchTrace[0].aborted).toFixed(2)} ms before logout dispatch and sent 0 queued activity requests`);
   console.log('PASS ENTRY-01/02 original visual entry, locale, password visibility, email signup/login/reset and account preference cleanup');
   // ENTRY-03: both supported external buttons finish through real mock-provider callbacks.
   for(const sql of readFileSync(root+'/worker/mock-provider-local-seed.sql','utf8').replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean)) await db.prepare(sql).run();

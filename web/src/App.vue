@@ -41,9 +41,11 @@ const starting = computed(() => !account.value || startup.value !== 'ready');
 const onLoginEntry = location.pathname === '/login';
 const prefetchedCapabilities = shallowRef<ReturnType<AccountClient['loginCapabilities']>>();
 const SESSION_CHECK_COOLDOWN_MS = 30_000;
+const OPEN_ACTIVITY_DELAY_MS = 150;
 let lastSessionCheckAt: number | undefined;
 let accountScope = 0;
 let openReported = false;
+let openActivityTimer: ReturnType<typeof setTimeout> | undefined;
 let profileMethodsRequested = false;
 let methodsRequest = 0;
 interface Application {
@@ -165,13 +167,15 @@ async function refreshAccount() {
 function confirmAccount(current: AccountView) {
   if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) {
     accountScope++;
+    cancelOpenActivity();
+    openReported = false;
   }
   lastSessionCheckAt = Date.now();
   account.value = current;
   if (current.state === "AUTHENTICATED") {
     document.documentElement.lang = 'zh-CN';
     prefetchedCapabilities.value = undefined;
-    void reportOpenActivity();
+    scheduleOpenActivity();
   }
 }
 async function initializeSession() {
@@ -198,10 +202,22 @@ async function initializeSession() {
   }
   startup.value = 'ready';
 }
-async function reportOpenActivity() {
-  if (openReported) return;
-  openReported = true;
+function cancelOpenActivity() {
+  clearTimeout(openActivityTimer);
+  openActivityTimer = undefined;
+}
+function scheduleOpenActivity() {
+  if (openReported || openActivityTimer !== undefined) return;
   const scope = accountScope;
+  // Let the account watcher queue the initial login-methods read before this write.
+  openActivityTimer = setTimeout(() => {
+    openActivityTimer = undefined;
+    if (scope !== accountScope || account.value?.state !== "AUTHENTICATED") return;
+    openReported = true;
+    void reportOpenActivity(scope);
+  }, OPEN_ACTIVITY_DELAY_MS);
+}
+async function reportOpenActivity(scope: number) {
   try {
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
@@ -265,17 +281,22 @@ async function submitWrite<T>(
     success = "已完成", refreshMessage = "操作已完成，但相关数据暂未刷新。",
   } = options;
   const section = page.value;
+  const scope = accountScope;
   await refreshAfterWrite(
     () => submissions.send(action, method, path, editGeneration ?? body,
       key => client.request<T>(path, body, method, key)),
     result => {
+      if (scope !== accountScope) throw new AuthError("CANCELLED");
       refreshIssues.delete(action);
       committed?.(result);
       showToast(success);
     },
-    after,
+    async result => {
+      if (scope !== accountScope) throw new AuthError("CANCELLED");
+      await after(result);
+    },
     (error, retry) => {
-      if (expireAccount(error) || (error instanceof AuthError && error.code === "CANCELLED")) return;
+      if (scope !== accountScope || expireAccount(error) || (error instanceof AuthError && error.code === "CANCELLED")) return;
       refreshIssues.set(action, { page: section, message: refreshMessage, retry });
     },
   );
@@ -296,7 +317,9 @@ function retryRefresh(action: string) {
   return run(async () => {
     const issue = refreshIssues.get(action);
     if (!issue) return;
+    const scope = accountScope;
     await issue.retry();
+    if (scope !== accountScope || refreshIssues.get(action) !== issue) return;
     refreshIssues.delete(action);
     showToast("已刷新");
   });
@@ -434,6 +457,7 @@ async function finishSecurity(identityHandle?: string) {
 }
 async function logout(all = false) {
   await run(async () => {
+    cancelOpenActivity();
     const result = await client.logout(all);
     clearAccount();
     rememberEmail("");
@@ -446,6 +470,7 @@ async function logout(all = false) {
 }
 function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   accountScope++;
+  cancelOpenActivity();
   prefetchedCapabilities.value = undefined;
   lastSessionCheckAt = undefined;
   openReported = false;
@@ -506,6 +531,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   accountScope++;
+  cancelOpenActivity();
   clearToast();
   client.close(); sessionChanges?.close();
   window.removeEventListener('focus', checkSession);
@@ -619,6 +645,7 @@ onBeforeUnmount(() => {
       </section>
       <TenantPage
         v-if="page === 'tenants'"
+        :key="accountScope"
         :client="client"
         :busy="busy"
         :mutate="mutate"

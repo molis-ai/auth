@@ -1092,6 +1092,11 @@ test(
       assert.deepEqual(response.headers.getSetCookie(), [])
       assert.deepEqual(await row(b), before)
 
+      const methods = await traced({ read: 2, write: 0 }, b, '/login-methods')
+      assert.deepEqual(await data(methods), { loginMethods: [], version: 0 })
+      assert.deepEqual(methods.headers.getSetCookie(), [])
+      assert.deepEqual(await row(b), before)
+
       // An invalid activity body isolates the browser lease claim and finish.
       const write = await traced({ read: 0, write: 2 }, b, '/activity', { body: {} })
       assert.equal(write.status, 400)
@@ -1411,6 +1416,37 @@ test(
         null,
       )
     })
+
+    await t.test(
+      'browser activity checks the lease and returns the committed session value',
+      async () => {
+        const { b, loginId } = await authenticated()
+        const stored = () =>
+          db
+            .prepare('SELECT last_active_at FROM auth_login_session WHERE id=?')
+            .bind(loginId)
+            .first()
+        const receipt = () =>
+          db
+            .prepare(
+              'SELECT received_at FROM auth_login_activity WHERE login_session_id=? AND event_id=?',
+            )
+            .bind(loginId, activity.body.eventId)
+            .first()
+        const initial = await stored()
+        const old = await pause(b, 'activity-credential-after', '/activity', activity)
+        await takeOver(b, old, 'AUTHENTICATED')
+        assert.deepEqual(await stored(), initial)
+        assert.equal(await receipt(), null)
+
+        const before = await row(b)
+        const committed = await data(await traced({ read: 1, write: 3 }, b, '/activity', activity))
+        assert.equal(committed.loginSessionId, loginId)
+        assert.equal(Date.parse(committed.lastActiveAt), (await stored())?.last_active_at)
+        assert.equal(Date.parse(committed.lastActiveAt), (await receipt())?.received_at)
+        assertReady(await row(b), Number(before.revision) + 1)
+      },
+    )
 
     await t.test('a stale profile write cannot make business changes', async () => {
       const { b, userId } = await authenticated()
