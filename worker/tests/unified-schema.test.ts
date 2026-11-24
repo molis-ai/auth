@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
 
 const migrationName = '0005_unified_account.sql'
-const directory = new URL('../migrations/', import.meta.url)
+const directory = new URL('../migration-history/through-0020/', import.meta.url)
 const migration = readFileSync(new URL(migrationName, directory), 'utf8')
 const localSeed = readFileSync(
   new URL('../unified-account-local-seed.sql', import.meta.url),

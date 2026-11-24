@@ -76,7 +76,7 @@ Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`�
 
 `POST /api/v2/auth/management-handoffs` 由已登录产品 BFF 调用，提交已登记的 `redirectUri` 与浏览器发起凭证的 S256 challenge。返回 Auth `/account/handoff/start` 导航地址。Auth 设置独立 HttpOnly 浏览器凭证后返回产品的已登记回调（`handoff` 参数）；产品须校验其 HttpOnly 发起凭证并通过当前同一个产品会话调用 `POST /api/v2/auth/management-handoffs/approve`，随后导航到 Auth `/account/handoff/finish`。
 
-总有效期 60 秒。Auth 原子校验两端浏览器凭证、原登录会话 revision/有效性、客户端策略和一次性消费状态后建立自己的 Web 会话。访问令牌和刷新令牌只留服务端；目标固定为 Auth 根管理页。跳转保留原认证时间、最近身份验证时间和绝对过期时间，不授予新的敏感操作验证。替换旧 Auth Web cookie 时轮换会话引用。首次部署需应用 `0018_management_handoff.sql`。
+总有效期 60 秒。Auth 原子校验两端浏览器凭证、原登录会话 revision/有效性、客户端策略和一次性消费状态后建立自己的 Web 会话。访问令牌和刷新令牌只留服务端；目标固定为 Auth 根管理页。跳转保留原认证时间、最近身份验证时间和绝对过期时间，不授予新的敏感操作验证。替换旧 Auth Web cookie 时轮换会话引用。管理交接表已纳入[当前 D1 基线](../../docs/cloudflare-deployment.md#d1-迁移基线)。
 
 隔离验证：Club `scripts/test-account-live-login.mjs` 的 `CLUB-SSO-01` 覆盖同账号进入、缺失浏览器凭证、重放、过期、跨站发起和原会话失效拒绝；Auth `worker/tests/web-session.test.ts` 验证现有 Web 会话与 CSRF 不变量。
 

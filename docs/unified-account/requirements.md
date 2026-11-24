@@ -234,7 +234,7 @@ Work 旧团队协作草案采用显式项目授权。本期不改其业务存储
 
 主要代码证据：
 
-- [Auth 身份与空间表](../../worker/migrations/0001_identity_and_spaces.sql)：用户主表无必填邮箱，邮箱/密码/外部身份分表；已有空间和成员。
+- [Auth 身份与空间表](../../worker/migrations/0020_auth_baseline.sql)：用户主表无必填邮箱，邮箱/密码/外部身份分表；已有空间和成员。
 - 替换前的 [Auth 身份流程](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/identity.rs)、[令牌](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/tokens.rs)、[账号](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/account.rs)、[第三方身份](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/federation.rs)、[团队](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/teams.rs)、[授权](https://github.com/molis-ai/auth/blob/67904ef/worker/rust/src/authorization.rs)。
 - 替换前的[浏览器 SDK](https://github.com/molis-ai/auth/blob/67904ef/sdk/browser/src/index.ts)：产品内密码表单导航 Auth `/complete`；不能直接充当服务端或原生持久会话。
 - [Club 认证](https://github.com/molis-ai/molis-club/blob/6e223f849847a8bffd338eb94d757e877101c020/lib/auth.ts)、[Club 表结构](https://github.com/molis-ai/molis-club/blob/6e223f849847a8bffd338eb94d757e877101c020/db/schema.ts)：独立 Better Auth，用户 email 必填且唯一，notes 引用业务 user.id。
