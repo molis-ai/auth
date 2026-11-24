@@ -19,6 +19,10 @@ pub(crate) fn view(s: &Value) -> Value {
 const CLIENT_COLUMNS: &str =
     "c.*,p.version policy_version,p.allowed_origins,e.version environment_version,
      e.id environment_id,e.kind,e.auth_origin,e.delivery_mode,e.provider_mode";
+const CLIENT_POLICY_JOINS: &str =
+    "JOIN auth_application app ON app.id=c.application_id AND app.status='ACTIVE'
+    JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
+    JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'";
 
 fn client_config(a: &Auth) -> Result<Value> {
     Ok(serde_json::from_str(
@@ -31,14 +35,20 @@ fn client_config(a: &Auth) -> Result<Value> {
             .to_string(),
     )?)
 }
+const CLIENT_CONFIG_FIELDS: [(&str, &str, &str); 5] = [
+    ("id", "environment_id", "environmentId"),
+    ("auth_origin", "auth_origin", "authOrigin"),
+    ("kind", "kind", "kind"),
+    ("delivery_mode", "delivery_mode", "deliveryMode"),
+    ("provider_mode", "provider_mode", "providerMode"),
+];
+
 fn check_registered_client(c: &Value, config: &Value) -> Result<()> {
     ensure(
         !c["environment_id"].is_null()
-            && c["environment_id"] == config["environmentId"]
-            && c["auth_origin"] == config["authOrigin"]
-            && c["kind"] == config["kind"]
-            && c["delivery_mode"] == config["deliveryMode"]
-            && c["provider_mode"] == config["providerMode"],
+            && CLIENT_CONFIG_FIELDS
+                .iter()
+                .all(|(_, field, key)| c[field] == config[key]),
         403,
         "POLICY_MISMATCH",
     )
@@ -52,14 +62,15 @@ fn check_origin(c: &Value, origin: &str) -> Result<()> {
 }
 pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
     let config = client_config(a)?;
-    let c = a.s.one(
-        &format!("SELECT {CLIENT_COLUMNS} FROM auth_client c
-             JOIN auth_application app ON app.id=c.application_id AND app.status='ACTIVE'
-             JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
-             JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'
-             WHERE c.client_id=? AND c.status='ACTIVE'"),
-        vec![id.into()],
-    ).await?;
+    let c =
+        a.s.one(
+            &format!(
+                "SELECT {CLIENT_COLUMNS} FROM auth_client c {CLIENT_POLICY_JOINS}
+             WHERE c.client_id=? AND c.status='ACTIVE'"
+            ),
+            vec![id.into()],
+        )
+        .await?;
     check_registered_client(&c, &config)?;
     Ok(c)
 }
@@ -183,6 +194,38 @@ pub(crate) fn active_lookup(a: &Auth, raw: &str) -> Result<(String, D1PreparedSt
     let digest = token_digest(raw)?;
     let statement = credential_statement(a, &digest, false)?;
     Ok((digest, statement))
+}
+/// Principal rows eligible to execute the data part of a read snapshot. The
+/// credential result remains the source of HTTP errors and is read in the same
+/// transaction, including when this query returns no principal.
+pub(crate) fn active_actor(a: &Auth, digest: &str) -> (String, Vec<Value>) {
+    let config = client_config(a).unwrap_or(Value::Null);
+    let origin = a.header("Origin");
+    let n = now();
+    let mut args = vec![digest.into(), n.into(), n.into(), n.into()];
+    for (_, _, key) in CLIENT_CONFIG_FIELDS {
+        args.push(config[key].as_str().map_or(Value::Null, Value::from));
+    }
+    args.extend([origin.clone().into(), origin.into()]);
+    let config_matches = CLIENT_CONFIG_FIELDS
+        .map(|(column, _, _)| format!("e.{column}=?"))
+        .join(" AND ");
+    (
+        format!(
+            "SELECT s.user_id,s.client_id FROM auth_login_access_token t
+             JOIN auth_login_session s ON s.id=t.login_session_id
+             JOIN auth_user_security us ON us.user_id=s.user_id
+             JOIN auth_user u ON u.id=s.user_id
+             JOIN auth_client c ON c.client_id=s.client_id AND c.status='ACTIVE'
+             {CLIENT_POLICY_JOINS}
+             WHERE t.token_hash=? AND {LIVE} AND t.expires_at>?
+             AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision
+             AND {config_matches}
+             AND (?='' OR EXISTS(SELECT 1 FROM json_each(p.allowed_origins)
+                                 WHERE type='text' AND value=?))"
+        ),
+        args,
+    )
 }
 pub(crate) fn active_result(
     a: &Auth,
