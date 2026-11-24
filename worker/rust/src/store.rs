@@ -3,9 +3,14 @@ use serde_json::Value;
 use wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, D1Result};
 
+pub(crate) enum WebSessionAccess {
+    Lease(String, i64),
+    ReadSnapshot(String, i64),
+}
+
 pub struct Store {
     pub db: D1Database,
-    pub web_owner: Option<(String, i64)>,
+    pub(crate) web_session_access: Option<WebSessionAccess>,
     log_env: &'static str,
     request_id: String,
     route: &'static str,
@@ -14,7 +19,7 @@ impl Store {
     pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
             db,
-            web_owner: None,
+            web_session_access: None,
             log_env: log.env,
             request_id: log.id.to_owned(),
             route: log.route,
@@ -96,7 +101,18 @@ impl Store {
         statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
-        self.write_batch(statements, conflict).await.map(|_| ())
+        self.write_batch(statements, conflict, false)
+            .await
+            .map(|_| ())
+    }
+    pub(crate) async fn batch_page_cursor(
+        &self,
+        statements: Vec<D1PreparedStatement>,
+    ) -> Result<()> {
+        // A page read may issue a scoped cursor without changing its browser session.
+        self.write_batch(statements, "VERSION_CONFLICT", true)
+            .await
+            .map(|_| ())
     }
     pub(crate) async fn batch_returning(
         &self,
@@ -104,10 +120,10 @@ impl Store {
         returning: D1PreparedStatement,
         conflict: &'static str,
     ) -> Result<Value> {
-        let index = statements.len() + usize::from(self.web_owner.is_some());
+        let index = statements.len() + usize::from(self.web_session_access.is_some());
         statements.push(returning);
         let started = now();
-        let results = self.write_batch(statements, conflict).await?;
+        let results = self.write_batch(statements, conflict, false).await?;
         let result = results.get(index).ok_or_else(Failure::unavailable)?;
         self.result_rows(result, "d1.batch", started)?
             .into_iter()
@@ -154,9 +170,17 @@ impl Store {
         &self,
         mut statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
+        page_cursor: bool,
     ) -> Result<Vec<D1Result>> {
-        if let Some((id, revision)) = &self.web_owner {
-            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY' AND expires_at>?)", vec![id.clone().into(),(*revision).into(),now().into()])?);
+        if let Some(access) = &self.web_session_access {
+            let (id, revision, status) = match access {
+                WebSessionAccess::Lease(id, revision) => (id, revision, "BUSY"),
+                WebSessionAccess::ReadSnapshot(id, revision) if page_cursor => {
+                    (id, revision, "READY")
+                }
+                WebSessionAccess::ReadSnapshot(..) => return Err(Failure::unavailable()),
+            };
+            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status=? AND expires_at>?)", vec![id.clone().into(),(*revision).into(),status.into(),now().into()])?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         let started = now();

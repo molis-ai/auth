@@ -11,6 +11,9 @@ const points = {
   'refresh-used': ['first', 'SELECT * FROM auth_login_refresh_token WHERE token_hash='],
   'refresh-race': ['batch', 'UPDATE auth_login_refresh_token SET used_at='],
   promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
+  'session-read-after': ['first', 'SELECT revision,status,busy_until,payload', 'after'],
+  'account-read-after': ['batch', 'credential_session', 'after'],
+  'cursor-write': ['batch', "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR'"],
   'managed-list-before': ['batch', 'WITH actor AS (SELECT'],
   'managed-list-after': ['batch', 'WITH actor AS (SELECT', 'after'],
   'first-phone-binding': ['first', 'FROM auth_user_phone p JOIN auth_user u', 'after'],
@@ -61,7 +64,11 @@ export default {
   async fetch(request, env, ctx) {
     const tag = request.headers.get('X-Fixture-Barrier')
     if (!tag) return worker.prototype.fetch.call({ env, ctx }, request)
-    if (tag === 'managed-list-trace') {
+    if (tag === 'web-session-missing-config') {
+      const { UNIFIED_ACCOUNT_CONFIG, ...bindings } = env
+      return worker.prototype.fetch.call({ env: bindings, ctx }, request)
+    }
+    if (tag === 'managed-list-trace' || tag === 'web-session-trace') {
       const counts = { read: 0, write: 0 }
       const DB = new D1Database(env.DB, (_operation, statements, moment = 'before') => {
         if (moment === 'before') {

@@ -306,7 +306,7 @@ pub async fn read(
                         (now() + 900000).into(),
                     ],
                 )?);
-                a.s.batch(writes, "VERSION_CONFLICT").await?;
+                a.s.batch_page_cursor(writes).await?;
                 Value::String(raw)
             } else {
                 Value::Null
