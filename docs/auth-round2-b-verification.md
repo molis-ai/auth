@@ -60,7 +60,7 @@ node worker/scripts/benchmark-password-kdf.mjs "$control_root/worker/rust/build"
 ## A、C 集成复核
 
 - A 的 D1 探针对权益读取、登录方式和当前会话分别断言 1 读、0 写，活动写入断言 1 读、1 写。Chrome 回环实测，成员首页在租户列表返回后 0.90 ms 发出，当时邀请和转移响应仍由测试挂起。首屏登录方式请求先于 activity 42.20 ms。切换账号在登出派发前 0.20 ms 中止被挂起的旧账号读取，旧账号排队的 activity 派发次数为 0。线上权益 P95 待同口径实测。
-- C 的 `/login` 回环 Chrome 探针，对比 `2938120` 与集成候选，分别观察到 6 和 7 个 HTTP 请求，其中进入 Worker 的请求为 6 和 3。候选的 4 个哈希资源请求都直达 Assets。首屏 CSS 从 59,639 B 降至 27,193 B（−54.4%），gzip-9 从 11,218 B 降至 6,109 B（−45.5%）。生产 WASM 从基线的 3,198,239 B / 1,019,226 B gzip-9 降至 2,608,306 B / 913,858 B gzip-9。回归覆盖 GET/HEAD、安全头、运行时绑定和密钥轮换、按需样式与倒计时。Cloudflare 边缘的 Worker 命中和冷启动延迟待测。
+- C 的静态路由在终审后恢复 Worker 优先。登录网络请求、Worker 调用量、CSS 和生产 WASM 体积以修订快照的同工具链实测为准。[C 集成复验](auth-round2-integration-verification.md)
 
 ## 本地回归
 

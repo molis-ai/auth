@@ -146,7 +146,7 @@ test('P0-5 only successful hashed Vite assets are immutable', async () => {
   }
 })
 
-test('GET and HEAD bypass the Worker only for existing hashed assets', async (t) => {
+test('the real Assets router preserves hashed asset responses and the Worker method contract', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'auth-route-assets-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const assets = join(directory, 'auth-ui/assets')
@@ -165,32 +165,32 @@ test('GET and HEAD bypass the Worker only for existing hashed assets', async (t)
   t.after(() => proxy.dispose())
 
   for (const method of ['GET', 'HEAD']) {
-    for (const [path, get, head, worker, cache, type] of [
+    for (const [path, get, head, cache, type, entity] of [
       [
         '/auth-ui/assets/index-Abcd_123.js',
         200,
         200,
-        false,
         'public, max-age=31536000, immutable',
         /javascript/,
+        'export {}',
       ],
       [
         '/auth-ui/assets/index-Abcd_123.css',
         200,
         200,
-        false,
         'public, max-age=31536000, immutable',
         /text\/css/,
+        'body {}',
       ],
-      ['/auth-ui/assets/missing-Abcd_123.js', 404, 404, true, 'no-store', null],
-      ['/login', 200, 200, true, 'no-store', /text\/html/],
-      ['/index.html', 404, 404, true, 'no-store', /application\/json/],
-      ['/api/v2/health', 200, 501, true, 'no-store', /application\/json/],
+      ['/auth-ui/assets/missing-Abcd_123.js', 404, 404, 'no-store', null, null],
+      ['/login', 200, 200, 'no-store', /text\/html/, null],
+      ['/index.html', 404, 404, 'no-store', /application\/json/, null],
+      ['/api/v2/health', 200, 501, 'no-store', /application\/json/, null],
     ] as const) {
       const response = await proxy.fetch(new Request(origin + path, { method }))
       const label = `${method} ${path}`
       assert.equal(response.status, method === 'GET' ? get : head, label)
-      assert.equal(response.headers.has('X-Request-ID'), worker, label)
+      assert.ok(response.headers.get('X-Request-ID'), label)
       assert.equal(response.headers.get('Cache-Control'), cache, label)
       assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff', label)
       assert.equal(response.headers.get('X-Frame-Options'), 'DENY', label)
@@ -208,11 +208,12 @@ test('GET and HEAD bypass the Worker only for existing hashed assets', async (t)
       if (type) assert.match(response.headers.get('Content-Type') ?? '', type, label)
       const body = await response.text()
       if (method === 'HEAD') assert.equal(body, '', label)
+      else if (entity !== null) assert.equal(body, entity, label)
       if (method === 'GET' && path === '/login') {
         assert.match(body, /<meta name="molis-tenant-invite-channels" content="USER">/, label)
         assert.match(body, /<meta name="molis-environment" content="DEV · 本地数据">/, label)
       }
-      t.diagnostic(`${label} ${response.status}; Worker ${worker ? 'called' : 'bypassed'}`)
+      t.diagnostic(`${label} ${response.status}; Worker called`)
     }
 
     const alias = await proxy.fetch(
@@ -225,5 +226,37 @@ test('GET and HEAD bypass the Worker only for existing hashed assets', async (t)
     assert.ok(alias.headers.has('X-Request-ID'))
     assert.equal(await alias.text(), '')
     t.diagnostic(`${method} /login on alias ${alias.status}; Worker called`)
+  }
+
+  for (const [method, asset] of [
+    ['POST', 'index-Abcd_123.js'],
+    ['POST', 'index-Abcd_123.css'],
+    ['PUT', 'index-Abcd_123.js'],
+    ['PATCH', 'index-Abcd_123.js'],
+    ['DELETE', 'index-Abcd_123.js'],
+    ['OPTIONS', 'index-Abcd_123.js'],
+    ['REPORT', 'index-Abcd_123.js'],
+    ['PROPFIND', 'index-Abcd_123.js'],
+    ['MKCOL', 'index-Abcd_123.js'],
+    ['POST', 'missing-Abcd_123.js'],
+  ]) {
+    const path = `/auth-ui/assets/${asset}`
+    const label = `${method} ${path}`
+    const response = await proxy.fetch(
+      new Request(origin + path, { method, body: method === 'POST' ? '{}' : undefined }),
+    )
+    assert.equal(response.status, 405, label)
+    assert.match(response.headers.get('Content-Type') ?? '', /application\/json/, label)
+    assert.equal(response.headers.get('Cache-Control'), 'no-store', label)
+    const requestId = response.headers.get('X-Request-ID')
+    assert.ok(requestId, label)
+    assert.deepEqual(
+      await response.json(),
+      { error: { code: 'METHOD_NOT_ALLOWED' }, requestId },
+      label,
+    )
+    assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff', label)
+    assert.equal(response.headers.get('X-Frame-Options'), 'DENY', label)
+    t.diagnostic(`${label} 405 METHOD_NOT_ALLOWED; Worker called`)
   }
 })

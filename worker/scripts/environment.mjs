@@ -11,18 +11,8 @@ export function webAssetConfig(directory = path('web/dist')) {
   return {
     directory,
     binding: 'ASSETS',
-    // Unmatched paths check Assets and fall back to the Worker on a miss.
-    // A negative route would send misses directly to Assets as well.
-    run_worker_first: [
-      '/',
-      '/index.html',
-      '/login',
-      '/console',
-      '/api/*',
-      '/account/*',
-      '/.well-known/*',
-      '/oauth2/*',
-    ],
+    // Auth owns method errors for existing assets. The Worker serves GET and HEAD via ASSETS.
+    run_worker_first: true,
     html_handling: 'none',
     not_found_handling: 'none',
   }

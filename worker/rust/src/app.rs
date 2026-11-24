@@ -291,7 +291,8 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         "NOT_FOUND",
     )?;
     ensure(
-        method == Method::Get || method == Method::Head,
+        // The SDK maps unrecognized HTTP methods to GET.
+        matches!(a.request.inner().method().as_str(), "GET" | "HEAD"),
         405,
         "METHOD_NOT_ALLOWED",
     )?;
