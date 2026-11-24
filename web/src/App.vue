@@ -112,10 +112,11 @@ async function run(task: () => Promise<void>) {
   if (busy.value) return;
   busy.value = true;
   clearToast();
+  const scope = accountScope;
   try {
     await task();
   } catch (e) {
-    if (e instanceof AuthError && e.code === "CANCELLED") return;
+    if (scope !== accountScope || (e instanceof AuthError && e.code === "CANCELLED")) return;
     expireAccount(e);
     showToast(accountErrorMessage(e));
   } finally {
@@ -142,8 +143,12 @@ async function list<T>(path: string): Promise<T[]> {
 }
 async function refreshAccount() {
   const scope = accountScope;
-  const current = await client.session();
-  if (scope !== accountScope) throw new AuthError("CANCELLED");
+  let current: AccountView;
+  try {
+    current = await client.session();
+  } finally {
+    if (scope !== accountScope) throw new AuthError("CANCELLED");
+  }
   if (account.value?.user && current.state !== "AUTHENTICATED") {
     throw new AuthError("SESSION_EXPIRED");
   }
@@ -190,8 +195,12 @@ async function reportOpenActivity() {
 async function refreshLoginMethods() {
   const scope = accountScope;
   const request = ++methodsRequest;
-  const data = await client.request<{ loginMethods: Method[] }>("/login-methods");
-  if (scope !== accountScope) throw new AuthError("CANCELLED");
+  let data: { loginMethods: Method[] };
+  try {
+    data = await client.request("/login-methods");
+  } finally {
+    if (scope !== accountScope) throw new AuthError("CANCELLED");
+  }
   if (request === methodsRequest) methods.value = data.loginMethods;
 }
 watch([() => account.value?.user?.userId, page], ([userId, target]) => {
