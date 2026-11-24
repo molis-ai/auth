@@ -10,6 +10,7 @@
 | A、C 合并 | `a7af6045ec7686d9a4ca47d4b8c334dc50c32ea5` |
 | B 索引、密码计算池与读副本评估，同时为首次验收 HEAD | `8c293b7af0242ce9a23a7077118eda197ecd22b0` |
 | 静态路由复验基点 | `15f9b8c1d9d6e434f17e8b9bf8d5748f26274cda` 加 C-2 工作树补丁 |
+| V-2 独立复验的集成提交 | `8de0c05722c50f07b86a6ea37301107a75197808` |
 
 `git merge-base --is-ancestor` 核实 A、B、C 均包含在 HEAD。B 直接基于 A、C 的合并提交。首次验收由 HEAD 导出无空格的临时源码副本，执行前逐字节比对工作树的 257 个跟踪文件。Web、Worker 和 Rust 的锁文件均与前置安装记录一致。工具链为 Node 26.4.0、npm 11.17.0、Rust 1.96.0、worker-build 0.8.6、Vite 8.3.8、Binaryen 123.0.0、Wrangler 4.166.0、workerd 1.20261119.1 和 Chrome 158.0.8127.38。
 
@@ -123,3 +124,28 @@ C-2 在 `15f9b8c` 上复现了真实 Assets 路由对已有哈希 JS 的 POST �
 首次验收证据保存在 `/private/tmp/auth-round2-v.jQ6cEU/logs/`，其中 `gates.status` 记录门禁退出码，`performance.status` 记录补充复验退出码。
 
 C-2 使用独立的 `/private/tmp/auth-round2-c2.vUjt9b/`。本轮先遇到默认沙箱的回环 `EPERM`，改用隔离回环后完成验证。扩展方法探针发现 SDK 映射问题，补齐原始方法判断后重跑全部门禁。`logs/route-before.log` 记录回归复现，`logs/consumers.log` 记录 Work 和 Club 各六份合同文件、摘要和生成类型的只读复核。`logs-final/gates.status` 汇总修订快照的命令退出码，`logs-final/tracked-source.sha256` 记录逐字节比对通过的 258 个跟踪文件。同目录保留路由、测试、浏览器、构建、生产包、dry-run、WASM 体积和登录网络的原始日志。
+
+## V-2 · 修订提交独立复验
+
+从 `8de0c05722c50f07b86a6ea37301107a75197808` 导出无空格隔离副本，逐字节比对通过 258 个跟踪文件。提交链为 A、C 合并后接 B，随后是 V 的记录和 C-2 的路由修订。`git merge-base --is-ancestor` 逐项通过。`git diff --exit-code 2938120 HEAD -- contracts worker/migrations/0020_auth_baseline.sql` 通过，合同 Git tree 仍为 `ed5a44ec3c7ebff43534ce1f6f8376396a1edd8a`。Work 和 Club 各 6 份合同及 SHA-256 与 Auth 一致，两端生成类型的本地检查通过。
+
+`App.vue` 保留 A 的活动调度、登出与切换取消，以及 C 的异步组件。 `login_sessions.rs` 保留 A 的单读和事务内 activity 响应、B 的 refresh JOIN 及 C 的绑定缓存，两文件与 B 提交逐字节一致。 `app.rs` 保留 API 与 BFF 派发，C-2 用原始 HTTP 方法检查静态入口。真实 Assets 路由与生产打包配置共用 `run_worker_first: true`，GET 和 HEAD 由 Worker 经 Assets 绑定取回。
+
+| §4 命令 | V-2 实际结果 |
+| --- | --- |
+| `npm run contracts:check` | 退出 0，合同与消费者校验 9 项通过。 |
+| `npm test` | 退出 0，环境配置 4 项、合同 9 项、Rust 默认 25 项与生产配置 26 项、Worker/D1 203 项、Web 56 项通过。 |
+| `npm run build` | 退出 0，Vue 类型检查、Web 生产构建和 Wrangler fixture dry-run 通过。 |
+| `node worker/scripts/verify-production-bundle.mjs` | 退出 0，校验 14 个哈希资源、4 个 HTML 引用、生产准入和生产包。Wrangler 包 gzip 为 909.40 KiB。 |
+| `MOLIS_WORK_SOURCE=/Users/zhuanghaozhe/IdeaProjects/molis-work npm run test:browser` | 退出 0，31 项浏览器检查通过。 |
+| `npm run deploy -- --env test --dry-run` | 退出 0，使用合成绑定。Wrangler 读取 18 个目录文件，包为 2,609.46 KiB，gzip 909.41 KiB，并明确输出 dry-run 退出。 |
+
+**C 路由阻断已解除。** `node --test worker/tests/routes.test.ts` 通过 3 项。真实 Assets 入口对已有 JS 和 CSS 的 POST、其他非 GET/HEAD 方法和缺失 JS 的 POST 返回 405 JSON，`error.code` 为 `METHOD_NOT_ALLOWED`，`requestId` 与 `X-Request-ID` 一致，缓存为 `no-store`。生产 WASM 对 14 个实际哈希资源执行 42 次 GET、HEAD 和 POST 检查。GET 均为 200 且实体逐字节一致，HEAD 均为 200 且正文为空，两者保留 immutable、ETag 和安全头。生产构建、Wrangler 生产校验包和 test dry-run 生成的 WASM SHA-256 均为 `9fe6ffacea5450fe4c6a3aa0a4ad361554ff57af8372b47cff1373217dc1e6b5`。与 C-2 的产物逐字节比对确认，跨次摘要差异来自内嵌的临时 Cargo 路径。
+
+**A 的隔离复验。** `npm test` 中，个人及租户权益、中央登录方式和当前会话各为 1 读 0 写，activity 为 1 读 1 写，重放未新增事件。每个 D1 batch 按一次绑定往返计。凭据和策略错误优先级、授权与撤销均通过。权益 SQL 的内存 SQLite 探针再次得到 100,000 行、100,001 行溢出哨兵及撤销后 0 行。Chrome 请求轨迹显示，成员首页在 `tenants` 返回后 0.80 ms 发出，当时邀请与转移仍挂起。首屏 `login-methods` 完成后 42.40 ms 才发出 activity。切换账号中止旧读取，旧账号排队的 activity 发出 0 次。
+
+**B 的隔离复验。** `wrangler d1 migrations apply --local` 验证空库和从 `0020` 升级。两条路径均建齐 5 个索引，外键检查为空，升级保留了预置的应用与客户端关联。`npm test` 的 5 类真实分页 SQL 在首页和游标页均对业务大表使用索引 `SEARCH`，保留部分中间排序。邀请和转移的游标重读、顺序和去重通过。refresh 重放的客户端匹配与撤销范围通过。KDF 代码和基准脚本与 B 提交一致，复核前两组 8 并发、每种模式 48 次的本地记录，意外错误均为 0，端到端 P95 变化分别为 +19.9% 和 −19.2%。
+
+**C 的本地性能复验。** 逐个核对前置基线副本的 250 个跟踪文件，均与 `2938120` 的 Git blob 匹配。相同工具链和回环探针记录，冷开 `/login` 的 HTTP 请求由 6 增至 7，API 均为 2 次，静态 Worker 调用由 3/3 增至 4/4。探针使用全新 Chrome profile，按 `X-Request-ID` 计 Worker 调用。首屏实际 CSS 实体从 59,639 B 降至 27,193 B（−54.4%），gzip-9 从 11,218 B 降至 6,109 B（−45.5%）。生产 WASM 原始体积从 3,198,239 B 降至 2,610,459 B（−18.4%），gzip-9 从 1,019,227 B 降至 913,975 B（−10.3%）。同源码的 `-Os` 前产物为 3,198,321 B，V-2 不同压缩阶段的实测也支持保留 `-Os`。按需分包、倒计时清理、原始配置和 origin 变更、AES 与 Ed25519 轮换及 192,000 字节载荷均通过回归。
+
+线上权益 Loki P95、边缘 Assets 命中和 Worker 调用、生产冷启动、KDF 排队尾延迟及 D1 副本状态、RTT 和 bookmark 一致性仍待实测。默认沙箱的回环探针返回 `EPERM`，改用获准的隔离回环后，六项门禁均在首次执行时通过。复验使用复制到新目录的离线依赖和合成绑定，部署操作止于 dry-run。V-2 原始日志位于 `/private/tmp/auth-round2-v2.39nGdJ/logs/`，命令退出码见 `gates.status`，隔离源码清单见 `tracked-source.sha256`。
