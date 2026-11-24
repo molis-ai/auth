@@ -206,3 +206,15 @@ export function authEnvironment(name, local, configRoot = root) {
       : {}),
   }
 }
+
+export const wranglerOverrides = [
+  'CLOUDFLARE_ENV',
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CF_ACCOUNT_ID',
+  'CLOUDFLARE_COMPLIANCE_REGION',
+  'CLOUDFLARE_API_BASE_URL',
+  'CF_API_BASE_URL',
+  'WRANGLER_API_ENVIRONMENT',
+  'WRANGLER_CI_OVERRIDE_NAME',
+  'WRANGLER_CI_GENERATE_PREVIEW_ALIAS',
+]

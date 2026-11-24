@@ -2,20 +2,100 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
+import { adoptBaseline } from '../scripts/adopt-d1-baseline.mjs'
 import { verifyDeploymentDatabase } from '../scripts/deployment-readiness.mjs'
 
 const busyLeaseMigration = '0019_web_session_busy_lease.sql'
 const migrationDirectory = new URL('../migrations/', import.meta.url)
 
+const historyDirectory = new URL('../migration-history/through-0020/', import.meta.url)
+
 function database(through?: string) {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
-  for (const name of readdirSync(migrationDirectory)
+  const directory = through ? historyDirectory : migrationDirectory
+  for (const name of readdirSync(directory)
     .filter((n) => n.endsWith('.sql') && (!through || n <= through))
     .sort())
-    db.exec(readFileSync(new URL(name, migrationDirectory), 'utf8'))
+    db.exec(readFileSync(new URL(name, directory), 'utf8'))
   return db
 }
+
+const baseline = '0020_auth_baseline.sql'
+
+test('the fresh Auth baseline reproduces the historical schema and empty contents', () => {
+  const fresh = new DatabaseSync(':memory:')
+  const legacy = database('0020_logout_receipt_proof_expiry.sql')
+  const objects =
+    "SELECT type, name, sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name"
+  try {
+    fresh.exec('PRAGMA foreign_keys=ON')
+    fresh.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
+    // Match complete definitions: columns, checks, keys, foreign keys and partial indexes.
+    assert.deepEqual(fresh.prepare(objects).all(), legacy.prepare(objects).all())
+    for (const { name } of fresh
+      .prepare("SELECT name FROM sqlite_schema WHERE type='table'")
+      .all()) {
+      const rows = 'SELECT * FROM "' + name + '"'
+      assert.deepEqual(fresh.prepare(rows).all(), legacy.prepare(rows).all(), String(name))
+    }
+    assert.deepEqual(fresh.prepare('PRAGMA foreign_key_check').all(), [])
+  } finally {
+    fresh.close()
+    legacy.close()
+  }
+})
+
+test('cutover checks the historical ledger and exact DDL before registering once', () => {
+  const db = database('0020_logout_receipt_proof_expiry.sql')
+  const execute = (sql: string) => db.prepare(sql).all()
+  try {
+    db.exec('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY, name TEXT UNIQUE)')
+    const history = readdirSync(historyDirectory)
+      .filter((file) => file.endsWith('.sql'))
+      .sort()
+    const insert = db.prepare('INSERT INTO d1_migrations(name) VALUES(?)')
+    for (const file of history.slice(0, -1)) insert.run(file)
+    assert.throws(() => adoptBaseline(execute, true), /Unapplied historical migrations: 0020_/)
+    insert.run(history.at(-1)!)
+    db.exec("INSERT INTO auth_user VALUES('kept','Original','ACTIVE',NULL,0,0)")
+    db.exec(
+      "INSERT INTO auth_web_session(id_hash,payload,revision,status,expires_at,busy_until) VALUES('lease','sealed',4,'BUSY',999,111)",
+    )
+    db.exec('ALTER TABLE auth_user ADD COLUMN drift INTEGER')
+    assert.throws(() => adoptBaseline(execute, true), /different Auth schema object: auth_user/)
+    db.exec('ALTER TABLE auth_user DROP COLUMN drift')
+    assert.match(adoptBaseline(execute), /ready for registration/)
+    const before = execute('SELECT * FROM d1_migrations ORDER BY id')
+    assert.equal(before.length, history.length)
+    // An independent schema edit between the preview and the insert must cancel the write.
+    const concurrent = (sql: string) => {
+      if (sql.startsWith('INSERT')) db.exec('CREATE INDEX concurrent_edit ON auth_user(status)')
+      return execute(sql)
+    }
+    assert.throws(() => adoptBaseline(concurrent, true), /changed during registration/)
+    assert.deepEqual(execute('SELECT * FROM d1_migrations ORDER BY id'), before)
+    db.exec('DROP INDEX concurrent_edit')
+    assert.equal(adoptBaseline(execute, true), 'Baseline registered')
+    assert.equal(adoptBaseline(execute, true), 'Baseline already recorded')
+    const after = execute('SELECT * FROM d1_migrations ORDER BY id')
+    assert.deepEqual(after.slice(0, -1), before)
+    assert.equal(after.at(-1)?.name, baseline)
+    assert.equal(
+      execute("SELECT display_name FROM auth_user WHERE id='kept'")[0].display_name,
+      'Original',
+    )
+    assert.equal(
+      execute("SELECT busy_until FROM auth_web_session WHERE id_hash='lease'")[0].busy_until,
+      111,
+    )
+    db.exec('CREATE TABLE baseline_successor(id INTEGER PRIMARY KEY)')
+    insert.run('0021_future.sql')
+    assert.equal(adoptBaseline(execute, true), 'Baseline already recorded')
+  } finally {
+    db.close()
+  }
+})
 
 test('0019 preserves existing READY and BUSY sessions and enables the lease readiness probe', () => {
   const db = database('0018_management_handoff.sql')
@@ -27,7 +107,7 @@ test('0019 preserves existing READY and BUSY sessions and enables the lease read
     const before = rows()
     const readiness = 'SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0'
     assert.throws(() => db.prepare(readiness), /no such column: busy_until/)
-    db.exec(readFileSync(new URL(busyLeaseMigration, migrationDirectory), 'utf8'))
+    db.exec(readFileSync(new URL(busyLeaseMigration, historyDirectory), 'utf8'))
     assert.deepEqual(db.prepare(readiness).all(), [])
     assert.deepEqual(
       rows().map((row) => ({ ...row })),

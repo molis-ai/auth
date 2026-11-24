@@ -4,7 +4,7 @@ Auth 网页与 Molis Work 使用同一套 V2 challenge / verify / phone / comple
 
 ## 部署配置
 
-先在隔离环境应用 `0014_sms_verifier.sql`；按现有部署流程应用全部连续迁移，不手工改真实库。Auth 环境登记及 `UNIFIED_ACCOUNT_CONFIG` 的 `deliveryMode` 均设为 `LIVE`，保留原客户端、回调和来源约束。MOCK 仍只供 LOCAL/TEST。
+短信校验字段已包含在当前 D1 基线中，按[部署手册](cloudflare-deployment.md#d1-迁移基线)准备隔离环境。Auth 环境登记及 `UNIFIED_ACCOUNT_CONFIG` 的 `deliveryMode` 均设为 `LIVE`，保留原客户端、回调和来源约束。MOCK 仍只供 LOCAL/TEST。
 
 通过目标 Worker 的 Secrets 配置 `ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`，RAM 身份只授予 `dypns:SendSmsVerifyCode` 和 `dypns:CheckSmsVerifyCode`。配置变量 `ALIYUN_SMS_SIGN_NAME` 为控制台实际可用的赠送签名，不使用文档示例冒充已开通配置。
 

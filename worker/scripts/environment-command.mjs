@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertPortAvailable, selectEnvironment } from '../../scripts/environment-properties.mjs'
 import { sessionGeneration } from '../../scripts/environment-session.mjs'
-import { authEnvironment, port, root } from './environment.mjs'
+import { authEnvironment, port, root, wranglerOverrides } from './environment.mjs'
 import { verifyDeploymentDatabase } from './deployment-readiness.mjs'
 
 const [operation, ...args] = process.argv.slice(2)
@@ -24,17 +24,6 @@ const wranglerEnv = {
   CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
   WRANGLER_LOG_SANITIZE: 'true',
 }
-const wranglerOverrides = [
-  'CLOUDFLARE_ENV',
-  'CLOUDFLARE_ACCOUNT_ID',
-  'CF_ACCOUNT_ID',
-  'CLOUDFLARE_COMPLIANCE_REGION',
-  'CLOUDFLARE_API_BASE_URL',
-  'CF_API_BASE_URL',
-  'WRANGLER_API_ENVIRONMENT',
-  'WRANGLER_CI_OVERRIDE_NAME',
-  'WRANGLER_CI_GENERATE_PREVIEW_ALIAS',
-]
 for (const key of wranglerOverrides) delete wranglerEnv[key]
 const cwd = fileURLToPath(root)
 function run(command, commandArgs) {

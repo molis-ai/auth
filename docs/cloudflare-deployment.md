@@ -6,6 +6,24 @@
 
 `config/platform-targets.json` 记录已盘点的 Cloudflare 账户、Worker、Auth 来源及 D1 名称和 ID。环境 properties 必须与登记一致。更新目标时由平台操作员先核实资源归属，再更新两处声明。测试准入的 `TEST_ALLOWED_EMAILS` 和 `TEST_ALLOWED_PHONES` 放在私有 `secrets/test.properties`，两个值都使用 JSON 字符串数组，例如 `TEST_ALLOWED_EMAILS=["qa@example.test"]`、`TEST_ALLOWED_PHONES=["+8613800000000"]`。邮箱忽略大小写，重复项自动去重。以 `[]` 表示空集合。部署器据此生成投递和测试准入 secret 绑定；两个集合都为空时拒绝所有新登录。修改后需要重启本机 Auth 或更新测试部署。
 
+## D1 迁移基线
+
+当前基线是 `worker/migrations/0020_auth_baseline.sql`，包含截至 0020 的全部表、约束与索引。此后的迁移从 `0021` 开始。种子登记仍单独执行。
+
+- **新建空库**：用目标环境的 Wrangler 配置执行正常的 `d1 migrations apply`；Wrangler 创建结构并自动记录基线。
+- **已有 Auth 库**：先运行下列只读检查。它核对旧账本中的 19 个文件名，并逐项比对实际表、索引及约束定义。核对通过后，用同一命令加 `--apply` 登记；写入时再次比对刚才读到的结构与账本。该步骤只在 `d1_migrations` 增加一条记录，保留旧记录和业务数据。再次运行时，工具发现基线已登记就直接返回。登记后即可走正常增量迁移与发布预检。
+- **未到 0020 的旧库**：用指向原数据库的 Wrangler 配置，将其 D1 绑定的 `migrations_dir` 指向 `worker/migration-history/through-0020/` 的绝对路径，按历史顺序补完待执行文件，再做登记。若结构有差异、账本不明或已缺失，先核查来源和差异。直接对已建表的库执行建库基线会失败。
+
+从仓库根目录执行；`dev` 使用本地 D1，`test` 和 `prod` 分别使用目标登记中的远端数据库。已有 test、prod 分别登记，先验收 test。
+
+```sh
+npm --prefix worker run db:baseline -- --env test
+# 确认目标和只读检查结果后，显式登记同一库
+npm --prefix worker run db:baseline -- --env test --apply
+```
+
+## 本地启动与发布
+
 本地 dev 使用 `worker/.wrangler/state` 的 D1 数据。首次准备独立的 dev D1 时，明确执行现有迁移和两份无用户登记脚本。已有本地库先核对迁移及登记，保留原数据。如果 `unified-local` 是旧的模拟登记，使用本地管理操作将该行的 delivery 和 provider 改为 `LIVE` 并递增版本。
 
 ```sh

@@ -53,7 +53,7 @@ AUTH_DEV_PROXY_URL=http://127.0.0.1:7993
 
 GitHub 登录复用上述 Auth 资料保存机制，从认证后的 `/user` 响应读取 name、login 和 avatar_url。昵称为空时使用 login；头像仅允许 HTTPS 的 avatars.githubusercontent.com，Auth 页面 CSP 同步放行。默认名称与空头像可在再次登录时补齐，用户主动修改的资料仍保留。登录方式显示完整 `@用户名`，不显示数字身份尾号。
 
-本地与部署数据库均需应用 `0016_external_profile_username.sql`。旧 GitHub 账号重新登录一次即可获取资料，无需重新注册或解绑。公开邮箱没有验证声明，因此不会据此创建邮箱登录方式、合并账号或作为已验证联系邮箱。
+本地与部署数据库均需按[部署手册](cloudflare-deployment.md#d1-迁移基线)准备当前基线，其中包含第三方用户名字段。旧 GitHub 账号重新登录一次即可获取资料，无需重新注册或解绑。公开邮箱没有验证声明，因此不会据此创建邮箱登录方式、合并账号或作为已验证联系邮箱。
 
 ## 退出与再次选择账号
 
