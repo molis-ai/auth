@@ -10,8 +10,8 @@ use crate::{
     http::*,
     identity::Auth,
     security::uuid,
-    tenants::protocol,
-    tenants::{Action, Context, Service},
+    tenants::protocol::{self, Access, Lookup, Read},
+    tenants::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
@@ -142,33 +142,13 @@ impl Service<'_> {
                 self.platform_permission(&mut ctx, "SUBSCRIPTION_WRITE")
                     .await?
             }
-            "subscription.list" | "subscription.get" | "pool.platform" => {
-                self.platform_permission(&mut ctx, "SUBSCRIPTION_READ")
-                    .await?
-            }
-            "billing.platform-audit" => self.platform_permission(&mut ctx, "AUDIT_READ").await?,
-            "subscription.tenant" | "seat.list" => {
-                self.member_context(&mut ctx, &action.tenant_id, &["OWNER", "ADMIN", "MEMBER"])
-                    .await?
-            }
-            "pool.list"
-            | "billing.tenant-audit"
-            | "seat.assign"
-            | "seat.release"
-            | "seat.reassign" => {
-                self.member_context(&mut ctx, &action.tenant_id, &["OWNER", "ADMIN"])
+            "seat.assign" | "seat.release" | "seat.reassign" => {
+                self.member_context(&mut ctx, &action.tenant_id, MANAGER_ROLES)
                     .await?
             }
             _ => {}
         }
-        if [
-            "subscription.get",
-            "pool.platform",
-            "subscription.update",
-            "subscription.renew",
-        ]
-        .contains(&action.op)
-        {
+        if ["subscription.update", "subscription.renew"].contains(&action.op) {
             ctx.record = self.subscription(&action.id).await?;
             ctx.guards.push(self.subscription_guard(&ctx.record)?);
         }
@@ -176,30 +156,6 @@ impl Service<'_> {
             ctx.record = self.seat_assignment(&action.id, &action.tenant_id).await?;
         }
         Ok(ctx)
-    }
-    async fn billing_read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        if action.op == "seat.list" {
-            self.seat_list(action, ctx).await
-        } else if action.op.starts_with("catalog.") {
-            self.catalog_read(action, ctx).await
-        } else if action.op.starts_with("billing.") {
-            let sql = "SELECT *, 'immutable' stamp FROM auth_management_audit";
-            if action.op == "billing.tenant-audit" {
-                protocol::try_page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{sql} WHERE tenant_id=?"),
-                    vec![ctx.tenant["id"].clone()],
-                    audit_view,
-                )
-                .await
-            } else {
-                protocol::try_page(self, action, ctx, sql, vec![], audit_view).await
-            }
-        } else {
-            self.subscription_read(action, ctx).await
-        }
     }
     fn billing_audit(
         &self,
@@ -263,10 +219,54 @@ impl Service<'_> {
         self.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) VALUES (?,?,?,?,?,?,?,'SUCCESS',?,?,?,?)",vec![uuid().into(),self.user(),self.s["client_id"].clone(),tenant,action.op.into(),kind.into(),id,b["reason"].clone(),json!({"before":before,"after":after,"beforeSeatQuantities":before_quantities,"requestedSeatQuantities":b["seatQuantities"],"changes":changes}).to_string().into(),self.a.request_id.clone().into(),now().into()])
     }
 }
+async fn read(a: &Auth, action: &Action) -> Result<Value> {
+    let access = match action.op {
+        "subscription.list" | "subscription.get" | "pool.platform" => {
+            Access::Permission("SUBSCRIPTION_READ")
+        }
+        "billing.platform-audit" => Access::Permission("AUDIT_READ"),
+        "subscription.tenant" | "seat.list" => Access::Member(ALL_ROLES),
+        "pool.list" | "billing.tenant-audit" => Access::Member(MANAGER_ROLES),
+        "catalog.features" | "catalog.plans" | "subscription.mine" => Access::Session,
+        _ => unreachable!("only billing reads reach this owner"),
+    };
+    let lookup = matches!(action.op, "subscription.get" | "pool.platform").then(|| Lookup {
+        sql: format!("{} WHERE s.id=?", subscriptions::SUBSCRIPTIONS),
+        id: action.id.clone(),
+        guard: Some(|service, row| service.subscription_guard(row)),
+    });
+    let sql = "SELECT * FROM auth_management_audit";
+    let plan = match action.op {
+        "seat.list" => seats::list(a, action),
+        "catalog.features" | "catalog.plans" => Ok(catalog::read(action)),
+        "billing.tenant-audit" => Ok(Read::page(
+            format!("{sql} WHERE tenant_id=?"),
+            vec![action.tenant_id.clone().into()],
+            audit_view,
+        )),
+        "billing.platform-audit" => Ok(Read::page(sql, vec![], audit_view)),
+        _ => Ok(subscriptions::read(action)),
+    };
+    protocol::read(a, action, access, lookup, plan).await
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+    let action = match action(path, method) {
+        Ok(action) => action,
+        Err(error) => {
+            login_sessions::active(a).await?;
+            return Err(error);
+        }
+    };
+    let Some(schema) = action.schema else {
+        let result = read(a, &action).await?;
+        return Ok(json_response(
+            json!({"data":result,"requestId":a.request_id}),
+            200,
+        )?);
+    };
     let (s, c) = login_sessions::active(a).await?;
-    let action = action(path, method)?;
-    let b = if let Some(schema) = action.schema {
+    let b = {
         ensure(
             a.header("Content-Type").split(';').next() == Some("application/json"),
             400,
@@ -282,18 +282,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             )?;
         }
         b
-    } else {
-        json!({})
     };
     let mut service = Service { a, s, c };
-    let result = if action.schema.is_none() {
-        let mut ctx = service.billing_context(&action).await?;
-        let result = service.billing_read(&action, &mut ctx).await?;
-        let mut w = protocol::base(&service)?;
-        w.extend(ctx.guards);
-        a.s.batch(w, "VERSION_CONFLICT").await?;
-        result
-    } else {
+    let result = {
         let key = protocol::key(a)?;
         let mut last = Failure {
             status: 409,

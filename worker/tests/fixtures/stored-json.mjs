@@ -7,38 +7,39 @@ class D1Database {
     this.db = db
   }
 
-  prepare(sql) {
-    const statement = this.db.prepare(sql)
-    const column = sql.startsWith('SELECT * FROM (SELECT p.*,json_array(')
-      ? 'definition'
-      : sql.startsWith("SELECT * FROM (SELECT *, 'immutable' stamp FROM auth_management_audit")
-        ? 'change_summary'
-        : undefined
-    if (!column) return statement
-    const db = this.db
+  prepare(sql, statement = this.db.prepare(sql)) {
     return {
-      bind(...values) {
-        const bound = statement.bind(...values)
-        return {
-          async all() {
-            const result = await bound.all()
-            const fixture = await db
-              .prepare('SELECT raw FROM fixture_stored_json WHERE field=?')
-              .bind(column)
-              .first()
-            if (!fixture) return result
-            return {
-              ...result,
-              results: result.results.map((row) => ({ ...row, [column]: fixture.raw })),
-            }
-          },
-        }
-      },
+      sql,
+      statement,
+      bind: (...values) => this.prepare(sql, statement.bind(...values)),
+      all: (...args) => statement.all(...args),
+      first: (...args) => statement.first(...args),
+      run: (...args) => statement.run(...args),
     }
   }
 
-  batch(statements) {
-    return this.db.batch(statements)
+  async batch(statements) {
+    const results = await this.db.batch(statements.map(({ statement }) => statement))
+    return Promise.all(
+      results.map(async (result, index) => {
+        const { sql } = statements[index]
+        const column = sql.includes('FROM (SELECT p.*,json_array(')
+          ? 'definition'
+          : sql.includes('FROM (SELECT * FROM auth_management_audit')
+            ? 'change_summary'
+            : undefined
+        if (!column) return result
+        const fixture = await this.db
+          .prepare('SELECT raw FROM fixture_stored_json WHERE field=?')
+          .bind(column)
+          .first()
+        if (!fixture) return result
+        return {
+          ...result,
+          results: result.results.map((row) => ({ ...row, [column]: fixture.raw })),
+        }
+      }),
+    )
   }
 }
 

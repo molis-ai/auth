@@ -2,12 +2,12 @@
 use crate::{
     http::*,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{Lookup, Read},
     tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
 use worker::Method;
-const USERS: &str = "SELECT u.*,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,s.account_version version,CAST(s.account_version AS TEXT) stamp FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
+const USERS: &str = "SELECT u.*,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,s.account_version version FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
 fn user_view(r: &Value) -> Value {
     json!({"userId":r["id"],"displayName":r["display_name"],"email":r["email"],"status":r["status"],"version":r["version"]})
 }
@@ -70,16 +70,13 @@ pub fn permission(a: &Action) -> &'static str {
     }
 }
 pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()> {
-    if a.op == "user.list" {
-        return Ok(());
-    }
     if a.op.starts_with("user.") || a.op.starts_with("permission.") {
         c.record =
             s.a.s
                 .one(&format!("{USERS} WHERE u.id=?"), vec![a.id.clone().into()])
                 .await?;
         ensure(!c.record.is_null(), 404, "NOT_FOUND")?;
-        c.guards.push(s.a.s.guard("EXISTS(SELECT 1 FROM auth_user u JOIN auth_user_security us ON us.user_id=u.id WHERE u.id=? AND u.status=? AND us.account_version=?)",vec![a.id.clone().into(),c.record["status"].clone(),c.record["version"].clone()])?);
+        c.guards.push(user_guard(s, &c.record)?);
         if a.op == "permission.set" {
             c.from =
                 s.a.s
@@ -92,12 +89,38 @@ pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()>
     }
     Ok(())
 }
-pub async fn read(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<Value> {
-    match a.op{
- "user.list"=>protocol::page(s,a,c,USERS,vec![],user_view).await,
- "user.get"=>Ok(user_view(&c.record)),
- "permission.list"=>protocol::page(s,a,c,"SELECT *,permission id,CAST(version AS TEXT) stamp FROM auth_platform_permission WHERE user_id=?",vec![a.id.clone().into()],permission_view).await,
- _=>unreachable!("only current user and permission reads reach this owner")}
+fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatement> {
+    s.a.s.guard(
+        "EXISTS(SELECT 1 FROM auth_user u JOIN auth_user_security us ON us.user_id=u.id
+         WHERE u.id=? AND u.status=? AND us.account_version=?)",
+        vec![
+            row["id"].clone(),
+            row["status"].clone(),
+            row["version"].clone(),
+        ],
+    )
+}
+
+pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
+    let user = || Lookup {
+        sql: format!("{USERS} WHERE u.id=?"),
+        id: action.id.clone(),
+        guard: Some(user_guard),
+    };
+    let (lookup, plan) = match action.op {
+        "user.list" => (None, Read::page(USERS, vec![], |row| Ok(user_view(row)))),
+        "user.get" => (Some(user()), Read::Detail(|ctx| Ok(user_view(&ctx.record)))),
+        "permission.list" => (
+            Some(user()),
+            Read::page(
+                "SELECT *,permission id FROM auth_platform_permission WHERE user_id=?",
+                vec![action.id.clone().into()],
+                |row| Ok(permission_view(row)),
+            ),
+        ),
+        _ => unreachable!("only current user and permission reads reach this owner"),
+    };
+    (permission(action), lookup, plan)
 }
 pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Result<Change> {
     let n = now();

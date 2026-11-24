@@ -4,7 +4,7 @@ use crate::{
     http::*,
     identity::Auth,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{self, Access, Lookup, Read},
     tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
@@ -19,8 +19,8 @@ pub fn matches(path: &str) -> bool {
     .iter()
     .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
-const APPLICATIONS: &str = "SELECT *,CAST(version AS TEXT) stamp FROM auth_application";
-const CLIENTS: &str = "SELECT c.*,p.environment_id,p.allowed_origins,p.version policy_version,cp.product,printf('%d:%d',c.version,p.version) stamp FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id LEFT JOIN auth_client_product cp ON cp.client_id=c.client_id";
+const APPLICATIONS: &str = "SELECT * FROM auth_application";
+const CLIENTS: &str = "SELECT c.*,p.environment_id,p.allowed_origins,p.version policy_version,cp.product FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id LEFT JOIN auth_client_product cp ON cp.client_id=c.client_id";
 fn application_view(v: &Value) -> Value {
     json!({"applicationId":v["id"],"name":v["name"],"status":v["status"],"version":v["version"]})
 }
@@ -80,9 +80,7 @@ impl Service<'_> {
     async fn administration_context(&self, action: &Action) -> Result<Context> {
         let mut ctx = Context::new();
         let permission = match action.op {
-            "application.list" | "application.get" => "APPLICATION_READ",
             "application.create" | "application.update" => "APPLICATION_WRITE",
-            "client.list" | "client.get" => "CLIENT_READ",
             "client.create" | "client.update" => "CLIENT_WRITE",
             _ => crate::platform::platform_accounts::permission(action),
         };
@@ -91,14 +89,7 @@ impl Service<'_> {
             crate::platform::platform_accounts::context(self, action, &mut ctx).await?;
             return Ok(ctx);
         }
-        if [
-            "application.get",
-            "application.update",
-            "client.list",
-            "client.create",
-        ]
-        .contains(&action.op)
-        {
+        if ["application.update", "client.create"].contains(&action.op) {
             ctx.record = self
                 .a
                 .s
@@ -108,11 +99,8 @@ impl Service<'_> {
                 )
                 .await?;
             ensure(!ctx.record.is_null(), 404, "NOT_FOUND")?;
-            ctx.guards.push(self.a.s.guard(
-                "EXISTS(SELECT 1 FROM auth_application WHERE id=? AND version=?)",
-                vec![ctx.record["id"].clone(), ctx.record["version"].clone()],
-            )?);
-        } else if ["client.get", "client.update"].contains(&action.op) {
+            ctx.guards.push(application_guard(self, &ctx.record)?);
+        } else if action.op == "client.update" {
             ctx.record = self
                 .a
                 .s
@@ -125,29 +113,6 @@ impl Service<'_> {
             ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id WHERE c.client_id=? AND c.version=? AND p.version=?)",vec![ctx.record["client_id"].clone(),ctx.record["version"].clone(),ctx.record["policy_version"].clone()])?);
         }
         Ok(ctx)
-    }
-    async fn administration_read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        if !action.op.starts_with("application.") && !action.op.starts_with("client.") {
-            return crate::platform::platform_accounts::read(self, action, ctx).await;
-        }
-        match action.op {
-            "application.list" => {
-                protocol::page(self, action, ctx, APPLICATIONS, vec![], application_view).await
-            }
-            "application.get" => Ok(application_view(&ctx.record)),
-            "client.get" => client_view(&ctx.record),
-            _ => {
-                protocol::try_page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{CLIENTS} WHERE c.application_id=?"),
-                    vec![action.id.clone().into()],
-                    client_view,
-                )
-                .await
-            }
-        }
     }
     async fn administration_change(
         &self,
@@ -280,6 +245,53 @@ fn validate_redirects(b: &Value) -> Result<()> {
     Ok(())
 }
 
+fn application_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatement> {
+    s.a.s.guard(
+        "EXISTS(SELECT 1 FROM auth_application WHERE id=? AND version=?)",
+        vec![row["id"].clone(), row["version"].clone()],
+    )
+}
+
+async fn read(a: &Auth, action: &Action) -> Result<Value> {
+    let application = || Lookup {
+        sql: format!("{APPLICATIONS} WHERE id=?"),
+        id: action.id.clone(),
+        guard: Some(application_guard),
+    };
+    let (permission, lookup, plan) = match action.op {
+        "application.list" => (
+            "APPLICATION_READ",
+            None,
+            Read::page(APPLICATIONS, vec![], |row| Ok(application_view(row))),
+        ),
+        "application.get" => (
+            "APPLICATION_READ",
+            Some(application()),
+            Read::Detail(|ctx| Ok(application_view(&ctx.record))),
+        ),
+        "client.get" => (
+            "CLIENT_READ",
+            Some(Lookup {
+                sql: format!("{CLIENTS} WHERE c.client_id=?"),
+                id: action.id.clone(),
+                guard: None,
+            }),
+            Read::Detail(|ctx| client_view(&ctx.record)),
+        ),
+        "client.list" => (
+            "CLIENT_READ",
+            Some(application()),
+            Read::page(
+                format!("{CLIENTS} WHERE c.application_id=?"),
+                vec![action.id.clone().into()],
+                client_view,
+            ),
+        ),
+        _ => crate::platform::platform_accounts::read(action),
+    };
+    protocol::read(a, action, Access::Permission(permission), lookup, Ok(plan)).await
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     let action = action(path, method)?;
     let body = if let Some(schema) = action.schema {
@@ -304,11 +316,14 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             &[]
         },
     )?;
-    let key = if action.schema.is_some() {
-        Some(protocol::key(a)?)
-    } else {
-        None
-    };
+    if action.schema.is_none() {
+        let result = read(a, &action).await?;
+        return Ok(json_response(
+            json!({"data":result,"requestId":a.request_id}),
+            200,
+        )?);
+    }
+    let key = protocol::key(a)?;
     let mut output = None;
     let mut last = Failure {
         status: 409,
@@ -317,57 +332,48 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     for attempt in 0..2 {
         let (s, c) = login_sessions::active(a).await?;
         let service = Service { a, s, c };
-        let mut ctx = service.administration_context(&action).await?;
-        if let Some(key) = &key {
-            if let Some(result) = protocol::replay(&service, &action, &body, key).await? {
-                let mut w = protocol::base(&service)?;
-                w.extend(ctx.guards);
-                a.s.batch(w, "VERSION_CONFLICT").await?;
-                output = Some(result);
-                break;
-            }
-            if attempt > 0 {
-                break;
-            }
-            let change = service.administration_change(&action, &ctx, &body).await?;
-            let mut w = protocol::base(&service)?;
-            w.extend(ctx.guards);
-            w.extend(change.writes);
-            let target = change.result["clientId"]
-                .as_str()
-                .or(change.result["applicationId"].as_str())
-                .or(change.result["userId"].as_str())
-                .unwrap_or_default();
-            w.push(a.s.audit(
-                action.op,
-                service.user(),
-                &a.request_id,
-                Value::Null,
-                Value::Null,
-                json!({"targetId":target,"reason":body["reason"]}),
-                false,
-            )?);
-            w.extend(protocol::receipt(
-                &service,
-                &action,
-                &body,
-                key,
-                &change.result,
-            )?);
-            match a.s.batch(w, "VERSION_CONFLICT").await {
-                Ok(()) => {
-                    output = Some(change.result);
-                    break;
-                }
-                Err(e) => last = e,
-            }
-        } else {
-            let result = service.administration_read(&action, &mut ctx).await?;
+        let ctx = service.administration_context(&action).await?;
+        if let Some(result) = protocol::replay(&service, &action, &body, &key).await? {
             let mut w = protocol::base(&service)?;
             w.extend(ctx.guards);
             a.s.batch(w, "VERSION_CONFLICT").await?;
             output = Some(result);
             break;
+        }
+        if attempt > 0 {
+            break;
+        }
+        let change = service.administration_change(&action, &ctx, &body).await?;
+        let mut w = protocol::base(&service)?;
+        w.extend(ctx.guards);
+        w.extend(change.writes);
+        let target = change.result["clientId"]
+            .as_str()
+            .or(change.result["applicationId"].as_str())
+            .or(change.result["userId"].as_str())
+            .unwrap_or_default();
+        w.push(a.s.audit(
+            action.op,
+            service.user(),
+            &a.request_id,
+            Value::Null,
+            Value::Null,
+            json!({"targetId":target,"reason":body["reason"]}),
+            false,
+        )?);
+        w.extend(protocol::receipt(
+            &service,
+            &action,
+            &body,
+            &key,
+            &change.result,
+        )?);
+        match a.s.batch(w, "VERSION_CONFLICT").await {
+            Ok(()) => {
+                output = Some(change.result);
+                break;
+            }
+            Err(e) => last = e,
         }
     }
     Ok(json_response(

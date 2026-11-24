@@ -11,6 +11,8 @@ const points = {
   'refresh-used': ['first', 'SELECT * FROM auth_login_refresh_token WHERE token_hash='],
   'refresh-race': ['batch', 'UPDATE auth_login_refresh_token SET used_at='],
   promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
+  'managed-list-before': ['batch', 'WITH actor AS (SELECT'],
+  'managed-list-after': ['batch', 'WITH actor AS (SELECT', 'after'],
   'first-phone-binding': ['first', 'FROM auth_user_phone p JOIN auth_user u', 'after'],
 }
 
@@ -31,24 +33,46 @@ class D1Database {
         await this.pause('first', [sql], 'after')
         return result
       },
-      all: (...args) => statement.all(...args),
-      run: (...args) => statement.run(...args),
+      all: async (...args) => {
+        await this.pause('all', [sql])
+        return statement.all(...args)
+      },
+      run: async (...args) => {
+        await this.pause('run', [sql])
+        return statement.run(...args)
+      },
     }
   }
 
   async batch(statements) {
-    await this.pause(
-      'batch',
-      statements.map((entry) => entry.sql),
-    )
-    return this.db.batch(statements.map((entry) => entry.statement))
+    const queries = statements.map((entry) => entry.sql)
+    await this.pause('batch', queries)
+    const result = await this.db.batch(statements.map((entry) => entry.statement))
+    await this.pause('batch', queries, 'after')
+    return result
   }
 }
 
 export default {
-  fetch(request, env, ctx) {
+  scheduled(event, env, ctx) {
+    return worker.prototype.scheduled.call({ env, ctx }, event)
+  },
+
+  async fetch(request, env, ctx) {
     const tag = request.headers.get('X-Fixture-Barrier')
     if (!tag) return worker.prototype.fetch.call({ env, ctx }, request)
+    if (tag === 'managed-list-trace') {
+      const counts = { read: 0, write: 0 }
+      const DB = new D1Database(env.DB, (_operation, statements, moment = 'before') => {
+        if (moment === 'before') {
+          const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql))
+          counts[isRead ? 'read' : 'write']++
+        }
+      })
+      const response = await worker.prototype.fetch.call({ env: { ...env, DB }, ctx }, request)
+      response.headers.set('X-Fixture-D1-Calls', JSON.stringify(counts))
+      return response
+    }
     const [point] = tag.split('/')
     const [phase, fragment, timing = 'before'] = points[point]
     let paused = false
