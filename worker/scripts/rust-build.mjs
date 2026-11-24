@@ -16,7 +16,7 @@ if (!existsSync(binary))
   throw new Error('Run npm run setup first to install the pinned Rust toolchain and worker-build')
 const { values } = parseArgs({
   options: {
-    'no-mock-provider': { type: 'boolean' },
+    production: { type: 'boolean' },
     'out-dir': { type: 'string' },
   },
 })
@@ -27,7 +27,7 @@ if (outDir !== undefined) {
   args.push('--out-dir', resolve(outDir))
 }
 args.push('.', '--locked')
-if (values['no-mock-provider']) args.push('--no-default-features')
+if (values.production) args.push('--no-default-features')
 execFileSync(binary, args, {
   cwd,
   stdio: 'inherit',
