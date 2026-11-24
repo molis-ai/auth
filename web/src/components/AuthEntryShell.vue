@@ -4,6 +4,7 @@ import { entryText } from '../lib/entry-copy.ts';
 import { entryLanguage, saveEntryLanguage } from '../lib/entry-preferences.ts';
 import logo from '../assets/molis-logo.png';
 
+defineProps<{ showChrome: boolean }>();
 const language = ref(entryLanguage());
 const t = (text: string) => entryText(language.value, text);
 document.documentElement.lang = language.value;
@@ -15,7 +16,7 @@ function toggleLanguage() {
 </script>
 
 <template>
-  <div class="shell auth-entry">
+  <div v-if="showChrome" class="shell auth-entry">
     <header class="topbar">
       <a class="wordmark" href="/" aria-label="molis AI"><img class="brand-logo" :src="logo" alt="" width="32" height="32"><span class="brand-name">molis<span class="brand-ai">AI</span></span></a>
       <button class="language" type="button" @click="toggleLanguage">{{ language === 'en' ? '简体中文' : 'English' }}</button>
@@ -25,4 +26,5 @@ function toggleLanguage() {
       <slot :language="language" :t="t" />
     </main>
   </div>
+  <slot v-else :language="language" :t="t" />
 </template>

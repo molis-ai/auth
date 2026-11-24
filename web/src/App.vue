@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from "vue";
 import {
   AccountClient,
   AuthError,
@@ -37,6 +37,8 @@ const client = new AccountClient(),
   busy = ref(false),
   page = ref("account");
 const startup = ref<'loading' | 'error' | 'ready'>('loading');
+const starting = computed(() => !account.value || startup.value !== 'ready');
+const onLoginEntry = location.pathname === '/login';
 const prefetchedCapabilities = shallowRef<ReturnType<AccountClient['loginCapabilities']>>();
 const SESSION_CHECK_COOLDOWN_MS = 30_000;
 let lastSessionCheckAt: number | undefined;
@@ -167,6 +169,7 @@ function confirmAccount(current: AccountView) {
   lastSessionCheckAt = Date.now();
   account.value = current;
   if (current.state === "AUTHENTICATED") {
+    document.documentElement.lang = 'zh-CN';
     prefetchedCapabilities.value = undefined;
     void reportOpenActivity();
   }
@@ -176,7 +179,7 @@ async function initializeSession() {
   busy.value = true;
   startup.value = 'loading';
   const session = refreshAccount();
-  const capabilities = location.pathname === '/login' ? client.loginCapabilities() : undefined;
+  const capabilities = onLoginEntry ? client.loginCapabilities() : undefined;
   // The session decides whether this request is needed. Handle rejection even when it is discarded.
   void capabilities?.catch(() => undefined);
   prefetchedCapabilities.value = capabilities;
@@ -514,17 +517,17 @@ onBeforeUnmount(() => {
 <template>
   <p v-if="environmentLabel" class="environment-label" role="status">{{ environmentLabel }}</p>
   <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
-  <AuthEntryShell v-if="account?.state !== 'AUTHENTICATED'" v-slot="{ language, t }">
-    <section v-if="!account || startup !== 'ready'" class="panel login-panel session-startup" :aria-label="t('登录')">
-      <div class="login-welcome"><p>{{ t('欢迎回来') }}</p></div>
-      <div v-if="startup === 'error'" class="entry-content entry-load-error">
-        <p role="alert" class="notice error">{{ t('账号服务暂时不可用，请稍后再试。') }}</p>
-        <button type="button" class="entry-primary" @click="initializeSession">{{ t('重试') }}</button>
+  <AuthEntryShell v-if="account?.state !== 'AUTHENTICATED'" :show-chrome="onLoginEntry || !starting" v-slot="{ language, t }">
+    <component :is="onLoginEntry ? 'section' : 'main'" v-if="starting" class="session-startup" :class="{ 'panel login-panel': onLoginEntry }" :aria-label="onLoginEntry ? t('登录') : undefined">
+      <div v-if="onLoginEntry" class="login-welcome"><p>{{ t('欢迎回来') }}</p></div>
+      <div v-if="startup === 'error'" :class="{ 'entry-content entry-load-error': onLoginEntry }">
+        <p role="alert" :class="{ 'notice error': onLoginEntry }">{{ t('账号服务暂时不可用，请稍后再试。') }}</p>
+        <button type="button" :class="{ 'entry-primary': onLoginEntry }" @click="initializeSession">{{ t('重试') }}</button>
       </div>
-      <div v-else class="entry-content entry-login-content" role="status">
-        <span class="visually-hidden">{{ t('正在检查登录状态…') }}</span>
-      </div>
-    </section>
+      <p v-else :class="{ 'entry-content entry-login-content': onLoginEntry }" role="status">
+        <span :class="{ 'visually-hidden': onLoginEntry }">{{ t('正在检查登录状态…') }}</span>
+      </p>
+    </component>
     <AuthEntry v-else :key="accountScope" :client="client" :busy="busy" :language="language" :prefetched-capabilities="prefetchedCapabilities" @authenticating="authenticating = $event" @complete="loggedIn" />
   </AuthEntryShell>
   <div v-else class="console-shell v2-console">
