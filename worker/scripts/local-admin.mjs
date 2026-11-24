@@ -5,16 +5,16 @@ import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 // No remote flags, account tokens, or production bindings accepted by this command.
-const proxy = await getPlatformProxy<{ DB: D1Database; AUTH_ORIGIN: string }>({
+const proxy = await getPlatformProxy({
   configPath: fileURLToPath(new URL('../wrangler.fixture.jsonc', import.meta.url)),
   remoteBindings: false,
+  persist: { path: fileURLToPath(new URL('../.wrangler/state/v3', import.meta.url)) },
 })
 try {
   if (proxy.env.AUTH_ORIGIN !== 'http://127.0.0.1:8787') throw new Error('Local bootstrap only')
   const s = {
-      statement: (sql: string, ...args: (string | number)[]) =>
-        proxy.env.DB.prepare(sql).bind(...args),
-      one: (sql: string, ...args: string[]) =>
+      statement: (sql, ...args) => proxy.env.DB.prepare(sql).bind(...args),
+      one: (sql, ...args) =>
         proxy.env.DB.prepare(sql)
           .bind(...args)
           .first(),

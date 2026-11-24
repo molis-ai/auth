@@ -2,6 +2,7 @@ import { Miniflare, Response, convertV4MiniflareOptions } from 'miniflare'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { compatibilityDate } from './environment.mjs'
 
 export async function getRustProxy(
   bindings,
@@ -32,7 +33,7 @@ export async function getRustProxy(
         path: join(buildDirectory, 'index_bg.wasm'),
       },
     ],
-    compatibilityDate: '2026-09-19',
+    compatibilityDate,
     handleStructuredLogs,
     d1Databases: { DB: 'rust-isolated-test' },
     durableObjects: passwordKdf
@@ -45,7 +46,7 @@ export async function getRustProxy(
               const result = await assets(request)
               return new Response(await result.arrayBuffer(), {
                 status: result.status,
-                headers: Object.fromEntries(result.headers),
+                headers: result.headers,
               })
             },
           },
@@ -56,7 +57,7 @@ export async function getRustProxy(
       const r = await outbound(request)
       return new Response(await r.arrayBuffer(), {
         status: r.status,
-        headers: Object.fromEntries(r.headers),
+        headers: r.headers,
       })
     },
   }
@@ -68,10 +69,10 @@ export async function getRustProxy(
       DB: db,
       PASSWORD_KDF: passwordKdf ? await mf.getDurableObjectNamespace('PASSWORD_KDF') : undefined,
     },
-    async fetch(request, env) {
+    async fetch(request) {
       return mf.dispatchFetch(request.url, {
         method: request.method,
-        headers: Object.fromEntries(request.headers),
+        headers: [...request.headers.entries()],
         body: request.body ? await request.arrayBuffer() : undefined,
         redirect: 'manual',
       })

@@ -4,6 +4,7 @@ import targets from '../../config/platform-targets.json' with { type: 'json' }
 
 export const root = new URL('../../', import.meta.url)
 export const port = Number(new URL(targets.dev.authOrigin).port)
+export const compatibilityDate = '2026-09-19'
 const path = (relative) => fileURLToPath(new URL(relative, root))
 const sessionKey = (value) => required(value) && /^[A-Za-z0-9_-]{43}$/u.test(value)
 const optional = (value) => value === undefined || typeof value === 'string'
@@ -149,7 +150,7 @@ export function authEnvironment(name, local, configRoot = root) {
     name: config.workerName,
     ...(config.accountId ? { account_id: config.accountId } : {}),
     main: path('worker/rust/build/index.js'),
-    compatibility_date: '2026-09-19',
+    compatibility_date: compatibilityDate,
     workers_dev: false,
     preview_urls: false,
     ...(!local && config.grafanaLogsDestination
@@ -218,3 +219,9 @@ export const wranglerOverrides = [
   'WRANGLER_CI_OVERRIDE_NAME',
   'WRANGLER_CI_GENERATE_PREVIEW_ALIAS',
 ]
+
+export function cleanWranglerEnv(base = process.env, extra = {}) {
+  const env = { ...base, ...extra }
+  for (const key of wranglerOverrides) delete env[key]
+  return env
+}
