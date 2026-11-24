@@ -1,7 +1,7 @@
 // V2U-03/05/07: real Auth WASM/D1 and Chrome; temporary data, explicit mock delivery only.
 import assert from "node:assert/strict";
 import http from "node:http";
-import { readFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
@@ -120,10 +120,41 @@ try {
   page = await browser.page();
   await page.command("Page.enable");
   await page.viewport(1440, 900);
-  await page.command("Page.navigate", { url: origin });
+  await page.command("Page.addScriptToEvaluateOnNewDocument", {source: `{
+    const original = window.fetch;
+    const trace = window.__authPerformance = {requests: [], gates: {}};
+    const firstDocument = location.search === '?check=startup-failure';
+    const authenticatedProbe = location.search === '?check=authenticated-startup';
+    const hold = async (name) => {
+      await new Promise(resolve => { trace.gates[name] = resolve; });
+      delete trace.gates[name];
+    };
+    window.fetch = async (url, options) => {
+      const path = new URL(url, location.href).pathname.replace(/^\\/api\\/account/, '');
+      const entry = {path, started: performance.now()};
+      trace.requests.push(entry);
+      if (firstDocument && path === '/session' && trace.requests.length === 1) {
+        await hold('startup');
+        return Response.json({error: {code: 'AUTH_UNAVAILABLE'}}, {status: 503});
+      }
+      const response = await original(url, options);
+      if (authenticatedProbe && ['/activity', '/login-methods'].includes(path) &&
+          trace.requests.filter(item => item.path === path).length === 1) {
+        await hold(path);
+      }
+      entry.finished = performance.now();
+      return response;
+    };
+  }`});
+  await page.command("Page.navigate", { url: origin + "/?check=startup-failure" });
   await page.wait(
-    "document.querySelector('main')?.textContent.includes('登录')",
+    "Boolean(window.__authPerformance?.gates.startup && document.querySelector('.session-startup [role=status]'))",
   );
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
+  await page.evaluate("window.__authPerformance.gates.startup()");
+  await page.wait("Boolean(document.querySelector('.session-startup [role=alert]'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
+  await page.click(".session-startup button");
   const click = async (text) => {
     if(text==='设置或修改密码') await click('登录密码');
     if(text.startsWith('绑定') && text !== '绑定') await click('登录方式');
@@ -154,6 +185,9 @@ try {
   };
   // ENTRY-01: the original visual composition opens directly on the V2 form.
   await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('button[type=submit]').disabled");
+  assert.deepEqual(await page.evaluate("window.__authPerformance.requests.slice(0, 3).map(item => item.path)"), ['/session', '/session', '/auth/capabilities']);
+  await page.evaluate("history.replaceState(null, '', '/')");
+  console.log("PASS P0-1 startup outage is visible and retry restores the anonymous entry");
   for (const width of [1440,1024,390]) {
     await page.viewport(width,900);
     assert.ok(await page.evaluate('document.documentElement.scrollWidth<=innerWidth'));
@@ -254,6 +288,7 @@ try {
   await page.command('Emulation.setDeviceMetricsOverride', {width:1440, height:900, deviceScaleFactor:1, mobile:false});
 
   await click("个人资料");
+  const openReportsBeforeProfileSave = await page.evaluate("window.__authPerformance.requests.filter(item => item.path === '/activity').length");
   await page.click('.profile-inline-name [role="button"]');
   await page.fill('input[maxlength="80"]', "QA 昵称");
   await page.evaluate("document.querySelector('input[aria-label=修改昵称]').blur()");
@@ -263,6 +298,7 @@ try {
   console.log("PASS browser profile update");
   const {profileEditorChecks}=await import('./profile-editor-checks.mjs');
   await profileEditorChecks({page,click,db,evidence,root});
+  assert.equal(await page.evaluate("window.__authPerformance.requests.filter(item => item.path === '/activity').length"), openReportsBeforeProfileSave, "profile saves do not report another OPEN");
 
   await click("账号安全");
   await page.wait(
@@ -589,11 +625,58 @@ try {
   await page.wait("!document.querySelector('.security-editor')");
   await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
   await page.fill('input[autocomplete=username]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-49');
+  const passwordStart = await page.evaluate("window.__authPerformance.requests.length");
   await page.click('input[type=checkbox]');await click('登录');await page.wait("Boolean(document.querySelector('.console-tabs'))");
   assert.equal(await page.evaluate("localStorage.getItem('molis.auth.remembered-email')"),'entry-union@example.test');
   assert.equal(await page.evaluate("document.querySelector('.profile-email')?.textContent"),'entry-union@example.test');
   assert.equal(await page.evaluate("document.querySelector('.account-menu-email')?.textContent"),'entry-union@example.test');
   await page.screenshot(join(evidence,'sidebar-email.png'));
+  await page.wait(`window.__authPerformance.requests.slice(${passwordStart}).some(item => item.path === '/login-methods' && item.finished)`);
+  const password = await page.evaluate(`window.__authPerformance.requests.slice(${passwordStart}).map(item => item.path)`);
+  assert.equal(password.filter(path => path === '/auth/login/password').length, 1);
+  assert.equal(password.filter(path => path === '/session').length, 0);
+  assert.equal(password.filter(path => path === '/activity').length, 1);
+
+  // Open the console from its existing cookie and hold background responses after the real Worker has answered.
+  await page.command('Page.navigate', {url: origin + '/?check=authenticated-startup'});
+  await page.wait("Boolean(window.__authPerformance?.gates['/activity']) && Boolean(document.querySelector('.profile-inline-name [role=button]'))");
+  assert.ok(await page.evaluate("[...document.querySelectorAll('.console-tabs button')].every(button => !button.disabled)"));
+  await page.click('.profile-inline-name [role=button]');
+  await page.wait("Boolean(document.querySelector('.profile-inline-name input'))");
+  const profileInteractiveAt = await page.evaluate("performance.now()");
+  await page.evaluate("document.querySelector('.profile-inline-name input').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'})); window.__authPerformance.gates['/activity']()");
+  await page.wait("Boolean(window.__authPerformance.gates['/login-methods'])");
+  await click('租户');
+  await page.wait("document.querySelector('.console-tabs [aria-current=page]')?.textContent === '租户'");
+  const navigationInteractiveAt = await page.evaluate("performance.now()");
+  await page.evaluate("window.__authPerformance.gates['/login-methods']()");
+  await page.wait("document.querySelector('main')?.textContent.includes('创建租户')");
+  await click('个人资料');
+  await page.wait("Boolean(document.querySelector('.profile-inline-name [role=button]'))");
+  await page.evaluate("window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('focus'))");
+  const authenticatedStartup = await page.evaluate(`({
+    requests: window.__authPerformance.requests,
+    assets: performance.getEntriesByType('resource').filter(entry => new URL(entry.name).pathname.startsWith('/auth-ui/assets/')).map(entry => ({
+      path: new URL(entry.name).pathname,
+      transferSize: entry.transferSize,
+      decodedBodySize: entry.decodedBodySize,
+    })),
+  })`);
+  const startupPaths = authenticatedStartup.requests.map(item => item.path);
+  assert.equal(startupPaths.filter(path => path === '/session').length, 1);
+  assert.equal(startupPaths.filter(path => path === '/auth/capabilities').length, 0);
+  assert.equal(startupPaths.filter(path => path === '/activity').length, 1);
+  assert.equal(startupPaths.filter(path => path === '/login-methods').length, 1);
+  assert.ok(profileInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/activity').finished);
+  assert.ok(navigationInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/login-methods').finished);
+  for (const extension of ['.js', '.css', '.png']) {
+    assert.ok(authenticatedStartup.assets.some(asset => asset.path.endsWith(extension) &&
+      asset.transferSize === 0 && asset.decodedBodySize > 0), extension + ' is cached by Chrome');
+  }
+  writeFileSync(join(evidence, 'p0-performance.json'), JSON.stringify({
+    password, authenticatedStartup, profileInteractiveAt, navigationInteractiveAt,
+  }, null, 2) + '\n');
+  console.log('PASS P0-1/2/3/4/5 password and cookie request counts, live interactions before background responses, cooldown and Chrome cache');
   await click('账号安全'); await click('绑定手机');
   await page.wait("Boolean(document.querySelector('.security-editor input[type=tel]'))");
   assert.equal(await page.evaluate("Boolean(document.querySelector('.security-editor input[type=password]'))"),false);

@@ -3,6 +3,8 @@ const english: Record<string, string> = {
   '登录 Molis 账号，管理个人资料、租户与订阅。': 'Sign in to manage your profile, tenants and subscriptions.',
   '欢迎回来': 'Welcome back',
   '欢迎使用 molis AI': 'Welcome to molis AI',
+  '正在检查登录状态…': 'Checking your sign-in status…',
+  '重试': 'Retry',
   '账号登录': 'Account', '账号密码': 'Password', '邮箱验证': 'Email code', '手机验证': 'Phone code', '邮箱或手机号': 'Email or phone', '手机验证码': 'Phone code', '邮箱密码': 'Email & password',
   '使用 Google 登录': 'Sign in with Google', '使用 GitHub 登录': 'Sign in with GitHub',
   '登录方式': 'Sign-in method', '暂不可用': 'Unavailable', '邮箱': 'Email',

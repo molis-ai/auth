@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // AUTH-CYCLE-01/02: real cookies and BFF; no token injection into browser state.
 export async function accountCycles({page,browser,db,origin}) {
-  const anonymous="Boolean(document.querySelector('.auth-entry input[type=email]')) && !document.querySelector('.console-tabs')";
+  const anonymous="Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.console-tabs')";
   const authenticated="Boolean(document.querySelector('.console-tabs'))";
   async function wait(p,expression,options) {
     for(let attempt=0;attempt<5;attempt++) {
@@ -26,7 +26,7 @@ export async function accountCycles({page,browser,db,origin}) {
     await wait(p,anonymous);
     // Functional stress, not a rate-limit bypass in product: isolate buckets between test accounts.
     await db.prepare('UPDATE auth_rate_bucket SET expires_at=0').run();
-    await p.fill('input[type=email]',email);await p.fill('input[autocomplete=current-password]',password);
+    await p.fill('input[autocomplete=username]',email);await p.fill('input[autocomplete=current-password]',password);
     await click(p,'登录',4);await wait(p,authenticated);
     const current=await state(p);
     assert.equal(await p.evaluate("document.querySelector('.profile-identity h2').textContent"),current.user.displayName,'old unsaved profile must not survive account replacement');
@@ -60,14 +60,17 @@ export async function accountCycles({page,browser,db,origin}) {
   await wait(sibling,anonymous,{timeoutMs:5000});
   console.log('PASS AUTH-CYCLE-01 clean entry, valid-cookie restore, repeated logout, second-tab invalidation');
   // Register B through the actual UI, then alternate distinct identities.
-  await click(page,'邮箱注册');await page.fill('input[type=email]','cycle-b@example.test');await click(page,'继续');
+  await click(page,'邮箱验证');await page.fill('input[type=email]','cycle-b@example.test');await click(page,'继续');
   await wait(page,"Boolean(document.querySelector('input[autocomplete=one-time-code]'))");
   const code=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('cycle-b@example.test').first();
   await page.fill('input[autocomplete=one-time-code]',code.credential);await click(page,'验证');
+  await wait(page,authenticated);
+  await click(page,'账号安全');await click(page,'登录密码');await click(page,'设置或修改密码');
   await wait(page,"document.querySelectorAll('input[autocomplete=new-password]').length===2");
   await page.fill('input[autocomplete=new-password]','Synthetic-Cycle-B-Password-61');
   await page.fill('label:has(input[autocomplete=new-password]):last-of-type input','Synthetic-Cycle-B-Password-61');
-  await click(page,'完成注册');await wait(page,authenticated);const b=await state(page);assert.notEqual(a.user.userId,b.user.userId);
+  await click(page,'确认修改密码');await wait(page,"!document.querySelector('.security-editor')");
+  const b=await state(page);assert.notEqual(a.user.userId,b.user.userId);
   await logout(page);
   const B={email:'cycle-b@example.test',password:'Synthetic-Cycle-B-Password-61'};
   for(let i=0;i<20;i++) {
@@ -92,7 +95,7 @@ export async function accountCycles({page,browser,db,origin}) {
   await wait(page,anonymous);assert.notEqual((await state(page)).state,'AUTHENTICATED');
   // A delayed session response from before logout must not restore the old identity.
   await login(page,B.email,B.password);await wait(sibling,authenticated);
-  await page.evaluate("window.__holdSession=true;window.dispatchEvent(new Event('focus'))");
+  await page.evaluate("{const now=Date.now;Date.now=()=>now()+31_000;window.__holdSession=true;window.dispatchEvent(new Event('focus'));Date.now=now;}");
   await wait(page,'window.__heldSession===true');await logout(sibling);await wait(page,anonymous);
   await new Promise(resolve=>setTimeout(resolve,1500));assert.notEqual((await state(page)).state,'AUTHENTICATED');
   // A failed logout request must not claim success; retry must revoke the real session.

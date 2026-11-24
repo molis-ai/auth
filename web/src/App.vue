@@ -5,6 +5,7 @@ import {
   AuthError,
   type AccountView,
 } from "./lib/account-client.ts";
+import type { AuthCompletion } from "./lib/auth-flow.ts";
 import AccountSecurityEditor from "./components/AccountSecurityEditor.vue";
 import AuthEntry from "./components/AuthEntry.vue";
 import AccountProfile from "./components/AccountProfile.vue";
@@ -34,6 +35,13 @@ const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
   page = ref("account");
+const startupFailed = ref(false);
+const SESSION_CHECK_COOLDOWN_MS = 30_000;
+let lastSessionCheckAt: number | undefined;
+let accountScope = 0;
+let openReported = false;
+let profileMethodsRequested = false;
+let methodsRequest = 0;
 interface Application {
   applicationId: string;
   name: string;
@@ -94,9 +102,11 @@ function can(capability: string) {
 function expireAccount(error: unknown): boolean {
   if (!(error instanceof AuthError) ||
     !["SESSION_EXPIRED", "SESSION_REVOKED", "LOGIN_REQUIRED"].includes(error.code)) return false;
-  clearAccount();
-  account.value = { state: "EXPIRED" };
+  clearAccount({ state: "EXPIRED" });
   return true;
+}
+function expireWithToast(error: unknown) {
+  if (expireAccount(error)) showToast(accountErrorMessage(error));
 }
 async function run(task: () => Promise<void>) {
   if (busy.value) return;
@@ -105,6 +115,7 @@ async function run(task: () => Promise<void>) {
   try {
     await task();
   } catch (e) {
+    if (e instanceof AuthError && e.code === "CANCELLED") return;
     expireAccount(e);
     showToast(accountErrorMessage(e));
   } finally {
@@ -130,7 +141,9 @@ async function list<T>(path: string): Promise<T[]> {
   return result;
 }
 async function refreshAccount() {
+  const scope = accountScope;
   const current = await client.session();
+  if (scope !== accountScope) throw new AuthError("CANCELLED");
   if (account.value?.user && current.state !== "AUTHENTICATED") {
     throw new AuthError("SESSION_EXPIRED");
   }
@@ -138,20 +151,57 @@ async function refreshAccount() {
     replaceSession();
     throw new AuthError("CANCELLED");
   }
+  confirmAccount(current);
+}
+function confirmAccount(current: AccountView) {
+  if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) {
+    accountScope++;
+  }
+  lastSessionCheckAt = Date.now();
   account.value = current;
-  if (current.state === "AUTHENTICATED") {
-    methods.value = (await client.request<{ loginMethods: Method[] }>("/login-methods")).loginMethods;
+  if (current.state === "AUTHENTICATED") void reportOpenActivity();
+}
+async function initializeSession() {
+  if (busy.value || account.value || replacing) return;
+  busy.value = true;
+  startupFailed.value = false;
+  try {
+    await refreshAccount();
+  } catch (error) {
+    if (error instanceof AuthError && error.code === "CANCELLED") return;
+    if (!expireAccount(error)) startupFailed.value = true;
+  } finally {
+    busy.value = false;
   }
 }
-async function refresh() {
-  await refreshAccount();
-  if (account.value?.state === "AUTHENTICATED") {
+async function reportOpenActivity() {
+  if (openReported) return;
+  openReported = true;
+  const scope = accountScope;
+  try {
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
       kind: "OPEN",
     });
+  } catch (error) {
+    if (scope === accountScope) expireWithToast(error);
   }
 }
+async function refreshLoginMethods() {
+  const scope = accountScope;
+  const request = ++methodsRequest;
+  const data = await client.request<{ loginMethods: Method[] }>("/login-methods");
+  if (scope !== accountScope) throw new AuthError("CANCELLED");
+  if (request === methodsRequest) methods.value = data.loginMethods;
+}
+watch([() => account.value?.user?.userId, page], ([userId, target]) => {
+  if (!userId || account.value?.state !== "AUTHENTICATED" || target !== "account" || profileMethodsRequested) return;
+  profileMethodsRequested = true;
+  const scope = accountScope;
+  void refreshLoginMethods().catch(error => {
+    if (scope === accountScope) expireWithToast(error);
+  });
+});
 async function navigate(target: string) {
   await cancelSecurity();
   page.value = target;
@@ -159,20 +209,22 @@ async function navigate(target: string) {
   selectedApplication.value = undefined;
   securityAction.value = "";
   await run(async () => {
-    if (target === "security") {
-      const data = await client.request<{ loginMethods: Method[] }>(
-        "/login-methods",
-      );
-      methods.value = data.loginMethods;
-    } else if (target === "applications")
+    if (target === "security") await refreshLoginMethods();
+    else if (target === "applications")
       applications.value = await list("/platform/applications");
     else if (target === "subscriptions")
       subscriptions.value = await list("/subscriptions");
   });
 }
-async function loggedIn() {
+async function loggedIn({ account: current }: AuthCompletion) {
   clearToast();
-  await run(refresh);
+  const user = current?.user;
+  if (current?.state === "AUTHENTICATED" && user?.userId &&
+    typeof user.displayName === "string" && typeof user.version === "number" &&
+    (user.avatarUrl === null || typeof user.avatarUrl === "string") &&
+    Array.isArray(current.capabilities)) {
+    confirmAccount(current);
+  } else await run(refreshAccount);
   if (account.value?.state === 'AUTHENTICATED') sessionChanges?.postMessage('changed');
 }
 async function submitWrite<T>(
@@ -345,7 +397,10 @@ async function finishSecurity(identityHandle?: string) {
         confirmPassword.value = "";
         securityAction.value = "";
       },
-      after: refreshAccount,
+      after: async () => {
+        await refreshAccount();
+        await refreshLoginMethods();
+      },
     },
   );
 }
@@ -361,10 +416,14 @@ async function logout(all = false) {
     } else showToast("本机已退出，远端撤销尚未确认");
   });
 }
-function clearAccount() {
+function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
+  accountScope++;
+  lastSessionCheckAt = undefined;
+  openReported = false;
+  profileMethodsRequested = false;
   submissions.setAccount(undefined);
   refreshIssues.clear();
-  account.value = { state: 'ANONYMOUS' };
+  account.value = next;
   page.value = 'account'; securityTab.value = 'methods';
   applicationSearch.value = '';
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
@@ -372,6 +431,8 @@ function clearAccount() {
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
   newIdentity.value = false; securityIdentity.value = ''; newPassword.value = ''; confirmPassword.value = '';
+  authorizationPopup.value?.close();
+  authorizationPopup.value = null;
 }
 const sessionChanges = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('molis.auth.session');
 const authenticating = ref(false);
@@ -386,14 +447,18 @@ function replaceSession() {
 }
 if (sessionChanges) sessionChanges.onmessage = () => replaceSession();
 async function checkSession() {
-  if (busy.value || authenticating.value || checking || replacing || document.visibilityState !== 'visible') return;
+  if (!account.value || busy.value || authenticating.value || checking || replacing || document.visibilityState !== 'visible') return;
+  if (lastSessionCheckAt !== undefined && Date.now() - lastSessionCheckAt < SESSION_CHECK_COOLDOWN_MS) return;
   checking = true;
+  const scope = accountScope;
   try {
     const current = await client.session();
-    if (authenticating.value) return;
+    if (scope !== accountScope || authenticating.value) return;
+    lastSessionCheckAt = Date.now();
     if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) replaceSession();
   } catch (error) {
-    if (error instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
+    if (scope === accountScope && error instanceof AuthError &&
+      ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
   } finally { checking = false; }
 }
 function pageRestored(event: PageTransitionEvent) { if (event.persisted) replaceSession(); }
@@ -404,13 +469,14 @@ function pageLeaving() {
   if (root) root.style.visibility = 'hidden';
 }
 onMounted(() => {
-  void run(refresh);
+  void initializeSession();
   window.addEventListener('focus', checkSession);
   document.addEventListener('visibilitychange', checkSession);
   window.addEventListener('pageshow', pageRestored);
   window.addEventListener('pagehide', pageLeaving);
 });
 onBeforeUnmount(() => {
+  accountScope++;
   clearToast();
   client.close(); sessionChanges?.close();
   window.removeEventListener('focus', checkSession);
@@ -422,7 +488,14 @@ onBeforeUnmount(() => {
 <template>
   <p v-if="environmentLabel" class="environment-label" role="status">{{ environmentLabel }}</p>
   <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
-  <AuthEntry v-if="account?.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @authenticating="authenticating = $event" @complete="loggedIn" />
+  <main v-if="!account" class="session-startup">
+    <div v-if="startupFailed">
+      <p role="alert">{{ entryText(entryLanguage(), '账号服务暂时不可用，请稍后再试。') }}</p>
+      <button type="button" @click="initializeSession">{{ entryText(entryLanguage(), '重试') }}</button>
+    </div>
+    <p v-else role="status">{{ entryText(entryLanguage(), '正在检查登录状态…') }}</p>
+  </main>
+  <AuthEntry v-else-if="account.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @authenticating="authenticating = $event" @complete="loggedIn" />
   <div v-else class="console-shell v2-console">
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
@@ -470,7 +543,7 @@ onBeforeUnmount(() => {
           <button type="button" :disabled="busy" @click="retryRefresh(action)">刷新</button>
         </p>
       </template>
-      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel" :client="client" :on-saved="refresh" @expired="error => { clearAccount(); showToast(accountErrorMessage(error)); }">
+      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel" :client="client" :on-saved="refreshAccount" @expired="expireWithToast">
       </AccountProfile>
       <section v-if="page === 'security'" class="console-card security-page">
         <div class="collection-layout security-layout">

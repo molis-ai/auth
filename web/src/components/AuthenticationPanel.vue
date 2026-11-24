@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AuthFlow, FlowCancelled } from "../lib/auth-flow.ts";
+import { AuthFlow, FlowCancelled, type AuthCompletion } from "../lib/auth-flow.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
 import { onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { entryText } from "../lib/entry-copy.ts";
 import { rememberedEmail, rememberEmail } from "../lib/entry-preferences.ts";
-import { AccountClient } from "../lib/account-client.ts";
+import { AccountClient, type AccountView } from "../lib/account-client.ts";
 const props = defineProps<{
   client: AccountClient;
   authorizationPopup?: Window | null;
@@ -19,7 +19,7 @@ const props = defineProps<{
   blocked?: boolean;
 }>();
 const emit = defineEmits<{
-  complete: [value: { handle: string; account?: unknown }];
+  complete: [value: AuthCompletion];
   cancel: [];
   busy: [value: boolean];
 }>();
@@ -29,7 +29,7 @@ interface Transaction {
   nextStep: string;
   challengeHandle?: string;
   retryAfterSeconds?: number;
-  account?: unknown;
+  account?: AccountView;
   operationReady?: boolean;
   browserStartUrl?: string;
 }
@@ -230,7 +230,7 @@ async function submit() {
           );
           if (status.status === "CONSUMED") {
             const account = (props.purpose ?? "LOGIN") === "LOGIN"
-              ? await request<{ state: string }>("/session")
+              ? await request<AccountView>("/session")
               : undefined;
             if (account && account.state !== "AUTHENTICATED") throw Error("登录状态已失效，请重新登录。");
             providerPending.value = false;

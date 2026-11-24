@@ -1,4 +1,5 @@
 /* Reference layout with original Calm Workspace colors; scoped to Auth entry pages. */
+.session-startup { display: grid; place-items: center; min-height: 100svh; padding: 24px; background: var(--workspace-bg); text-align: center; }
 .auth-entry.shell { position: relative; max-width: none; width: 100%; min-height: 100svh; padding: 24px 40px; background: var(--workspace-bg); }
 .auth-entry .topbar { position: absolute; top: 20px; left: 40px; right: 40px; min-height: 40px; }
 .auth-entry .wordmark { font-size: 22px; font-weight: 500; letter-spacing: -.5px; gap: 8px; }
