@@ -8,6 +8,16 @@
  .v2-console .collection-item.selected:hover { background:#e1e6f6; }
  .v2-console .v2-row:not(.collection-item):hover,
  .v2-console tbody tr:has(td:not(.tm-empty)):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
+ #app .v2-console dialog header button:not(:disabled):hover,
+ #app .v2-console dialog button[aria-label^="关闭"]:not(:disabled):hover {
+  background-color:#e9e9ed;
+  color:var(--ink);
+  box-shadow:inset 0 0 0 1px #19191b12;
+ }
+ #app .v2-console :is(tbody tr:has(td:not(.tm-empty)), .v2-row:not(.collection-item)):not([inert]):hover {
+  background-color:#efeff2;
+  box-shadow:inset 0 0 0 1px #19191b08;
+ }
 }
 .v2-console .collection-item:focus-within { box-shadow:0 0 0 2px #5068b740; }
 .v2-console .v2-row:focus-within,

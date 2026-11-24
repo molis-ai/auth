@@ -57,8 +57,17 @@ const loginAccountMethods = computed(() => accountChoices.filter(([value]) => av
 const loginProviders = computed(() => providerChoices.filter(([value]) => available(value)));
 const firstLoginMethod = computed(() => loginAccountMethods.value[0]?.[0] ?? '');
 const t = (text: string) => props.entry ? entryText(props.language, text) : text;
-const remember = ref(Boolean(address.value)), showPassword = ref(false), now = ref(Date.now()), providerPending = ref(false);
-const countdown = setInterval(() => { now.value = Date.now(); }, 1000);
+const remember = ref(Boolean(address.value)), showPassword = ref(false), now = ref(0), providerPending = ref(false);
+watch([retryAt, challenge], ([deadline, activeChallenge], _, onCleanup) => {
+  now.value = Date.now();
+  if (!activeChallenge || deadline <= now.value) return;
+
+  const countdown = setInterval(() => {
+    now.value = Date.now();
+    if (now.value >= deadline) clearInterval(countdown);
+  }, 1000);
+  onCleanup(() => clearInterval(countdown));
+});
 watch(() => busy.value || providerPending.value, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
 async function chooseMethod(value: string) {
@@ -104,7 +113,6 @@ async function cancel() {
 onBeforeUnmount(() => {
   active = false;
   flow.dispose();
-  clearInterval(countdown);
   void cancel();
 });
 async function complete() {

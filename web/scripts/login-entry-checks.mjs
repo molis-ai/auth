@@ -172,7 +172,12 @@ async function checkLayout({ page, origin, fixtures }) {
         assert.deepEqual(trace.firstForm, trace.readyForm, `width ${width}, first and ready form geometry`);
         assert.equal(trace.disabledSubmit, false, `width ${width}, password submit starts enabled`);
         assert.deepEqual(trace.shifts.filter(shift => shift.value > 0), [], `width ${width}, no Chrome layout shifts`);
-        observations.push({ width, first, loading, afterFirst, ...trace, requests });
+        const assets = await page.evaluate(`performance.getEntriesByType('resource')
+          .filter(entry => new URL(entry.name).pathname.startsWith('/auth-ui/assets/'))
+          .map(entry => ({ path: new URL(entry.name).pathname, bytes: entry.decodedBodySize }))`);
+        assert.equal(assets.filter(asset => asset.path.endsWith('.css')).length, 1);
+        assert.ok(assets.every(asset => !/\/(ConsoleShell|AccountProfile|TenantPage|AccountSecurityEditor|AvatarCropper)-/.test(asset.path)));
+        observations.push({ width, first, loading, afterFirst, ...trace, requests, assets });
       });
     }
   } finally {
@@ -238,6 +243,70 @@ async function checkCapabilitiesRetry({ page, origin, fixtures }, status, method
   });
 }
 
+function traceCountdown() {
+  const intervals = new Map();
+  const trace = { active: 0, started: 0, runs: [] };
+  window.__countdown = trace;
+  const start = window.setInterval.bind(window);
+  const stop = window.clearInterval.bind(window);
+  window.setInterval = (...args) => {
+    const id = start(...args);
+    intervals.set(id, performance.now());
+    trace.started++;
+    trace.active = intervals.size;
+    return id;
+  };
+  window.clearInterval = (id) => {
+    if (intervals.has(id)) {
+      trace.runs.push(performance.now() - intervals.get(id));
+      intervals.delete(id);
+      trace.active = intervals.size;
+    }
+    return stop(id);
+  };
+
+  const fetch = window.fetch.bind(window);
+  const retries = [2, 7];
+  window.fetch = (url, options) => {
+    if (options?.method !== 'POST' || new URL(url).pathname !== '/api/account/auth/verification-codes') {
+      return fetch(url, options);
+    }
+    return Promise.resolve(Response.json({
+      data: { verificationId: 'local-browser-countdown', retryAfterSeconds: retries.shift() },
+    }));
+  };
+}
+
+async function checkResendCountdown({ page, origin }) {
+  const { identifier } = await page.command('Page.addScriptToEvaluateOnNewDocument', { source: `(${traceCountdown})()` });
+  const tab = '.account-methods button';
+  const resend = '.entry-actions button.text-button';
+  try {
+    await page.command('Page.navigate', { url: origin + '/login' });
+    await page.wait(passwordReady);
+    assert.equal(await page.evaluate('window.__countdown.started'), 0);
+    await page.click(`${tab}:nth-child(2)`);
+    await page.fill('.entry-auth-form input[type=email]', 'countdown@example.test');
+    await page.click('.entry-actions button[type=submit]');
+    await page.wait(`document.querySelector('${resend}:disabled')?.textContent.endsWith('(2s)')`);
+    assert.equal(await page.evaluate('window.__countdown.active'), 1);
+    await page.wait(`Boolean(document.querySelector('${resend}:enabled')) && window.__countdown.active === 0`);
+    const firstRun = await page.evaluate('window.__countdown.runs[0]');
+    assert.ok(firstRun >= 1900, `two-second retry ran for ${firstRun} ms`);
+    await page.click(resend);
+    await page.wait(`document.querySelector('${resend}:disabled')?.textContent.endsWith('(7s)')`);
+    await page.click(`${tab}:first-child`);
+    await page.wait(passwordReady);
+    const { active, started, runs } = await page.evaluate('window.__countdown');
+    assert.equal(active, 0);
+    assert.equal(started, 2);
+    assert.ok(runs[1] < 7000, `switching to password stopped the retry after ${runs[1]} ms`);
+    console.log(`PASS login resend uses the returned 2 s and 7 s delays, clears on expiry and method switch (active for ${runs.map(Math.round).join(' and ')} ms)`);
+  } finally {
+    await page.command('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+  }
+}
+
 export async function loginEntryChecks({ page, origin, fixtures, evidence }) {
   const context = { page, origin, fixtures };
   const observations = await checkLayout(context);
@@ -247,6 +316,7 @@ export async function loginEntryChecks({ page, origin, fixtures, evidence }) {
   await checkCapabilitiesRetry(context, 403, 'EMAIL_CODE');
   await checkCapabilitiesRetry(context, 503, 'GOOGLE');
   console.log('PASS login entry handles session failure and capabilities 403/503 with retry and only enables returned methods');
+  await checkResendCountdown(context);
 }
 
 export async function authenticatedLoginEntryCheck({ page, origin, fixtures }) {

@@ -24,16 +24,10 @@ const CLIENT_POLICY_JOINS: &str =
     JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
     JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'";
 
-fn client_config(a: &Auth) -> Result<Value> {
-    Ok(serde_json::from_str(
-        &a.env
-            .var("UNIFIED_ACCOUNT_CONFIG")
-            .map_err(|_| Failure {
-                status: 503,
-                code: "UNIFIED_CONFIGURATION_INVALID",
-            })?
-            .to_string(),
-    )?)
+fn client_config(a: &Auth) -> Result<&Value> {
+    a.unified_config
+        .as_deref()
+        .ok_or_else(crate::unified_policy::invalid_configuration)
 }
 const CLIENT_CONFIG_FIELDS: [(&str, &str, &str); 5] = [
     ("id", "environment_id", "environmentId"),
@@ -71,7 +65,7 @@ pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
             vec![id.into()],
         )
         .await?;
-    check_registered_client(&c, &config)?;
+    check_registered_client(&c, config)?;
     Ok(c)
 }
 pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
@@ -155,7 +149,7 @@ fn credential_result(
         401,
         "INVALID_CREDENTIALS",
     )?;
-    check_registered_client(&row, &client_config(a)?)?;
+    check_registered_client(&row, client_config(a)?)?;
     check_origin(&row, origin)?;
     let token = parsed(&row, "credential_token")?;
     if let Some(client) = row.as_object_mut() {
@@ -199,7 +193,7 @@ pub(crate) fn active_lookup(a: &Auth, raw: &str) -> Result<(String, D1PreparedSt
 /// credential result remains the source of HTTP errors and is read in the same
 /// transaction, including when this query returns no principal.
 pub(crate) fn active_actor(a: &Auth, digest: &str) -> (String, Vec<Value>) {
-    let config = client_config(a).unwrap_or(Value::Null);
+    let config = a.unified_config.as_deref().unwrap_or(&Value::Null);
     let origin = a.header("Origin");
     let n = now();
     let mut args = vec![digest.into(), n.into(), n.into(), n.into()];

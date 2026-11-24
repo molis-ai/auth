@@ -2,7 +2,7 @@ import { Miniflare, Response, convertV4MiniflareOptions } from 'miniflare'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { compatibilityDate } from './environment.mjs'
+import { compatibilityDate, webAssetConfig } from './environment.mjs'
 
 export async function getRustProxy(
   bindings,
@@ -12,9 +12,11 @@ export async function getRustProxy(
     passwordKdf = true,
     fixtureEntrypoint,
     handleStructuredLogs,
+    assetsDirectory,
     buildDirectory = fileURLToPath(new URL('../rust/build/', import.meta.url)),
   } = {},
 ) {
+  const assetConfig = assetsDirectory ? webAssetConfig(assetsDirectory) : undefined
   const base = {
     modulesRoot: buildDirectory,
     modules: [
@@ -39,6 +41,20 @@ export async function getRustProxy(
     durableObjects: passwordKdf
       ? { PASSWORD_KDF: { className: 'PasswordKdf', useSQLite: true } }
       : {},
+    ...(assetConfig
+      ? {
+          assets: {
+            directory: assetConfig.directory,
+            binding: assetConfig.binding,
+            run_worker_first: assetConfig.run_worker_first,
+            assetConfig: {
+              html_handling: assetConfig.html_handling,
+              not_found_handling: assetConfig.not_found_handling,
+            },
+            routerConfig: { has_user_worker: true },
+          },
+        }
+      : {}),
     ...(assets
       ? {
           serviceBindings: {

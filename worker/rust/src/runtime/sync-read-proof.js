@@ -5,11 +5,20 @@ const b64url = (bytes) =>
     .replace(/\//g, '_')
     .replace(/=+$/, '')
 
-export async function signSyncReadProof(configuration, payload) {
+let signingKey
+
+async function loadSigningKey(configuration) {
+  if (signingKey?.configuration === configuration) return signingKey
   const { kid, kty, crv, x, d } = JSON.parse(configuration)
   const key = await crypto.subtle.importKey('jwk', { kty, crv, x, d }, { name: 'Ed25519' }, false, [
     'sign',
   ])
+  signingKey = { configuration, kid, key }
+  return signingKey
+}
+
+export async function signSyncReadProof(configuration, payload) {
+  const { kid, key } = await loadSigningKey(configuration)
   const header = b64url(
     encoder.encode(JSON.stringify({ alg: 'EdDSA', typ: 'molis-sync-read+jwt', kid })),
   )

@@ -6,15 +6,16 @@ import {
   type AccountView,
 } from "./lib/account-client.ts";
 import type { AuthCompletion } from "./lib/auth-flow.ts";
-import AccountSecurityEditor from "./components/AccountSecurityEditor.vue";
 import AuthEntry from "./components/AuthEntry.vue";
 import AuthEntryShell from "./components/AuthEntryShell.vue";
-import AccountProfile from "./components/AccountProfile.vue";
 import { entryText } from "./lib/entry-copy.ts";
 import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
 import { accountErrorMessage } from "./lib/errors.ts";
 import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./lib/idempotent-submit.ts";
 import logo from "./assets/molis-logo.png";
+const ConsoleShell = defineAsyncComponent(() => import("./components/ConsoleShell.vue"));
+const AccountProfile = defineAsyncComponent(() => import("./components/AccountProfile.vue"));
+const AccountSecurityEditor = defineAsyncComponent(() => import("./components/AccountSecurityEditor.vue"));
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
@@ -556,7 +557,7 @@ onBeforeUnmount(() => {
     </component>
     <AuthEntry v-else :key="accountScope" :client="client" :busy="busy" :language="language" :prefetched-capabilities="prefetchedCapabilities" @authenticating="authenticating = $event" @complete="loggedIn" />
   </AuthEntryShell>
-  <div v-else class="console-shell v2-console">
+  <ConsoleShell v-else>
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
         <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">Molis AI</strong></a>
@@ -723,58 +724,11 @@ onBeforeUnmount(() => {
       </section>
     </main>
     </div>
-  </div>
+  </ConsoleShell>
 </template>
 <style>
-.console-shell.v2-console {
-  display: block;
-  min-height: 100svh;
-}
-.v2-console,
-.v2-console * {
-  box-sizing: border-box;
-}
-.v2-console > .console-header {
-  flex-wrap: wrap;
-}
-.v2-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-}
-.v2-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-.console-shell button {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 14px;
-  background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-  min-height: 40px;
-}
-.console-shell button:enabled:hover {
-  background: var(--accent-soft);
-}
-.console-shell button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
 .v2-form {
   max-width: 520px;
-}
-.console-tabs {
-  flex-wrap: wrap;
-}
-.console-shell footer {
-  margin-top: 30px;
 }
 </style>
 

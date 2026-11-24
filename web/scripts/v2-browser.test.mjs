@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import policy from "../../contracts/unified-account/policy.json" with { type: "json" };
 import { bootstrapPlatform } from "../../worker/scripts/platform-bootstrap.mjs";
 import { authenticatedLoginEntryCheck, loginEntryChecks, loginEntryFixtures } from "./login-entry-checks.mjs";
 const workRoot = process.env.MOLIS_WORK_SOURCE;
@@ -83,19 +84,8 @@ try {
       }),
     },
     undefined,
-    (req) => {
-      const path = new URL(req.url).pathname;
-      const type = path.endsWith(".js")
-        ? "text/javascript"
-        : path.endsWith(".css")
-          ? "text/css"
-          : path.endsWith(".png")
-            ? "image/png"
-            : "text/html";
-      return new Response(readFileSync(root + "/web/dist" + path), {
-        headers: { "Content-Type": type },
-      });
-    },
+    undefined,
+    { assetsDirectory: join(root, "web/dist") },
   );
   await initializeLocalRuntime(proxy);
   // ENTRY-04: an alias document redirects before login; cross-origin writes remain denied.
@@ -243,11 +233,21 @@ try {
   await page.wait(
     "document.querySelector('.console-tabs')?.textContent.includes('个人资料')",
   );
+  await page.wait("Boolean(document.querySelector('.profile-identity'))");
+  const stylesheets = () => page.evaluate("[...document.styleSheets].filter(sheet => sheet.href).map(sheet => new URL(sheet.href).pathname)");
+  const profileStylesheets = await stylesheets();
+  assert.ok(profileStylesheets.some(path => path.includes("/ConsoleShell-")));
+  assert.ok(profileStylesheets.some(path => path.includes("/AccountProfile-")));
+  assert.ok(profileStylesheets.every(path => !path.includes("/TenantPage-")));
+  assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.console-shell')).display"), "grid");
+  assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.profile-identity')).display"), "flex");
   console.log("PASS browser phone registration/login");
   await click("租户");
   await page.wait(
     "document.querySelector('main')?.textContent.includes('创建租户')",
   );
+  assert.ok((await stylesheets()).some(path => path.includes("/TenantPage-")));
+  console.log("PASS console and profile styles arrive on sign-in, tenant styles arrive on navigation");
   await click("＋ 创建租户");
   await page.fill("#tenant-create-name", "QA 自助租户");
   await click("创建");
@@ -451,8 +451,10 @@ try {
   // Bound methods expose unlink; replacement was removed from the current UI.
   assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.security-method')].find(e=>e.querySelector('h3')?.textContent==='手机号').querySelector('.security-method-actions').textContent.trim()"),'解绑');
   const verifiedBefore=(await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t;
+  assert.ok([...scripts].every(path => !path.includes("/AccountSecurityEditor-")));
   await click("设置或修改密码");
   await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
+  assert.ok([...scripts].some(path => path.includes("/AccountSecurityEditor-")));
   assert.equal(await page.evaluate("Boolean(document.querySelector('input[autocomplete=current-password]'))"),false);
   await click('取消');
   await page.wait("!document.querySelector('.security-editor')");
@@ -629,6 +631,14 @@ try {
   await page.wait(
     "document.querySelector('main')?.textContent.includes('QA 目标用户 的平台权限')",
   );
+  const expectedPlatformCapabilities = [...new Set(policy.permissions
+    .map(({ authority }) => authority)
+    .filter(authority => authority.startsWith("platform:"))
+    .map(authority => authority.slice("platform:".length)))];
+  assert.deepEqual(
+    await page.evaluate("[...document.querySelectorAll('main h2 ~ .v2-row > span')].map(row => row.textContent.split(' ·')[0].trim())"),
+    expectedPlatformCapabilities,
+  );
   for (const [button, status] of [
     ["授予", "ACTIVE"],
     ["撤销", "REVOKED"],
@@ -718,6 +728,7 @@ try {
   await page.fill('input[autocomplete=username]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-49');
   const passwordStart = await page.evaluate("window.__authPerformance.requests.length");
   await page.click('input[type=checkbox]');await click('登录');await page.wait("Boolean(document.querySelector('.console-tabs'))");
+  await page.wait("Boolean(document.querySelector('.profile-email'))");
   assert.equal(await page.evaluate("localStorage.getItem('molis.auth.remembered-email')"),'entry-union@example.test');
   assert.equal(await page.evaluate("document.querySelector('.profile-email')?.textContent"),'entry-union@example.test');
   assert.equal(await page.evaluate("document.querySelector('.account-menu-email')?.textContent"),'entry-union@example.test');

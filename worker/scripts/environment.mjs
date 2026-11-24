@@ -6,6 +6,28 @@ export const root = new URL('../../', import.meta.url)
 export const port = Number(new URL(targets.dev.authOrigin).port)
 export const compatibilityDate = '2026-09-19'
 const path = (relative) => fileURLToPath(new URL(relative, root))
+
+export function webAssetConfig(directory = path('web/dist')) {
+  return {
+    directory,
+    binding: 'ASSETS',
+    // Unmatched paths check Assets and fall back to the Worker on a miss.
+    // A negative route would send misses directly to Assets as well.
+    run_worker_first: [
+      '/',
+      '/index.html',
+      '/login',
+      '/console',
+      '/api/*',
+      '/account/*',
+      '/.well-known/*',
+      '/oauth2/*',
+    ],
+    html_handling: 'none',
+    not_found_handling: 'none',
+  }
+}
+
 const sessionKey = (value) => required(value) && /^[A-Za-z0-9_-]{43}$/u.test(value)
 const optional = (value) => value === undefined || typeof value === 'string'
 const email = (value) => required(value) && /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/u.test(value)
@@ -172,13 +194,7 @@ export function authEnvironment(name, local, configRoot = root) {
     ...(!local && name !== 'dev'
       ? { routes: [{ pattern: new URL(origin).hostname, custom_domain: true }] }
       : {}),
-    assets: {
-      directory: path('web/dist'),
-      binding: 'ASSETS',
-      run_worker_first: true,
-      html_handling: 'none',
-      not_found_handling: 'none',
-    },
+    assets: webAssetConfig(),
     vars,
     triggers: { crons: ['0 * * * *'] },
     d1_databases: [
