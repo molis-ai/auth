@@ -1,15 +1,38 @@
 // Native Workers primitives only; authentication decisions remain in Rust.
 const dec = (s) =>
   Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
-const enc = (b) =>
-  btoa(String.fromCharCode(...new Uint8Array(b)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-export async function authSeal(key, value) {
+const enc = (b) => {
+  const bytes = new Uint8Array(b)
+  const chunkSize = 8192
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+const MAX_AES_KEYS = 4
+const aesKeys = new Map()
+
+async function aesKey(key, usage) {
+  const cached = aesKeys.get(key)?.[usage]
+  if (cached) return cached
   const raw = dec(key)
   if (raw.length !== 32) throw Error('key')
-  const k = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt'])
+  // Publish only completed imports, so each pending operation belongs to its own request.
+  const imported = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, [usage])
+  let keys = aesKeys.get(key)
+  if (!keys) {
+    if (aesKeys.size >= MAX_AES_KEYS) aesKeys.delete(aesKeys.keys().next().value)
+    keys = {}
+    aesKeys.set(key, keys)
+  }
+  keys[usage] = imported
+  return imported
+}
+
+export async function authSeal(key, value) {
+  const k = await aesKey(key, 'encrypt')
   const iv = crypto.getRandomValues(new Uint8Array(12))
   return (
     enc(iv) +
@@ -20,9 +43,7 @@ export async function authSeal(key, value) {
 export async function authOpen(key, value) {
   const [iv, data, ...extra] = value.split('.')
   if (extra.length) throw Error('format')
-  const raw = dec(key)
-  if (raw.length !== 32) throw Error('key')
-  const k = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt'])
+  const k = await aesKey(key, 'decrypt')
   return new TextDecoder().decode(
     await crypto.subtle.decrypt({ name: 'AES-GCM', iv: dec(iv) }, k, dec(data)),
   )

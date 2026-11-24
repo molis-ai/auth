@@ -510,6 +510,48 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .run()
     assert.equal((await call('/sessions/current', undefined, expired.accessToken)).status, 401)
     assert.equal((await call('/sessions/current', undefined, fresh.accessToken)).status, 200)
+
+    await suite.test('revalidates configuration and signs with the current binding', async () => {
+      const currentSession = () => call('/sessions/current', undefined, fresh.accessToken)
+      await p.updateBindings({ AUTH_ORIGIN: 'http://127.0.0.1:8788' })
+      const wrongOrigin = await currentSession()
+      assert.equal(wrongOrigin.status, 503)
+      assert.equal(wrongOrigin.error.code, 'UNIFIED_CONFIGURATION_INVALID')
+
+      await p.updateBindings({ AUTH_ORIGIN: origin, UNIFIED_ACCOUNT_CONFIG: '{' })
+      const malformed = await currentSession()
+      assert.equal(malformed.status, 503)
+      assert.equal(malformed.error.code, 'UNIFIED_CONFIGURATION_INVALID')
+
+      await p.updateBindings({
+        UNIFIED_ACCOUNT_CONFIG: JSON.stringify({ ...config, environmentId: 'unified-other' }),
+      })
+      const changedEnvironment = await currentSession()
+      assert.equal(changedEnvironment.status, 403)
+      assert.equal(changedEnvironment.error.code, 'POLICY_MISMATCH')
+
+      const rotatedKey = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
+      await p.updateBindings({
+        UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config, null, 2),
+        SYNC_READ_SIGNING_JWK: JSON.stringify({ ...rotatedKey, kid: 'synthetic-sync' }),
+      })
+      assert.equal((await currentSession()).status, 200)
+      const newJwksReply = await p.fetch(new Request(origin + '/.well-known/molis-sync-jwks.json'))
+      assert.equal(newJwksReply.status, 200)
+      const { keys: rotatedKeys } = (await newJwksReply.json()) as { keys: JWK[] }
+      assert.equal(rotatedKeys[0].kid, 'synthetic-sync')
+      assert.equal(rotatedKeys[0].x, rotatedKey.x)
+      assert.equal(rotatedKeys[0].d, undefined)
+      const oldPublic = await importJWK(keys[0], 'EdDSA')
+      const newPublic = await importJWK(rotatedKeys[0], 'EdDSA')
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const proof = await call('/auth/sync-read-proof', undefined, fresh.accessToken)
+        assert.equal(proof.status, 200)
+        await assert.rejects(jwtVerify(proof.data.proof, oldPublic, { algorithms: ['EdDSA'] }))
+        const verified = await jwtVerify(proof.data.proof, newPublic, { algorithms: ['EdDSA'] })
+        assert.equal(verified.payload.token_sha256, hash(fresh.accessToken))
+      }
+    })
   } finally {
     await p.dispose()
   }

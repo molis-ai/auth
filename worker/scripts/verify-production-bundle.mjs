@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
-import { compatibilityDate } from './environment.mjs'
+import { compatibilityDate, webAssetConfig } from './environment.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const fixtureWasm = join(root, 'worker/rust/build/index_bg.wasm')
@@ -16,6 +16,41 @@ const mockDeliveryStatements = [
   'INSERT INTO auth_mock_delivery',
   'INSERT INTO auth_mock_notification',
 ]
+
+const assets = webAssetConfig()
+const assetPrefix = '/auth-ui/assets/'
+const assetFiles = readdirSync(join(assets.directory, assetPrefix), { withFileTypes: true })
+for (const entry of assetFiles) {
+  assert(
+    entry.isFile() && /^.+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/u.test(entry.name),
+    `Expected a content-hashed file under ${assetPrefix}: ${entry.name}`,
+  )
+}
+const index = readFileSync(join(assets.directory, 'index.html'), 'utf8')
+const references = [...index.matchAll(/\b(?:src|href)="(\/[^"]+)"/gu)].map((match) => match[1])
+assert(
+  references.some((url) => url.endsWith('.js')),
+  'Auth HTML needs an entry script',
+)
+assert(
+  references.some((url) => url.endsWith('.css')),
+  'Auth HTML needs an entry stylesheet',
+)
+for (const url of references) {
+  assert(
+    url.startsWith(assetPrefix) &&
+      assetFiles.some((entry) => entry.name === url.slice(assetPrefix.length)),
+    `Auth HTML references an asset missing from the published path: ${url}`,
+  )
+}
+assert.equal(
+  readFileSync(join(assets.directory, '_headers'), 'utf8'),
+  readFileSync(join(root, 'web/public/_headers'), 'utf8'),
+  'Build must publish the Auth asset headers',
+)
+console.log(
+  `Verified ${assetFiles.length} hashed assets and ${references.length} HTML asset references`,
+)
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
@@ -78,13 +113,7 @@ try {
       compatibility_date: compatibilityDate,
       workers_dev: false,
       preview_urls: false,
-      assets: {
-        directory: join(root, 'web/dist'),
-        binding: 'ASSETS',
-        run_worker_first: true,
-        html_handling: 'none',
-        not_found_handling: 'none',
-      },
+      assets,
       d1_databases: [
         {
           binding: 'DB',
@@ -108,6 +137,7 @@ try {
     WRANGLER_HIDE_BANNER: 'true',
     WRANGLER_SEND_ERROR_REPORTS: 'false',
     WRANGLER_NO_SKILLS_UPDATE_PROMPTS: 'true',
+    WRANGLER_LOG_PATH: join(staging, 'wrangler.log'),
     XDG_CONFIG_HOME: staging,
   })
   execFileSync(

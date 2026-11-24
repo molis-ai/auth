@@ -6,6 +6,7 @@ import { accountErrorMessage } from "../lib/errors.ts";
 import type { WriteOptions } from "../lib/idempotent-submit.ts";
 import TenantMembers from "./TenantMembers.vue";
 import { syncCreatedTenant } from "../lib/tenant-selection.ts";
+import "../styles/tenant-page.css";
 
 type Tenant = {
   tenantId: string;
