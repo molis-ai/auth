@@ -21,7 +21,9 @@ test('switching after a throttled challenge cancels the transaction before chang
   assert.equal(failure.value,'');assert.equal(retryAt.value,0);assert.equal(busy.value,false);
   const buttons=source.split('\n').filter(line=>line.includes('@click="chooseMethod'));
   assert.equal(buttons.length,2); // three account tabs and two social buttons, each rendered by its own loop
-  assert.match(buttons[0], /EMAIL_PASSWORD.*EMAIL_CODE.*PHONE_OTP/);
-  assert.match(buttons[1], /GOOGLE.*GITHUB/);
+  assert.match(buttons[0], /v-for="\[value,label\] in loginAccountMethods"/);
+  assert.match(buttons[1], /v-for="\[provider,label\] in loginProviders"/);
+  assert.match(source, /const accountChoices = .*EMAIL_PASSWORD.*EMAIL_CODE.*PHONE_OTP/);
+  assert.match(source, /const providerChoices = .*GOOGLE.*GITHUB/);
   for(const line of buttons)assert.doesNotMatch(line,/!!transaction/);
 });

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AuthFlow, FlowCancelled, type AuthCompletion } from "../lib/auth-flow.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
-import { onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { entryText } from "../lib/entry-copy.ts";
 import { rememberedEmail, rememberEmail } from "../lib/entry-preferences.ts";
 import { AccountClient, type AccountView } from "../lib/account-client.ts";
@@ -17,6 +17,7 @@ const props = defineProps<{
   entry?: boolean;
   language?: string;
   blocked?: boolean;
+  prefetchedCapabilities?: ReturnType<AccountClient['loginCapabilities']>;
 }>();
 const emit = defineEmits<{
   complete: [value: AuthCompletion];
@@ -48,6 +49,13 @@ const method = ref("EMAIL_PASSWORD"),
 const methods = ref<string[]>([]);
 const loginFlow = (props.purpose ?? 'LOGIN') === 'LOGIN' && !props.operation;
 const available = (value: string) => !loginFlow || methods.value.includes(value === 'EMAIL_PASSWORD' ? 'ACCOUNT_PASSWORD' : value);
+const capabilitiesState = ref<'loading' | 'ready' | 'error'>('loading');
+const capabilitiesFailure = ref('');
+const accountChoices = [['EMAIL_PASSWORD', '账号密码'], ['EMAIL_CODE', '邮箱验证'], ['PHONE_OTP', '手机验证']] as const;
+const providerChoices = [['GOOGLE', '使用 Google 登录'], ['GITHUB', '使用 GitHub 登录']] as const;
+const loginAccountMethods = computed(() => accountChoices.filter(([value]) => available(value)));
+const loginProviders = computed(() => providerChoices.filter(([value]) => available(value)));
+const firstLoginMethod = computed(() => loginAccountMethods.value[0]?.[0] ?? '');
 const t = (text: string) => props.entry ? entryText(props.language, text) : text;
 const remember = ref(Boolean(address.value)), showPassword = ref(false), now = ref(Date.now()), providerPending = ref(false);
 const countdown = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -123,7 +131,7 @@ async function progress(value: Transaction) {
   else if (value.nextStep === "COMPLETE") await complete();
 }
 async function submit() {
-  if (!available(method.value)) return;
+  if (loginFlow && (capabilitiesState.value !== 'ready' || !available(method.value))) return;
   if (busy.value || props.blocked || providerPending.value) return;
   if (phoneBinding && !challenge.value && !/^1[3-9]\d{9}$/.test(address.value.trim())) {
     failure.value = "请输入正确的 11 位手机号";
@@ -331,11 +339,33 @@ async function prepareOperation() {
     busy.value = false;
   }
 }
-onMounted(async () => {
-  if (loginFlow) {
-    try { methods.value = (await request<{methods:string[]}>('/auth/capabilities')).methods; }
-    catch (error) { if (active) failure.value = accountErrorMessage(error); return; }
+async function loadLoginCapabilities(prefetched?: ReturnType<AccountClient['loginCapabilities']>) {
+  capabilitiesState.value = 'loading';
+  try {
+    const { methods: configured } = await (prefetched ?? props.client.loginCapabilities());
     if (!active) return;
+    methods.value = configured;
+    if (!firstLoginMethod.value && !loginProviders.value.length) {
+      capabilitiesFailure.value = '当前没有可用的登录方式。';
+      capabilitiesState.value = 'error';
+      return;
+    }
+    method.value = firstLoginMethod.value;
+    if (method.value !== 'EMAIL_PASSWORD') address.value = '';
+    capabilitiesState.value = 'ready';
+  } catch {
+    if (!active) return;
+    capabilitiesFailure.value = '暂时无法获取登录方式，请重试。';
+    capabilitiesState.value = 'error';
+  }
+}
+function retryLoginCapabilities() {
+  if (capabilitiesState.value === 'error' && !props.blocked) void loadLoginCapabilities();
+}
+onMounted(() => {
+  if (loginFlow) {
+    void loadLoginCapabilities(props.prefetchedCapabilities);
+    return;
   }
   if (phoneBinding) phoneInput.value?.focus();
   if (['BIND', 'REPLACE'].includes(props.purpose ?? '') && ['GOOGLE', 'GITHUB'].includes(method.value)) void submit();
@@ -382,11 +412,18 @@ if (
         : "EMAIL_CODE";
 </script>
 <template>
-  <form :class="entry ? 'entry-auth-form v2-form' : 'console-card v2-form'" :aria-busy="busy" @submit.prevent="submit">
+  <form :class="entry ? 'entry-auth-form v2-form' : 'console-card v2-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit">
     <template v-if="entry">
       <div class="login-welcome"><p v-if="purpose === 'LOGIN'">{{ t('欢迎回来') }}</p><div v-else class="panel-heading"><h2>{{ t(purpose === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码') }}</h2><p>{{ t(purpose === 'EMAIL_SIGNUP' ? '输入邮箱，验证后设置密码。' : '验证邮箱后，重新设置你的密码。') }}</p></div></div>
     </template>
-    <div v-if="checkingSession" class="session-check-placeholder" aria-busy="true"></div>
+    <div v-if="loginFlow && capabilitiesState === 'loading'" class="entry-capabilities-loading entry-content entry-login-content" role="status">
+      <span class="visually-hidden">{{ t('正在获取登录方式…') }}</span>
+    </div>
+    <div v-else-if="loginFlow && capabilitiesState === 'error'" class="entry-capabilities-error entry-content entry-load-error">
+      <p role="alert" class="notice error">{{ t(capabilitiesFailure) }}</p>
+      <button type="button" class="entry-primary" :disabled="blocked" @click="retryLoginCapabilities">{{ t('重试') }}</button>
+    </div>
+    <div v-else-if="checkingSession" class="session-check-placeholder" aria-busy="true"></div>
     <div v-else-if="operation && failure"><p v-if="failure" role="alert" class="notice error">{{ failure }}</p><div class="console-actions"><button type="button" @click="prepareOperation">重试</button><button type="button" @click="emit('cancel')">取消</button></div></div>
     <div v-else-if="operation" class="session-check-placeholder" aria-busy="true"></div>
     <div v-else-if="phoneBinding" class="phone-binding">
@@ -407,12 +444,12 @@ if (
       </div>
       <p v-if="failure" class="notice error" role="alert">{{ failure }}</p>
     </div>
-    <div v-else :class="{ 'entry-content': entry, 'entry-login-content': entry && purpose === 'LOGIN' }">
+    <div v-else :class="{ 'entry-content': entry, 'entry-login-content': entry && loginFlow }">
       <label v-if="!entry && !identityType">登录方式<select v-model="method" :disabled="busy || !!transaction"><option v-for="[value,label] in purposeMethods()" :key="value" :value="value">{{ label }}</option></select></label>
-      <div v-else-if="purpose === 'LOGIN' && !['GOOGLE','GITHUB'].includes(method)" class="account-methods" :aria-label="t('登录方式')">
-        <button v-for="[value,label] in [['EMAIL_PASSWORD','账号密码'],['EMAIL_CODE','邮箱验证'],['PHONE_OTP','手机验证']]" :key="value" type="button" class="text-button" :aria-pressed="method === value" v-show="available(value)" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
+      <div v-else-if="loginFlow && loginAccountMethods.length" class="account-methods" :aria-label="t('登录方式')">
+        <button v-for="[value,label] in loginAccountMethods" :key="value" type="button" class="text-button" :aria-pressed="method === value" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
       </div>
-      <template v-if="!['GOOGLE', 'GITHUB'].includes(method)">
+      <template v-if="method && !['GOOGLE', 'GITHUB'].includes(method)">
         <label class="field login-field"><span :class="{ 'visually-hidden': entry && purpose === 'LOGIN' }">{{ t(method === 'PHONE_OTP' ? '手机号（+86）' : method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? '邮箱或手机号' : '邮箱') }}</span><input v-model="address" :type="method === 'PHONE_OTP' ? 'tel' : method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? 'text' : 'email'" :autocomplete="method === 'PHONE_OTP' ? 'tel-national' : 'username'" :placeholder="entry && purpose === 'PASSWORD_RESET' ? undefined : method === 'PHONE_OTP' ? t('手机号（+86）') : t(method === 'EMAIL_PASSWORD' && purpose === 'LOGIN' ? '邮箱或手机号' : '邮箱')" :disabled="busy || blocked || !!challenge" required></label>
         <p v-if="method === 'PHONE_OTP' && !operation && !parent" class="field-hint">{{ t('未注册手机号验证后将自动注册。') }}</p>
         <template v-if="method === 'EMAIL_PASSWORD' || transaction?.nextStep === 'EMAIL_SIGNUP'">
@@ -424,15 +461,16 @@ if (
 
       <slot v-if="entry && purpose === 'LOGIN' && method === 'EMAIL_PASSWORD'" name="recovery" />
       <p v-if="failure" class="notice error" role="alert">{{ t(failure) }}</p>
-      <div :class="entry ? 'entry-actions' : 'console-actions'">
+      <div v-if="method" :class="entry ? 'entry-actions' : 'console-actions'">
         <button type="submit" :class="{'entry-primary':entry}" :disabled="busy || blocked || providerPending || !available(method)">{{ t(providerPending ? '正在等待授权…' : busy ? '正在处理…' : challenge ? '验证' : transaction?.nextStep === 'EMAIL_SIGNUP' ? '完成注册' : entry && purpose === 'LOGIN' && method === 'EMAIL_PASSWORD' ? '登录' : entry && purpose === 'PASSWORD_RESET' ? '发送验证码' : '继续') }}</button>
         <button v-if="challenge" type="button" :class="{'text-button':entry}" :disabled="busy || blocked || now < retryAt" @click="resend">{{ t('重新发送') }}<span v-if="now < retryAt"> ({{ Math.ceil((retryAt-now)/1000) }}s)</span></button>
-        <button v-if="!entry || transaction" type="button" :class="{'text-button':entry}" :disabled="busy || blocked" @click="cancel().then(() => entry && purpose === 'LOGIN' ? chooseMethod('EMAIL_PASSWORD') : emit('cancel'))">{{ t(entry ? '使用其他方式' : '取消') }}</button>
+        <button v-if="!entry || transaction" type="button" :class="{'text-button':entry}" :disabled="busy || blocked" @click="cancel().then(() => entry && loginFlow ? chooseMethod(firstLoginMethod) : emit('cancel'))">{{ t(entry ? '使用其他方式' : '取消') }}</button>
       </div>
-      <label v-if="entry && purpose === 'LOGIN'" class="remember-email" :class="{ 'remember-placeholder': method !== 'EMAIL_PASSWORD' }" :aria-hidden="method !== 'EMAIL_PASSWORD'"><input v-model="remember" type="checkbox" :disabled="busy || blocked || method !== 'EMAIL_PASSWORD'">{{ t('记住邮箱') }}</label>
+      <label v-if="entry && loginFlow && method === 'EMAIL_PASSWORD'" class="remember-email"><input v-model="remember" type="checkbox" :disabled="busy || blocked">{{ t('记住邮箱') }}</label>
+      <div v-else-if="entry && loginFlow && method" class="remember-email" aria-hidden="true"></div>
     </div>
-    <div v-if="entry && purpose === 'LOGIN'" class="entry-social">
-      <button v-for="provider in ['GOOGLE','GITHUB']" :key="provider" v-show="available(provider)" type="button" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">{{ t(provider === 'GOOGLE' ? '使用 Google 登录' : '使用 GitHub 登录') }}</button>
+    <div v-if="entry && loginFlow && capabilitiesState === 'ready' && loginProviders.length" class="entry-social">
+      <button v-for="[provider,label] in loginProviders" :key="provider" type="button" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">{{ t(label) }}</button>
     </div>
   </form>
 </template>

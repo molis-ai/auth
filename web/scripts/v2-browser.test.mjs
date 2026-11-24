@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { bootstrapPlatform } from "../../worker/scripts/platform-bootstrap.mjs";
+import { authenticatedLoginEntryCheck, loginEntryChecks, loginEntryFixtures } from "./login-entry-checks.mjs";
 const workRoot = process.env.MOLIS_WORK_SOURCE;
 assert.ok(
   workRoot,
@@ -35,20 +36,23 @@ let proxy, browser, page, origin;
 const requests = [];
 const scripts = new Set();
 const memberReads = [];
+const entryFixtures = loginEntryFixtures();
 const server = http.createServer(async (req, res) => {
   try {
     const parts = [];
     for await (const p of req) parts.push(p);
-    const r = await proxy.fetch(
-      new Request(origin + req.url, {
-        method: req.method,
-        headers: req.headers,
-        ...(["GET", "HEAD"].includes(req.method)
-          ? {}
-          : { body: Buffer.concat(parts) }),
-      }),
-    );
     const url = new URL(origin + req.url);
+    const r = await entryFixtures.fetch(req.method, url.pathname, () =>
+      proxy.fetch(
+        new Request(url, {
+          method: req.method,
+          headers: req.headers,
+          ...(["GET", "HEAD"].includes(req.method)
+            ? {}
+            : { body: Buffer.concat(parts) }),
+        }),
+      ),
+    );
     requests.push({method:req.method,path:url.pathname,status:r.status});
     if (r.ok && url.pathname.endsWith(".js")) scripts.add(url.pathname);
     if (req.method === "GET" && /^\/api\/account\/tenants\/[^/]+\/members$/.test(url.pathname)) {
@@ -120,6 +124,7 @@ try {
   page = await browser.page();
   await page.command("Page.enable");
   await page.viewport(1440, 900);
+  await loginEntryChecks({ page, origin, fixtures: entryFixtures, evidence });
   await page.command("Page.addScriptToEvaluateOnNewDocument", {source: `{
     const original = window.fetch;
     const trace = window.__authPerformance = {requests: [], gates: {}};
@@ -638,8 +643,11 @@ try {
   assert.equal(password.filter(path => path === '/activity').length, 1);
 
   // Open the console from its existing cookie and hold background responses after the real Worker has answered.
+  const previousEntryLanguage = await page.evaluate("localStorage.getItem('molis.auth.locale')");
+  await page.evaluate("localStorage.setItem('molis.auth.locale', 'en')");
   await page.command('Page.navigate', {url: origin + '/?check=authenticated-startup'});
   await page.wait("Boolean(window.__authPerformance?.gates['/activity']) && Boolean(document.querySelector('.profile-inline-name [role=button]'))");
+  assert.equal(await page.evaluate('document.documentElement.lang'), 'zh-CN');
   assert.ok(await page.evaluate("[...document.querySelectorAll('.console-tabs button')].every(button => !button.disabled)"));
   await page.click('.profile-inline-name [role=button]');
   await page.wait("Boolean(document.querySelector('.profile-inline-name input'))");
@@ -677,6 +685,12 @@ try {
     password, authenticatedStartup, profileInteractiveAt, navigationInteractiveAt,
   }, null, 2) + '\n');
   console.log('PASS P0-1/2/3/4/5 password and cookie request counts, live interactions before background responses, cooldown and Chrome cache');
+  await authenticatedLoginEntryCheck({ page, origin, fixtures: entryFixtures });
+  assert.equal(await page.evaluate("localStorage.getItem('molis.auth.locale')"), 'en');
+  await page.evaluate(previousEntryLanguage === null
+    ? "localStorage.removeItem('molis.auth.locale')"
+    : `localStorage.setItem('molis.auth.locale', ${JSON.stringify(previousEntryLanguage)})`);
+  console.log('PASS authenticated root and login entry use the console language despite the English entry preference');
   await click('账号安全'); await click('绑定手机');
   await page.wait("Boolean(document.querySelector('.security-editor input[type=tel]'))");
   assert.equal(await page.evaluate("Boolean(document.querySelector('.security-editor input[type=password]'))"),false);

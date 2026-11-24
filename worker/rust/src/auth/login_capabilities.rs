@@ -36,13 +36,17 @@ pub async fn route(a: &Auth, method: Method) -> Result<Response> {
     let query = form(a.request.url()?.query().unwrap_or_default())?;
     shape("LoginCapabilitiesQuery", &query)?;
     let c = client(a, &text(&query, "clientId")).await?;
+    response(a, &c)
+}
+
+pub(crate) fn response(a: &Auth, c: &Value) -> Result<Response> {
     ensure(
         a.env.durable_object("PASSWORD_KDF").is_ok(),
         503,
         "UPSTREAM_UNAVAILABLE",
     )?;
     Ok(json_response(
-        json!({"data":{"methods":available(a, &c)},"requestId":a.request_id}),
+        json!({"data":{"methods":available(a, c)},"requestId":a.request_id}),
         200,
     )?)
 }

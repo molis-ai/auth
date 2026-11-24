@@ -7,6 +7,7 @@ test('LOGIN-P1-04: LIVE without provider credentials exposes password only and r
   const origin = 'http://127.0.0.1:8787'
   const p = await getRustProxy({
     AUTH_ORIGIN: origin,
+    AUTH_WEB_CLIENT_ID: 'molis-work-unified-local',
     UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
       environmentId: 'unified-local',
       kind: 'LOCAL',
@@ -34,6 +35,11 @@ test('LOGIN-P1-04: LIVE without provider credentials exposes password only and r
     )
     assert.equal(response.status, 200)
     assert.deepEqual((await response.json()).data, { methods: ['ACCOUNT_PASSWORD'] })
+    const browser = await p.fetch(new Request(origin + '/api/account/auth/capabilities'))
+    assert.equal(browser.status, 200)
+    assert.deepEqual((await browser.json()).data, { methods: ['ACCOUNT_PASSWORD'] })
+    assert.deepEqual(browser.headers.getSetCookie(), [])
+    assert.equal(browser.headers.get('X-CSRF-Token'), null)
     await p.env.DB.prepare(
       "UPDATE auth_client SET status='DISABLED' WHERE client_id='molis-work-unified-local'",
     ).run()
@@ -59,6 +65,7 @@ test('LOGIN-P1-04: missing required password infrastructure fails capability dis
   const p = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
+      AUTH_WEB_CLIENT_ID: 'molis-work-unified-local',
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
         environmentId: 'unified-local',
         kind: 'LOCAL',
@@ -87,6 +94,11 @@ test('LOGIN-P1-04: missing required password infrastructure fails capability dis
     )
     assert.equal(r.status, 503)
     assert.equal((await r.json()).error.code, 'UPSTREAM_UNAVAILABLE')
+    const browser = await p.fetch(new Request(origin + '/api/account/auth/capabilities'))
+    assert.equal(browser.status, 503)
+    assert.equal((await browser.json()).error.code, 'AUTH_UNAVAILABLE')
+    assert.deepEqual(browser.headers.getSetCookie(), [])
+    assert.equal(browser.headers.get('X-CSRF-Token'), null)
   } finally {
     await p.dispose()
   }

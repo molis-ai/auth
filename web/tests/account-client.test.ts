@@ -96,6 +96,97 @@ const holdUntilAbort = (signal: AbortSignal) =>
 const accountPath = (url: RequestInfo | URL) => String(url).slice((origin + "/api/account").length);
 const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve));
 
+test("login capabilities and initial session run in parallel without sharing CSRF", async () => {
+  const bootstrap = Promise.withResolvers<Response>();
+  const calls: [string, string | null][] = [];
+  const capabilities = { methods: ["ACCOUNT_PASSWORD"] };
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      calls.push([path, new Headers(init!.headers).get("X-CSRF-Token")]);
+      if (path === "/session") return bootstrap.promise;
+      if (path === "/auth/capabilities") return reply("unexpected-csrf", capabilities);
+      return reply();
+    },
+  });
+  try {
+    const session = client.session();
+    const typed = client.loginCapabilities();
+    const generic = client.request("/auth/capabilities");
+    await nextTurn();
+    assert.deepEqual(calls.toSorted(), [
+      ["/auth/capabilities", null], ["/auth/capabilities", null], ["/session", null],
+    ]);
+    assert.deepEqual(await typed, capabilities);
+    assert.deepEqual(await generic, capabilities);
+    const write = client.request("/profile", {}, "PATCH");
+    bootstrap.resolve(reply());
+    await Promise.all([session, write]);
+    assert.deepEqual(calls.at(-1), ["/profile", "current-csrf"]);
+  } finally {
+    bootstrap.resolve(reply());
+    client.close();
+  }
+});
+
+test("LOGIN-P1-04 capability failures stay explicit and leave a fresh write to bootstrap", async () => {
+  const calls: [string, string | null][] = [];
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      calls.push([path, new Headers(init!.headers).get("X-CSRF-Token")]);
+      if (path !== "/auth/capabilities") return reply();
+      if (calls.length === 1) return Response.json(
+        { error: { code: "POLICY_MISMATCH" }, requestId: "forbidden-capabilities" },
+        { status: 403, headers: { "X-CSRF-Token": "unexpected-csrf" } },
+      );
+      return reply("unexpected-csrf", { methods: null });
+    },
+  });
+  try {
+    await assert.rejects(client.loginCapabilities(), {
+      code: "POLICY_MISMATCH", status: 403, requestId: "forbidden-capabilities",
+    });
+    await assert.rejects(client.loginCapabilities(), { code: "INVALID_RESPONSE" });
+    await client.request("/profile", {}, "PATCH");
+    assert.deepEqual(calls, [
+      ["/auth/capabilities", null], ["/auth/capabilities", null],
+      ["/session", null], ["/profile", "current-csrf"],
+    ]);
+  } finally {
+    client.close();
+  }
+});
+
+test("logout and close cancel in-flight login capability reads", async () => {
+  for (const action of ["logout", "close"] as const) {
+    const capabilities = Promise.withResolvers<Response>();
+    let signal: AbortSignal | null | undefined;
+    const client = new AccountClient({
+      origin,
+      fetch: async (url, init) => {
+        if (accountPath(url) !== "/auth/capabilities") return reply();
+        signal = init!.signal;
+        return capabilities.promise;
+      },
+    });
+    try {
+      const pending = client.loginCapabilities();
+      const rejected = assert.rejects(pending, cancelled);
+      await nextTurn();
+      assert.ok(signal);
+      await client[action]();
+      await rejected;
+      assert.equal(signal.aborted, true);
+    } finally {
+      capabilities.resolve(reply("unexpected-csrf", { methods: ["ACCOUNT_PASSWORD"] }));
+      client.close();
+    }
+  }
+});
+
 test("P1-4 tenant overview starts four first-page GETs together after CSRF bootstrap", { timeout: 1500 }, async () => {
   const paths = [
     "/tenant-creation-policy",
@@ -172,7 +263,6 @@ test("P1-4 an exclusive operation waits for earlier reads and holds later reads"
     { path: "/profile", method: "PATCH", body: {} },
     { path: "/tenants?limit=20&cursor=opaque", method: "GET" },
     { path: "/auth/transactions/handle", method: "GET" },
-    { path: "/auth/capabilities", method: "GET" },
     { path: "/session", method: "GET" },
   ]) {
     await t.test(exclusive.path, async () => {

@@ -28,6 +28,7 @@ export class AuthError extends Error {
 }
 const TIMEOUT = Symbol("timeout");
 const CANCEL = Symbol("cancel");
+const LOGIN_CAPABILITIES_PATH = "/auth/capabilities";
 
 // The BFF marks conflicts before dispatch when a retry cannot replay a cursor write.
 class ConflictBeforeDispatch extends AuthError {
@@ -109,6 +110,12 @@ export class AccountClient {
   session(): Promise<AccountView> {
     return this.request<AccountView>("/session");
   }
+  async loginCapabilities(): Promise<{ methods: string[] }> {
+    const data = await this.request<{ methods: string[] }>(LOGIN_CAPABILITIES_PATH);
+    if (!Array.isArray(data?.methods) || data.methods.some(method => typeof method !== "string"))
+      throw new AuthError("INVALID_RESPONSE");
+    return data;
+  }
   request<T>(
     path: string,
     body?: unknown,
@@ -124,9 +131,15 @@ export class AccountClient {
     )
       return Promise.reject(new AuthError("INVALID_REQUEST"));
     const get = method === "GET" && body === undefined && key === undefined;
+    // Capabilities are independent of the browser session and its write queue.
+    if (get && path === LOGIN_CAPABILITIES_PATH) {
+      return this.track(Promise.resolve(), (generation, signal) =>
+        this.send<T>(path, body, method, generation, signal),
+      );
+    }
     const idempotent = get && isIdempotentRead(path);
     const firstPage = get && isTenantFirstPage(path);
-    // Session and capabilities can create a browser session when its cookie
+    // Session can create a browser session when its cookie
     // expires, even when the client still holds a CSRF token.
     const concurrent = Boolean(this.csrf) && (idempotent || firstPage);
     const mayRetry = idempotent || (get && path === "/session");
@@ -287,7 +300,7 @@ export class AccountClient {
       controller.signal.throwIfAborted();
       const csrf = response.headers.get("X-CSRF-Token");
       // Another response may already have supplied a newer token.
-      if (csrf && this.csrf === sentCsrf) this.csrf = csrf;
+      if (path !== LOGIN_CAPABILITIES_PATH && csrf && this.csrf === sentCsrf) this.csrf = csrf;
       if (!response.ok) {
         const code = /^[A-Z][A-Z0-9_]{1,63}$/.test(reply?.error?.code ?? "")
           ? reply.error.code : "AUTH_UNAVAILABLE";
