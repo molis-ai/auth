@@ -485,12 +485,20 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             login_sessions::active(a).await?;
             return Ok(json!({"mode":creation::policy(&a.env)?}));
         }
-        "tenant.get" => (Access::Member(ALL_ROLES), None, Read::Detail(|ctx| {
-            let mut t = ctx.tenant.clone();
-            t["role"] = ctx.member["role"].clone();
-            t["membership_id"] = ctx.member["id"].clone();
-            Ok(tenant_view(&t))
-        })),
+        "tenant.get" => (
+            Access::Member(ALL_ROLES),
+            Some(Lookup {
+                sql: format!("{TENANTS} WHERE t.space_id=?"),
+                id: action.tenant_id.clone(),
+                guard: None,
+            }),
+            Read::Detail(|ctx| {
+                let mut t = ctx.record.clone();
+                t["role"] = ctx.member["role"].clone();
+                t["membership_id"] = ctx.member["id"].clone();
+                Ok(tenant_view(&t))
+            }),
+        ),
         "tenant.platform-get" => (
             Access::Permission("TENANT_READ"),
             Some(Lookup {

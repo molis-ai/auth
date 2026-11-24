@@ -60,6 +60,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       method = body === undefined ? 'GET' : 'POST',
       proof?: string,
       barrier?: string,
+      callerOrigin?: string,
     ) {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
@@ -70,6 +71,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             ...(actor ? { Authorization: 'Bearer ' + actor.accessToken } : {}),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
             ...(barrier ? { 'X-Fixture-Barrier': barrier } : {}),
+            ...(callerOrigin ? { Origin: callerOrigin } : {}),
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
@@ -78,7 +80,12 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       return {
         status: r.status,
         ...(await r.json()),
-        ...(counts ? { d1Calls: JSON.parse(counts) } : {}),
+        ...(counts
+          ? {
+              d1Calls: JSON.parse(counts),
+              protectedQueries: Number(r.headers.get('X-Fixture-Protected-Queries')),
+            }
+          : {}),
       }
     }
     function ok(r: any, schema?: string) {
@@ -1266,7 +1273,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         }
         const finalResponse = await calls(path + '&cursor=' + paged.nextCursor, platform)
         const finalPage = ok(finalResponse)
-        assert.deepEqual(finalResponse.d1Calls, oneRead)
+        assert.deepEqual(finalResponse.d1Calls, { read: 2, write: 0 })
         assert.equal(finalPage.nextCursor, null)
         assert.deepEqual(finalPage.items, all.items.slice(limit))
         assert.equal(await cursorCount(), n + 1)
@@ -1274,6 +1281,89 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         await db.prepare('DROP TRIGGER fixture_block_read_writes').run()
       }
     })
+
+    await suite.test(
+      'UAS-26 skips protected SQL work until credentials, permissions and cursors are valid',
+      async () => {
+        await permission(platform, 'USER_READ')
+        const unrecognized = { accessToken: secret() }
+        for (const path of [
+          '/platform/users',
+          '/platform/tenants',
+          '/platform/users/' + owner.userId,
+        ]) {
+          for (const fixture of ['managed-list-poison', 'managed-list-broken']) {
+            // The authorized request proves the deliberately faulty query reaches
+            // SQLite. Missing credentials/grants must win over either fault.
+            const get = (actor: any) =>
+              call(path, undefined, actor, secret(), 'GET', undefined, fixture)
+            const authorized = await get(platform)
+            assert.ok(authorized.protectedQueries > 0)
+            assert.equal(authorized.status, 503)
+            const unauthenticated = await get(unrecognized)
+            assert.equal(unauthenticated.status, 401)
+            assert.equal(unauthenticated.error.code, 'INVALID_CREDENTIALS')
+            const forbidden = await get(owner)
+            assert.equal(forbidden.status, 403)
+            assert.equal(forbidden.error.code, 'FORBIDDEN')
+            if (fixture === 'managed-list-poison') {
+              // LIMIT 0 skips expression evaluation in the original batch. A
+              // fallback authorization probe would require another D1 call.
+              assert.deepEqual(unauthenticated.d1Calls, { read: 1, write: 0 })
+              assert.deepEqual(forbidden.d1Calls, { read: 1, write: 0 })
+            }
+          }
+        }
+        const deniedOrigin = await call(
+          '/platform/users',
+          undefined,
+          platform,
+          secret(),
+          'GET',
+          undefined,
+          'managed-list-poison',
+          'http://127.0.0.1:3000',
+        )
+        assert.equal(deniedOrigin.status, 403)
+        assert.equal(deniedOrigin.error.code, 'FORBIDDEN')
+        assert.deepEqual(deniedOrigin.d1Calls, { read: 1, write: 0 })
+        const allowedOrigin = await call(
+          '/platform/users',
+          undefined,
+          platform,
+          secret(),
+          'GET',
+          undefined,
+          'managed-list-trace',
+          'http://127.0.0.1:4207',
+        )
+        assert.ok(
+          ok(allowedOrigin).items.some(
+            (item: { userId: string }) => item.userId === platform.userId,
+          ),
+        )
+        const page = ok(await call('/platform/tenants?limit=1', undefined, platform))
+        assert.ok(page.nextCursor)
+        for (const path of [
+          '/platform/tenants?limit=1&cursor=' + secret(),
+          '/platform/users?limit=1&cursor=' + page.nextCursor,
+        ]) {
+          const invalid = await call(
+            path,
+            undefined,
+            platform,
+            secret(),
+            'GET',
+            undefined,
+            'managed-list-poison',
+          )
+          assert.equal(invalid.status, 400)
+          assert.equal(invalid.error.code, 'INVALID_REQUEST')
+          assert.equal(invalid.protectedQueries, 0)
+          assert.deepEqual(invalid.d1Calls, { read: 1, write: 0 })
+        }
+      },
+    )
 
     await suite.test(
       'UAS-26 validates current authorization in the list snapshot and again before a cursor write',

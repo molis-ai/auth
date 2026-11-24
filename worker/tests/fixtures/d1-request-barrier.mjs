@@ -20,12 +20,13 @@ const points = {
 }
 
 class D1Database {
-  constructor(db, pause) {
+  constructor(db, pause, transform = (sql) => sql) {
     this.db = db
     this.pause = pause
+    this.transform = transform
   }
 
-  prepare(sql, statement = this.db.prepare(sql)) {
+  prepare(sql, statement = this.db.prepare(this.transform(sql))) {
     return {
       sql,
       statement,
@@ -68,16 +69,34 @@ export default {
       const { UNIFIED_ACCOUNT_CONFIG, ...bindings } = env
       return worker.prototype.fetch.call({ env: bindings, ctx }, request)
     }
-    if (tag === 'managed-list-trace' || tag === 'web-session-trace') {
+    if (['managed-list-trace', 'managed-list-poison', 'managed-list-broken', 'web-session-trace'].includes(tag)) {
       const counts = { read: 0, write: 0 }
-      const DB = new D1Database(env.DB, (_operation, statements, moment = 'before') => {
-        if (moment === 'before') {
-          const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql))
-          counts[isRead ? 'read' : 'write']++
-        }
-      })
+      let protectedQueries = 0
+      const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
+      const DB = new D1Database(
+        env.DB,
+        (_operation, statements, moment = 'before') => {
+          if (moment === 'before') {
+            const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql))
+            counts[isRead ? 'read' : 'write']++
+            protectedQueries += statements.filter(isProtected).length
+          }
+        },
+        (sql) => {
+          if (!isProtected(sql)) return sql
+          if (tag === 'managed-list-poison')
+            return sql.replace(
+              ') SELECT * FROM (',
+              ") SELECT *, json('invalid') AS fixture_poison FROM (",
+            )
+          if (tag === 'managed-list-broken')
+            return sql.replace(') SELECT * FROM (', ') SELECT * FROM fixture_missing_table JOIN (')
+          return sql
+        },
+      )
       const response = await worker.prototype.fetch.call({ env: { ...env, DB }, ctx }, request)
       response.headers.set('X-Fixture-D1-Calls', JSON.stringify(counts))
+      response.headers.set('X-Fixture-Protected-Queries', String(protectedQueries))
       return response
     }
     const [point] = tag.split('/')
