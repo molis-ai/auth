@@ -29,6 +29,18 @@ export class AuthError extends Error {
 const TIMEOUT = Symbol("timeout");
 const CANCEL = Symbol("cancel");
 
+// The BFF marks conflicts before dispatch when a retry cannot replay a cursor write.
+class ConflictBeforeDispatch extends AuthError {
+  constructor(requestId: string) {
+    super("VERSION_CONFLICT", 409, requestId);
+  }
+}
+
+interface ReadBatch {
+  after: Promise<void>;
+  firstAttempts: Set<Promise<unknown>>;
+}
+
 function isIdempotentRead(path: string): boolean {
   return path === "/tenant-creation-policy" ||
     path === "/login-methods" ||
@@ -36,8 +48,8 @@ function isIdempotentRead(path: string): boolean {
 }
 
 function isTenantFirstPage(path: string): boolean {
-  // First pages can issue a separate cursor. They can overlap other reads,
-  // but only the side-effect-free routes above are safe to retry.
+  // First pages can issue a separate cursor. Only a conflict before dispatch
+  // warrants retrying one.
   return /^\/(tenants|invitations|ownership-transfers)(\?limit=([1-9][0-9]?|100))?$/.test(path);
 }
 
@@ -68,7 +80,7 @@ export class AccountClient {
   private generation = 0;
   private readonly pending = new Set<AbortController>();
   private readonly reads = new Set<Promise<void>>();
-  private writeTail: Promise<void> = Promise.resolve();
+  private readBatch: ReadBatch = { after: Promise.resolve(), firstAttempts: new Set() };
   constructor(options: ClientOptions = {}) {
     this.origin = options.origin ?? globalThis.location?.origin ?? "";
     const url = new URL(this.origin);
@@ -113,23 +125,40 @@ export class AccountClient {
       return Promise.reject(new AuthError("INVALID_REQUEST"));
     const get = method === "GET" && body === undefined && key === undefined;
     const idempotent = get && isIdempotentRead(path);
+    const firstPage = get && isTenantFirstPage(path);
     // Session and capabilities can create a browser session when its cookie
     // expires, even when the client still holds a CSRF token.
-    const concurrent = Boolean(this.csrf) && (idempotent || (get && isTenantFirstPage(path)));
-    const retries = idempotent || (get && path === "/session") ? 3 : 0;
+    const concurrent = Boolean(this.csrf) && (idempotent || firstPage);
+    const mayRetry = idempotent || (get && path === "/session");
     // Exclusive operations wait for the reads already queued. Later reads
     // wait for that operation, so an account write cannot overtake a read.
-    const ready = concurrent ? this.writeTail : Promise.all([this.writeTail, ...this.reads]);
+    const batch = this.readBatch;
+    const ready = concurrent ? batch.after : Promise.all([batch.after, ...this.reads]);
     const result = this.track(ready, async (generation, signal) => {
       if (method !== "GET" && !this.csrf)
         await this.send("/session", undefined, "GET", generation, signal);
       for (let attempt = 0; ; attempt++) {
+        const sent = this.send<T>(path, body, method, generation, signal, key);
+        if (concurrent && attempt === 0) {
+          batch.firstAttempts.add(sent);
+          const remove = () => batch.firstAttempts.delete(sent);
+          void sent.then(remove, remove);
+        }
         try {
-          return await this.send<T>(path, body, method, generation, signal, key);
+          return await sent;
         } catch (error) {
+          const beforeDispatch = error instanceof ConflictBeforeDispatch;
           if (!(error instanceof AuthError) || error.status !== 409 ||
-              error.code !== "VERSION_CONFLICT" || attempt >= retries) throw error;
+              error.code !== "VERSION_CONFLICT" || attempt >= 3 ||
+              !(mayRetry || (firstPage && beforeDispatch))) throw error;
           this.checkGeneration(generation);
+          // Give the request holding the refresh lease time to finish, even
+          // when refresh takes longer than the backoff. Waiting only for first
+          // attempts keeps all retries independent of each other.
+          if (concurrent && attempt === 0 && beforeDispatch) {
+            await Promise.allSettled(batch.firstAttempts);
+            this.checkGeneration(generation);
+          }
           await retryDelay(signal, attempt);
         }
       }
@@ -139,7 +168,7 @@ export class AccountClient {
       this.reads.add(barrier);
       void barrier.then(() => this.reads.delete(barrier));
     } else {
-      this.writeTail = barrier;
+      this.readBatch = { after: barrier, firstAttempts: new Set() };
     }
     return result;
   }
@@ -178,7 +207,7 @@ export class AccountClient {
         }
       }
     });
-    this.writeTail = settled(result);
+    this.readBatch = { after: settled(result), firstAttempts: new Set() };
     for (const controller of previous) controller.abort(CANCEL);
     return result;
   }
@@ -259,14 +288,16 @@ export class AccountClient {
       const csrf = response.headers.get("X-CSRF-Token");
       // Another response may already have supplied a newer token.
       if (csrf && this.csrf === sentCsrf) this.csrf = csrf;
-      if (!response.ok)
-        throw new AuthError(
-          /^[A-Z][A-Z0-9_]{1,63}$/.test(reply?.error?.code ?? "")
-            ? reply.error.code
-            : "AUTH_UNAVAILABLE",
-          response.status,
-          typeof reply?.requestId === "string" ? reply.requestId : "",
-        );
+      if (!response.ok) {
+        const code = /^[A-Z][A-Z0-9_]{1,63}$/.test(reply?.error?.code ?? "")
+          ? reply.error.code : "AUTH_UNAVAILABLE";
+        const requestId = typeof reply?.requestId === "string" ? reply.requestId : "";
+        if (method === "GET" && response.status === 409 && code === "VERSION_CONFLICT" &&
+            response.headers.get("Retry-After") === "0") {
+          throw new ConflictBeforeDispatch(requestId);
+        }
+        throw new AuthError(code, response.status, requestId);
+      }
       if (!reply || !Object.hasOwn(reply, "data"))
         throw new AuthError("INVALID_RESPONSE");
       return reply.data as T;

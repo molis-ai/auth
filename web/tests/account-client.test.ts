@@ -84,6 +84,11 @@ const reply = (csrf = "current-csrf", data: unknown = { state: "ANONYMOUS" }) =>
   Response.json({ data }, { headers: { "X-CSRF-Token": csrf } });
 const unknownResult = { code: "RESULT_UNKNOWN", status: 0, requestId: "" };
 const cancelled = { code: "CANCELLED", status: 0, requestId: "" };
+const conflict = { code: "VERSION_CONFLICT", status: 409, requestId: "conflict-id" };
+const conflictBeforeDispatch = () => Response.json(
+  { error: { code: conflict.code }, requestId: conflict.requestId },
+  { status: conflict.status, headers: { "Retry-After": "0" } },
+);
 const holdUntilAbort = (signal: AbortSignal) =>
   new Promise<never>((_, reject) => {
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -209,8 +214,7 @@ test("P1-4 an exclusive operation waits for earlier reads and holds later reads"
   }
 });
 
-test("P1-4 only safe reads retry HTTP 409 VERSION_CONFLICT, with at most three retries", async () => {
-  const conflict = { code: "VERSION_CONFLICT", status: 409, requestId: "conflict-id" };
+test("P1-4 HTTP 409 retry requires an eligible GET and its expected code and marker", async () => {
   const calls = new Map<string, number>();
   const client = new AccountClient({
     origin,
@@ -219,10 +223,15 @@ test("P1-4 only safe reads retry HTTP 409 VERSION_CONFLICT, with at most three r
       const count = (calls.get(path) ?? 0) + 1;
       calls.set(path, count);
       if (path === "/session" || (path === "/tenant-creation-policy" && count === 2)) return reply();
-      const status = path === "/tenants/wrong-status" ? 503 : 409;
-      const code = path === "/tenants/wrong-code" ? "IDEMPOTENCY_CONFLICT" : conflict.code;
       assert.equal(init!.method, path === "/profile" ? "PATCH" : "GET");
-      return Response.json({ error: { code }, requestId: conflict.requestId }, { status });
+      if (path === "/profile" || path.includes("cursor=") || path === "/auth/transactions/handle")
+        return conflictBeforeDispatch();
+      const status = path === "/tenants/wrong-status" ? 503 : 409;
+      const code = path === "/tenants/wrong-code" || path.startsWith("/ownership-transfers")
+        ? "IDEMPOTENCY_CONFLICT" : conflict.code;
+      const headers = path.startsWith("/invitations") ? { "Retry-After": "1" }
+        : path.startsWith("/ownership-transfers") ? { "Retry-After": "0" } : undefined;
+      return Response.json({ error: { code }, requestId: conflict.requestId }, { status, headers });
     },
   });
   await client.session();
@@ -230,6 +239,8 @@ test("P1-4 only safe reads retry HTTP 409 VERSION_CONFLICT, with at most three r
     client.request("/tenant-creation-policy"),
     assert.rejects(client.request("/login-methods"), conflict),
     assert.rejects(client.request("/tenants?limit=20"), conflict),
+    assert.rejects(client.request("/invitations?limit=20"), conflict),
+    assert.rejects(client.request("/ownership-transfers?limit=20"), { ...conflict, code: "IDEMPOTENCY_CONFLICT" }),
     assert.rejects(client.request("/tenants?limit=20&cursor=opaque"), conflict),
     assert.rejects(client.request("/auth/transactions/handle"), conflict),
     assert.rejects(client.request("/profile", {}, "PATCH"), conflict),
@@ -238,14 +249,87 @@ test("P1-4 only safe reads retry HTTP 409 VERSION_CONFLICT, with at most three r
   ]);
   assert.deepEqual(calls, new Map([
     ["/session", 1], ["/tenant-creation-policy", 2], ["/login-methods", 4],
-    ["/tenants?limit=20", 1], ["/tenants?limit=20&cursor=opaque", 1],
+    ["/tenants?limit=20", 1], ["/invitations?limit=20", 1],
+    ["/ownership-transfers?limit=20", 1], ["/tenants?limit=20&cursor=opaque", 1],
     ["/auth/transactions/handle", 1], ["/profile", 1],
     ["/tenants/wrong-status", 1], ["/tenants/wrong-code", 1],
   ]));
   client.close();
 });
 
-test("P1-4 close and logout cancel pending reads and queues without waiting for fetch or JSON", async (t) => {
+test("P1-4 marked first-page conflicts wait out a slow in-flight refresh", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const refresh = Promise.withResolvers<Response>();
+  const calls: string[] = [];
+  const paths = [
+    "/tenant-creation-policy", "/tenants?limit=20", "/invitations?limit=20", "/ownership-transfers?limit=20",
+  ];
+  let refreshed = false;
+  const client = new AccountClient({
+    origin,
+    fetch: async url => {
+      const path = accountPath(url);
+      calls.push(path);
+      if (path === "/session") return reply();
+      if (path === "/tenant-creation-policy") return refresh.promise;
+      return refreshed ? reply("current-csrf", path) : conflictBeforeDispatch();
+    },
+  });
+  await client.session();
+  const reads = Promise.all(paths.map(path => client.request(path)));
+  void reads.catch(() => undefined);
+  try {
+    await nextTurn();
+    assert.deepEqual(calls, ["/session", ...paths]);
+    t.mock.timers.tick(1000);
+    await nextTurn();
+    assert.deepEqual(calls, ["/session", ...paths]);
+    refreshed = true;
+    refresh.resolve(reply("current-csrf", paths[0]));
+    await nextTurn();
+    t.mock.timers.tick(40);
+    assert.deepEqual(await reads, paths);
+    assert.deepEqual(calls.slice(paths.length + 1).sort(), paths.slice(1).sort());
+  } finally {
+    refresh.resolve(reply());
+    client.close();
+  }
+});
+
+test("P1-4 a whole batch of marked conflicts retries within bounds before later operations", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const calls: string[] = [];
+  const paths = ["/tenants", "/invitations"];
+  const client = new AccountClient({
+    origin,
+    fetch: async url => {
+      const path = accountPath(url);
+      calls.push(path);
+      return paths.includes(path) ? conflictBeforeDispatch() : reply();
+    },
+  });
+  await client.session();
+  const results = Promise.all([
+    ...paths.map(path => assert.rejects(client.request(path), conflict)),
+    client.request("/profile", {}, "PATCH"),
+    client.request("/login-methods"),
+  ]);
+  void results.catch(() => undefined);
+  try {
+    for (const delay of [40, 80, 120]) {
+      await nextTurn();
+      t.mock.timers.tick(delay);
+    }
+    await results;
+    assert.deepEqual(calls.slice(0, 3), ["/session", ...paths]);
+    assert.deepEqual(calls.slice(-2), ["/profile", "/login-methods"]);
+    assert.deepEqual(calls.slice(3, -2).sort(), [...paths, ...paths, ...paths].sort());
+  } finally {
+    client.close();
+  }
+});
+
+test("P1-4 close and logout cancel network, queued and retrying requests immediately", async (t) => {
   for (const fence of ["close", "logout"] as const) {
     await t.test(fence, async subtest => {
       subtest.mock.timers.enable({ apis: ["setTimeout"] });
@@ -254,7 +338,7 @@ test("P1-4 close and logout cancel pending reads and queues without waiting for 
       const logoutReply = Promise.withResolvers<Response>();
       const signals: AbortSignal[] = [];
       const calls: string[] = [];
-      const reads = ["/session", "/tenants", "/login-methods", "/tenants/waiting"];
+      const reads = ["/session", "/tenants", "/login-methods", "/tenants/waiting", "/invitations"];
       let oldResponseParsed = false;
       let oldHeaderRead = false;
       let writeCsrf: string | null = null;
@@ -282,6 +366,7 @@ test("P1-4 close and logout cancel pending reads and queues without waiting for 
           if (path === "/tenants/waiting") {
             return Response.json({ error: { code: "VERSION_CONFLICT" } }, { status: 409 });
           }
+          if (path === "/invitations") return conflictBeforeDispatch();
           writeCsrf = new Headers(init!.headers).get("X-CSRF-Token");
           return reply("logout-csrf");
         },
@@ -291,6 +376,7 @@ test("P1-4 close and logout cancel pending reads and queues without waiting for 
         client.request("/tenants"),
         client.request("/login-methods"),
         client.request("/tenants/waiting"),
+        client.request("/invitations"),
         client.request("/profile", {}, "PATCH"),
         client.request("/tenant-creation-policy"),
       ];
