@@ -2,6 +2,7 @@ use crate::{
     http::*,
     identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
     security::uuid,
+    store::WebSessionAccess,
 };
 use serde_json::json;
 use worker::{Env, Method, Request, Response};
@@ -13,14 +14,14 @@ pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
 pub(crate) async fn handle_internal(
     req: Request,
     env: Env,
-    owner: (String, i64),
+    access: WebSessionAccess,
     client_ip: String,
     request_id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
     Box::pin(handle_inner(
         req,
         env,
-        Some(owner),
+        Some(access),
         Some(client_ip),
         request_id,
     ))
@@ -29,7 +30,7 @@ pub(crate) async fn handle_internal(
 async fn handle_inner(
     req: Request,
     env: Env,
-    owner: Option<(String, i64)>,
+    access: Option<WebSessionAccess>,
     client_ip: Option<String>,
     id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
@@ -46,11 +47,11 @@ async fn handle_inner(
             method.as_ref()
         },
     };
-    let external = owner.is_none();
+    let external = access.is_none();
     let url = req.url();
     let https = url.as_ref().is_ok_and(|url| url.scheme() == "https");
     let result = match url {
-        Ok(url) => handle_response(req, &env, url, owner, client_ip, &log).await,
+        Ok(url) => handle_response(req, &env, url, access, client_ip, &log).await,
         Err(error) => Err(error),
     };
     let (response, retry_after_at, error_code) = match result {
@@ -74,7 +75,7 @@ async fn handle_response(
     req: Request,
     env: &Env,
     url: worker::Url,
-    owner: Option<(String, i64)>,
+    access: Option<WebSessionAccess>,
     client_ip: Option<String>,
     log: &RequestLog<'_>,
 ) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
@@ -83,7 +84,7 @@ async fn handle_response(
         let response = with_security_headers(health_response(id)?, id, url.scheme() == "https")?;
         return Ok((response, None, None));
     }
-    let external = owner.is_none();
+    let external = access.is_none();
     let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
@@ -94,7 +95,7 @@ async fn handle_response(
             return Ok((response, None, Some(code)));
         }
     };
-    a.s.web_owner = owner;
+    a.s.web_session_access = access;
     let result = dispatch(&mut a, env, url).await;
     let retry_after_at = a.retry_after_at.get();
     let status = result
@@ -134,6 +135,8 @@ async fn handle_response(
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
+    } else if external && status == 409 && a.retry_browser_read {
+        response.headers_mut().set("Retry-After", "0")?;
     }
     let response = with_security_headers(response, id, a.origin.starts_with("https:"))?;
     Ok((response, retry_after_at, error_code))

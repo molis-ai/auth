@@ -16,6 +16,7 @@ pub struct Auth {
     pub request_id: String,
     pub client_ip: String,
     pub retry_after_at: Cell<Option<i64>>,
+    pub(crate) retry_browser_read: bool,
     pub cookies: Vec<String>,
     pub env: Env,
 }
@@ -45,6 +46,7 @@ impl Auth {
             request_id: log.id.to_owned(),
             client_ip,
             retry_after_at: Cell::new(None),
+            retry_browser_read: false,
             cookies: vec![],
             env: env.clone(),
         })
@@ -70,17 +72,64 @@ impl Auth {
         if !r.is_null() && number(&r, "hits") <= limit {
             return Ok(());
         }
-        self.retry_after_at.set(r["expires_at"].as_i64());
-        Err(Failure {
+        Err(self.rate_limited(&r))
+    }
+    fn rate_limited(&self, row: &serde_json::Value) -> Failure {
+        self.retry_after_at.set(row["expires_at"].as_i64());
+        Failure {
             status: 429,
             code: "RATE_LIMITED",
-        })
+        }
+    }
+    pub(crate) async fn rate_batch(&self, rules: &[(&str, &str, i64, i64)]) -> Result<()> {
+        let n = now();
+        let mut bindings = vec![n.into()];
+        let mut limits = Vec::new();
+        let mut slots = Vec::new();
+        for (position, (kind, subject, limit, window)) in rules.iter().enumerate() {
+            let key = hash(&format!("{kind}:{subject}"));
+            let parameter = bindings.len() + 1;
+            slots.push(format!(
+                "(?{parameter}, ?{}, ?{}, {position})",
+                parameter + 1,
+                parameter + 2
+            ));
+            bindings.extend([key.clone().into(), (*limit).into(), (n + window).into()]);
+            limits.push((key, *limit));
+        }
+        // Read the counters before the UPSERT. Charge every preceding bucket
+        // and the first rejected bucket, just as the sequential checks do.
+        let rows = self.s.all(
+            &format!("WITH rules(bucket_hash,max_hits,new_expiry,position) AS (VALUES {}),
+                next_hits AS MATERIALIZED (
+                    SELECT r.*,
+                        CASE WHEN b.expires_at>?1 THEN b.hits+1 ELSE 1 END AS hits,
+                        CASE WHEN b.expires_at>?1 THEN b.expires_at ELSE r.new_expiry END AS expires_at
+                    FROM rules r LEFT JOIN auth_rate_bucket b ON b.bucket_hash=r.bucket_hash
+                ), first_denial AS (SELECT MIN(position) position FROM next_hits WHERE hits>max_hits)
+                INSERT INTO auth_rate_bucket(bucket_hash,hits,expires_at)
+                SELECT h.bucket_hash,h.hits,h.expires_at
+                FROM next_hits h CROSS JOIN first_denial d
+                WHERE d.position IS NULL OR h.position<=d.position
+                ON CONFLICT(bucket_hash) DO UPDATE SET hits=excluded.hits,expires_at=excluded.expires_at
+                RETURNING bucket_hash,hits,expires_at",
+                slots.join(",")
+            ),
+            bindings,
+        ).await?;
+        for row in &rows {
+            let (_, limit) = limits
+                .iter()
+                .find(|(key, _)| row["bucket_hash"].as_str() == Some(key))
+                .ok_or_else(Failure::unavailable)?;
+            if number(row, "hits") > *limit {
+                return Err(self.rate_limited(row));
+            }
+        }
+        ensure(rows.len() == rules.len(), 503, "AUTH_UNAVAILABLE")
     }
     pub async fn rate_ip(&self, kind: &str, limit: i64) -> Result<()> {
-        self.rate_ip_window(kind, limit, 60_000).await
-    }
-    pub async fn rate_ip_window(&self, kind: &str, limit: i64, window: i64) -> Result<()> {
-        self.rate(kind, &self.client_ip, limit, window).await
+        self.rate(kind, &self.client_ip, limit, 60_000).await
     }
 }
 

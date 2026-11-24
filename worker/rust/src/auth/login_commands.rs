@@ -3,10 +3,6 @@ use crate::{auth::registration, http::*, identity::Auth, security::challenge};
 use serde_json::{Value, json};
 use worker::{Method, Response};
 
-async fn finish(a: &Auth, id: &str) -> Result<Value> {
-    let (t, c) = registration::transaction(a, id).await?;
-    registration::complete(a, &t, &c).await
-}
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
     ensure(
@@ -17,15 +13,8 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let b: Value = serde_json::from_str(&crate::app::bounded(a, 16384).await?)?;
     let result = if path == "/api/v2/auth/login/code" {
         shape("LoginCodeRequest", &b)?;
-        let q =
-            a.s.one(
-                "SELECT transaction_id FROM auth_verification_challenge WHERE id=?",
-                vec![b["verificationId"].clone()],
-            )
-            .await?;
-        ensure(!q.is_null(), 401, "INVALID_CREDENTIALS")?;
-        let id = text(&q, "transaction_id");
-        let (t, c) = registration::transaction(a, &id).await?;
+        let verification_id = text(&b, "verificationId");
+        let (mut t, c) = registration::challenge_transaction(a, &verification_id).await?;
         ensure(
             t["purpose"] == "LOGIN" && (t["method"] == "EMAIL_CODE" || t["method"] == "PHONE_OTP"),
             400,
@@ -35,13 +24,13 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             a,
             &t,
             &c,
-            &text(&b, "verificationId"),
+            &verification_id,
             &json!({"credential":b["code"]}),
         )
         .await?;
         let input = json!({"verificationProof":proof["verificationProof"]});
-        registration::identify(a, &t, &c, "code", &input).await?;
-        finish(a, &id).await?
+        registration::identify(a, &mut t, &c, "code", &input).await?;
+        registration::complete(a, &t, &c).await?
     } else {
         let password = path == "/api/v2/auth/login/password";
         shape(
@@ -58,24 +47,22 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             401,
             "INVALID_CREDENTIALS",
         )?;
-        let created = registration::begin(a, &json!({
+        let (mut t, c) = registration::begin_login(a, &json!({
             "clientId":b["clientId"],"redirectUri":b["redirectUri"],"state":b["state"],
             "codeChallenge":b["codeChallenge"],"codeChallengeMethod":b["codeChallengeMethod"],
             "initiatorChallenge":b["initiatorChallenge"],"purpose":"LOGIN",
             "method":if password {"ACCOUNT_PASSWORD"} else if b["channel"] == "SMS" {"PHONE_OTP"} else {"EMAIL_CODE"}
         })).await?;
-        let id = text(&created, "transactionId");
-        let (t, c) = registration::transaction(a, &id).await?;
         if password {
             registration::identify(
                 a,
-                &t,
+                &mut t,
                 &c,
                 "password",
                 &json!({"identifier":b["identifier"],"password":b["password"]}),
             )
             .await?;
-            finish(a, &id).await?
+            registration::complete(a, &t, &c).await?
         } else {
             let sent = registration::send(
                 a,

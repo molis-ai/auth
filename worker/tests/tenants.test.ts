@@ -7,16 +7,39 @@ import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle', async (suite) => {
   const origin = 'http://127.0.0.1:8787'
-  const p = await getRustProxy({
-    AUTH_ORIGIN: origin,
-    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
-      environmentId: 'unified-local',
-      kind: 'LOCAL',
-      authOrigin: origin,
-      deliveryMode: 'MOCK',
-      providerMode: 'MOCK',
-    }),
-  })
+  const barriers = new Map<
+    string,
+    {
+      reached: ReturnType<typeof Promise.withResolvers<void>>
+      proceed: ReturnType<typeof Promise.withResolvers<void>>
+    }
+  >()
+  const p = await getRustProxy(
+    {
+      AUTH_ORIGIN: origin,
+      UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+        environmentId: 'unified-local',
+        kind: 'LOCAL',
+        authOrigin: origin,
+        deliveryMode: 'MOCK',
+        providerMode: 'MOCK',
+      }),
+    },
+    async (request) => {
+      const barrier = barriers.get(new URL(request.url).pathname.slice(1))
+      assert.ok(barrier, request.url)
+      barrier.reached.resolve()
+      await barrier.proceed.promise
+      return new Response('continue')
+    },
+    undefined,
+    {
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
+  )
   try {
     await initializeLocalRuntime(p)
     const db = p.env.DB
@@ -36,6 +59,8 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       key = secret(),
       method = body === undefined ? 'GET' : 'POST',
       proof?: string,
+      barrier?: string,
+      callerOrigin?: string,
     ) {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
@@ -45,11 +70,23 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             'Idempotency-Key': key,
             ...(actor ? { Authorization: 'Bearer ' + actor.accessToken } : {}),
             ...(proof ? { 'X-Auth-Initiator-Proof': proof } : {}),
+            ...(barrier ? { 'X-Fixture-Barrier': barrier } : {}),
+            ...(callerOrigin ? { Origin: callerOrigin } : {}),
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
       )
-      return { status: r.status, ...(await r.json()) }
+      const counts = r.headers.get('X-Fixture-D1-Calls')
+      return {
+        status: r.status,
+        ...(await r.json()),
+        ...(counts
+          ? {
+              d1Calls: JSON.parse(counts),
+              protectedQueries: Number(r.headers.get('X-Fixture-Protected-Queries')),
+            }
+          : {}),
+      }
     }
     function ok(r: any, schema?: string) {
       assert.equal(r.status, 200, JSON.stringify(r))
@@ -1169,6 +1206,234 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         )
       },
     )
+    async function cursorCount() {
+      const result = await db
+        .prepare("SELECT count(*) n FROM auth_one_use WHERE purpose='V2_TENANT_CURSOR'")
+        .first()
+      return result.n
+    }
+    async function atListSnapshot(
+      path: string,
+      actor: any,
+      moment: 'before' | 'after',
+      change: () => Promise<unknown>,
+    ) {
+      const tag = 'managed-list-' + moment + '/' + secret()
+      const reached = Promise.withResolvers<void>()
+      const proceed = Promise.withResolvers<void>()
+      barriers.set(tag, { reached, proceed })
+      const result = call(path, undefined, actor, secret(), 'GET', undefined, tag)
+      try {
+        await Promise.race([
+          reached.promise,
+          result.then((response) =>
+            assert.fail('List did not reach its SELECT batch: ' + JSON.stringify(response)),
+          ),
+        ])
+        await change()
+      } finally {
+        proceed.resolve()
+        await result.finally(() => barriers.delete(tag))
+      }
+      return result
+    }
+
+    await suite.test('UAS-26 terminal reads skip write guards and cursor inserts', async () => {
+      const calls = (path: string, actor: any) =>
+        call(path, undefined, actor, secret(), 'GET', undefined, 'managed-list-trace')
+      const oneRead = { read: 1, write: 0 }
+      const n = await cursorCount()
+      const all = ok(await call('/platform/tenants?limit=100', undefined, platform))
+      const limit = Math.ceil(all.items.length / 2)
+      const path = '/platform/tenants?limit=' + limit
+      const firstResponse = await calls(path, platform)
+      const paged = ok(firstResponse)
+      assert.deepEqual(firstResponse.d1Calls, { read: 1, write: 1 })
+      assert.ok(paged.nextCursor)
+      await permission(platform, 'APPLICATION_READ')
+      await db
+        .prepare(
+          "CREATE TRIGGER fixture_block_read_writes BEFORE INSERT ON auth_write_guard BEGIN SELECT RAISE(ABORT,'unexpected auth write'); END",
+        )
+        .run()
+      try {
+        const policy = await calls('/tenant-creation-policy', platform)
+        ok(policy, 'TenantCreationPolicyView')
+        assert.deepEqual(policy.d1Calls, oneRead)
+        for (const [path, actor] of [
+          ['/tenants?limit=100', other],
+          ['/tenants/' + alpha.tenantId + '/members?limit=100', other],
+          ['/platform/tenants?limit=100', platform],
+          ['/platform/applications?limit=100', platform],
+          ['/catalog/features?limit=100', platform],
+        ] as const) {
+          const response = await calls(path, actor)
+          assert.equal(ok(response).nextCursor, null, path)
+          assert.deepEqual(response.d1Calls, oneRead, path)
+        }
+        const finalResponse = await calls(path + '&cursor=' + paged.nextCursor, platform)
+        const finalPage = ok(finalResponse)
+        assert.deepEqual(finalResponse.d1Calls, { read: 2, write: 0 })
+        assert.equal(finalPage.nextCursor, null)
+        assert.deepEqual(finalPage.items, all.items.slice(limit))
+        assert.equal(await cursorCount(), n + 1)
+      } finally {
+        await db.prepare('DROP TRIGGER fixture_block_read_writes').run()
+      }
+    })
+
+    await suite.test(
+      'UAS-26 skips protected SQL work until credentials, permissions and cursors are valid',
+      async () => {
+        await permission(platform, 'USER_READ')
+        const unrecognized = { accessToken: secret() }
+        for (const path of [
+          '/platform/users',
+          '/platform/tenants',
+          '/platform/users/' + owner.userId,
+        ]) {
+          for (const fixture of ['managed-list-poison', 'managed-list-broken']) {
+            // The authorized request proves the deliberately faulty query reaches
+            // SQLite. Missing credentials/grants must win over either fault.
+            const get = (actor: any) =>
+              call(path, undefined, actor, secret(), 'GET', undefined, fixture)
+            const authorized = await get(platform)
+            assert.ok(authorized.protectedQueries > 0)
+            assert.equal(authorized.status, 503)
+            const unauthenticated = await get(unrecognized)
+            assert.equal(unauthenticated.status, 401)
+            assert.equal(unauthenticated.error.code, 'INVALID_CREDENTIALS')
+            const forbidden = await get(owner)
+            assert.equal(forbidden.status, 403)
+            assert.equal(forbidden.error.code, 'FORBIDDEN')
+            if (fixture === 'managed-list-poison') {
+              // LIMIT 0 skips expression evaluation in the original batch. A
+              // fallback authorization probe would require another D1 call.
+              assert.deepEqual(unauthenticated.d1Calls, { read: 1, write: 0 })
+              assert.deepEqual(forbidden.d1Calls, { read: 1, write: 0 })
+            }
+          }
+        }
+        const deniedOrigin = await call(
+          '/platform/users',
+          undefined,
+          platform,
+          secret(),
+          'GET',
+          undefined,
+          'managed-list-poison',
+          'http://127.0.0.1:3000',
+        )
+        assert.equal(deniedOrigin.status, 403)
+        assert.equal(deniedOrigin.error.code, 'FORBIDDEN')
+        assert.deepEqual(deniedOrigin.d1Calls, { read: 1, write: 0 })
+        const allowedOrigin = await call(
+          '/platform/users',
+          undefined,
+          platform,
+          secret(),
+          'GET',
+          undefined,
+          'managed-list-trace',
+          'http://127.0.0.1:4207',
+        )
+        assert.ok(
+          ok(allowedOrigin).items.some(
+            (item: { userId: string }) => item.userId === platform.userId,
+          ),
+        )
+        const page = ok(await call('/platform/tenants?limit=1', undefined, platform))
+        assert.ok(page.nextCursor)
+        for (const path of [
+          '/platform/tenants?limit=1&cursor=' + secret(),
+          '/platform/users?limit=1&cursor=' + page.nextCursor,
+        ]) {
+          const invalid = await call(
+            path,
+            undefined,
+            platform,
+            secret(),
+            'GET',
+            undefined,
+            'managed-list-poison',
+          )
+          assert.equal(invalid.status, 400)
+          assert.equal(invalid.error.code, 'INVALID_REQUEST')
+          assert.equal(invalid.protectedQueries, 0)
+          assert.deepEqual(invalid.d1Calls, { read: 1, write: 0 })
+        }
+      },
+    )
+
+    await suite.test(
+      'UAS-26 validates current authorization in the list snapshot and again before a cursor write',
+      async () => {
+        const path = '/platform/tenants'
+        const terminal = path + '?limit=100'
+        const paginated = path + '?limit=1'
+        const all = ok(await call(terminal, undefined, reader))
+        const before = await atListSnapshot(terminal, reader, 'before', () =>
+          permission(reader, 'TENANT_READ', false),
+        )
+        assert.equal(before.status, 403)
+        assert.equal(before.error.code, 'FORBIDDEN')
+
+        await permission(reader, 'TENANT_READ')
+        const after = await atListSnapshot(terminal, reader, 'after', () =>
+          permission(reader, 'TENANT_READ', false),
+        )
+        assert.deepEqual(ok(after), all)
+        assert.equal((await call(terminal, undefined, reader)).status, 403)
+
+        await permission(reader, 'TENANT_READ')
+        const n = await cursorCount()
+        const permissionDrift = await atListSnapshot(paginated, reader, 'after', () =>
+          permission(reader, 'TENANT_READ'),
+        )
+        assert.equal(permissionDrift.status, 409)
+        assert.equal(permissionDrift.error.code, 'VERSION_CONFLICT')
+        assert.equal(await cursorCount(), n)
+
+        const members = '/tenants/' + alpha.tenantId + '/members?limit=1'
+        const membershipDrift = await atListSnapshot(members, other, 'after', () =>
+          db
+            .prepare(
+              "UPDATE auth_tenant_membership SET version=version+1 WHERE tenant_id=? AND user_id=? AND status='ACTIVE'",
+            )
+            .bind(alpha.tenantId, other.userId)
+            .run(),
+        )
+        assert.equal(membershipDrift.status, 409)
+        assert.equal(membershipDrift.error.code, 'VERSION_CONFLICT')
+        assert.equal(await cursorCount(), n)
+
+        const first = all.items[0]
+        const rowDrift = ok(
+          await atListSnapshot(paginated, reader, 'after', () =>
+            db
+              .prepare('UPDATE auth_managed_tenant SET version=version+1 WHERE space_id=?')
+              .bind(first.tenantId)
+              .run(),
+          ),
+        )
+        assert.deepEqual(rowDrift.items, [first])
+        assert.ok(rowDrift.nextCursor)
+        assert.equal(await cursorCount(), n + 1)
+
+        const revoked = await atListSnapshot(paginated, reader, 'after', () =>
+          db
+            .prepare('UPDATE auth_login_session SET revoked_at=? WHERE id=?')
+            .bind(Date.now(), reader.session.loginSessionId)
+            .run(),
+        )
+        assert.equal(revoked.status, 409)
+        assert.equal(revoked.error.code, 'VERSION_CONFLICT')
+        assert.equal(await cursorCount(), n + 1)
+        const denied = await call(terminal, undefined, reader)
+        assert.equal(denied.status, 401)
+        assert.equal(denied.error.code, 'SESSION_EXPIRED')
+      },
+    )
     await suite.test(
       'UAS-26/40: notification cleanup and audit keep targets private; revoked sessions cannot retry writes',
       async () => {
@@ -1223,6 +1488,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       },
     )
   } finally {
+    for (const { proceed } of barriers.values()) proceed.resolve()
     await p.dispose()
   }
 })

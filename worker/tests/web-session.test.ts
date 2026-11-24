@@ -188,6 +188,24 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     )
     assert.equal(done.account.state, 'AUTHENTICATED')
     assert.ok(validateNamed('AccountView', done.account))
+    await t.test(
+      'session projection reads no password state and preserves SELECT failures',
+      async () => {
+        await db
+          .prepare('ALTER TABLE auth_local_credential RENAME TO hidden_local_credential')
+          .run()
+        try {
+          assert.deepEqual(ok(await call('/api/account/session')), done.account)
+          const unavailable = await call('/api/account/login-methods')
+          assert.equal(unavailable.status, 503)
+          assert.equal(unavailable.error.code, 'AUTH_UNAVAILABLE')
+        } finally {
+          await db
+            .prepare('ALTER TABLE hidden_local_credential RENAME TO auth_local_credential')
+            .run()
+        }
+      },
+    )
     assert.ok(cookie !== anonymousCookie, 'login rotates the opaque browser reference')
     const staleAnonymous = await p.fetch(
       new Request(origin + '/api/account/login-methods', {
@@ -534,7 +552,8 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       async () => {
         const ipA = '192.0.2.1',
           ipB = '192.0.2.2',
-          ipC = '192.0.2.3'
+          ipC = '192.0.2.3',
+          ipD = '192.0.2.4'
         const sendPath = '/api/account/auth/verification-codes'
         const sendBody = (address: string) => ({ purpose: 'LOGIN', channel: 'EMAIL', address })
         async function browser(ip: string) {
@@ -593,6 +612,15 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           other = await browser(ipB)
         assert.notEqual(first.cookie, second.cookie)
         const hourlyBucket = (ip: string) => hash(`v2-delivery-ip-hour:${ip}`)
+        const bucketHits = async (bucketHash: string) =>
+          (
+            await db
+              .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
+              .bind(bucketHash)
+              .first()
+          )?.hits
+        const clientBucket = hash('v2-delivery-client:auth-web')
+        const clientHits = (await bucketHits(clientBucket)) ?? 0
         // Put IP A one send below the hourly quota with a partially elapsed window.
         const expiresAt = Date.now() + 1_800_750
         await db
@@ -623,16 +651,27 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         const directOther = await direct(ipC, 'quota-direct-other@example.test')
         assert.equal(directOther.status, 200, await directOther.text())
 
-        const bucketHits = async (bucketHash: string) =>
-          (
-            await db
-              .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
-              .bind(bucketHash)
-              .first()
-          )?.hits
         assert.equal(await bucketHits(hourlyBucket(ipA)), 62)
         assert.equal(await bucketHits(hourlyBucket(ipB)), 1)
         assert.equal(await bucketHits(hourlyBucket(ipC)), 1)
+        assert.equal(await bucketHits(hash(`v2-delivery-ip:${ipA}`)), 3)
+        for (const address of ['quota-same-ip@example.test', 'quota-direct-same@example.test']) {
+          assert.equal(await bucketHits(hash(`v2-delivery-target:EMAIL:${address}`)), undefined)
+          assert.equal(await bucketHits(hash(`v2-delivery-resend:EMAIL:${address}`)), undefined)
+        }
+        assert.equal(await bucketHits(clientBucket), clientHits + 3)
+
+        await db
+          .prepare('INSERT INTO auth_rate_bucket(bucket_hash,hits,expires_at) VALUES (?,59,?)')
+          .bind(hourlyBucket(ipD), expiresAt)
+          .run()
+        const concurrent = await Promise.all([
+          direct(ipD, 'quota-concurrent-1@example.test'),
+          direct(ipD, 'quota-concurrent-2@example.test'),
+        ])
+        assert.deepEqual(concurrent.map((r) => r.status).sort(), [200, 429])
+        assert.equal(await bucketHits(hourlyBucket(ipD)), 61)
+        assert.equal(await bucketHits(clientBucket), clientHits + 4)
 
         const localPasswordBucket = hash('v2-password:local')
         const localPasswordHits = await bucketHits(localPasswordBucket)
@@ -686,7 +725,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         })
         assert.equal(failure.status, 503, JSON.stringify(failure))
         const logs = await failures.forRequest(failure.requestId, [
-          'd1.first',
+          'd1.all',
           'internal',
           'dispatch',
         ])
@@ -702,7 +741,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           reportedRoutes.get('dispatch'),
           '/api/account/auth/transactions/{handle}/submit',
         )
-        for (const phase of ['d1.first', 'internal']) {
+        for (const phase of ['d1.all', 'internal']) {
           assert.equal(
             reportedRoutes.get(phase),
             '/api/v2/auth/transactions/{transactionId}/challenges',
@@ -821,10 +860,11 @@ test(
       return body.data
     }
 
-    async function conflict(response: Response) {
+    async function conflict(response: Response, retryable = false) {
       assert.equal(response.status, 409)
       assert.equal((await response.json()).error.code, 'VERSION_CONFLICT')
       assert.deepEqual(response.headers.getSetCookie(), [])
+      assert.equal(response.headers.get('Retry-After'), retryable ? '0' : null)
     }
 
     async function browser(): Promise<Browser> {
@@ -862,7 +902,7 @@ test(
         .run()
     }
 
-    async function authenticated({ staleAccess = false, usedRefresh = false } = {}) {
+    async function authenticated({ accessTtlMs = 900_000, usedRefresh = false } = {}) {
       const b = await browser()
       const userId = crypto.randomUUID()
       const loginId = crypto.randomUUID()
@@ -891,7 +931,7 @@ test(
         )
         .bind(loginId, userId, clientId, now, now, expiry, seq.seq, now)
         .run()
-      const accessExpiresAt = staleAccess ? now : now + 900_000
+      const accessExpiresAt = now + accessTtlMs
       await db
         .prepare('INSERT INTO auth_login_access_token VALUES (?,?,0,0,?)')
         .bind(hash(accessToken), loginId, accessExpiresAt)
@@ -910,7 +950,7 @@ test(
           session: { loginSessionId: loginId },
         }
       })
-      return { b, userId, loginId }
+      return { b, userId, loginId, accessToken }
     }
 
     async function pause(
@@ -948,18 +988,225 @@ test(
     }
 
     const logout = { body: { scope: 'CURRENT_LOGIN' } }
+    const activity = { body: { eventId: crypto.randomUUID(), kind: 'OPEN' } }
+    const tenantReads = [
+      '/tenant-creation-policy',
+      '/tenants',
+      '/invitations',
+      '/ownership-transfers',
+    ]
     function assertReady(value: Awaited<ReturnType<typeof row>>, revision: number) {
       assert.equal(value.status, 'READY')
       assert.equal(value.busy_until, 0)
       assert.equal(value.revision, revision)
     }
 
+    async function traced(
+      counts: { read: number; write: number },
+      b?: Browser,
+      path = '/session',
+      options: Parameters<typeof request>[2] = {},
+    ) {
+      const response = await request(b, path, {
+        ...options,
+        headers: { ...options.headers, 'X-Fixture-Barrier': 'web-session-trace' },
+      })
+      assert.deepEqual(JSON.parse(response.headers.get('X-Fixture-D1-Calls')!), counts)
+      return response
+    }
+
+    await t.test('existing browser reads avoid session writes and cookie reissues', async () => {
+      const created = await traced({ read: 0, write: 2 })
+      assert.equal((await data(created)).state, 'ANONYMOUS')
+      assert.equal(created.headers.getSetCookie().length, 1)
+      const anonymous = await browser()
+      assertReady(await row(anonymous), 0)
+      for (const [path, reads] of [
+        ['/session', 1],
+        ['/auth/capabilities', 2],
+      ] as const) {
+        const before = await row(anonymous)
+        const response = await traced({ read: reads, write: 0 }, anonymous, path)
+        await data(response)
+        assert.deepEqual(response.headers.getSetCookie(), [])
+        assert.equal(response.headers.get('X-CSRF-Token'), anonymous.csrf)
+        assert.deepEqual(await row(anonymous), before)
+      }
+
+      const { b } = await authenticated()
+      const before = await row(b)
+      const response = await traced({ read: 2, write: 0 }, b)
+      assert.equal((await data(response)).state, 'AUTHENTICATED')
+      assert.deepEqual(response.headers.getSetCookie(), [])
+      assert.deepEqual(await row(b), before)
+
+      // An invalid activity body isolates the browser lease claim and finish.
+      const write = await traced({ read: 0, write: 2 }, b, '/activity', { body: {} })
+      assert.equal(write.status, 400)
+      assertReady(await row(b), Number(before.revision) + 1)
+      const transaction = await traced({ read: 0, write: 2 }, b, '/auth/transactions/unknown')
+      assert.equal(transaction.status, 404)
+      assertReady(await row(b), Number(before.revision) + 2)
+    })
+
+    await t.test(
+      'tenant first-page reads run concurrently on a single READY revision',
+      async () => {
+        const { b } = await authenticated()
+        const before = await row(b)
+        const reads = await Promise.all(
+          tenantReads.map((path) => pause(b, 'session-read-after', path)),
+        )
+        assert.deepEqual(await row(b), before)
+        const responses = await Promise.all(reads.map((read) => read()))
+        for (const response of responses) {
+          await data(response)
+          assert.deepEqual(response.headers.getSetCookie(), [])
+        }
+        assert.deepEqual(await row(b), before)
+        for (const path of tenantReads) {
+          await data(await traced({ read: 2, write: 0 }, b, path))
+        }
+      },
+    )
+
+    await t.test('parallel tenant reads recover from one near-expiry refresh', async () => {
+      const { b, loginId } = await authenticated({ accessTtlMs: 25_000 })
+      const before = await row(b)
+      const [first, ...others] = tenantReads
+      const pending = await Promise.all(others.map((path) => pause(b, 'session-read-after', path)))
+      const completeRefresh = await pause(b, 'refresh-race', first)
+
+      // These requests all observed the old READY revision, then lost the claim
+      // before their management handlers could query data or issue a cursor.
+      const claimConflicts = await Promise.all(pending.map((complete) => complete()))
+      for (const response of claimConflicts) await conflict(response, true)
+      await conflict(await request(b, '/tenants'), true)
+
+      await data(await completeRefresh())
+      const recovered = await Promise.all(others.map((path) => request(b, path)))
+      for (const response of recovered) {
+        await data(response)
+        assert.equal(response.headers.get('Retry-After'), null)
+      }
+      assertReady(await row(b), Number(before.revision) + 1)
+      const rotation = await db
+        .prepare(
+          'SELECT generation, used_at IS NOT NULL AS used FROM auth_login_refresh_token WHERE login_session_id=? ORDER BY generation',
+        )
+        .bind(loginId)
+        .all()
+      assert.deepEqual(rotation.results, [
+        { generation: 0, used: 1 },
+        { generation: 1, used: 0 },
+      ])
+    })
+
+    await t.test('cursor issuance rechecks the initial READY revision', async () => {
+      const { b, userId } = await authenticated()
+      await db
+        .prepare(
+          "INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at) VALUES (?,'USER_READ','ACTIVE',?,?)",
+        )
+        .bind(userId, userId, Date.now())
+        .run()
+      const path = '/platform/users?limit=1'
+      const before = await row(b)
+      const first = await data(await traced({ read: 2, write: 1 }, b, path))
+      assert.ok(first.nextCursor)
+      await data(await request(b, path + '&cursor=' + first.nextCursor))
+      assert.deepEqual(await row(b), before)
+
+      const cursorCount = () =>
+        db.prepare("SELECT count(*) n FROM auth_one_use WHERE purpose='V2_TENANT_CURSOR'").first()
+      const count = await cursorCount()
+      const stale = await pause(b, 'cursor-write', path)
+      await data(await request(b, '/activity', activity))
+      await conflict(await stale())
+      assert.deepEqual(await cursorCount(), count)
+      assertReady(await row(b), Number(before.revision) + 1)
+
+      const pending = await pause(b, 'cursor-write', path)
+      await data(await request(b, '/logout', logout))
+      await conflict(await pending())
+      assert.deepEqual(await cursorCount(), count)
+      assertReady(await row(b), Number(before.revision) + 2)
+    })
+
+    await t.test('a rejected read only clears its original revision', async () => {
+      const { b, loginId } = await authenticated()
+      await db
+        .prepare('DELETE FROM auth_login_access_token WHERE login_session_id=?')
+        .bind(loginId)
+        .run()
+      await replacePayload(b, (payload) => {
+        payload.data.transactions = { stale: {} }
+        payload.data.loginVerification = { stale: true }
+      })
+      const old = await pause(b, 'account-read-after')
+      await data(await request(b, '/logout', logout))
+      const cleared = await row(b)
+      await conflict(await old())
+      assert.deepEqual(await row(b), cleared)
+
+      const { b: revoked, loginId: revokedLogin } = await authenticated()
+      const before = await row(revoked)
+      await replacePayload(revoked, (payload) => {
+        payload.data.transactions = { stale: {} }
+        payload.data.loginVerification = { stale: true }
+      })
+      await db
+        .prepare('UPDATE auth_login_session SET revoked_at=? WHERE id=?')
+        .bind(Date.now(), revokedLogin)
+        .run()
+      const response = await traced({ read: 2, write: 2 }, revoked)
+      assert.deepEqual(await data(response), { state: 'EXPIRED' })
+      assert.deepEqual(response.headers.getSetCookie(), [])
+      const after = await row(revoked)
+      assertReady(after, Number(before.revision) + 1)
+      assert.deepEqual(JSON.parse(await authOpen(bffKey, after.payload)).data, {
+        loginVerification: null,
+        tokens: null,
+        transactions: {},
+      })
+    })
+
+    await t.test('a delayed anonymous read cannot reissue the pre-promotion cookie', async () => {
+      const b = await browser()
+      const sent = await data(
+        await request(b, '/auth/verification-codes', {
+          body: { purpose: 'LOGIN', channel: 'SMS', address: '+8613800000776' },
+        }),
+      )
+      const delivery = await db
+        .prepare(
+          'SELECT m.credential FROM auth_mock_delivery m JOIN auth_verification_challenge c ON c.delivery_id=m.delivery_id WHERE c.id=?',
+        )
+        .bind(sent.verificationId)
+        .first()
+      assert.ok(delivery)
+      const old = await pause(b, 'session-read-after')
+      const promoted = await request(b, '/auth/login/code', {
+        body: { verificationId: sent.verificationId, code: delivery.credential },
+      })
+      assert.equal((await data(promoted)).account.state, 'AUTHENTICATED')
+      const newCookie = promoted.headers.getSetCookie()[0]?.split(';')[0]
+      assert.ok(newCookie && newCookie !== b.cookie)
+      const delayed = await old()
+      assert.equal((await data(delayed)).state, 'ANONYMOUS')
+      assert.deepEqual(delayed.headers.getSetCookie(), [])
+      assert.equal(
+        await db.prepare('SELECT id_hash FROM auth_web_session WHERE id_hash=?').bind(b.id).first(),
+        null,
+      )
+    })
+
     await t.test('only a fully validated logout can preempt a future lease', async () => {
       const { b, loginId } = await authenticated()
       const until = Date.now() + 120_000
       await expiredLease(b, until)
       const before = await row(b)
-      await conflict(await request(b))
+      await conflict(await request(b), true)
       for (const [options, status] of [
         [{ ...logout, headers: { Origin: 'https://other.example' } }, 403],
         [{ ...logout, headers: { 'X-CSRF-Token': 'wrong' } }, 403],
@@ -1020,7 +1267,18 @@ test(
       const second = await pause(b, 'claim')
       assert.deepEqual(await row(b), before)
       assert.equal((await data(await first())).state, 'ANONYMOUS')
-      await conflict(await second())
+      await conflict(await second(), true)
+      assertReady(await row(b), Number(before.revision) + 1)
+    })
+
+    await t.test('ordinary writes cannot claim an active writer lease', async () => {
+      const { b } = await authenticated()
+      const before = await row(b)
+      const first = await pause(b, 'finish', '/activity', activity)
+      await conflict(await request(b, '/activity', activity))
+      await conflict(await request(b), true)
+      assert.equal((await row(b)).revision, Number(before.revision) + 1)
+      await data(await first())
       assertReady(await row(b), Number(before.revision) + 1)
     })
 
@@ -1039,7 +1297,7 @@ test(
           .prepare('UPDATE auth_web_session SET payload=? WHERE id_hash=?')
           .bind('invalid-sealed-payload', b.id)
           .run()
-        const invalid = await request(b)
+        const invalid = await request(b, '/activity', activity)
         assert.equal(invalid.status, 503)
         assert.deepEqual(invalid.headers.getSetCookie(), [])
         assertReady(await row(b), Number(ready.revision) + 1)
@@ -1067,7 +1325,7 @@ test(
         const ready = await row(b)
         const updatePayload = db.prepare('UPDATE auth_web_session SET payload=? WHERE id_hash=?')
         await updatePayload.bind('invalid-sealed-payload', b.id).run()
-        const old = await pause(b, 'cleanup')
+        const old = await pause(b, 'cleanup', '/activity', activity)
         assert.equal((await row(b)).revision, Number(ready.revision) + 1)
         await updatePayload.bind(ready.payload, b.id).run()
         await takeOver(b, old, 'ANONYMOUS')
@@ -1078,7 +1336,7 @@ test(
       'a stale finish cannot overwrite the winning payload, release its lease or set cookies',
       async () => {
         const { b } = await authenticated()
-        const old = await pause(b, 'finish')
+        const old = await pause(b, 'finish', '/activity', activity)
         await replacePayload(b, (payload) => {
           payload.data.tokens = null
         })
@@ -1125,7 +1383,7 @@ test(
       ['refresh-race', false],
     ] as const) {
       await t.test(`stale refresh (${point}) cannot revoke or change tokens`, async () => {
-        const { b, loginId } = await authenticated({ staleAccess: true, usedRefresh })
+        const { b, loginId } = await authenticated({ accessTtlMs: 0, usedRefresh })
         const tokens = () =>
           db
             .prepare('SELECT * FROM auth_login_refresh_token WHERE login_session_id=?')
@@ -1169,5 +1427,26 @@ test(
       assert.deepEqual(await db.prepare('SELECT count(*) n FROM auth_web_session').first(), before)
       assert.equal(JSON.parse(await authOpen(bffKey, (await row(b)).payload)).data.tokens, null)
     })
+
+    await t.test(
+      'lightweight browser account reads preserve the original V2 error boundary',
+      async () => {
+        const { b, accessToken } = await authenticated()
+        const before = await row(b)
+        const headers = { 'X-Fixture-Barrier': 'web-session-missing-config' }
+        const v2 = await p.fetch(
+          new Request(origin + '/api/v2/users/me', {
+            headers: { ...headers, Authorization: 'Bearer ' + accessToken },
+          }),
+        )
+        assert.equal(v2.status, 503)
+        assert.equal((await v2.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')
+        const browser = await request(b, '/session', { headers })
+        assert.equal(browser.status, 503)
+        assert.equal((await browser.json()).error.code, 'AUTH_UNAVAILABLE')
+        assert.deepEqual(browser.headers.getSetCookie(), [])
+        assert.deepEqual(await row(b), before)
+      },
+    )
   },
 )

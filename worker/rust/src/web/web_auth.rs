@@ -68,15 +68,7 @@ pub async fn route(
 ) -> Result<Value> {
     if path == "/api/account/auth/capabilities" {
         ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
-        return s
-            .call(
-                &format!("/api/v2/auth/capabilities?clientId={}", s.client()?),
-                Method::Get,
-                None,
-                None,
-                None,
-            )
-            .await;
+        return capabilities(s).await;
     }
     if matches!(
         path,
@@ -289,6 +281,17 @@ pub async fn route(
  }.await;
     s.data["transactions"][id] = t;
     result
+}
+
+pub(super) async fn capabilities(s: &WebSession<'_>) -> Result<Value> {
+    s.call(
+        &format!("/api/v2/auth/capabilities?clientId={}", s.client()?),
+        Method::Get,
+        None,
+        None,
+        None,
+    )
+    .await
 }
 async fn finish(s: &mut WebSession<'_>, t: &mut Value) -> Result<Value> {
     let result = call(s, t, "/complete", Method::Post, Some(json!({}))).await?;

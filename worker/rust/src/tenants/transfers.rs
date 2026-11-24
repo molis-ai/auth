@@ -2,12 +2,26 @@
 use crate::{
     http::*,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{self, ACTOR, Read},
     tenants::{Action, Change, Context, Service, expected, member_view},
 };
 use serde_json::{Value, json};
 fn view(r: &Value) -> Value {
     json!({"transferId":r["id"],"tenantId":r["tenant_id"],"fromMembershipId":r["from_membership_id"],"toMembershipId":r["to_membership_id"],"status":if r["status"]=="PENDING"&&number(r,"expires_at")<=now(){json!("EXPIRED")}else{r["status"].clone()},"expiresAt":iso(&r["expires_at"]),"version":r["version"]})
+}
+pub fn list() -> Read {
+    Read::page(
+        format!(
+            "SELECT x.* FROM auth_ownership_transfer x
+                 JOIN auth_managed_tenant t ON t.space_id=x.tenant_id
+                 JOIN auth_tenant_membership f ON f.id=x.from_membership_id
+                 JOIN auth_tenant_membership m ON m.id=x.to_membership_id
+                 WHERE t.status='ACTIVE' AND ((f.user_id={ACTOR} AND f.status='ACTIVE') OR
+                 (m.user_id={ACTOR} AND m.status='ACTIVE'))"
+        ),
+        vec![],
+        |row| Ok(view(row)),
+    )
 }
 impl Service<'_> {
     pub async fn transfer_context(&self, ctx: &mut Context, action: &Action) -> Result<()> {
@@ -45,9 +59,6 @@ impl Service<'_> {
         ensure(ctx.tenant["status"] == "ACTIVE", 403, "TENANT_DISABLED")?;
         ctx.guards.push(self.tenant_guard(&ctx.tenant, true)?);
         Ok(())
-    }
-    pub async fn transfer_list(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        protocol::page(self,action,ctx,"SELECT x.*,printf('%d:%d:%d:%d',x.version,t.version,f.version,m.version) stamp FROM auth_ownership_transfer x JOIN auth_managed_tenant t ON t.space_id=x.tenant_id JOIN auth_tenant_membership f ON f.id=x.from_membership_id JOIN auth_tenant_membership m ON m.id=x.to_membership_id WHERE t.status='ACTIVE' AND ((f.user_id=? AND f.status='ACTIVE') OR (m.user_id=? AND m.status='ACTIVE'))",vec![self.user(),self.user()],view).await
     }
     pub async fn transfer_change(
         &self,

@@ -2,11 +2,37 @@
 use crate::{
     http::*,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{self, ACTOR, Read},
     tenants::{Action, Change, Context, Service, expected, member_view},
 };
 use serde_json::{Value, json};
-pub(crate) const TARGET: &str = "((i.target_kind='USER' AND i.target_user_id=?) OR (i.target_kind='EMAIL' AND EXISTS(SELECT 1 FROM auth_user_email e WHERE e.user_id=? AND e.canonical_email=i.target_email AND e.verified_at IS NOT NULL)) OR (i.target_kind='PHONE' AND EXISTS(SELECT 1 FROM auth_user_phone p WHERE p.user_id=? AND p.canonical_phone=i.target_phone)))";
+fn target(user: &str) -> String {
+    format!(
+        "((i.target_kind='USER' AND i.target_user_id={user}) OR
+        (i.target_kind='EMAIL' AND EXISTS(SELECT 1 FROM auth_user_email e WHERE e.user_id={user}
+         AND e.canonical_email=i.target_email AND e.verified_at IS NOT NULL)) OR
+        (i.target_kind='PHONE' AND EXISTS(SELECT 1 FROM auth_user_phone p WHERE p.user_id={user}
+         AND p.canonical_phone=i.target_phone)))"
+    )
+}
+pub fn list(action: &Action) -> Read {
+    if action.op == "invitation.list-tenant" {
+        Read::page(
+            "SELECT i.* FROM auth_tenant_invitation i WHERE i.tenant_id=?",
+            vec![action.tenant_id.clone().into()],
+            |row| Ok(view(row)),
+        )
+    } else {
+        let target = target(ACTOR);
+        Read::page(
+            format!("SELECT i.* FROM auth_tenant_invitation i
+                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     WHERE t.status='ACTIVE' AND i.status='PENDING' AND i.expires_at>? AND {target}"),
+            vec![now().into()],
+            |row| Ok(view(row)),
+        )
+    }
+}
 fn view(i: &Value) -> Value {
     let target = match text(i, "target_kind").as_str() {
         "EMAIL" => format!(
@@ -41,11 +67,12 @@ fn view(i: &Value) -> Value {
 impl Service<'_> {
     pub async fn invitation_context(&self, ctx: &mut Context, id: &str) -> Result<()> {
         let args = vec![id.into(), self.user(), self.user(), self.user()];
+        let target = target("?");
         ctx.record = self
             .a
             .s
             .one(
-                &format!("SELECT i.* FROM auth_tenant_invitation i WHERE i.id=? AND {TARGET}"),
+                &format!("SELECT i.* FROM auth_tenant_invitation i WHERE i.id=? AND {target}"),
                 args.clone(),
             )
             .await?;
@@ -56,19 +83,12 @@ impl Service<'_> {
             self.tenant_guard(&ctx.tenant, true)?,
             self.a.s.guard(
                 &format!(
-                    "EXISTS(SELECT 1 FROM auth_tenant_invitation i WHERE i.id=? AND {TARGET})"
+                    "EXISTS(SELECT 1 FROM auth_tenant_invitation i WHERE i.id=? AND {target})"
                 ),
                 args,
             )?,
         ]);
         Ok(())
-    }
-    pub async fn invitation_list(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        if action.op == "invitation.list-tenant" {
-            protocol::page(self,action,ctx,"SELECT i.*,CAST(i.version AS TEXT) stamp FROM auth_tenant_invitation i WHERE i.tenant_id=?",vec![ctx.tenant["id"].clone()],view).await
-        } else {
-            protocol::page(self,action,ctx,&format!("SELECT i.*,printf('%d:%d',i.version,t.version) stamp FROM auth_tenant_invitation i JOIN auth_managed_tenant t ON t.space_id=i.tenant_id WHERE t.status='ACTIVE' AND i.status='PENDING' AND i.expires_at>{} AND {TARGET}",now()),vec![self.user(),self.user(),self.user()],view).await
-        }
     }
     pub async fn invitation_change(
         &self,

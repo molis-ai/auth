@@ -11,11 +11,21 @@ const ABSOLUTE: i64 = 7776000000;
 const ACCESS: i64 = 900000;
 const RECEIPT: i64 = 86400000;
 const LIVE: &str = "s.revoked_at IS NULL AND u.status='ACTIVE' AND s.user_epoch=us.session_epoch AND s.last_active_at+2592000000>? AND s.absolute_expires_at>?";
+pub(crate) const ACCESS_USER_ID: &str = "(SELECT s.user_id FROM auth_login_access_token t
+    JOIN auth_login_session s ON s.id=t.login_session_id WHERE t.token_hash=?1)";
 pub(crate) fn view(s: &Value) -> Value {
     json!({"loginSessionId":s["id"],"applicationId":s["application_id"],"clientId":s["client_id"],"authenticatedAt":iso(&s["authenticated_at"]),"lastActiveAt":iso(&s["last_active_at"]),"idleExpiresAt":iso(&json!(number(s,"last_active_at")+IDLE)),"absoluteExpiresAt":iso(&s["absolute_expires_at"]),"sessionRevision":s["session_revision"]})
 }
-pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
-    let config: Value = serde_json::from_str(
+const CLIENT_COLUMNS: &str =
+    "c.*,p.version policy_version,p.allowed_origins,e.version environment_version,
+     e.id environment_id,e.kind,e.auth_origin,e.delivery_mode,e.provider_mode";
+const CLIENT_POLICY_JOINS: &str =
+    "JOIN auth_application app ON app.id=c.application_id AND app.status='ACTIVE'
+    JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
+    JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'";
+
+fn client_config(a: &Auth) -> Result<Value> {
+    Ok(serde_json::from_str(
         &a.env
             .var("UNIFIED_ACCOUNT_CONFIG")
             .map_err(|_| Failure {
@@ -23,28 +33,50 @@ pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
                 code: "UNIFIED_CONFIGURATION_INVALID",
             })?
             .to_string(),
-    )?;
-    let c=a.s.one("SELECT c.*,p.version policy_version,p.allowed_origins,e.version environment_version,e.id environment_id,e.kind,e.auth_origin,e.delivery_mode,e.provider_mode FROM auth_client c JOIN auth_application app ON app.id=c.application_id JOIN auth_client_policy p ON p.client_id=c.client_id JOIN auth_environment e ON e.id=p.environment_id WHERE c.client_id=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND p.policy_profile='unified-account-v2' AND e.status='ACTIVE'",vec![id.into()]).await?;
+    )?)
+}
+const CLIENT_CONFIG_FIELDS: [(&str, &str, &str); 5] = [
+    ("id", "environment_id", "environmentId"),
+    ("auth_origin", "auth_origin", "authOrigin"),
+    ("kind", "kind", "kind"),
+    ("delivery_mode", "delivery_mode", "deliveryMode"),
+    ("provider_mode", "provider_mode", "providerMode"),
+];
+
+fn check_registered_client(c: &Value, config: &Value) -> Result<()> {
     ensure(
-        !c.is_null()
-            && c["environment_id"] == config["environmentId"]
-            && c["auth_origin"] == config["authOrigin"]
-            && c["kind"] == config["kind"]
-            && c["delivery_mode"] == config["deliveryMode"]
-            && c["provider_mode"] == config["providerMode"],
+        !c["environment_id"].is_null()
+            && CLIENT_CONFIG_FIELDS
+                .iter()
+                .all(|(_, field, key)| c[field] == config[key]),
         403,
         "POLICY_MISMATCH",
-    )?;
+    )
+}
+fn check_origin(c: &Value, origin: &str) -> Result<()> {
+    ensure(
+        origin.is_empty() || contains(&parsed(c, "allowed_origins")?, &json!(origin)),
+        403,
+        "FORBIDDEN",
+    )
+}
+pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
+    let config = client_config(a)?;
+    let c =
+        a.s.one(
+            &format!(
+                "SELECT {CLIENT_COLUMNS} FROM auth_client c {CLIENT_POLICY_JOINS}
+             WHERE c.client_id=? AND c.status='ACTIVE'"
+            ),
+            vec![id.into()],
+        )
+        .await?;
+    check_registered_client(&c, &config)?;
     Ok(c)
 }
 pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
     let c = registered_client(a, id).await?;
-    let origin = a.header("Origin");
-    ensure(
-        origin.is_empty() || contains(&parsed(&c, "allowed_origins")?, &json!(origin)),
-        403,
-        "FORBIDDEN",
-    )?;
+    check_origin(&c, &a.header("Origin"))?;
     Ok(c)
 }
 pub(crate) fn client_guard(a: &Auth, c: &Value) -> Result<D1PreparedStatement> {
@@ -71,55 +103,149 @@ struct Credential {
     client: Value,
 }
 
-async fn credential(a: &Auth, b: &Value) -> Result<Credential> {
-    let refresh = b.get("refreshProof");
-    let authorization = a.header("Authorization");
-    let (table, raw) = if let Some(p) = refresh {
-        ensure(authorization.is_empty(), 400, "INVALID_REQUEST")?;
-        ("auth_login_refresh_token", text(p, "refreshToken"))
+fn credential_statement(a: &Auth, digest: &str, refresh: bool) -> Result<D1PreparedStatement> {
+    let (table, used_at) = if refresh {
+        ("auth_login_refresh_token", "t.used_at")
     } else {
-        (
-            "auth_login_access_token",
-            authorization
-                .strip_prefix("Bearer ")
-                .unwrap_or("")
-                .to_owned(),
-        )
+        ("auth_login_access_token", "NULL")
     };
-    ensure(token(&raw), 401, "INVALID_CREDENTIALS")?;
-    let digest = hash(&raw);
-    let t =
-        a.s.one(
-            &format!("SELECT * FROM {table} WHERE token_hash=?"),
-            vec![digest.clone().into()],
-        )
-        .await?;
-    ensure(!t.is_null(), 401, "INVALID_CREDENTIALS")?;
-    let s = session(a, &text(&t, "login_session_id")).await?;
+    // Session existence and client policy have distinct error codes. The left
+    // joins keep their absence distinguishable even when the token exists.
+    a.s.statement(
+        &format!("SELECT {CLIENT_COLUMNS},
+             CASE WHEN u.id IS NOT NULL AND us.user_id IS NOT NULL AND c.client_id IS NOT NULL
+             THEN json_object(
+               'id',s.id,'user_id',s.user_id,'client_id',s.client_id,'authenticated_at',s.authenticated_at,
+               'last_active_at',s.last_active_at,'absolute_expires_at',s.absolute_expires_at,
+               'user_epoch',s.user_epoch,'session_revision',s.session_revision,'created_seq',s.created_seq,
+               'revoked_at',s.revoked_at,'identity_verified_at',s.identity_verified_at,
+               'application_id',c.application_id,'current_epoch',us.session_epoch,'user_status',u.status
+             ) END credential_session,
+             json_object('expires_at',t.expires_at,'session_revision',t.session_revision,
+                         'user_epoch',t.user_epoch,'used_at',{used_at}) credential_token
+             FROM {table} t
+             LEFT JOIN auth_login_session s ON s.id=t.login_session_id
+             LEFT JOIN auth_user_security us ON us.user_id=s.user_id
+             LEFT JOIN auth_user u ON u.id=s.user_id
+             LEFT JOIN auth_client c ON c.client_id=s.client_id
+             LEFT JOIN auth_application app
+               ON app.id=c.application_id AND app.status='ACTIVE' AND c.status='ACTIVE'
+             LEFT JOIN auth_client_policy p
+               ON p.client_id=c.client_id AND app.id IS NOT NULL AND p.policy_profile='unified-account-v2'
+             LEFT JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'
+             WHERE t.token_hash=?"),
+        vec![digest.into()],
+    )
+}
+fn credential_result(
+    a: &Auth,
+    mut row: Value,
+    digest: String,
+    refresh: Option<&Value>,
+    origin: &str,
+) -> Result<Credential> {
     ensure(
-        !s.is_null() && refresh.is_none_or(|p| p["clientId"] == s["client_id"]),
+        !row["credential_session"].is_null(),
         401,
         "INVALID_CREDENTIALS",
     )?;
-    let c = client(a, &text(&s, "client_id")).await?;
+    let session = parsed(&row, "credential_session")?;
+    ensure(
+        refresh.is_none_or(|p| p["clientId"] == session["client_id"]),
+        401,
+        "INVALID_CREDENTIALS",
+    )?;
+    check_registered_client(&row, &client_config(a)?)?;
+    check_origin(&row, origin)?;
+    let token = parsed(&row, "credential_token")?;
+    if let Some(client) = row.as_object_mut() {
+        client.remove("credential_session");
+        client.remove("credential_token");
+    }
     Ok(Credential {
-        session: s,
-        token: t,
+        session,
+        token,
         digest,
-        client: c,
+        client: row,
     })
 }
-/// A v2 access credential, including its expiry for the final commit guard.
-pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
+fn token_digest(raw: &str) -> Result<String> {
+    ensure(token(raw), 401, "INVALID_CREDENTIALS")?;
+    Ok(hash(raw))
+}
+pub(crate) fn bearer(authorization: &str) -> &str {
+    authorization.strip_prefix("Bearer ").unwrap_or("")
+}
+async fn credential(a: &Auth, b: &Value) -> Result<Credential> {
+    let refresh = b.get("refreshProof");
+    let authorization = a.header("Authorization");
+    let digest = if let Some(p) = refresh {
+        ensure(authorization.is_empty(), 400, "INVALID_REQUEST")?;
+        token_digest(&text(p, "refreshToken"))?
+    } else {
+        token_digest(bearer(&authorization))?
+    };
+    let row =
+        a.s.first(credential_statement(a, &digest, refresh.is_some())?)
+            .await?;
+    credential_result(a, row, digest, refresh, &a.header("Origin"))
+}
+pub(crate) fn active_lookup(a: &Auth, raw: &str) -> Result<(String, D1PreparedStatement)> {
+    let digest = token_digest(raw)?;
+    let statement = credential_statement(a, &digest, false)?;
+    Ok((digest, statement))
+}
+/// Principal rows eligible to execute the data part of a read snapshot. The
+/// credential result remains the source of HTTP errors and is read in the same
+/// transaction, including when this query returns no principal.
+pub(crate) fn active_actor(a: &Auth, digest: &str) -> (String, Vec<Value>) {
+    let config = client_config(a).unwrap_or(Value::Null);
+    let origin = a.header("Origin");
+    let n = now();
+    let mut args = vec![digest.into(), n.into(), n.into(), n.into()];
+    for (_, _, key) in CLIENT_CONFIG_FIELDS {
+        args.push(config[key].as_str().map_or(Value::Null, Value::from));
+    }
+    args.extend([origin.clone().into(), origin.into()]);
+    let config_matches = CLIENT_CONFIG_FIELDS
+        .map(|(column, _, _)| format!("e.{column}=?"))
+        .join(" AND ");
+    (
+        format!(
+            "SELECT s.user_id,s.client_id FROM auth_login_access_token t
+             JOIN auth_login_session s ON s.id=t.login_session_id
+             JOIN auth_user_security us ON us.user_id=s.user_id
+             JOIN auth_user u ON u.id=s.user_id
+             JOIN auth_client c ON c.client_id=s.client_id AND c.status='ACTIVE'
+             {CLIENT_POLICY_JOINS}
+             WHERE t.token_hash=? AND {LIVE} AND t.expires_at>?
+             AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision
+             AND {config_matches}
+             AND (?='' OR EXISTS(SELECT 1 FROM json_each(p.allowed_origins)
+                                 WHERE type='text' AND value=?))"
+        ),
+        args,
+    )
+}
+pub(crate) fn active_result(
+    a: &Auth,
+    row: Value,
+    digest: String,
+    origin: &str,
+) -> Result<(Value, Value)> {
+    check_active(credential_result(a, row, digest, None, origin)?)
+}
+fn check_active(credential: Credential) -> Result<(Value, Value)> {
     let Credential {
         session: mut s,
         token: t,
         digest,
         client: c,
-    } = credential(a, &json!({})).await?;
+    } = credential;
+    let n = now();
     ensure(
-        live(&s, now())
-            && number(&t, "expires_at") > now()
+        live(&s, n)
+            && number(&t, "expires_at") > n
             && t["session_revision"] == s["session_revision"]
             && t["user_epoch"] == s["user_epoch"],
         401,
@@ -128,6 +254,10 @@ pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
     s["access_hash"] = digest.into();
     s["access_expires_at"] = t["expires_at"].clone();
     Ok((s, c))
+}
+/// A v2 access credential, including its expiry for the final commit guard.
+pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
+    check_active(credential(a, &json!({})).await?)
 }
 pub(crate) fn active_guard(a: &Auth, s: &Value) -> Result<D1PreparedStatement> {
     a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_login_access_token t ON t.login_session_id=s.id WHERE s.id=? AND s.session_revision=? AND {LIVE} AND t.token_hash=? AND t.expires_at>? AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision)"),vec![s["id"].clone(),s["session_revision"].clone(),now().into(),now().into(),s["access_hash"].clone(),now().into()])

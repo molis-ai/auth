@@ -7,6 +7,7 @@ pub(crate) mod protocol;
 pub(crate) mod transfers;
 
 use crate::{auth::login_sessions, http::*, identity::Auth, security::uuid};
+use protocol::{ACTOR, Access, Lookup, Read};
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 pub(crate) struct Service<'a> {
@@ -79,7 +80,26 @@ pub(crate) fn expected(b: &Value, row: &Value) -> Result<()> {
         "VERSION_CONFLICT",
     )
 }
-pub(crate) const TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id,CAST(t.version AS TEXT) stamp FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id";
+pub(crate) const TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id";
+pub(crate) const ACTIVE_MEMBER: &str = "tenant_id=? AND status='ACTIVE'";
+pub(crate) const ACTIVE_PERMISSION: &str = "permission=? AND status='ACTIVE'";
+pub(crate) const ALL_ROLES: &[&str] = &["OWNER", "ADMIN", "MEMBER"];
+pub(crate) const MANAGER_ROLES: &[&str] = &["OWNER", "ADMIN"];
+
+pub(crate) fn require_member(ctx: &Context, roles: &[&str]) -> Result<()> {
+    ensure(
+        !ctx.tenant.is_null() && !ctx.member.is_null(),
+        404,
+        "NOT_FOUND",
+    )?;
+    ensure(ctx.tenant["status"] == "ACTIVE", 403, "TENANT_DISABLED")?;
+    ensure(
+        roles.contains(&text(&ctx.member, "role").as_str()),
+        403,
+        "FORBIDDEN",
+    )
+}
+
 impl Service<'_> {
     pub fn user(&self) -> Value {
         self.s["user_id"].clone()
@@ -106,14 +126,17 @@ impl Service<'_> {
     }
     pub async fn member_context(&self, ctx: &mut Context, id: &str, roles: &[&str]) -> Result<()> {
         ctx.tenant = self.tenant(id).await?;
-        ctx.member=self.a.s.one("SELECT * FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE'",vec![id.into(),self.user()]).await?;
-        ensure(!ctx.member.is_null(), 404, "NOT_FOUND")?;
-        ensure(ctx.tenant["status"] == "ACTIVE", 403, "TENANT_DISABLED")?;
-        ensure(
-            roles.contains(&text(&ctx.member, "role").as_str()),
-            403,
-            "FORBIDDEN",
-        )?;
+        ctx.member = self
+            .a
+            .s
+            .one(
+                &format!(
+                    "SELECT * FROM auth_tenant_membership WHERE user_id=? AND {ACTIVE_MEMBER}"
+                ),
+                vec![self.user(), id.into()],
+            )
+            .await?;
+        require_member(ctx, roles)?;
         ctx.guards.extend([
             self.tenant_guard(&ctx.tenant, true)?,
             self.member_guard(&ctx.member)?,
@@ -145,23 +168,34 @@ impl Service<'_> {
         )
     }
     pub async fn platform_permission(&self, ctx: &mut Context, permission: &str) -> Result<()> {
-        ctx.permission=self.a.s.one("SELECT * FROM auth_platform_permission WHERE user_id=? AND permission=? AND status='ACTIVE'",vec![self.user(),permission.into()]).await?;
+        ctx.permission = self
+            .a
+            .s
+            .one(
+                &format!(
+                    "SELECT * FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION}"
+                ),
+                vec![self.user(), permission.into()],
+            )
+            .await?;
         ensure(!ctx.permission.is_null(), 403, "FORBIDDEN")?;
-        ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission=? AND status='ACTIVE' AND version=?)",vec![self.user(),permission.into(),ctx.permission["version"].clone()])?);
+        ctx.guards.push(self.permission_guard(&ctx.permission)?);
         Ok(())
+    }
+    pub fn permission_guard(&self, permission: &Value) -> Result<D1PreparedStatement> {
+        self.a.s.guard(
+            &format!("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION} AND version=?)"),
+            vec![self.user(), permission["permission"].clone(), permission["version"].clone()],
+        )
     }
     pub async fn authorize(&self, action: &Action) -> Result<Context> {
         let mut ctx = Context::new();
         match action.op {
-            "tenant.create"
-            | "tenant.platform-list"
-            | "tenant.platform-get"
-            | "tenant.disable"
-            | "tenant.enable" => {
-                let permission = match action.op {
-                    "tenant.create" => "TENANT_CREATE",
-                    "tenant.disable" | "tenant.enable" => "TENANT_STATUS",
-                    _ => "TENANT_READ",
+            "tenant.create" | "tenant.disable" | "tenant.enable" => {
+                let permission = if action.op == "tenant.create" {
+                    "TENANT_CREATE"
+                } else {
+                    "TENANT_STATUS"
                 };
                 self.platform_permission(&mut ctx, permission).await?;
                 if !action.tenant_id.is_empty() {
@@ -176,8 +210,6 @@ impl Service<'_> {
                     "FORBIDDEN",
                 )?;
             }
-            "tenant.creation-policy" | "tenant.list" | "invitation.list-mine" | "transfer.list" => {
-            }
             "invitation.accept" | "invitation.decline" => {
                 self.invitation_context(&mut ctx, &action.id).await?
             }
@@ -186,13 +218,10 @@ impl Service<'_> {
             }
             _ => {
                 let roles: &[&str] = match action.op {
-                    "tenant.update"
-                    | "invitation.create"
-                    | "invitation.list-tenant"
-                    | "invitation.revoke"
-                    | "member.remove" => &["OWNER", "ADMIN"],
+                    "tenant.update" | "invitation.create" | "invitation.revoke"
+                    | "member.remove" => MANAGER_ROLES,
                     "member.role" | "transfer.create" => &["OWNER"],
-                    _ => &["OWNER", "ADMIN", "MEMBER"],
+                    _ => ALL_ROLES,
                 };
                 self.member_context(&mut ctx, &action.tenant_id, roles)
                     .await?;
@@ -227,22 +256,6 @@ impl Service<'_> {
             }
         }
         Ok(ctx)
-    }
-    async fn read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        match action.op {
-            "tenant.creation-policy" => Ok(json!({"mode":crate::tenants::creation::policy(&self.a.env)?})),
-            "tenant.get"=>{let mut t=ctx.tenant.clone();t["role"]=ctx.member["role"].clone();t["membership_id"]=ctx.member["id"].clone();Ok(tenant_view(&t))},
-            "tenant.platform-get"=>Ok(platform_view(&ctx.tenant)),
-            "tenant.platform-list"=>protocol::page(self,action,ctx,TENANTS,vec![],platform_view).await,
-            "tenant.list"=>{
-                let mut r=protocol::page(self,action,ctx,"SELECT t.space_id id,s.name,t.status,t.version,m.id membership_id,m.role,printf('%d:%d',t.version,m.version) stamp FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id JOIN auth_tenant_membership m ON m.tenant_id=t.space_id WHERE m.user_id=? AND m.status='ACTIVE'",vec![self.user()],tenant_view).await?;
-                r["personalScope"]=json!({"kind":"PERSONAL"});Ok(r)
-            }
-            "member.list"=>protocol::page(self,action,ctx,"SELECT m.*,u.display_name,(SELECT e.canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL ORDER BY e.created_at,e.id LIMIT 1) email,CAST(m.version AS TEXT) stamp FROM auth_tenant_membership m JOIN auth_user u ON u.id=m.user_id WHERE m.tenant_id=? AND m.status='ACTIVE'",vec![ctx.tenant["id"].clone()],directory_member_view).await,
-            "invitation.list-mine"|"invitation.list-tenant"=>self.invitation_list(action,ctx).await,
-            "transfer.list"=>self.transfer_list(action,ctx).await,
-            _=>Err(Failure{status:501,code:"UNIFIED_ACCOUNT_NOT_IMPLEMENTED"}),
-        }
     }
     async fn change(&self, action: &Action, ctx: &Context, b: &Value) -> Result<Change> {
         match action.op {
@@ -466,10 +479,93 @@ fn action(path: &str, method: Method) -> Result<Action> {
         schema,
     })
 }
+async fn read(a: &Auth, action: &Action) -> Result<Value> {
+    let (access, lookup, plan) = match action.op {
+        "tenant.creation-policy" => {
+            login_sessions::active(a).await?;
+            return Ok(json!({"mode":creation::policy(&a.env)?}));
+        }
+        "tenant.get" => (
+            Access::Member(ALL_ROLES),
+            Some(Lookup {
+                sql: format!("{TENANTS} WHERE t.space_id=?"),
+                id: action.tenant_id.clone(),
+                guard: None,
+            }),
+            Read::Detail(|ctx| {
+                let mut t = ctx.record.clone();
+                t["role"] = ctx.member["role"].clone();
+                t["membership_id"] = ctx.member["id"].clone();
+                Ok(tenant_view(&t))
+            }),
+        ),
+        "tenant.platform-get" => (
+            Access::Permission("TENANT_READ"),
+            Some(Lookup {
+                sql: format!("{TENANTS} WHERE t.space_id=?"),
+                id: action.tenant_id.clone(),
+                guard: None,
+            }),
+            Read::Detail(|ctx| Ok(platform_view(&ctx.record))),
+        ),
+        "tenant.platform-list" => (
+            Access::Permission("TENANT_READ"),
+            None,
+            Read::page(TENANTS, vec![], |row| Ok(platform_view(row))),
+        ),
+        "tenant.list" => (
+            Access::Session,
+            None,
+            Read::page(
+                format!("SELECT t.space_id id,s.name,t.status,t.version,m.id membership_id,m.role
+                         FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
+                         JOIN auth_tenant_membership m ON m.tenant_id=t.space_id
+                         WHERE m.user_id={ACTOR} AND m.status='ACTIVE'"),
+                vec![],
+                |row| Ok(tenant_view(row)),
+            ),
+        ),
+        "member.list" => (
+            Access::Member(ALL_ROLES),
+            None,
+            Read::page(
+                "SELECT m.*,u.display_name,(SELECT e.canonical_email FROM auth_user_email e
+                 WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL ORDER BY e.created_at,e.id LIMIT 1) email
+                 FROM auth_tenant_membership m JOIN auth_user u ON u.id=m.user_id
+                 WHERE m.tenant_id=? AND m.status='ACTIVE'",
+                vec![action.tenant_id.clone().into()],
+                |row| Ok(directory_member_view(row)),
+            ),
+        ),
+        "invitation.list-tenant" => (Access::Member(MANAGER_ROLES), None, invitations::list(action)),
+        "invitation.list-mine" => (Access::Session, None, invitations::list(action)),
+        "transfer.list" => (Access::Session, None, transfers::list()),
+        _ => unreachable!("only managed tenant reads reach this owner"),
+    };
+    let mut result = protocol::read(a, action, access, lookup, Ok(plan)).await?;
+    if action.op == "tenant.list" {
+        result["personalScope"] = json!({"kind":"PERSONAL"});
+    }
+    Ok(result)
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+    let action = match action(path, method) {
+        Ok(action) => action,
+        Err(error) => {
+            login_sessions::active(a).await?;
+            return Err(error);
+        }
+    };
+    let Some(schema) = action.schema else {
+        let result = read(a, &action).await?;
+        return Ok(json_response(
+            json!({"data":result,"requestId":a.request_id}),
+            200,
+        )?);
+    };
     let (s, c) = login_sessions::active(a).await?;
-    let action = action(path, method)?;
-    let b = if let Some(schema) = action.schema {
+    let b = {
         ensure(
             a.header("Content-Type").split(';').next() == Some("application/json"),
             400,
@@ -485,18 +581,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             )?;
         }
         b
-    } else {
-        json!({})
     };
     let mut service = Service { a, s, c };
-    let result = if action.schema.is_none() {
-        let mut ctx = service.authorize(&action).await?;
-        let result = service.read(&action, &mut ctx).await?;
-        let mut w = protocol::base(&service)?;
-        w.extend(ctx.guards);
-        a.s.batch(w, "VERSION_CONFLICT").await?;
-        result
-    } else {
+    let result = {
         let key = protocol::key(a)?;
         let mut last = Failure {
             status: 409,

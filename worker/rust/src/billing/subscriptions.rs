@@ -2,15 +2,14 @@
 use crate::{
     http::*,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{ACTOR, Read},
     tenants::{Action, Change, Context, Service, expected},
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;
 
-pub const SUBSCRIPTIONS: &str =
-    "SELECT s.*,CAST(s.version AS TEXT) stamp FROM billing_subscription s";
-pub const POOLS: &str = "SELECT p.*,json_array(p.subscription_id,p.seat_type_id) id,(SELECT count(*) FROM billing_seat_assignment a WHERE a.subscription_id=p.subscription_id AND a.seat_type_id=p.seat_type_id AND a.status='ASSIGNED') assigned_count,printf('%d:%d',p.version,(SELECT count(*) FROM billing_seat_assignment a WHERE a.subscription_id=p.subscription_id AND a.seat_type_id=p.seat_type_id AND a.status='ASSIGNED')) stamp FROM billing_seat_pool p";
+pub const SUBSCRIPTIONS: &str = "SELECT s.* FROM billing_subscription s";
+pub const POOLS: &str = "SELECT p.*,json_array(p.subscription_id,p.seat_type_id) id,(SELECT count(*) FROM billing_seat_assignment a WHERE a.subscription_id=p.subscription_id AND a.seat_type_id=p.seat_type_id AND a.status='ASSIGNED') assigned_count FROM billing_seat_pool p";
 pub fn view(s: &Value) -> Value {
     let enabled = number(s, "enabled") == 1;
     let n = now();
@@ -23,6 +22,33 @@ fn timestamp(v: &Value) -> Result<Value> {
     let t = js_sys::Date::parse(v.as_str().unwrap_or_default());
     ensure(t.is_finite(), 400, "INVALID_REQUEST")?;
     Ok((t as i64).into())
+}
+pub fn read(action: &Action) -> Read {
+    match action.op {
+        "subscription.get" => Read::Detail(|ctx| Ok(view(&ctx.record))),
+        "subscription.mine" => Read::page(
+            format!("{SUBSCRIPTIONS} WHERE s.owner_user_id={ACTOR}"),
+            vec![],
+            |row| Ok(view(row)),
+        ),
+        "subscription.tenant" => Read::page(
+            format!("{SUBSCRIPTIONS} WHERE s.owner_tenant_id=?"),
+            vec![action.tenant_id.clone().into()],
+            |row| Ok(view(row)),
+        ),
+        "pool.platform" => Read::page(
+            format!("{POOLS} WHERE p.subscription_id=? AND p.status='CURRENT'"),
+            vec![action.id.clone().into()],
+            |row| Ok(pool_view(row)),
+        ),
+        "pool.list" => Read::page(
+            format!("{POOLS} WHERE p.tenant_id=? AND p.status='CURRENT'"),
+            vec![action.tenant_id.clone().into()],
+            |row| Ok(pool_view(row)),
+        ),
+        "subscription.list" => Read::page(SUBSCRIPTIONS, vec![], |row| Ok(view(row))),
+        _ => unreachable!("only subscription and pool reads reach this owner"),
+    }
 }
 impl Service<'_> {
     pub async fn subscription(&self, id: &str) -> Result<Value> {
@@ -39,56 +65,6 @@ impl Service<'_> {
             "EXISTS(SELECT 1 FROM billing_subscription WHERE id=? AND version=?)",
             vec![r["id"].clone(), r["version"].clone()],
         )
-    }
-    pub async fn subscription_read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        match action.op {
-            "subscription.get" => Ok(view(&ctx.record)),
-            "subscription.mine" => {
-                protocol::page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{SUBSCRIPTIONS} WHERE s.owner_user_id=?"),
-                    vec![self.user()],
-                    view,
-                )
-                .await
-            }
-            "subscription.tenant" => {
-                protocol::page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{SUBSCRIPTIONS} WHERE s.owner_tenant_id=?"),
-                    vec![ctx.tenant["id"].clone()],
-                    view,
-                )
-                .await
-            }
-            "pool.platform" => {
-                protocol::page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{POOLS} WHERE p.subscription_id=? AND p.status='CURRENT'"),
-                    vec![ctx.record["id"].clone()],
-                    pool_view,
-                )
-                .await
-            }
-            "pool.list" => {
-                protocol::page(
-                    self,
-                    action,
-                    ctx,
-                    &format!("{POOLS} WHERE p.tenant_id=? AND p.status='CURRENT'"),
-                    vec![ctx.tenant["id"].clone()],
-                    pool_view,
-                )
-                .await
-            }
-            _ => protocol::page(self, action, ctx, SUBSCRIPTIONS, vec![], view).await,
-        }
     }
     // All live ASSIGNED rows count, including expired/disabled subscriptions. The same
     // predicate is checked inside the final D1 batch, so a concurrent assignment cannot

@@ -1,13 +1,13 @@
 //! Append-only catalog publication; old subscriptions keep their selected version.
 use crate::{
     http::*,
-    tenants::protocol,
-    tenants::{Action, Change, Context, Service},
+    tenants::protocol::Read,
+    tenants::{Action, Change, Service},
 };
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-pub const PLANS: &str = "SELECT p.*,json_array(p.plan_id,p.plan_version) id,'immutable' stamp,json_object('planId',p.plan_id,'planVersion',p.plan_version,'name',p.name,'personalFeatureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_personal_feature WHERE plan_id=p.plan_id AND plan_version=p.plan_version ORDER BY feature_id))),'seatTypes',json((SELECT json_group_array(json(item)) FROM (SELECT json_object('seatTypeId',t.seat_type_id,'name',t.name,'featureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_seat_feature WHERE plan_id=t.plan_id AND plan_version=t.plan_version AND seat_type_id=t.seat_type_id ORDER BY feature_id)))) item FROM billing_plan_seat_type t WHERE t.plan_id=p.plan_id AND t.plan_version=p.plan_version ORDER BY t.seat_type_id)))) definition FROM billing_plan_version p";
+pub const PLANS: &str = "SELECT p.*,json_array(p.plan_id,p.plan_version) id,json_object('planId',p.plan_id,'planVersion',p.plan_version,'name',p.name,'personalFeatureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_personal_feature WHERE plan_id=p.plan_id AND plan_version=p.plan_version ORDER BY feature_id))),'seatTypes',json((SELECT json_group_array(json(item)) FROM (SELECT json_object('seatTypeId',t.seat_type_id,'name',t.name,'featureIds',json((SELECT json_group_array(feature_id) FROM (SELECT feature_id FROM billing_plan_seat_feature WHERE plan_id=t.plan_id AND plan_version=t.plan_version AND seat_type_id=t.seat_type_id ORDER BY feature_id)))) item FROM billing_plan_seat_type t WHERE t.plan_id=p.plan_id AND t.plan_version=p.plan_version ORDER BY t.seat_type_id)))) definition FROM billing_plan_version p";
 fn plan_view(r: &Value) -> Result<Value> {
     let plan: Value = stored_json(r, "definition")?;
     ensure(
@@ -19,6 +19,15 @@ fn plan_view(r: &Value) -> Result<Value> {
 }
 pub fn feature_view(r: &Value) -> Value {
     json!({"featureId":r["id"],"product":r["product"],"name":r["name"]})
+}
+pub fn read(action: &Action) -> Read {
+    if action.op == "catalog.features" {
+        Read::page("SELECT * FROM billing_feature", vec![], |row| {
+            Ok(feature_view(row))
+        })
+    } else {
+        Read::page(PLANS, vec![], plan_view)
+    }
 }
 impl Service<'_> {
     pub async fn billing_plan(&self, id: &Value, version: &Value) -> Result<Value> {
@@ -32,21 +41,6 @@ impl Service<'_> {
             .await?;
         ensure(!p.is_null(), 404, "NOT_FOUND")?;
         plan_view(&p)
-    }
-    pub async fn catalog_read(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        if action.op == "catalog.features" {
-            protocol::page(
-                self,
-                action,
-                ctx,
-                "SELECT *, 'immutable' stamp FROM billing_feature",
-                vec![],
-                feature_view,
-            )
-            .await
-        } else {
-            protocol::try_page(self, action, ctx, PLANS, vec![], plan_view).await
-        }
     }
     pub async fn catalog_change(&self, action: &Action, b: &Value) -> Result<Change> {
         let n = now();

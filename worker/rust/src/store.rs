@@ -1,11 +1,16 @@
 use crate::{http::*, security::uuid};
 use serde_json::Value;
 use wasm_bindgen::JsValue;
-use worker::{D1Database, D1PreparedStatement};
+use worker::{D1Database, D1PreparedStatement, D1Result};
+
+pub(crate) enum WebSessionAccess {
+    Lease(String, i64),
+    ReadSnapshot(String, i64),
+}
 
 pub struct Store {
     pub db: D1Database,
-    pub web_owner: Option<(String, i64)>,
+    pub(crate) web_session_access: Option<WebSessionAccess>,
     log_env: &'static str,
     request_id: String,
     route: &'static str,
@@ -14,7 +19,7 @@ impl Store {
     pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
             db,
-            web_owner: None,
+            web_session_access: None,
             log_env: log.env,
             request_id: log.id.to_owned(),
             route: log.route,
@@ -59,7 +64,9 @@ impl Store {
             .map_err(|error| self.database_failure(error, "d1.bind", started))
     }
     pub async fn one(&self, sql: &str, values: Vec<Value>) -> Result<Value> {
-        let statement = self.statement(sql, values)?;
+        self.first(self.statement(sql, values)?).await
+    }
+    pub(crate) async fn first(&self, statement: D1PreparedStatement) -> Result<Value> {
         let started = now();
         let result = statement
             .first::<Value>(None)
@@ -91,16 +98,94 @@ impl Store {
     }
     pub async fn batch(
         &self,
-        mut statements: Vec<D1PreparedStatement>,
+        statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
-        if let Some((id, revision)) = &self.web_owner {
-            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY' AND expires_at>?)", vec![id.clone().into(),(*revision).into(),now().into()])?);
+        self.write_batch(statements, conflict, false)
+            .await
+            .map(|_| ())
+    }
+    pub(crate) async fn batch_page_cursor(
+        &self,
+        statements: Vec<D1PreparedStatement>,
+    ) -> Result<()> {
+        // A page read may issue a scoped cursor without changing its browser session.
+        self.write_batch(statements, "VERSION_CONFLICT", true)
+            .await
+            .map(|_| ())
+    }
+    pub(crate) async fn batch_returning(
+        &self,
+        mut statements: Vec<D1PreparedStatement>,
+        returning: D1PreparedStatement,
+        conflict: &'static str,
+    ) -> Result<Value> {
+        let index = statements.len() + usize::from(self.web_session_access.is_some());
+        statements.push(returning);
+        let started = now();
+        let results = self.write_batch(statements, conflict, false).await?;
+        let result = results.get(index).ok_or_else(Failure::unavailable)?;
+        self.result_rows(result, "d1.batch", started)?
+            .into_iter()
+            .next()
+            .ok_or_else(Failure::unavailable)
+    }
+    pub(crate) async fn batch_read(
+        &self,
+        statements: Vec<D1PreparedStatement>,
+    ) -> Result<Vec<Vec<Value>>> {
+        let started = now();
+        let size = statements.len();
+        let results = self
+            .db
+            .batch(statements)
+            .await
+            .map_err(|error| self.database_failure(error, "d1.batch_read", started))?;
+        if results.len() != size {
+            let failure = Failure::unavailable();
+            self.log_failure("d1.batch_read", &failure, started);
+            return Err(failure);
+        }
+        results
+            .iter()
+            .map(|result| self.result_rows(result, "d1.batch_read", started))
+            .collect()
+    }
+    fn result_rows(
+        &self,
+        result: &D1Result,
+        phase: &'static str,
+        started: i64,
+    ) -> Result<Vec<Value>> {
+        if !result.success() {
+            let failure = Failure::unavailable();
+            self.log_failure(phase, &failure, started);
+            return Err(failure);
+        }
+        result
+            .results::<Value>()
+            .map_err(|error| self.database_failure(error, phase, started))
+    }
+    async fn write_batch(
+        &self,
+        mut statements: Vec<D1PreparedStatement>,
+        conflict: &'static str,
+        page_cursor: bool,
+    ) -> Result<Vec<D1Result>> {
+        if let Some(access) = &self.web_session_access {
+            let (id, revision, status) = match access {
+                WebSessionAccess::Lease(id, revision) => (id, revision, "BUSY"),
+                WebSessionAccess::ReadSnapshot(id, revision) if page_cursor => {
+                    (id, revision, "READY")
+                }
+                WebSessionAccess::ReadSnapshot(..) => return Err(Failure::unavailable()),
+            };
+            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status=? AND expires_at>?)", vec![id.clone().into(),(*revision).into(),status.into(),now().into()])?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         let started = now();
         match self.db.batch(statements).await {
-            Ok(_) => Ok(()),
+            Ok(results) => Ok(results),
             Err(e) => {
                 let msg = e.to_string();
                 Err(if msg.contains("CHECK constraint failed") {

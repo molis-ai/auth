@@ -2,8 +2,9 @@
 use crate::{
     billing::subscriptions::{POOLS, pool_view},
     http::*,
+    identity::Auth,
     security::uuid,
-    tenants::protocol,
+    tenants::protocol::{ACTOR, Read},
     tenants::{Action, Change, Context, Service, expected},
 };
 use serde_json::{Value, json};
@@ -11,6 +12,30 @@ use worker::D1PreparedStatement;
 
 pub fn view(r: &Value) -> Value {
     json!({"assignmentId":r["id"],"subscriptionId":r["subscription_id"],"seatTypeId":r["seat_type_id"],"membershipId":r["membership_id"],"userId":r["user_id"],"status":r["status"],"assignedAt":iso(&r["assigned_at"]),"endedAt":iso(&r["ended_at"]),"endReason":r["end_reason"],"version":r["version"]})
+}
+pub fn list(a: &Auth, action: &Action) -> Result<Read> {
+    let q = form(a.request.url()?.query().unwrap_or_default())?;
+    let state = q.get("state").and_then(Value::as_str).unwrap_or("current");
+    ensure(
+        ["current", "history"].contains(&state),
+        400,
+        "INVALID_REQUEST",
+    )?;
+    let status = if state == "current" {
+        "ASSIGNED"
+    } else {
+        "ENDED"
+    };
+    Ok(Read::Page {
+        sql: format!("SELECT a.* FROM billing_seat_assignment a
+                      WHERE a.tenant_id=? AND a.status=? AND (a.user_id={ACTOR} OR EXISTS(
+                          SELECT 1 FROM auth_tenant_membership m WHERE m.tenant_id=a.tenant_id
+                          AND m.user_id={ACTOR} AND m.status='ACTIVE' AND m.role IN ('OWNER','ADMIN')
+                      ))"),
+        args: vec![action.tenant_id.clone().into(), status.into()],
+        view: |row| Ok(view(row)),
+        filters: json!({"state":state}),
+    })
 }
 impl Service<'_> {
     /// Compose this plan with the membership owner transition. Every statement
@@ -46,39 +71,6 @@ impl Service<'_> {
             .await?;
         ensure(!r.is_null(), 404, "NOT_FOUND")?;
         Ok(r)
-    }
-    pub async fn seat_list(&self, action: &Action, ctx: &mut Context) -> Result<Value> {
-        let q = form(self.a.request.url()?.query().unwrap_or_default())?;
-        let state = q.get("state").and_then(Value::as_str).unwrap_or("current");
-        ensure(
-            ["current", "history"].contains(&state),
-            400,
-            "INVALID_REQUEST",
-        )?;
-        let mut args = vec![
-            ctx.tenant["id"].clone(),
-            if state == "current" {
-                "ASSIGNED"
-            } else {
-                "ENDED"
-            }
-            .into(),
-        ];
-        let mut sql="SELECT a.*,CAST(a.version AS TEXT) stamp FROM billing_seat_assignment a WHERE a.tenant_id=? AND a.status=?".to_string();
-        if ctx.member["role"] == "MEMBER" {
-            sql.push_str(" AND a.user_id=?");
-            args.push(self.user());
-        }
-        protocol::filtered_page(
-            self,
-            action,
-            ctx,
-            &sql,
-            args,
-            |row| Ok(view(row)),
-            &json!({"state":state}),
-        )
-        .await
     }
     pub async fn seat_change(&self, action: &Action, ctx: &Context, b: &Value) -> Result<Change> {
         let assign = action.op == "seat.assign";
