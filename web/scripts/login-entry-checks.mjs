@@ -248,3 +248,25 @@ export async function loginEntryChecks({ page, origin, fixtures, evidence }) {
   await checkCapabilitiesRetry(context, 503, 'GOOGLE');
   console.log('PASS login entry handles session failure and capabilities 403/503 with retry and only enables returned methods');
 }
+
+export async function authenticatedLoginEntryCheck({ page, origin, fixtures }) {
+  const session = holdResponse(sessionPath);
+  const capabilities = holdResponse(capabilitiesPath);
+  await fixtures.run([session, capabilities], async (requests) => {
+    await page.command('Page.navigate', { url: origin + '/login' });
+    await waitForRequests(session, capabilities);
+    await assertPending(page, sessionLoading);
+    assert.equal(await page.evaluate('document.documentElement.lang'), 'en');
+    session.release();
+    await page.wait("Boolean(document.querySelector('.console-tabs'))");
+    assert.equal(await page.evaluate('document.documentElement.lang'), 'zh-CN');
+    assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
+    assert.equal(requests.find(request => request.path === capabilitiesPath).status, undefined,
+      'an authenticated visit enters the console before capabilities return');
+    capabilities.release();
+    await page.wait(`performance.getEntriesByName(location.origin + '${capabilitiesPath}').length === 1`);
+    await page.evaluate(painted);
+    assertRequestCounts(requests, 1, 1);
+    assert.equal(await page.evaluate('document.documentElement.lang'), 'zh-CN');
+  });
+}
