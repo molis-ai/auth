@@ -66,10 +66,6 @@ pub async fn route(
     method: Method,
     b: &mut Value,
 ) -> Result<Value> {
-    if path == "/api/account/auth/capabilities" {
-        ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
-        return capabilities(s).await;
-    }
     if matches!(
         path,
         "/api/account/auth/login/password"
@@ -283,16 +279,6 @@ pub async fn route(
     result
 }
 
-pub(super) async fn capabilities(s: &WebSession<'_>) -> Result<Value> {
-    s.call(
-        &format!("/api/v2/auth/capabilities?clientId={}", s.client()?),
-        Method::Get,
-        None,
-        None,
-        None,
-    )
-    .await
-}
 async fn finish(s: &mut WebSession<'_>, t: &mut Value) -> Result<Value> {
     let result = call(s, t, "/complete", Method::Post, Some(json!({}))).await?;
     t["status"] = "CONSUMED".into();

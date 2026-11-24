@@ -104,11 +104,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       )
       return r.data
     }
-    assert.equal(
-      ok(await call('/api/account/auth/capabilities')).methods.length,
-      5,
-      'capabilities bootstrap the anonymous browser before parent session loading',
-    )
+    assert.equal(ok(await call('/api/account/auth/capabilities')).methods.length, 5)
+    assert.equal(cookie, '')
+    assert.equal(csrf, '')
     assert.equal(
       (await call('/api/account/session', undefined, { Origin: 'https://evil.example' })).status,
       403,
@@ -133,7 +131,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       403,
     )
     await db.prepare("UPDATE auth_client SET status='DISABLED' WHERE client_id='auth-web'").run()
-    assert.equal((await call('/api/account/auth/capabilities')).status, 403)
+    const disabled = await call('/api/account/auth/capabilities')
+    assert.equal(disabled.status, 403)
+    assert.equal(disabled.error.code, 'POLICY_MISMATCH')
     await db.prepare("UPDATE auth_client SET status='ACTIVE' WHERE client_id='auth-web'").run()
     const anonymousCookie = cookie
     const anonymousCsrf = csrf
@@ -1015,23 +1015,75 @@ test(
       return response
     }
 
+    await t.test(
+      'capabilities use only one configuration read and leave session bootstrap to /session',
+      async () => {
+        const [capabilities, created] = await Promise.all([
+          traced({ read: 1, write: 0 }, undefined, '/auth/capabilities'),
+          traced({ read: 0, write: 2 }),
+        ])
+        const methods = (await data(capabilities)).methods
+        assert.ok(methods.includes('ACCOUNT_PASSWORD'))
+        assert.deepEqual(capabilities.headers.getSetCookie(), [])
+        assert.equal(capabilities.headers.get('X-CSRF-Token'), null)
+        assert.equal((await data(created)).state, 'ANONYMOUS')
+        assert.equal(created.headers.getSetCookie().length, 1)
+        assert.ok(created.headers.get('X-CSRF-Token'))
+
+        const anonymous = await browser()
+        await expiredLease(anonymous, Date.now() + 30_000)
+        const before = await row(anonymous)
+        const duringLease = await traced({ read: 1, write: 0 }, anonymous, '/auth/capabilities')
+        assert.deepEqual((await data(duringLease)).methods, methods)
+        assert.deepEqual(duringLease.headers.getSetCookie(), [])
+        assert.equal(duringLease.headers.get('X-CSRF-Token'), null)
+        assert.deepEqual(await row(anonymous), before)
+      },
+    )
+
+    await t.test(
+      'capabilities honor the BFF request guards before reading configuration',
+      async () => {
+        for (const { path, options, status } of [
+          { path: '/auth/capabilities?clientId=other', options: {}, status: 400 },
+          {
+            path: '/auth/capabilities',
+            options: { headers: { Authorization: 'fixture' } },
+            status: 400,
+          },
+          {
+            path: '/auth/capabilities',
+            options: { headers: { 'X-Auth-Initiator-Proof': 'fixture' } },
+            status: 400,
+          },
+          {
+            path: '/auth/capabilities',
+            options: { headers: { 'Sec-Fetch-Site': 'same-site' } },
+            status: 403,
+          },
+          {
+            path: '/auth/capabilities',
+            options: { headers: { Origin: 'https://example.com' } },
+            status: 403,
+          },
+        ]) {
+          const result = await traced({ read: 0, write: 0 }, undefined, path, options)
+          assert.equal(result.status, status)
+          assert.deepEqual(result.headers.getSetCookie(), [])
+          assert.equal(result.headers.get('X-CSRF-Token'), null)
+        }
+      },
+    )
+
     await t.test('existing browser reads avoid session writes and cookie reissues', async () => {
-      const created = await traced({ read: 0, write: 2 })
-      assert.equal((await data(created)).state, 'ANONYMOUS')
-      assert.equal(created.headers.getSetCookie().length, 1)
       const anonymous = await browser()
       assertReady(await row(anonymous), 0)
-      for (const [path, reads] of [
-        ['/session', 1],
-        ['/auth/capabilities', 2],
-      ] as const) {
-        const before = await row(anonymous)
-        const response = await traced({ read: reads, write: 0 }, anonymous, path)
-        await data(response)
-        assert.deepEqual(response.headers.getSetCookie(), [])
-        assert.equal(response.headers.get('X-CSRF-Token'), anonymous.csrf)
-        assert.deepEqual(await row(anonymous), before)
-      }
+      const anonymousBefore = await row(anonymous)
+      const anonymousResponse = await traced({ read: 1, write: 0 }, anonymous)
+      assert.equal((await data(anonymousResponse)).state, 'ANONYMOUS')
+      assert.deepEqual(anonymousResponse.headers.getSetCookie(), [])
+      assert.equal(anonymousResponse.headers.get('X-CSRF-Token'), anonymous.csrf)
+      assert.deepEqual(await row(anonymous), anonymousBefore)
 
       const { b } = await authenticated()
       const before = await row(b)

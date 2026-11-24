@@ -1,5 +1,6 @@
 //! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
 use crate::{
+    auth::{login_capabilities, login_sessions},
     http::*,
     identity::Auth,
     security::{hash, secret},
@@ -324,6 +325,21 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         403,
         "FORBIDDEN",
     )?;
+    if path == "/api/account/auth/capabilities" {
+        ensure(
+            a.request.inner().method() == "GET",
+            405,
+            "METHOD_NOT_ALLOWED",
+        )?;
+        let client_id = setting(a, "AUTH_WEB_CLIENT_ID")?;
+        shape("LoginCapabilitiesQuery", &json!({"clientId":client_id}))?;
+        // The browser origin was checked above. The registration is chosen by the BFF.
+        let registration = login_sessions::registered_client(a, &client_id)
+            .await
+            .map_err(|failure| v2_failure(failure.status, failure.code))?;
+        return login_capabilities::response(a, &registration)
+            .map_err(|failure| v2_failure(failure.status, failure.code));
+    }
     // Only the browser-bound callback completes provider authorization; status polling is read-only.
     if path == "/account/callback" {
         ensure(method == Method::Get, 403, "FORBIDDEN")?;
@@ -341,7 +357,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let mut id = browser_cookie_hash(a, &cookie);
     let mut create = !token(&cookie);
     let session_read = path == "/api/account/session" && method == Method::Get;
-    let capabilities = path == "/api/account/auth/capabilities" && method == Method::Get;
     let mut observed_revision = None;
     let mut rejected_read = None;
     let can_read_without_lease =
@@ -365,10 +380,8 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     key: key.clone(),
                     read_only: true,
                 };
-                // Capabilities never use access credentials. Anonymous session status
-                // is also available without a token or a browser-session write.
-                if capabilities
-                    || (session_read && session.data["tokens"].is_null())
+                // Anonymous session status is available without a browser-session write.
+                if (session_read && session.data["tokens"].is_null())
                     || (session.access_is_fresh()
                         && session.data["tokens"]["accessToken"]
                             .as_str()
@@ -376,8 +389,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 {
                     let result = if session_read {
                         session.account_view().await
-                    } else if capabilities {
-                        crate::web::web_auth::capabilities(&session).await
                     } else {
                         management(&session, path, Method::Get, json!({})).await
                     };
@@ -392,11 +403,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     }
-    ensure(
-        !create || session_read || capabilities,
-        401,
-        "LOGIN_REQUIRED",
-    )?;
+    ensure(!create || session_read, 401, "LOGIN_REQUIRED")?;
     let logout = path == "/api/account/logout" && method == Method::Post;
     let body = write_input(a, &key, &id, method.clone(), logout).await;
     if body.is_err() {
@@ -649,11 +656,10 @@ fn is_product_route(path: &str, method: &Method) -> bool {
 }
 
 fn read_without_lease(path: &str) -> bool {
-    // Capabilities, status and approved management reads only. A managed page
+    // Session status and approved management reads only. A managed page
     // can issue a cursor under its initial READY revision, through the cursor batch.
     const ROUTES: &[&str] = &[
         "/api/account/session",
-        "/api/account/auth/capabilities",
         "/api/account/login-methods",
         "/api/account/me",
         "/api/account/platform/users",
