@@ -10,7 +10,7 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
       (r) => {
         const path = new URL(r.url).pathname
         return new Response(path === '/index.html' ? '<head></head>' + path : path, {
-          headers: { 'Content-Type': 'text/html' },
+          headers: { 'Content-Type': path === '/index.html' ? 'text/html' : 'text/javascript' },
         })
       },
     )
@@ -92,6 +92,51 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
       assert.ok(
         (await r.text()).includes(`name="molis-tenant-invite-channels" content="${channels}"`),
       )
+    }
+  } finally {
+    await p.dispose()
+  }
+})
+
+test('P0-5 only successful hashed Vite assets are immutable', async () => {
+  const origin = 'http://127.0.0.1:8787'
+  const revalidate = 'public, max-age=0, must-revalidate'
+  const p = await getRustProxy({ AUTH_ORIGIN: origin }, undefined, (request) => {
+    const path = new URL(request.url).pathname
+    const status = path.startsWith('/assets/missing-')
+      ? 404
+      : path.startsWith('/assets/partial-')
+        ? 206
+        : 200
+    const type = path.startsWith('/assets/fallback-')
+      ? 'text/html; charset=utf-8'
+      : path.endsWith('.css')
+        ? 'text/css'
+        : path.endsWith('.png')
+          ? 'image/png'
+          : 'text/javascript; charset=utf-8'
+    return new Response(request.method === 'HEAD' ? null : path, {
+      status,
+      headers: { 'Content-Type': type, 'Cache-Control': revalidate },
+    })
+  })
+  try {
+    for (const method of ['GET', 'HEAD']) {
+      for (const [asset, status, cache] of [
+        ['index-CWLYDLyw.js', 200, 'public, max-age=31536000, immutable'],
+        ['TenantPage-D_MFHYQ-.css', 200, 'public, max-age=31536000, immutable'],
+        ['molis-logo-CkY8qvMq.png', 200, 'public, max-age=31536000, immutable'],
+        ['test.js', 200, revalidate],
+        ['test-short.js', 200, revalidate],
+        ['partial-CWLYDLyw.js', 206, revalidate],
+        ['missing-CWLYDLyw.js', 404, 'no-store'],
+        ['fallback-CWLYDLyw.js', 404, 'no-store'],
+      ]) {
+        const response = await p.fetch(new Request(origin + '/auth-ui/assets/' + asset, { method }))
+        assert.equal(response.status, status, method + ' ' + asset)
+        assert.equal(response.headers.get('Cache-Control'), cache, method + ' ' + asset)
+        assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff')
+      }
     }
   } finally {
     await p.dispose()

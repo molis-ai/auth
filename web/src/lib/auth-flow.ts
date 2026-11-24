@@ -1,3 +1,10 @@
+import type { AccountView } from "./account-client.ts";
+
+export interface AuthCompletion {
+  handle: string;
+  account?: AccountView;
+}
+
 /** Owns one panel's async lifetime, authorization window and scheduled poll. */
 export class AuthFlow {
   private revision = 0;

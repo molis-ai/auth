@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue';
 import { AccountClient } from '../lib/account-client.ts';
+import type { AuthCompletion } from '../lib/auth-flow.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
 import { accountErrorMessage } from '../lib/errors.ts';
 import { entryText } from '../lib/entry-copy.ts';
 import { entryLanguage, saveEntryLanguage } from '../lib/entry-preferences.ts';
 import logo from '../assets/molis-logo.png';
 defineProps<{ client: AccountClient; busy: boolean }>();
-const emit = defineEmits<{ complete: []; authenticating: [value: boolean] }>();
+const emit = defineEmits<{ complete: [value: AuthCompletion]; authenticating: [value: boolean] }>();
 const language = ref(entryLanguage()), mode = ref('LOGIN'), resetHandle = ref('');
 const panelBusy = ref(false);
 const password = ref(''), confirmation = ref(''), saving = ref(false), notice = ref('');
@@ -17,10 +18,10 @@ const t = (text: string) => entryText(language.value, text);
 document.documentElement.lang = language.value;
 function toggleLanguage() { language.value = language.value === 'en' ? 'zh-CN' : 'en'; saveEntryLanguage(language.value); }
 function changeMode(value: string) { panelBusy.value = false; mode.value = value; resetHandle.value = ''; password.value = ''; confirmation.value = ''; notice.value = ''; }
-function completed(value: { handle: string; account?: unknown }) {
+function completed(value: AuthCompletion) {
   panelBusy.value = false;
   if (mode.value === 'PASSWORD_RESET' && !value.account) resetHandle.value = value.handle;
-  else emit('complete');
+  else emit('complete', value);
 }
 async function resetPassword(client: AccountClient) {
   if (saving.value) return;

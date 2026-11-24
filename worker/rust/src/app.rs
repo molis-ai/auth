@@ -313,6 +313,15 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         .assets("ASSETS")?
         .fetch_request(Request::new(target.as_str(), method.clone())?)
         .await?;
+    let asset = path.strip_prefix("/auth-ui/assets/");
+    let content_type = r.headers().get("Content-Type")?.unwrap_or_default();
+    let media_type = content_type.split(';').next().unwrap_or_default().trim();
+    // An assets binding configured with SPA fallback can return HTML for a missing asset.
+    ensure(
+        asset.is_none() || !media_type.eq_ignore_ascii_case("text/html"),
+        404,
+        "NOT_FOUND",
+    )?;
     // Asset responses have immutable headers; copy them before adding our security policy.
     let headers = worker::Headers::new();
     for (key, value) in r.headers().entries() {
@@ -359,10 +368,38 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
     } else {
         r.with_headers(headers)
     };
-    if page {
+    if page || (asset.is_some() && r.status_code() >= 400) {
         r.headers_mut().set("Cache-Control", "no-store")?;
+    } else if r.status_code() == 200 && asset.is_some_and(|name| hashed_web_asset(name, media_type))
+    {
+        r.headers_mut()
+            .set("Cache-Control", "public, max-age=31536000, immutable")?;
     }
     Ok(r)
+}
+fn hashed_web_asset(name: &str, media_type: &str) -> bool {
+    let Some((base, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
+    // Only Vite's generated output from web/vite.config.ts is published under assets/.
+    let Some((prefix, hash)) = base.split_at_checked(base.len().saturating_sub(8)) else {
+        return false;
+    };
+    if !prefix.ends_with('-')
+        || prefix.len() == 1
+        || prefix.contains('/')
+        || !hash
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return false;
+    }
+    match extension {
+        "js" => media_type == "text/javascript" || media_type == "application/javascript",
+        "css" => media_type == "text/css",
+        "png" => media_type == "image/png",
+        _ => false,
+    }
 }
 pub(crate) async fn bounded(a: &mut Auth, max: usize) -> Result<String> {
     use futures_util::StreamExt;
