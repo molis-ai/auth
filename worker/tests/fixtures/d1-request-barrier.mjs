@@ -69,7 +69,14 @@ export default {
       const { UNIFIED_ACCOUNT_CONFIG, ...bindings } = env
       return worker.prototype.fetch.call({ env: bindings, ctx }, request)
     }
-    if (['managed-list-trace', 'managed-list-poison', 'managed-list-broken', 'web-session-trace'].includes(tag)) {
+    if (
+      [
+        'managed-list-trace',
+        'managed-list-poison',
+        'managed-list-broken',
+        'web-session-trace',
+      ].includes(tag)
+    ) {
       const counts = { read: 0, write: 0 }
       let protectedQueries = 0
       const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
