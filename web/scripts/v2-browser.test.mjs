@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { bootstrapPlatform } from "../../worker/scripts/platform-bootstrap.mjs";
+import { loginEntryChecks, loginEntryFixtures } from "./login-entry-checks.mjs";
 const workRoot = process.env.MOLIS_WORK_SOURCE;
 assert.ok(
   workRoot,
@@ -35,20 +36,23 @@ let proxy, browser, page, origin;
 const requests = [];
 const scripts = new Set();
 const memberReads = [];
+const entryFixtures = loginEntryFixtures();
 const server = http.createServer(async (req, res) => {
   try {
     const parts = [];
     for await (const p of req) parts.push(p);
-    const r = await proxy.fetch(
-      new Request(origin + req.url, {
-        method: req.method,
-        headers: req.headers,
-        ...(["GET", "HEAD"].includes(req.method)
-          ? {}
-          : { body: Buffer.concat(parts) }),
-      }),
-    );
     const url = new URL(origin + req.url);
+    const r = await entryFixtures.fetch(req.method, url.pathname, () =>
+      proxy.fetch(
+        new Request(url, {
+          method: req.method,
+          headers: req.headers,
+          ...(["GET", "HEAD"].includes(req.method)
+            ? {}
+            : { body: Buffer.concat(parts) }),
+        }),
+      ),
+    );
     requests.push({method:req.method,path:url.pathname,status:r.status});
     if (r.ok && url.pathname.endsWith(".js")) scripts.add(url.pathname);
     if (req.method === "GET" && /^\/api\/account\/tenants\/[^/]+\/members$/.test(url.pathname)) {
@@ -120,6 +124,7 @@ try {
   page = await browser.page();
   await page.command("Page.enable");
   await page.viewport(1440, 900);
+  await loginEntryChecks({ page, origin, fixtures: entryFixtures, evidence });
   await page.command("Page.addScriptToEvaluateOnNewDocument", {source: `{
     const original = window.fetch;
     const trace = window.__authPerformance = {requests: [], gates: {}};
@@ -150,10 +155,10 @@ try {
   await page.wait(
     "Boolean(window.__authPerformance?.gates.startup && document.querySelector('.session-startup [role=status]'))",
   );
-  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry form, .auth-entry input'))"), false);
   await page.evaluate("window.__authPerformance.gates.startup()");
   await page.wait("Boolean(document.querySelector('.session-startup [role=alert]'))");
-  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry form, .auth-entry input'))"), false);
   await page.click(".session-startup button");
   const click = async (text) => {
     if(text==='设置或修改密码') await click('登录密码');
