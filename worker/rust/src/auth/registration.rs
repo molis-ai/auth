@@ -24,12 +24,22 @@ pub(crate) fn boundary(a: &Auth, t: &Value, user: &str, epoch: i64) -> Result<D1
     a.s.guard("EXISTS(SELECT 1 FROM auth_user_security us JOIN auth_user u ON u.id=us.user_id WHERE us.user_id=? AND u.status='ACTIVE' AND us.session_epoch=? AND COALESCE(us.revoked_before_seq,0)<?)",vec![user.into(),epoch.into(),t["created_seq"].clone()])
 }
 pub(crate) async fn transaction(a: &Auth, id: &str) -> Result<(Value, Value)> {
-    let mut t =
+    let t =
         a.s.one(
             "SELECT * FROM auth_product_transaction WHERE id=?",
             vec![id.into()],
         )
         .await?;
+    check_transaction(a, t).await
+}
+pub(crate) async fn challenge_transaction(a: &Auth, challenge_id: &str) -> Result<(Value, Value)> {
+    let t = a.s.one(
+        "SELECT t.* FROM auth_verification_challenge q JOIN auth_product_transaction t ON t.id=q.transaction_id WHERE q.id=?",
+        vec![challenge_id.into()],
+    ).await?;
+    check_transaction(a, t).await
+}
+async fn check_transaction(a: &Auth, mut t: Value) -> Result<(Value, Value)> {
     let proof = a.header("X-Auth-Initiator-Proof");
     ensure(
         token(&proof) && !t.is_null() && t["initiator_hash"] == challenge(&proof),
@@ -59,6 +69,19 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     if crate::sensitive_transactions::protected(b) {
         return crate::sensitive_transactions::begin(a, b).await;
     }
+    let (t, _) = begin_unprotected(a, b).await?;
+    Ok(json!({
+        "transactionId":t["id"],"status":t["status"],
+        "nextStep":if t["method"]=="EMAIL_PASSWORD" || t["method"]=="ACCOUNT_PASSWORD"{"PASSWORD_LOGIN"}else if t["method"]=="GOOGLE" || t["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},
+        "expiresAt":iso(&t["expires_at"])
+    }))
+}
+pub(crate) async fn begin_login(a: &Auth, b: &Value) -> Result<(Value, Value)> {
+    shape("CreateTransactionRequest", b)?;
+    ensure(b["purpose"] == "LOGIN", 400, "INVALID_REQUEST")?;
+    begin_unprotected(a, b).await
+}
+async fn begin_unprotected(a: &Auth, b: &Value) -> Result<(Value, Value)> {
     ensure(
         (b["purpose"] == "LOGIN"
             && (b["method"] == "EMAIL_PASSWORD"
@@ -80,11 +103,17 @@ pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     )?;
     a.rate_ip("v2-begin", 60).await?;
     let n = now();
-    let id = uuid();
-    a.s.batch(vec![client_guard(a,&c)?,a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?,a.s.statement("INSERT INTO auth_product_transaction(id,client_id,environment_id,purpose,method,initiator_hash,redirect_uri,product_state,product_state_hash,pkce_challenge,created_seq,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,(SELECT MAX(seq) FROM auth_security_sequence),?,?)",vec![id.clone().into(),c["client_id"].clone(),c["environment_id"].clone(),b["purpose"].clone(),b["method"].clone(),b["initiatorChallenge"].clone(),b["redirectUri"].clone(),b["state"].clone(),hash(&text(b,"state")).into(),b["codeChallenge"].clone(),n.into(),(n+TX).into()])?],"VERSION_CONFLICT").await?;
-    Ok(
-        json!({"transactionId":id,"status":"PENDING","nextStep":if b["method"]=="EMAIL_PASSWORD" || b["method"]=="ACCOUNT_PASSWORD"{"PASSWORD_LOGIN"}else if b["method"]=="GOOGLE" || b["method"]=="GITHUB"{"START_PROVIDER"}else{"REQUEST_CHALLENGE"},"expiresAt":iso(&json!(n+TX))}),
-    )
+    let t = a.s.batch_returning(
+        vec![client_guard(a,&c)?,a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?],
+        a.s.statement(
+            "INSERT INTO auth_product_transaction(id,client_id,environment_id,purpose,method,initiator_hash,redirect_uri,product_state,product_state_hash,pkce_challenge,created_seq,created_at,expires_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,(SELECT MAX(seq) FROM auth_security_sequence),?,?)
+            RETURNING id,client_id,environment_id,purpose,method,product_state,created_seq,expires_at,status",
+            vec![uuid().into(),c["client_id"].clone(),c["environment_id"].clone(),b["purpose"].clone(),b["method"].clone(),b["initiatorChallenge"].clone(),b["redirectUri"].clone(),b["state"].clone(),hash(&text(b,"state")).into(),b["codeChallenge"].clone(),n.into(),(n+TX).into()],
+        )?,
+        "VERSION_CONFLICT",
+    ).await?;
+    Ok((t, c))
 }
 fn otp() -> Result<String> {
     loop {
@@ -130,28 +159,30 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     }
     let channel = text(b, "channel");
     let subject = format!("{channel}:{target}");
-    a.rate_ip("v2-delivery-ip", 60).await?;
-    a.rate_ip_window(
-        "v2-delivery-ip-hour",
-        delivery_limit("sendQuotaPerIp"),
-        delivery_limit("sendQuotaWindowSeconds") * 1000,
-    )
+    let window = delivery_limit("sendQuotaWindowSeconds") * 1000;
+    a.rate_batch(&[
+        ("v2-delivery-ip", &a.client_ip, 60, 60_000),
+        (
+            "v2-delivery-ip-hour",
+            &a.client_ip,
+            delivery_limit("sendQuotaPerIp"),
+            window,
+        ),
+        (
+            "v2-delivery-target",
+            &subject,
+            delivery_limit("sendQuotaPerTarget"),
+            window,
+        ),
+        (
+            "v2-delivery-client",
+            &text(c, "client_id"),
+            delivery_limit("sendQuotaPerClient"),
+            window,
+        ),
+        ("v2-delivery-resend", &subject, 1, 60_000),
+    ])
     .await?;
-    a.rate(
-        "v2-delivery-target",
-        &subject,
-        delivery_limit("sendQuotaPerTarget"),
-        delivery_limit("sendQuotaWindowSeconds") * 1000,
-    )
-    .await?;
-    a.rate(
-        "v2-delivery-client",
-        &text(c, "client_id"),
-        delivery_limit("sendQuotaPerClient"),
-        delivery_limit("sendQuotaWindowSeconds") * 1000,
-    )
-    .await?;
-    a.rate("v2-delivery-resend", &subject, 1, 60000).await?;
     let n = now();
     let id = uuid();
     let delivery = uuid();
@@ -312,29 +343,36 @@ async fn code_identity(a: &Auth, is_email: bool, target: &str) -> Result<Value> 
     }, vec![target.into()]).await
 }
 
-pub(crate) async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Result<Value> {
+pub(crate) async fn identify(
+    a: &Auth,
+    t: &mut Value,
+    c: &Value,
+    op: &str,
+    b: &Value,
+) -> Result<Value> {
     if crate::sensitive_transactions::protected(t) {
         return crate::sensitive_transactions::identify(a, t, c, op, b).await;
     }
-    if let Some(result) = identify_once(a, t, c, op, b, true).await? {
-        return Ok(result);
+    if !identify_once(a, t, c, op, b, true).await? {
+        // The failed batch left this transaction's proof unused. Retry only against
+        // an existing binding, keeping the ordinary proof and commit-time checks.
+        ensure(
+            identify_once(a, t, c, op, b, false).await?,
+            409,
+            "ALREADY_EXISTS",
+        )?;
     }
-    // The failed batch left this transaction's proof unused. Retry only against
-    // an existing binding, keeping the ordinary proof and commit-time checks.
-    identify_once(a, t, c, op, b, false).await?.ok_or(Failure {
-        status: 409,
-        code: "ALREADY_EXISTS",
-    })
+    Ok(json!({"status":"VERIFIED","nextStep":"COMPLETE"}))
 }
 
 async fn identify_once(
     a: &Auth,
-    t: &Value,
+    t: &mut Value,
     c: &Value,
     op: &str,
     b: &Value,
     allow_new_code_identity: bool,
-) -> Result<Option<Value>> {
+) -> Result<bool> {
     let n = now();
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, n, "PENDING")?];
     let mut creating_code_identity = false;
@@ -362,8 +400,11 @@ async fn identify_once(
             email(identifier)?
         };
         crate::test_admission::Admission::load(a)?.target(&address)?;
-        a.rate_ip("v2-password", 30).await?;
-        a.rate("v2-password-target", &address, 10, 300000).await?;
+        a.rate_batch(&[
+            ("v2-password", &a.client_ip, 30, 60_000),
+            ("v2-password-target", &address, 10, 300_000),
+        ])
+        .await?;
         let query = if is_phone {
             "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
         } else {
@@ -508,7 +549,7 @@ async fn identify_once(
     }
     writes.push(a.s.audit(
         "account.v2.verify",
-        user.into(),
+        user.clone().into(),
         &a.request_id,
         Value::Null,
         Value::Null,
@@ -516,10 +557,13 @@ async fn identify_once(
         false,
     )?);
     match a.s.batch(writes, "VERSION_CONFLICT").await {
-        Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(None),
+        Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(false),
         result => {
             result?;
-            Ok(Some(json!({"status":"VERIFIED","nextStep":"COMPLETE"})))
+            t["status"] = "VERIFIED".into();
+            t["user_id"] = user.into();
+            t["user_epoch"] = epoch.into();
+            Ok(true)
         }
     }
 }
@@ -551,7 +595,10 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
     };
     let mut writes = vec![
         client_guard(a, c)?,
-        tx_guard(a, t, n, "VERIFIED")?,
+        a.s.guard(
+            "EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND status='VERIFIED' AND expires_at>? AND user_id=? AND user_epoch=? AND created_seq=?)",
+            vec![t["id"].clone(),n.into(),user.clone().into(),t["user_epoch"].clone(),t["created_seq"].clone()],
+        )?,
         boundary(a, t, &user, number(t, "user_epoch"))?,
     ];
     if reset {
@@ -585,7 +632,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         begin(a, &b).await?
     } else {
         ensure(parts.len() >= 5, 501, "UNIFIED_ACCOUNT_NOT_IMPLEMENTED")?;
-        let (t, c) = transaction(a, parts[4]).await?;
+        let (mut t, c) = transaction(a, parts[4]).await?;
         let n = now();
         if parts.len() == 5 && method == Method::Get {
             let status = if number(&t, "expires_at") <= n
@@ -635,7 +682,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 ["challenges"] => send(a, &t, &c, &b).await?,
                 ["challenges", id, "verify"] => verify(a, &t, &c, id, &b).await?,
                 [op @ ("password" | "phone" | "code" | "email-signup")] => {
-                    match identify(a, &t, &c, op, &b).await {
+                    match identify(a, &mut t, &c, op, &b).await {
                         Err(e)
                             if ["email-signup", "phone", "code"].contains(op)
                                 && e.code == "ALREADY_EXISTS" =>

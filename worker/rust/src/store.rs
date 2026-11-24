@@ -1,7 +1,7 @@
 use crate::{http::*, security::uuid};
 use serde_json::Value;
 use wasm_bindgen::JsValue;
-use worker::{D1Database, D1PreparedStatement};
+use worker::{D1Database, D1PreparedStatement, D1Result};
 
 pub struct Store {
     pub db: D1Database,
@@ -59,7 +59,9 @@ impl Store {
             .map_err(|error| self.database_failure(error, "d1.bind", started))
     }
     pub async fn one(&self, sql: &str, values: Vec<Value>) -> Result<Value> {
-        let statement = self.statement(sql, values)?;
+        self.first(self.statement(sql, values)?).await
+    }
+    pub(crate) async fn first(&self, statement: D1PreparedStatement) -> Result<Value> {
         let started = now();
         let result = statement
             .first::<Value>(None)
@@ -91,16 +93,75 @@ impl Store {
     }
     pub async fn batch(
         &self,
-        mut statements: Vec<D1PreparedStatement>,
+        statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
+        self.write_batch(statements, conflict).await.map(|_| ())
+    }
+    pub(crate) async fn batch_returning(
+        &self,
+        mut statements: Vec<D1PreparedStatement>,
+        returning: D1PreparedStatement,
+        conflict: &'static str,
+    ) -> Result<Value> {
+        let index = statements.len() + usize::from(self.web_owner.is_some());
+        statements.push(returning);
+        let started = now();
+        let results = self.write_batch(statements, conflict).await?;
+        let result = results.get(index).ok_or_else(Failure::unavailable)?;
+        self.result_rows(result, "d1.batch", started)?
+            .into_iter()
+            .next()
+            .ok_or_else(Failure::unavailable)
+    }
+    pub(crate) async fn batch_read(
+        &self,
+        statements: Vec<D1PreparedStatement>,
+    ) -> Result<Vec<Vec<Value>>> {
+        let started = now();
+        let size = statements.len();
+        let results = self
+            .db
+            .batch(statements)
+            .await
+            .map_err(|error| self.database_failure(error, "d1.batch_read", started))?;
+        if results.len() != size {
+            let failure = Failure::unavailable();
+            self.log_failure("d1.batch_read", &failure, started);
+            return Err(failure);
+        }
+        results
+            .iter()
+            .map(|result| self.result_rows(result, "d1.batch_read", started))
+            .collect()
+    }
+    fn result_rows(
+        &self,
+        result: &D1Result,
+        phase: &'static str,
+        started: i64,
+    ) -> Result<Vec<Value>> {
+        if !result.success() {
+            let failure = Failure::unavailable();
+            self.log_failure(phase, &failure, started);
+            return Err(failure);
+        }
+        result
+            .results::<Value>()
+            .map_err(|error| self.database_failure(error, phase, started))
+    }
+    async fn write_batch(
+        &self,
+        mut statements: Vec<D1PreparedStatement>,
+        conflict: &'static str,
+    ) -> Result<Vec<D1Result>> {
         if let Some((id, revision)) = &self.web_owner {
             statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY' AND expires_at>?)", vec![id.clone().into(),(*revision).into(),now().into()])?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         let started = now();
         match self.db.batch(statements).await {
-            Ok(_) => Ok(()),
+            Ok(results) => Ok(results),
             Err(e) => {
                 let msg = e.to_string();
                 Err(if msg.contains("CHECK constraint failed") {

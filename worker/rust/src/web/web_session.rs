@@ -237,10 +237,12 @@ impl WebSession<'_> {
             return Ok(json!({"state":"ANONYMOUS"}));
         }
         self.fresh().await?;
-        let me = self
-            .call("/api/v2/users/me", Method::Get, None, None, None)
-            .await
-            .map_err(session_failure)?;
+        let me = crate::account_management::web_account_view(
+            self.a,
+            self.data["tokens"]["accessToken"].as_str().unwrap_or(""),
+        )
+        .await
+        .map_err(session_failure)?;
         self.data["user"] = me["user"].clone();
         Ok(
             json!({"state":"AUTHENTICATED","user":me["user"],"session":me["session"],"capabilities":me["platformCapabilities"]}),

@@ -13,21 +13,20 @@ async fn security(a: &Auth, user: &str) -> Result<Value> {
     )
     .await
 }
-async fn user_view(a: &Auth, user: &str) -> Result<Value> {
-    let u=a.s.one("SELECT u.*,s.account_version,COALESCE((SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),(SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=?",vec![user.into()]).await?;
-    Ok(
-        json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]}),
-    )
+const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,s.account_version,
+    COALESCE(
+        (SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),
+        (SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)
+    ) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=";
+const PASSWORD: &str = "SELECT user_id FROM auth_local_credential WHERE user_id=";
+fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
+    json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]})
 }
-async fn password_enabled(a: &Auth, user: &str) -> Result<bool> {
-    Ok(!a
-        .s
-        .one(
-            "SELECT user_id FROM auth_local_credential WHERE user_id=?",
-            vec![user.into()],
-        )
-        .await?
-        .is_null())
+async fn user_view(a: &Auth, user: &str) -> Result<Value> {
+    let row =
+        a.s.one(&format!("{USER_VIEW}?1"), vec![user.into()])
+            .await?;
+    Ok(user_view_value(a, user, &row))
 }
 fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
     let kind = text(row, "type");
@@ -97,13 +96,74 @@ fn method_view(a: &Auth, row: &Value, c: &Value, password: bool) -> Value {
     };
     json!({"bindingId":row["id"],"type":kind,"maskedLabel":masked.chars().take(254).collect::<String>(),"verified":verified,"usableForLogin":usable})
 }
-async fn methods(a: &Auth, user: &str, c: &Value) -> Result<Vec<Value>> {
-    let rows=a.s.all("SELECT id,'EMAIL' type,canonical_email target,verified_at,NULL issuer,NULL provider_email,NULL provider_username FROM auth_user_email WHERE user_id=? UNION ALL SELECT id,'PHONE',canonical_phone,verified_at,NULL,NULL,NULL FROM auth_user_phone WHERE user_id=? UNION ALL SELECT x.id,x.provider,x.subject,x.created_at,x.issuer,p.email,p.username FROM auth_external_identity x LEFT JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=? AND x.provider IN ('GOOGLE','GITHUB') ORDER BY type,id",vec![user.into(),user.into(),user.into()]).await?;
-    let password = password_enabled(a, user).await?;
-    Ok(rows
-        .iter()
+fn methods_query(subject: &str) -> String {
+    format!("SELECT id,'EMAIL' type,canonical_email target,verified_at,NULL issuer,NULL provider_email,NULL provider_username FROM auth_user_email WHERE user_id={subject}
+        UNION ALL SELECT id,'PHONE',canonical_phone,verified_at,NULL,NULL,NULL FROM auth_user_phone WHERE user_id={subject}
+        UNION ALL SELECT x.id,x.provider,x.subject,x.created_at,x.issuer,p.email,p.username FROM auth_external_identity x
+        LEFT JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject
+        WHERE x.user_id={subject} AND x.provider IN ('GOOGLE','GITHUB') ORDER BY type,id")
+}
+fn method_views(a: &Auth, rows: &[Value], c: &Value, password: bool) -> Vec<Value> {
+    rows.iter()
         .map(|r| method_view(a, r, c, password))
-        .collect())
+        .collect()
+}
+async fn methods(a: &Auth, user: &str, c: &Value) -> Result<(Vec<Value>, bool)> {
+    let [rows, password] =
+        a.s.batch_read(vec![
+            a.s.statement(&methods_query("?1"), vec![user.into()])?,
+            a.s.statement(&format!("{PASSWORD}?1"), vec![user.into()])?,
+        ])
+        .await?
+        .try_into()
+        .map_err(|_| Failure::unavailable())?;
+    let enabled = !password.is_empty();
+    Ok((method_views(a, &rows, c, enabled), enabled))
+}
+async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) -> Result<Value> {
+    let (digest, credential) = sessions::active_lookup(a, raw)?;
+    let subject = sessions::ACCESS_USER_ID;
+    let prepared = |sql: &str| a.s.statement(sql, vec![digest.clone().into()]);
+    let mut queries = vec![
+        credential,
+        prepared(&format!("{USER_VIEW}{subject}"))?,
+        prepared(&format!(
+            "SELECT permission FROM auth_platform_permission WHERE user_id={subject} AND status='ACTIVE' ORDER BY permission"
+        ))?,
+    ];
+    if include_methods {
+        queries.push(prepared(&methods_query(subject))?);
+        queries.push(prepared(&format!("{PASSWORD}{subject}"))?);
+    }
+    let mut sets = a.s.batch_read(queries).await?.into_iter();
+    let mut next_set = || sets.next().ok_or_else(Failure::unavailable);
+    let credential = next_set()?.into_iter().next().unwrap_or(Value::Null);
+    let (s, c) = sessions::active_result(a, credential, digest, origin)?;
+    let user = next_set()?.into_iter().next().unwrap_or(Value::Null);
+    let capabilities: Vec<_> = next_set()?
+        .into_iter()
+        .map(|mut p| p["permission"].take())
+        .filter(|permission| {
+            crate::unified_contracts::validate_named("PlatformCapability", permission).is_ok()
+        })
+        .collect();
+    let mut view = json!({
+        "user":user_view_value(a, &text(&s,"user_id"), &user),
+        "session":sessions::view(&s),
+        "platformCapabilities":capabilities,
+    });
+    if include_methods {
+        let rows = next_set()?;
+        let password = !next_set()?.is_empty();
+        view["loginMethods"] = json!(method_views(a, &rows, &c, password));
+        view["passwordEnabled"] = password.into();
+    }
+    Ok(view)
+}
+pub(crate) async fn web_account_view(a: &Auth, access_token: &str) -> Result<Value> {
+    // Browser origin checks run at the BFF boundary; its previous in-process
+    // V2 request carried only the browser session's access token.
+    account_view(a, access_token, "", false).await
 }
 fn version_guard(a: &Auth, user: &str, us: &Value) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
@@ -233,7 +293,7 @@ async fn mutation(
             writes,
         ));
     }
-    let mut list = methods(a, &user, c).await?;
+    let (mut list, password_enabled) = methods(a, &user, c).await?;
     if op != "bind" {
         let existing = sensitive::binding(a, &user, id).await?;
         ensure(existing["type"] != "EMAIL", 403, "FORBIDDEN")?;
@@ -310,7 +370,7 @@ async fn mutation(
             writes.extend(crate::auth::external_profile::save(a, &identity, &user)?);
         }
         let row = json!({"provider_username":identity["profile"]["username"],"provider_email":identity["profile"]["email"],"id":binding_id,"type":identity["type"],"target":if identity.get("target").is_some(){identity["target"].clone()}else{identity["subject"].clone()},"issuer":identity["issuer"],"verified_at":n});
-        list.push(method_view(a, &row, c, password_enabled(a, &user).await?));
+        list.push(method_view(a, &row, c, password_enabled));
         writes.extend(consume(a, &new)?);
     }
     ensure(list.len() <= 20, 400, "INVALID_REQUEST")?;
@@ -463,27 +523,21 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     };
     let result = if path == "/api/v2/auth/password-reset/complete" && method == Method::Post {
         reset(a, &b).await?
+    } else if path == "/api/v2/users/me" && method == Method::Get {
+        account_view(
+            a,
+            sessions::bearer(&a.header("Authorization")),
+            &a.header("Origin"),
+            true,
+        )
+        .await?
     } else {
         let (s, c) = sessions::active(a).await?;
         let user = text(&s, "user_id");
         match (path, method) {
-            ("/api/v2/users/me", Method::Get) => {
-                let permissions=a.s.all("SELECT permission FROM auth_platform_permission WHERE user_id=? AND status='ACTIVE' ORDER BY permission",vec![user.clone().into()]).await?;
-                let capabilities: Vec<_> = permissions
-                    .iter()
-                    .filter(|p| {
-                        crate::unified_contracts::validate_named(
-                            "PlatformCapability",
-                            &p["permission"],
-                        )
-                        .is_ok()
-                    })
-                    .map(|p| p["permission"].clone())
-                    .collect();
-                json!({"user":user_view(a,&user).await?,"loginMethods":methods(a,&user,&c).await?,"passwordEnabled":password_enabled(a,&user).await?,"session":sessions::view(&s),"platformCapabilities":capabilities})
-            }
             ("/api/v2/users/me/login-methods", Method::Get) => {
-                json!({"loginMethods":methods(a,&user,&c).await?,"version":security(a,&user).await?["account_version"]})
+                let (methods, _) = methods(a, &user, &c).await?;
+                json!({"loginMethods":methods,"version":security(a,&user).await?["account_version"]})
             }
             ("/api/v2/users/me/reauthentications", Method::Post) => {
                 shape("ReauthenticationRequest", &b)?;

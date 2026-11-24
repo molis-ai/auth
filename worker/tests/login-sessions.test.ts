@@ -51,13 +51,20 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('user',?)")
       .bind(n)
       .run()
-    const call = async (path: string, body?: unknown, access?: string, key = secret()) => {
+    const call = async (
+      path: string,
+      body?: unknown,
+      access?: string,
+      key = secret(),
+      requestOrigin?: string,
+    ) => {
       const r = await p.fetch(
         new Request(origin + '/api/v2' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             ...(access ? { Authorization: 'Bearer ' + access } : {}),
+            ...(requestOrigin ? { Origin: requestOrigin } : {}),
             'Idempotency-Key': key,
           },
           body: body === undefined ? undefined : JSON.stringify(body),
@@ -122,6 +129,22 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     )
     const current = await call('/sessions/current', undefined, a.accessToken)
     assert.equal(current.status, 200)
+    await suite.test('credential joins preserve lookup and policy error codes', async () => {
+      for (const path of ['/sessions/current', '/users/me']) {
+        const unknown = await call(path, undefined, secret())
+        assert.equal(unknown.status, 401)
+        assert.equal(unknown.error.code, 'INVALID_CREDENTIALS')
+        const denied = await call(
+          path,
+          undefined,
+          a.accessToken,
+          undefined,
+          'https://blocked.example.test',
+        )
+        assert.equal(denied.status, 403)
+        assert.equal(denied.error.code, 'FORBIDDEN')
+      }
+    })
     // PCSYNC-OPT-01: use an actual live Auth session; publish only the public key.
     const signed = await call('/auth/sync-read-proof', undefined, a.accessToken)
     assert.equal(signed.status, 200)
@@ -421,7 +444,21 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       .prepare("UPDATE auth_client SET status='DISABLED',version=version+1 WHERE client_id=?")
       .bind(club)
       .run()
-    assert.equal((await call('/sessions/current', undefined, disabled.accessToken)).status, 403)
+    for (const path of ['/sessions/current', '/users/me']) {
+      const denied = await call(path, undefined, disabled.accessToken)
+      assert.equal(denied.status, 403)
+      assert.equal(denied.error.code, 'POLICY_MISMATCH')
+    }
+    const disabledRefresh = await call('/sessions/current/logout', {
+      refreshProof: { clientId: club, refreshToken: disabled.refreshToken },
+    })
+    assert.equal(disabledRefresh.status, 403)
+    assert.equal(disabledRefresh.error.code, 'POLICY_MISMATCH')
+    const wrongClient = await call('/sessions/current/logout', {
+      refreshProof: { clientId: work, refreshToken: disabled.refreshToken },
+    })
+    assert.equal(wrongClient.status, 401)
+    assert.equal(wrongClient.error.code, 'INVALID_CREDENTIALS')
     await db
       .prepare("UPDATE auth_client SET status='ACTIVE',version=version+1 WHERE client_id=?")
       .bind(club)
@@ -449,6 +486,11 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       )
       .bind(n - 31 * 86400000, n - 31 * 86400000, n + 59 * 86400000, idle.session.loginSessionId)
       .run()
+    for (const path of ['/sessions/current', '/users/me']) {
+      const expired = await call(path, undefined, idle.accessToken)
+      assert.equal(expired.status, 401)
+      assert.equal(expired.error.code, 'SESSION_EXPIRED')
+    }
     assert.equal(
       (
         await call('/auth/token', {

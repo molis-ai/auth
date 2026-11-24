@@ -188,6 +188,24 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     )
     assert.equal(done.account.state, 'AUTHENTICATED')
     assert.ok(validateNamed('AccountView', done.account))
+    await t.test(
+      'session projection reads no password state and preserves SELECT failures',
+      async () => {
+        await db
+          .prepare('ALTER TABLE auth_local_credential RENAME TO hidden_local_credential')
+          .run()
+        try {
+          assert.deepEqual(ok(await call('/api/account/session')), done.account)
+          const unavailable = await call('/api/account/login-methods')
+          assert.equal(unavailable.status, 503)
+          assert.equal(unavailable.error.code, 'AUTH_UNAVAILABLE')
+        } finally {
+          await db
+            .prepare('ALTER TABLE hidden_local_credential RENAME TO auth_local_credential')
+            .run()
+        }
+      },
+    )
     assert.ok(cookie !== anonymousCookie, 'login rotates the opaque browser reference')
     const staleAnonymous = await p.fetch(
       new Request(origin + '/api/account/login-methods', {
@@ -534,7 +552,8 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       async () => {
         const ipA = '192.0.2.1',
           ipB = '192.0.2.2',
-          ipC = '192.0.2.3'
+          ipC = '192.0.2.3',
+          ipD = '192.0.2.4'
         const sendPath = '/api/account/auth/verification-codes'
         const sendBody = (address: string) => ({ purpose: 'LOGIN', channel: 'EMAIL', address })
         async function browser(ip: string) {
@@ -593,6 +612,15 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           other = await browser(ipB)
         assert.notEqual(first.cookie, second.cookie)
         const hourlyBucket = (ip: string) => hash(`v2-delivery-ip-hour:${ip}`)
+        const bucketHits = async (bucketHash: string) =>
+          (
+            await db
+              .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
+              .bind(bucketHash)
+              .first()
+          )?.hits
+        const clientBucket = hash('v2-delivery-client:auth-web')
+        const clientHits = (await bucketHits(clientBucket)) ?? 0
         // Put IP A one send below the hourly quota with a partially elapsed window.
         const expiresAt = Date.now() + 1_800_750
         await db
@@ -623,16 +651,27 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         const directOther = await direct(ipC, 'quota-direct-other@example.test')
         assert.equal(directOther.status, 200, await directOther.text())
 
-        const bucketHits = async (bucketHash: string) =>
-          (
-            await db
-              .prepare('SELECT hits FROM auth_rate_bucket WHERE bucket_hash=?')
-              .bind(bucketHash)
-              .first()
-          )?.hits
         assert.equal(await bucketHits(hourlyBucket(ipA)), 62)
         assert.equal(await bucketHits(hourlyBucket(ipB)), 1)
         assert.equal(await bucketHits(hourlyBucket(ipC)), 1)
+        assert.equal(await bucketHits(hash(`v2-delivery-ip:${ipA}`)), 3)
+        for (const address of ['quota-same-ip@example.test', 'quota-direct-same@example.test']) {
+          assert.equal(await bucketHits(hash(`v2-delivery-target:EMAIL:${address}`)), undefined)
+          assert.equal(await bucketHits(hash(`v2-delivery-resend:EMAIL:${address}`)), undefined)
+        }
+        assert.equal(await bucketHits(clientBucket), clientHits + 3)
+
+        await db
+          .prepare('INSERT INTO auth_rate_bucket(bucket_hash,hits,expires_at) VALUES (?,59,?)')
+          .bind(hourlyBucket(ipD), expiresAt)
+          .run()
+        const concurrent = await Promise.all([
+          direct(ipD, 'quota-concurrent-1@example.test'),
+          direct(ipD, 'quota-concurrent-2@example.test'),
+        ])
+        assert.deepEqual(concurrent.map((r) => r.status).sort(), [200, 429])
+        assert.equal(await bucketHits(hourlyBucket(ipD)), 61)
+        assert.equal(await bucketHits(clientBucket), clientHits + 4)
 
         const localPasswordBucket = hash('v2-password:local')
         const localPasswordHits = await bucketHits(localPasswordBucket)
@@ -686,7 +725,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         })
         assert.equal(failure.status, 503, JSON.stringify(failure))
         const logs = await failures.forRequest(failure.requestId, [
-          'd1.first',
+          'd1.all',
           'internal',
           'dispatch',
         ])
@@ -702,7 +741,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           reportedRoutes.get('dispatch'),
           '/api/account/auth/transactions/{handle}/submit',
         )
-        for (const phase of ['d1.first', 'internal']) {
+        for (const phase of ['d1.all', 'internal']) {
           assert.equal(
             reportedRoutes.get(phase),
             '/api/v2/auth/transactions/{transactionId}/challenges',
