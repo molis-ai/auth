@@ -8,7 +8,7 @@ test('private Durable Object derives 600k SHA-256 correctly and rejects custom p
   const proxy = await getRustProxy({ AUTH_ORIGIN: 'http://127.0.0.1:8787' })
   try {
     const namespace = proxy.env.PASSWORD_KDF!
-    const stub = namespace.get(namespace.newUniqueId())
+    const stub = namespace.get(namespace.idFromName('password-kdf-pool-0'))
     const password = 'fixed-test-密码-é'
     const salt = '000102030405060708090a0b0c0d0e0f'
     async function derive(body: unknown) {
@@ -24,6 +24,19 @@ test('private Durable Object derives 600k SHA-256 correctly and rejects custom p
       Buffer.from(await response.arrayBuffer()),
       pbkdf2Sync(password, Buffer.from(salt, 'hex'), 600000, 32, 'sha256'),
     )
+    const inputs = [
+      { password, salt: 'ff'.repeat(16) },
+      { password: 'other-test-密码', salt },
+    ]
+    const results = await Promise.all(inputs.map(derive))
+    for (const [index, result] of results.entries()) {
+      const input = inputs[index]
+      assert.equal(result.status, 200)
+      assert.deepEqual(
+        Buffer.from(await result.arrayBuffer()),
+        pbkdf2Sync(input.password, Buffer.from(input.salt, 'hex'), 600000, 32, 'sha256'),
+      )
+    }
     for (const body of [
       { password, salt, iterations: 1 },
       { password, salt: '00' },
@@ -128,6 +141,7 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
       'SELECT status FROM auth_product_transaction',
     ).first()
     assert.equal(transaction!.status, 'PENDING')
+    assert.deepEqual(await proxy.env.DB.prepare('SELECT count(*) n FROM auth_user').first(), before)
   } finally {
     await proxy.dispose()
   }

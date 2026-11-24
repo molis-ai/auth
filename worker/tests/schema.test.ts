@@ -46,6 +46,46 @@ test('the fresh Auth baseline reproduces the historical schema and empty content
   }
 })
 
+test('0021 adds the same indexes to a new database and a populated 0020 database', () => {
+  const fresh = database()
+  const upgraded = new DatabaseSync(':memory:')
+  try {
+    upgraded.exec('PRAGMA foreign_keys=ON')
+    upgraded.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
+    upgraded.exec(`
+      INSERT INTO auth_application(id,name) VALUES ('existing','Existing application');
+      INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
+        VALUES ('client','client','existing','WEB','[]','[]');
+    `)
+    const rows = () => upgraded.prepare('SELECT * FROM auth_client').all()
+    const before = rows()
+    upgraded.exec(readFileSync(new URL('0021_perf_indexes.sql', migrationDirectory), 'utf8'))
+    assert.deepEqual(rows(), before)
+    assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), [])
+    const indexes = {
+      ix_ownership_transfer_from: ['from_membership_id', 'id'],
+      ix_ownership_transfer_to: ['to_membership_id', 'id'],
+      ix_tenant_membership_tenant_status_id: ['tenant_id', 'status', 'id'],
+      ix_client_application_id: ['application_id', 'id'],
+      ix_management_audit_tenant_id: ['tenant_id', 'id'],
+    }
+    for (const [index, columns] of Object.entries(indexes)) {
+      for (const db of [fresh, upgraded]) {
+        assert.deepEqual(
+          db
+            .prepare(`PRAGMA index_info(${index})`)
+            .all()
+            .map((row) => row.name),
+          columns,
+        )
+      }
+    }
+  } finally {
+    fresh.close()
+    upgraded.close()
+  }
+})
+
 test('cutover checks the historical ledger and exact DDL before registering once', () => {
   const db = database('0020_logout_receipt_proof_expiry.sql')
   const execute = (sql: string) => db.prepare(sql).all()

@@ -24,16 +24,10 @@ const CLIENT_POLICY_JOINS: &str =
     JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
     JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'";
 
-fn client_config(a: &Auth) -> Result<Value> {
-    Ok(serde_json::from_str(
-        &a.env
-            .var("UNIFIED_ACCOUNT_CONFIG")
-            .map_err(|_| Failure {
-                status: 503,
-                code: "UNIFIED_CONFIGURATION_INVALID",
-            })?
-            .to_string(),
-    )?)
+fn client_config(a: &Auth) -> Result<&Value> {
+    a.unified_config
+        .as_deref()
+        .ok_or_else(crate::unified_policy::invalid_configuration)
 }
 const CLIENT_CONFIG_FIELDS: [(&str, &str, &str); 5] = [
     ("id", "environment_id", "environmentId"),
@@ -71,7 +65,7 @@ pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
             vec![id.into()],
         )
         .await?;
-    check_registered_client(&c, &config)?;
+    check_registered_client(&c, config)?;
     Ok(c)
 }
 pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
@@ -82,8 +76,17 @@ pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
 pub(crate) fn client_guard(a: &Auth, c: &Value) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id JOIN auth_client_policy p ON p.client_id=c.client_id JOIN auth_environment e ON e.id=p.environment_id WHERE c.client_id=? AND c.version=? AND p.version=? AND e.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND e.status='ACTIVE' AND p.policy_profile='unified-account-v2')",vec![c["client_id"].clone(),c["version"].clone(),c["policy_version"].clone(),c["environment_version"].clone()])
 }
+const SESSION_COLUMNS: &str =
+    "s.*,c.application_id,us.session_epoch current_epoch,u.status user_status";
+const SESSION_JOINS: &str = "JOIN auth_user_security us ON us.user_id=s.user_id
+     JOIN auth_user u ON u.id=s.user_id JOIN auth_client c ON c.client_id=s.client_id";
+
 pub(crate) async fn session(a: &Auth, id: &str) -> Result<Value> {
-    a.s.one("SELECT s.*,c.application_id,us.session_epoch current_epoch,u.status user_status FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_client c ON c.client_id=s.client_id WHERE s.id=?",vec![id.into()]).await
+    a.s.one(
+        &format!("SELECT {SESSION_COLUMNS} FROM auth_login_session s {SESSION_JOINS} WHERE s.id=?"),
+        vec![id.into()],
+    )
+    .await
 }
 fn live(s: &Value, n: i64) -> bool {
     !s.is_null()
@@ -155,7 +158,7 @@ fn credential_result(
         401,
         "INVALID_CREDENTIALS",
     )?;
-    check_registered_client(&row, &client_config(a)?)?;
+    check_registered_client(&row, client_config(a)?)?;
     check_origin(&row, origin)?;
     let token = parsed(&row, "credential_token")?;
     if let Some(client) = row.as_object_mut() {
@@ -199,7 +202,7 @@ pub(crate) fn active_lookup(a: &Auth, raw: &str) -> Result<(String, D1PreparedSt
 /// credential result remains the source of HTTP errors and is read in the same
 /// transaction, including when this query returns no principal.
 pub(crate) fn active_actor(a: &Auth, digest: &str) -> (String, Vec<Value>) {
-    let config = client_config(a).unwrap_or(Value::Null);
+    let config = a.unified_config.as_deref().unwrap_or(&Value::Null);
     let origin = a.header("Origin");
     let n = now();
     let mut args = vec![digest.into(), n.into(), n.into(), n.into()];
@@ -233,16 +236,15 @@ pub(crate) fn active_result(
     digest: String,
     origin: &str,
 ) -> Result<(Value, Value)> {
-    check_active(credential_result(a, row, digest, None, origin)?)
+    check_active(credential_result(a, row, digest, None, origin)?, now())
 }
-fn check_active(credential: Credential) -> Result<(Value, Value)> {
+fn check_active(credential: Credential, n: i64) -> Result<(Value, Value)> {
     let Credential {
         session: mut s,
         token: t,
         digest,
         client: c,
     } = credential;
-    let n = now();
     ensure(
         live(&s, n)
             && number(&t, "expires_at") > n
@@ -257,7 +259,7 @@ fn check_active(credential: Credential) -> Result<(Value, Value)> {
 }
 /// A v2 access credential, including its expiry for the final commit guard.
 pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
-    check_active(credential(a, &json!({})).await?)
+    check_active(credential(a, &json!({})).await?, now())
 }
 pub(crate) fn active_guard(a: &Auth, s: &Value) -> Result<D1PreparedStatement> {
     a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_login_access_token t ON t.login_session_id=s.id WHERE s.id=? AND s.session_revision=? AND {LIVE} AND t.token_hash=? AND t.expires_at>? AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision)"),vec![s["id"].clone(),s["session_revision"].clone(),now().into(),now().into(),s["access_hash"].clone(),now().into()])
@@ -295,16 +297,22 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     a.rate_ip("v2-token", 120).await?;
     if b["grantType"] == "refresh_token" {
         let digest = hash(&text(b, "refreshToken"));
-        let t =
+        let s =
             a.s.one(
-                "SELECT * FROM auth_login_refresh_token WHERE token_hash=?",
+                &format!("SELECT {SESSION_COLUMNS},t.generation token_generation,
+                        t.session_revision token_session_revision,t.user_epoch token_user_epoch,
+                        t.expires_at token_expires_at,t.used_at token_used_at
+                 FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id
+                 {SESSION_JOINS} WHERE t.token_hash=?"),
                 vec![digest.clone().into()],
             )
             .await?;
-        ensure(!t.is_null(), 401, "INVALID_GRANT")?;
-        let s = session(a, &text(&t, "login_session_id")).await?;
-        ensure(s["client_id"] == c["client_id"], 401, "INVALID_GRANT")?;
-        if !t["used_at"].is_null() {
+        ensure(
+            !s.is_null() && s["client_id"] == c["client_id"],
+            401,
+            "INVALID_GRANT",
+        )?;
+        if !s["token_used_at"].is_null() {
             revoke_replayed_refresh(a, &s, n).await?;
             return Err(Failure {
                 status: 401,
@@ -313,13 +321,13 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         }
         ensure(
             live(&s, n)
-                && number(&t, "expires_at") > n
-                && t["user_epoch"] == s["user_epoch"]
-                && t["session_revision"] == s["session_revision"],
+                && number(&s, "token_expires_at") > n
+                && s["token_user_epoch"] == s["user_epoch"]
+                && s["token_session_revision"] == s["session_revision"],
             401,
             "SESSION_EXPIRED",
         )?;
-        let (result, new_tokens) = tokens(a, &s, n, number(&t, "generation") + 1)?;
+        let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
         let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?];
         writes.extend(new_tokens);
         writes.push(a.s.audit(
@@ -458,6 +466,38 @@ async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(result)
 }
+async fn activity(a: &Auth, b: &Value) -> Result<Value> {
+    shape("ActivityRequest", b)?;
+    let credential = credential(a, &json!({})).await?;
+    let n = now();
+    let (mut s, c) = check_active(credential, n)?;
+    let session_id = s["id"].clone();
+    let event_id = b["eventId"].clone();
+    let writes = vec![
+        client_guard(a, &c)?,
+        session_guard(a, &s, n)?,
+        a.s.statement(
+            "UPDATE auth_login_session SET last_active_at=MAX(last_active_at,?) WHERE id=?
+             AND NOT EXISTS(SELECT 1 FROM auth_login_activity WHERE login_session_id=? AND event_id=?)",
+            vec![n.into(), session_id.clone(), session_id.clone(), event_id.clone()],
+        )?,
+        a.s.statement(
+            "INSERT OR IGNORE INTO auth_login_activity VALUES (?,?,?,?)",
+            vec![session_id.clone(), event_id, b["kind"].clone(), n.into()],
+        )?,
+    ];
+    // Read the value inside the guarded transaction, including on a replay that
+    // skipped the update and after another request advanced the session clock.
+    let returning = a.s.statement(
+        "SELECT last_active_at FROM auth_login_session WHERE id=?",
+        vec![session_id],
+    )?;
+    let row =
+        a.s.batch_returning(writes, returning, "VERSION_CONFLICT")
+            .await?;
+    s["last_active_at"] = row["last_active_at"].clone();
+    Ok(view(&s))
+}
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     let implemented = matches!(
         (path, method.clone()),
@@ -482,40 +522,11 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         exchange(a, &b).await?
     } else if path.ends_with("logout-all") || path.ends_with("/logout") {
         logout(a, &b, path.ends_with("logout-all")).await?
+    } else if method == Method::Post {
+        activity(a, &b).await?
     } else {
-        if method == Method::Post {
-            shape("ActivityRequest", &b)?;
-        }
-        let Credential {
-            session: s,
-            token: t,
-            client: c,
-            ..
-        } = credential(a, &json!({})).await?;
-        let n = now();
-        ensure(
-            live(&s, n)
-                && number(&t, "expires_at") > n
-                && t["session_revision"] == s["session_revision"]
-                && t["user_epoch"] == s["user_epoch"],
-            401,
-            "SESSION_EXPIRED",
-        )?;
-        let mut writes = vec![client_guard(a, &c)?, session_guard(a, &s, n)?];
-        if method == Method::Post {
-            writes.push(a.s.statement("UPDATE auth_login_session SET last_active_at=MAX(last_active_at,?) WHERE id=? AND NOT EXISTS(SELECT 1 FROM auth_login_activity WHERE login_session_id=? AND event_id=?)",vec![n.into(),s["id"].clone(),s["id"].clone(),b["eventId"].clone()])?);
-            writes.push(a.s.statement(
-                "INSERT OR IGNORE INTO auth_login_activity VALUES (?,?,?,?)",
-                vec![
-                    s["id"].clone(),
-                    b["eventId"].clone(),
-                    b["kind"].clone(),
-                    n.into(),
-                ],
-            )?);
-        }
-        a.s.batch(writes, "VERSION_CONFLICT").await?;
-        view(&session(a, &text(&s, "id")).await?)
+        let (s, _) = active(a).await?;
+        view(&s)
     };
     Ok(json_response(
         json!({"data":result,"requestId":a.request_id}),

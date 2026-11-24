@@ -23,12 +23,26 @@ pub fn list(action: &Action) -> Read {
             |row| Ok(view(row)),
         )
     } else {
-        let target = target(ACTOR);
+        let cutoff = json!(now());
+        let visible = "t.status='ACTIVE' AND i.status='PENDING' AND i.expires_at>?";
         Read::page(
-            format!("SELECT i.* FROM auth_tenant_invitation i
+            format!(
+                "SELECT i.* FROM auth_tenant_invitation i
                      JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
-                     WHERE t.status='ACTIVE' AND i.status='PENDING' AND i.expires_at>? AND {target}"),
-            vec![now().into()],
+                     WHERE i.target_kind='USER' AND i.target_user_id={ACTOR} AND {visible}
+                     UNION
+                     SELECT i.* FROM auth_user_email email
+                     JOIN auth_tenant_invitation i ON i.target_email=email.canonical_email
+                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     WHERE i.target_kind='EMAIL' AND email.user_id={ACTOR}
+                       AND email.verified_at IS NOT NULL AND {visible}
+                     UNION
+                     SELECT i.* FROM auth_user_phone phone
+                     JOIN auth_tenant_invitation i ON i.target_phone=phone.canonical_phone
+                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     WHERE i.target_kind='PHONE' AND phone.user_id={ACTOR} AND {visible}"
+            ),
+            vec![cutoff.clone(), cutoff.clone(), cutoff],
             |row| Ok(view(row)),
         )
     }

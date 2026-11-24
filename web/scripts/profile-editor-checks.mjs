@@ -53,6 +53,8 @@ export async function profileEditorChecks({page,click,db,evidence,root}) {
   await page.screenshot(join(evidence,'account-menu-anchored.png'));
   await page.click('[aria-label="账号菜单"]');
   // PROFILE-03: public avatar opens the native chooser directly, not the editor/menu.
+  const cropperLoaded = "performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.includes('/AvatarCropper-'))";
+  assert.equal(await page.evaluate(cropperLoaded), false);
   await page.command('Page.setInterceptFileChooserDialog',{enabled:true});
   await page.click('[aria-label="编辑头像"]');
   assert.equal(await page.evaluate(drawer),false);
@@ -63,6 +65,7 @@ export async function profileEditorChecks({page,click,db,evidence,root}) {
   const {nodeId:directInput}=await page.command('DOM.querySelector',{nodeId:directDom.nodeId,selector:'.profile-direct-file'});
   await page.command('DOM.setFileInputFiles',{nodeId:directInput,files:[join(root,'web/src/assets/molis-logo.png')]});
   await page.wait("Boolean(document.querySelector('.avatar-crop-dialog[open] .avatar-crop-stage'))");
+  assert.equal(await page.evaluate(cropperLoaded), true);
   assert.equal(await page.evaluate("Boolean(document.querySelector('.profile-identity img'))"),false);
   assert.equal(await page.evaluate(drawer),false);
   const proportions=await page.evaluate("(()=>{const modal=document.querySelector('.avatar-crop-dialog').getBoundingClientRect(),stage=document.querySelector('.avatar-crop-stage').getBoundingClientRect();return {modal:modal.height/modal.width,stage:stage.width/stage.height};})()");

@@ -6,6 +6,7 @@ import { accountErrorMessage } from "../lib/errors.ts";
 import type { WriteOptions } from "../lib/idempotent-submit.ts";
 import TenantMembers from "./TenantMembers.vue";
 import { syncCreatedTenant } from "../lib/tenant-selection.ts";
+import "../styles/tenant-page.css";
 
 type Tenant = {
   tenantId: string;
@@ -58,6 +59,8 @@ const { loading: membersLoading } = memberDirectory;
 const { loading: invitationsLoading, nextCursor: moreInvitations } = received;
 const { nextCursor: moreTransfers } = ownership;
 const transfersLoading = ref(false);
+let transferRead = 0;
+let directoryRead = 0;
 const selectedTenant = ref<Tenant>();
 const tenantSearch = ref("");
 const tenants = computed(() => {
@@ -98,8 +101,30 @@ async function read(section: Section, task: () => Promise<unknown>, restart = ta
 }
 
 const tenantPath = (id: string) => "/tenants/" + encodeURIComponent(id);
-const refreshDirectory = () => directory.first("/tenants");
-const refreshInvitations = () => received.first("/invitations");
+async function refreshDirectory(reconcileSelection = true) {
+  if (disposed) return;
+  const request = ++directoryRead;
+  if (!(await directory.first("/tenants")) || request !== directoryRead) return;
+  const selected = selectedTenant.value;
+  if (!reconcileSelection || !selected) return;
+  let latest: Tenant | undefined;
+  try {
+    latest = await lookupTenant(selected.tenantId);
+  } catch (error) {
+    if (disposed || request !== directoryRead || selectedTenant.value !== selected) return;
+    if (!(error instanceof AuthError && error.code === "TENANT_DISABLED")) throw error;
+  }
+  if (disposed || request !== directoryRead || selectedTenant.value !== selected) return;
+  selectedTenant.value = latest;
+  if (latest?.status !== "ACTIVE") clearMembers();
+  else if (latest.membershipId !== selected.membershipId || selected.status !== "ACTIVE") {
+    clearMembers();
+    await read("members", () => reloadMembers(latest));
+  }
+}
+const refreshInvitations = async () => {
+  if (!disposed) await received.first("/invitations");
+};
 
 function clearMembers() {
   delete errors.members;
@@ -157,12 +182,14 @@ async function lookupTenant(id: string) {
   }
 }
 
-async function readTransfers(append = false) {
-  if (disposed || transfersLoading.value) return;
+async function readTransfers(append = false, refreshedDirectory?: Promise<void>) {
+  if (disposed || (append && transfersLoading.value)) return;
+  const request = ++transferRead;
   transfersLoading.value = true;
   try {
-    await (append ? ownership.more() : ownership.first("/ownership-transfers"));
-    if (disposed) return;
+    // Load the transfer page in parallel, then resolve its participant IDs from the refreshed directory.
+    await Promise.all([append ? ownership.more() : ownership.first("/ownership-transfers"), refreshedDirectory]);
+    if (disposed || request !== transferRead) return;
     const known = append ? transferMembers.value : {};
     const ids = [...new Set(transfers.value.map(transfer => transfer.tenantId))]
       .filter(id => !Object.hasOwn(known, id));
@@ -170,9 +197,11 @@ async function readTransfers(append = false) {
       const tenant = await lookupTenant(id);
       return [id, tenant?.membershipId ?? ""] as const;
     }));
-    if (!disposed) transferMembers.value = { ...known, ...Object.fromEntries(memberships) };
+    if (!disposed && request === transferRead) transferMembers.value = { ...known, ...Object.fromEntries(memberships) };
+  } catch (error) {
+    if (!disposed && request === transferRead) throw error;
   } finally {
-    transfersLoading.value = false;
+    if (request === transferRead) transfersLoading.value = false;
   }
 }
 function transferOperation(transfer: Transfer): "accept" | "cancel" | undefined {
@@ -192,10 +221,7 @@ function updateTransfer(transfer: Transfer) {
         selectedTenant.value = undefined;
         clearMembers();
       },
-      after: async () => {
-        await refreshDirectory();
-        await readTransfers();
-      },
+      after: refreshDirectoryAndTransfers,
       refreshMessage: "所有权交接已更新，但交接或租户列表暂未刷新。",
     },
   );
@@ -207,8 +233,8 @@ function updateInvitation(invitation: Invitation, operation: "accept" | "decline
     {
       committed: () => received.remove(item => item.invitationId === invitation.invitationId),
       after: async () => {
-        if (operation === "accept") await refreshDirectory();
-        await refreshInvitations();
+        if (operation === "accept") await Promise.all([refreshDirectory(), refreshInvitations()]);
+        else await refreshInvitations();
       },
       refreshMessage: operation === "accept" ? "已接受邀请，但租户或邀请列表暂未刷新。" : "已拒绝邀请，但邀请列表暂未刷新。",
     },
@@ -221,9 +247,8 @@ function left(id: string) {
   }
   directory.remove(tenant => tenant.tenantId === id);
 }
-async function refreshAfterLeave() {
-  await refreshDirectory();
-  await readTransfers();
+function refreshDirectoryAndTransfers() {
+  return readTransfers(false, refreshDirectory());
 }
 
 watch(() => tenantName.value.trim(), () => props.discard("create-tenant"), { flush: "sync" });
@@ -254,7 +279,7 @@ function createTenant() {
       clearMembers();
     },
     after: async created => {
-      await refreshDirectory();
+      await refreshDirectory(false);
       if (disposed || selectedTenant.value?.tenantId !== created.tenantId) return;
       const current = await lookupTenant(created.tenantId);
       await syncCreatedTenant(created.tenantId, current ? [current] : [], selectedTenant,
@@ -268,7 +293,8 @@ onMounted(() => {
     creationMode.value = (await props.client.request<{ mode: string }>("/tenant-creation-policy")).mode;
   });
   void read("directory", async () => {
-    if (await refreshDirectory() && !selectedTenant.value && directory.items.value[0]) {
+    await refreshDirectory();
+    if (!disposed && !selectedTenant.value && directory.items.value[0]) {
       await selectTenant(directory.items.value[0]);
     }
   });
@@ -332,7 +358,7 @@ onBeforeUnmount(() => {
           :reload="reloadMembers"
           :own-membership="ownMembership"
           :refresh-transfers="readTransfers"
-          :leave="refreshAfterLeave"
+          :leave="refreshDirectoryAndTransfers"
           @expired="emit('expired', $event)"
           @left="left"
           @previous="memberPage--"

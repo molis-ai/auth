@@ -6,6 +6,55 @@ import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.m
 import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
+test('BFF re-seals a 192,000-byte session and observes a changed encryption binding', async (t) => {
+  const origin = 'http://127.0.0.1:8787'
+  const original = secret(),
+    rotated = secret()
+  const p = await getRustProxy({ AUTH_ORIGIN: origin, AUTH_WEB_SESSION_KEY: original })
+  t.after(() => p.dispose())
+  await initializeLocalRuntime(p, false)
+  let db = p.env.DB
+  const cookie = `molis-auth-web=${secret()}`
+  const id = hash(cookie.split('=')[1])
+  const data = { transactions: {}, tokens: null, fixture: '' }
+  data.fixture = 'a'.repeat(192_000 - Buffer.byteLength(JSON.stringify(data)))
+  assert.equal(Buffer.byteLength(JSON.stringify(data)), 192_000)
+  const payload = await authSeal(original, JSON.stringify({ id, data }))
+  await db
+    .prepare(
+      "INSERT INTO auth_web_session(id_hash,payload,status,expires_at,busy_until) VALUES (?,?,'BUSY',?,0)",
+    )
+    .bind(id, payload, Date.now() + 60_000)
+    .run()
+
+  const session = (cookie = '') =>
+    p.fetch(new Request(origin + '/api/account/session', { headers: { Cookie: cookie } }))
+  assert.equal((await session(cookie)).status, 200)
+  const saved = await db
+    .prepare('SELECT payload,status FROM auth_web_session WHERE id_hash=?')
+    .bind(id)
+    .first()
+  assert.equal(saved.status, 'READY')
+  assert.notEqual(saved.payload, payload)
+  assert.deepEqual(JSON.parse(await authOpen(original, saved.payload)), { id, data })
+
+  db = await p.updateBindings({ AUTH_WEB_SESSION_KEY: rotated })
+  const rejected = await session(cookie)
+  assert.equal(rejected.status, 503)
+  assert.equal((await rejected.json()).error.code, 'AUTH_UNAVAILABLE')
+  const newSession = await session()
+  assert.equal(newSession.status, 200)
+  const newCookie = newSession.headers.get('Set-Cookie')!.split(';')[0]
+  const newId = hash(newCookie.split('=')[1])
+  const newPayload = await db
+    .prepare('SELECT payload FROM auth_web_session WHERE id_hash=?')
+    .bind(newId)
+    .first('payload')
+  await assert.rejects(authOpen(original, newPayload))
+  assert.equal(JSON.parse(await authOpen(rotated, newPayload)).id, newId)
+  assert.equal((await session(newCookie)).status, 200)
+})
+
 test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async (t) => {
   const origin = 'http://127.0.0.1:8787',
     bffKey = secret()
@@ -1092,6 +1141,11 @@ test(
       assert.deepEqual(response.headers.getSetCookie(), [])
       assert.deepEqual(await row(b), before)
 
+      const methods = await traced({ read: 2, write: 0 }, b, '/login-methods')
+      assert.deepEqual(await data(methods), { loginMethods: [], version: 0 })
+      assert.deepEqual(methods.headers.getSetCookie(), [])
+      assert.deepEqual(await row(b), before)
+
       // An invalid activity body isolates the browser lease claim and finish.
       const write = await traced({ read: 0, write: 2 }, b, '/activity', { body: {} })
       assert.equal(write.status, 400)
@@ -1411,6 +1465,37 @@ test(
         null,
       )
     })
+
+    await t.test(
+      'browser activity checks the lease and returns the committed session value',
+      async () => {
+        const { b, loginId } = await authenticated()
+        const stored = () =>
+          db
+            .prepare('SELECT last_active_at FROM auth_login_session WHERE id=?')
+            .bind(loginId)
+            .first()
+        const receipt = () =>
+          db
+            .prepare(
+              'SELECT received_at FROM auth_login_activity WHERE login_session_id=? AND event_id=?',
+            )
+            .bind(loginId, activity.body.eventId)
+            .first()
+        const initial = await stored()
+        const old = await pause(b, 'activity-credential-after', '/activity', activity)
+        await takeOver(b, old, 'AUTHENTICATED')
+        assert.deepEqual(await stored(), initial)
+        assert.equal(await receipt(), null)
+
+        const before = await row(b)
+        const committed = await data(await traced({ read: 1, write: 3 }, b, '/activity', activity))
+        assert.equal(committed.loginSessionId, loginId)
+        assert.equal(Date.parse(committed.lastActiveAt), (await stored())?.last_active_at)
+        assert.equal(Date.parse(committed.lastActiveAt), (await receipt())?.received_at)
+        assertReady(await row(b), Number(before.revision) + 1)
+      },
+    )
 
     await t.test('a stale profile write cannot make business changes', async () => {
       const { b, userId } = await authenticated()

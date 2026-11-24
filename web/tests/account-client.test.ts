@@ -227,6 +227,84 @@ test("P1-4 tenant overview starts four first-page GETs together after CSRF boots
   }
 });
 
+test("tenant members start when tenants completes while invitations and transfers are still pending", async () => {
+  const tenants = Promise.withResolvers<Response>();
+  const slow = Promise.withResolvers<void>();
+  const calls: string[] = [];
+  const client = new AccountClient({
+    origin,
+    fetch: async url => {
+      const path = accountPath(url);
+      calls.push(path);
+      if (path === "/tenants?limit=20") return tenants.promise;
+      if (path === "/invitations?limit=20" || path === "/ownership-transfers?limit=20") await slow.promise;
+      return reply();
+    },
+  });
+  try {
+    await client.session();
+    const overview = ["/tenants?limit=20", "/invitations?limit=20", "/ownership-transfers?limit=20"];
+    const members = client.request<string>(overview[0]).then(id => client.request(`/tenants/${id}/members?limit=10`));
+    const background = Promise.all(overview.slice(1).map(path => client.request(path)));
+    void members.catch(() => undefined);
+    void background.catch(() => undefined);
+    await nextTurn();
+    assert.deepEqual(calls, ["/session", ...overview]);
+    tenants.resolve(reply("current-csrf", "tenant-1"));
+    await nextTurn();
+    assert.deepEqual(calls, ["/session", ...overview, "/tenants/tenant-1/members?limit=10"]);
+    await members;
+    slow.resolve();
+    await background;
+  } finally {
+    tenants.resolve(reply());
+    slow.resolve();
+    client.close();
+  }
+});
+
+test("new console collections retry only marked conflicts on their first pages", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const resources = [
+    "/tenants/t-1/members", "/tenants/t-1/invitations", "/subscriptions", "/platform/applications",
+    "/platform/applications/app-1/clients", "/platform/users", "/platform/users/user-1/permissions",
+  ];
+  const paths = resources.map((path, index) => index % 2 === 0 ? path : `${path}?limit=100`);
+  const calls = new Map<string, number>();
+  const client = new AccountClient({
+    origin,
+    fetch: async url => {
+      const path = accountPath(url);
+      const count = (calls.get(path) ?? 0) + 1;
+      calls.set(path, count);
+      if (path === "/session" || count > 1) return reply();
+      if (path.endsWith("?limit=25")) {
+        return Response.json({ error: { code: conflict.code }, requestId: conflict.requestId }, { status: conflict.status });
+      }
+      return conflictBeforeDispatch();
+    },
+  });
+  try {
+    await client.session();
+    const requests = Promise.all(paths.map(path => client.request(path)));
+    void requests.catch(() => undefined);
+    await nextTurn();
+    assert.deepEqual([...calls], [["/session", 1], ...paths.map(path => [path, 1])]);
+    t.mock.timers.tick(40);
+    await requests;
+    assert.deepEqual([...calls], [["/session", 1], ...paths.map(path => [path, 2])]);
+    for (const resource of resources) {
+      for (const query of ["?limit=25", "?limit=100&cursor=opaque"]) {
+        const path = resource + query;
+        await assert.rejects(client.request(path), conflict);
+        assert.equal(calls.get(path), 1);
+      }
+    }
+  } finally {
+    client.close();
+  }
+});
+
 test("P1-4 one cold bootstrap orders the queued writes and read", async () => {
   const calls: [string, string | null][] = [];
   const bootstrap = Promise.withResolvers<Response>();

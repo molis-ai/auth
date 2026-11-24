@@ -1,3 +1,17 @@
+.console-shell.v2-console { display: block; min-height: 100svh; }
+.v2-console, .v2-console * { box-sizing: border-box; }
+.v2-console > .console-header { flex-wrap: wrap; }
+.v2-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.v2-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.console-shell button {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; background: var(--surface);
+  color: var(--ink); cursor: pointer; min-height: 40px;
+}
+.console-shell button:enabled:hover { background: var(--accent-soft); }
+.console-shell button:disabled { cursor: wait; opacity: 0.55; }
+.console-tabs { flex-wrap: wrap; }
+.console-shell footer { margin-top: 30px; }
+
 .console-shell { max-width: 1280px; margin: auto; padding: 30px 36px 64px; }
 .console-header, .console-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .console-heading { margin: 42px 0 24px; }.console-heading h1 { margin: 10px 0; font-size: 34px; }.console-heading p { color: #6b8073; }

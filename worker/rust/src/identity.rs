@@ -1,5 +1,7 @@
 use crate::{http::*, security::*, store::Store};
+use serde_json::Value;
 use std::cell::Cell;
+use std::sync::Arc;
 use worker::{Env, Request};
 
 pub(crate) const DEFAULT_RETRY_AFTER: u64 = 60;
@@ -12,6 +14,7 @@ pub(crate) fn retry_after_seconds(expires_at: i64, current_ms: i64) -> u64 {
 pub struct Auth {
     pub s: Store,
     pub origin: String,
+    pub(crate) unified_config: Option<Arc<Value>>,
     pub request: Request,
     pub request_id: String,
     pub client_ip: String,
@@ -28,7 +31,7 @@ impl Auth {
         client_ip: Option<String>,
     ) -> Result<Self> {
         let origin = env.var("AUTH_ORIGIN")?.to_string();
-        crate::unified_policy::validate_environment(env, &origin)?;
+        let unified_config = crate::unified_policy::environment_configuration(env, &origin)?;
         // In-process calls provide the IP captured from the edge request.
         let client_ip = client_ip.unwrap_or_else(|| {
             request
@@ -42,6 +45,7 @@ impl Auth {
         Ok(Self {
             s: Store::new(env.d1("DB")?, log),
             origin,
+            unified_config,
             request,
             request_id: log.id.to_owned(),
             client_ip,

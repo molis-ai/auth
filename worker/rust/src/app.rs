@@ -4,7 +4,7 @@ use crate::{
     security::uuid,
     store::WebSessionAccess,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
@@ -291,7 +291,8 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         "NOT_FOUND",
     )?;
     ensure(
-        method == Method::Get || method == Method::Head,
+        // The SDK maps unrecognized HTTP methods to GET.
+        matches!(a.request.inner().method().as_str(), "GET" | "HEAD"),
         405,
         "METHOD_NOT_ALLOWED",
     )?;
@@ -310,13 +311,17 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         return Ok(response);
     }
     let mut target = url.clone();
-    target.set_path(if page { "/index.html" } else { &path[8..] });
+    let asset = path.strip_prefix("/auth-ui/assets/");
+    if page {
+        target.set_path("/index.html");
+    } else if asset.is_none() {
+        target.set_path(&path[8..]);
+    }
     target.set_query(None);
     let mut r = env
         .assets("ASSETS")?
         .fetch_request(Request::new(target.as_str(), method.clone())?)
         .await?;
-    let asset = path.strip_prefix("/auth-ui/assets/");
     let content_type = r.headers().get("Content-Type")?.unwrap_or_default();
     let media_type = content_type.split(';').next().unwrap_or_default().trim();
     // An assets binding configured with SPA fallback can return HTML for a missing asset.
@@ -340,11 +345,7 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         _ => "",
     };
     let mut r = if page && method == Method::Get && r.status_code() == 200 {
-        let config: serde_json::Value = env
-            .var("UNIFIED_ACCOUNT_CONFIG")
-            .ok()
-            .and_then(|binding| serde_json::from_str(&binding.to_string()).ok())
-            .unwrap_or_default();
+        let config = a.unified_config.as_deref().unwrap_or(&Value::Null);
         let channels = if crate::delivery::supports_invitation_notifications(
             &config["kind"],
             &config["deliveryMode"],
@@ -384,7 +385,7 @@ fn hashed_web_asset(name: &str, media_type: &str) -> bool {
     let Some((base, extension)) = name.rsplit_once('.') else {
         return false;
     };
-    // Only Vite's generated output from web/vite.config.ts is published under assets/.
+    // Only Vite's generated output from web/vite.config.ts is published under auth-ui/assets/.
     let Some((prefix, hash)) = base.split_at_checked(base.len().saturating_sub(8)) else {
         return false;
     };

@@ -108,6 +108,36 @@ fn method_views(a: &Auth, rows: &[Value], c: &Value, password: bool) -> Vec<Valu
         .map(|r| method_view(a, r, c, password))
         .collect()
 }
+async fn login_methods_view(a: &Auth) -> Result<Value> {
+    let origin = a.header("Origin");
+    let (digest, credential) =
+        sessions::active_lookup(a, sessions::bearer(&a.header("Authorization")))?;
+    let subject = sessions::ACCESS_USER_ID;
+    let prepared = |sql: &str| a.s.statement(sql, vec![digest.clone().into()]);
+    let [credential, rows, password, security] =
+        a.s.batch_read(vec![
+            credential,
+            prepared(&methods_query(subject))?,
+            prepared(&format!("{PASSWORD}{subject}"))?,
+            prepared(&format!(
+                "SELECT account_version FROM auth_user_security WHERE user_id={subject}"
+            ))?,
+        ])
+        .await?
+        .try_into()
+        .map_err(|_| Failure::unavailable())?;
+    let (_, client) = sessions::active_result(
+        a,
+        credential.into_iter().next().unwrap_or(Value::Null),
+        digest,
+        &origin,
+    )?;
+    let security = security.first().ok_or_else(Failure::unavailable)?;
+    Ok(json!({
+        "loginMethods":method_views(a, &rows, &client, !password.is_empty()),
+        "version":security["account_version"],
+    }))
+}
 async fn methods(a: &Auth, user: &str, c: &Value) -> Result<(Vec<Value>, bool)> {
     let [rows, password] =
         a.s.batch_read(vec![
@@ -531,14 +561,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             true,
         )
         .await?
+    } else if path == "/api/v2/users/me/login-methods" && method == Method::Get {
+        login_methods_view(a).await?
     } else {
         let (s, c) = sessions::active(a).await?;
         let user = text(&s, "user_id");
         match (path, method) {
-            ("/api/v2/users/me/login-methods", Method::Get) => {
-                let (methods, _) = methods(a, &user, &c).await?;
-                json!({"loginMethods":methods,"version":security(a,&user).await?["account_version"]})
-            }
             ("/api/v2/users/me/reauthentications", Method::Post) => {
                 shape("ReauthenticationRequest", &b)?;
                 let mut b = b.clone();

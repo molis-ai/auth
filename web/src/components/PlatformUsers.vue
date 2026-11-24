@@ -2,7 +2,7 @@
 import { accountErrorMessage } from "../lib/errors.ts";
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import { AccountClient } from "../lib/account-client.ts";
-import policy from "../../../contracts/unified-account/policy.json";
+declare const __AUTH_PLATFORM_CAPABILITIES__: readonly string[];
 const props = defineProps<{ client: AccountClient; capabilities: string[] }>();
 interface User {
   userId: string;
@@ -23,14 +23,7 @@ const users = ref<User[]>([]),
   reason = ref(""),
   busy = ref(false),
   message = ref("");
-const capabilities = [
-  ...new Set(
-    policy.permissions
-      .map((p) => p.authority)
-      .filter((p) => p.startsWith("platform:"))
-      .map((p) => p.slice(9)),
-  ),
-];
+const capabilities = __AUTH_PLATFORM_CAPABILITIES__;
 let active = true;
 onBeforeUnmount(() => {
   active = false;

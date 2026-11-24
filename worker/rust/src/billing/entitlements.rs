@@ -5,15 +5,79 @@ use crate::{
     identity::Auth,
     security::hash,
     tenants::protocol,
-    tenants::{Context, Service},
+    tenants::{ACTIVE_MEMBER, ALL_ROLES, Context, TENANTS, require_member},
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::{D1PreparedStatement, Method, Response};
 
 // Enabled future subscriptions are included to bound negative answers by their next
 // activation. Current results include only starts_at <= evaluatedAt < ends_at.
-const PERSONAL: &str = "SELECT f.feature_id,s.id subscription_id,s.version subscription_version,s.starts_at,s.ends_at,'PERSONAL_SUBSCRIPTION' kind,NULL assignment_id,NULL assignment_version,NULL seat_type_id FROM billing_subscription s JOIN billing_plan_personal_feature f ON f.plan_id=s.plan_id AND f.plan_version=s.plan_version WHERE s.owner_user_id=? AND s.enabled=1 AND s.ends_at>? AND f.feature_id IN (SELECT value FROM json_each(?))";
-const TENANT: &str = "SELECT f.feature_id,s.id subscription_id,s.version subscription_version,s.starts_at,s.ends_at,'TENANT_SEAT' kind,a.id assignment_id,a.version assignment_version,a.seat_type_id FROM billing_seat_assignment a JOIN billing_seat_pool p ON p.subscription_id=a.subscription_id AND p.seat_type_id=a.seat_type_id AND p.tenant_id=a.tenant_id JOIN billing_subscription s ON s.id=a.subscription_id AND s.owner_tenant_id=a.tenant_id JOIN billing_plan_seat_feature f ON f.plan_id=s.plan_id AND f.plan_version=s.plan_version AND f.seat_type_id=a.seat_type_id WHERE a.tenant_id=? AND a.membership_id=? AND a.user_id=? AND a.status='ASSIGNED' AND p.status='CURRENT' AND s.enabled=1 AND s.ends_at>? AND f.feature_id IN (SELECT value FROM json_each(?))";
+const PERSONAL: &str = "SELECT f.feature_id,s.id subscription_id,s.version subscription_version,s.starts_at,s.ends_at,'PERSONAL_SUBSCRIPTION' kind,NULL assignment_id,NULL assignment_version,NULL seat_type_id
+    FROM actor JOIN billing_subscription s ON s.owner_user_id=actor.user_id
+    JOIN billing_plan_personal_feature f ON f.plan_id=s.plan_id AND f.plan_version=s.plan_version
+    WHERE s.enabled=1 AND s.ends_at>? AND f.feature_id IN (SELECT feature_id FROM requested)";
+const TENANT: &str = "SELECT f.feature_id,s.id subscription_id,s.version subscription_version,s.starts_at,s.ends_at,'TENANT_SEAT' kind,a.id assignment_id,a.version assignment_version,a.seat_type_id
+    FROM actor JOIN billing_seat_assignment a ON a.tenant_id=actor.tenant_id AND a.membership_id=actor.membership_id AND a.user_id=actor.user_id
+    JOIN billing_seat_pool p ON p.subscription_id=a.subscription_id AND p.seat_type_id=a.seat_type_id AND p.tenant_id=a.tenant_id
+    JOIN billing_subscription s ON s.id=a.subscription_id AND s.owner_tenant_id=a.tenant_id
+    JOIN billing_plan_seat_feature f ON f.plan_id=s.plan_id AND f.plan_version=s.plan_version AND f.seat_type_id=a.seat_type_id
+    WHERE a.status='ASSIGNED' AND p.status='CURRENT' AND s.enabled=1 AND s.ends_at>? AND f.feature_id IN (SELECT feature_id FROM requested)";
+
+fn sources_statement(
+    a: &Auth,
+    digest: &str,
+    requested: &Value,
+    tenant_id: Option<&Value>,
+    evaluated_at: i64,
+) -> Result<D1PreparedStatement> {
+    let (principal, mut args) = login_sessions::active_actor(a, digest);
+    args.push(requested.clone());
+    let (columns, membership, union) = if let Some(id) = tenant_id {
+        args.extend([id.clone(), json!(ALL_ROLES)]);
+        (
+            ",m.tenant_id,m.id membership_id",
+            "JOIN auth_tenant_membership m ON m.user_id=p.user_id AND m.tenant_id=?
+             AND m.status='ACTIVE' AND m.role IN (SELECT value FROM json_each(?))
+             JOIN auth_managed_tenant t ON t.space_id=m.tenant_id AND t.status='ACTIVE'
+             JOIN auth_space s ON s.id=t.space_id",
+            format!(" UNION ALL {TENANT}"),
+        )
+    } else {
+        ("", "", String::new())
+    };
+    args.push(evaluated_at.into());
+    if tenant_id.is_some() {
+        args.push(evaluated_at.into());
+    }
+    // Overflow is unavailable, never a result computed after dropping a source.
+    a.s.statement(
+        &format!(
+            "WITH principal AS ({principal}), requested AS (SELECT value feature_id FROM json_each(?)),
+             actor AS (
+               SELECT p.user_id{columns} FROM principal p
+               JOIN auth_client_product cp ON cp.client_id=p.client_id {membership}
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM requested r WHERE NOT EXISTS (
+                   SELECT 1 FROM billing_feature f WHERE f.id=r.feature_id AND f.product IN ('SHARED',cp.product)
+                 )
+               )
+             )
+             SELECT * FROM ({PERSONAL}{union}) ORDER BY feature_id,kind,subscription_id,assignment_id
+             LIMIT CASE WHEN EXISTS (SELECT 1 FROM actor) THEN 100001 ELSE 0 END"
+        ),
+        args,
+    )
+}
+
+fn first(rows: &mut impl Iterator<Item = Vec<Value>>) -> Result<Value> {
+    Ok(rows
+        .next()
+        .ok_or_else(Failure::unavailable)?
+        .into_iter()
+        .next()
+        .unwrap_or(Value::Null))
+}
+
 fn source(r: &Value) -> Value {
     if r["kind"] == "PERSONAL_SUBSCRIPTION" {
         json!({"kind":r["kind"],"subscriptionId":r["subscription_id"]})
@@ -21,8 +85,7 @@ fn source(r: &Value) -> Value {
         json!({"kind":r["kind"],"subscriptionId":r["subscription_id"],"seatTypeId":r["seat_type_id"],"assignmentId":r["assignment_id"]})
     }
 }
-pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
-    let (s, c) = login_sessions::active(a).await?;
+async fn check_request(a: &mut Auth, method: Method) -> Result<Value> {
     ensure(
         method == Method::Post,
         501,
@@ -35,34 +98,77 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
     )?;
     let b: Value = serde_json::from_str(&crate::app::bounded(a, 32768).await?)?;
     shape("EntitlementCheckRequest", &b)?;
-    let service = Service { a, s, c };
-    let product =
-        a.s.one(
-            "SELECT * FROM auth_client_product WHERE client_id=?",
-            vec![service.s["client_id"].clone()],
-        )
-        .await?;
-    ensure(!product.is_null(), 403, "POLICY_MISMATCH")?;
-    let mut ctx = Context::new();
-    if b["scope"]["kind"] == "TENANT" {
-        service
-            .member_context(
-                &mut ctx,
-                &text(&b["scope"], "tenantId"),
-                &["OWNER", "ADMIN", "MEMBER"],
-            )
-            .await?;
-    }
+    Ok(b)
+}
+
+pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
+    let authorization = a.header("Authorization");
+    let origin = a.header("Origin");
+    let (digest, credential) =
+        login_sessions::active_lookup(a, login_sessions::bearer(&authorization))?;
+    let b = match check_request(a, method).await {
+        Ok(b) => b,
+        Err(error) => {
+            // A malformed request still reports the credential or policy failure first.
+            let row = a.s.first(credential).await?;
+            login_sessions::active_result(a, row, digest, &origin)?;
+            return Err(error);
+        }
+    };
     let feature_ids = b["featureIds"]
         .as_array()
         .ok_or_else(Failure::invalid_request)?;
-    let requested = b["featureIds"].to_string();
-    let features =
-        a.s.all(
+    let requested = &b["featureIds"];
+    let tenant_id = (b["scope"]["kind"] == "TENANT").then(|| &b["scope"]["tenantId"]);
+    let n = now();
+    let who = login_sessions::ACCESS_USER_ID;
+    let mut statements = vec![
+        credential,
+        a.s.statement(
+            "SELECT * FROM auth_client_product WHERE client_id=(
+             SELECT s.client_id FROM auth_login_access_token t
+             JOIN auth_login_session s ON s.id=t.login_session_id WHERE t.token_hash=?
+             )",
+            vec![digest.clone().into()],
+        )?,
+    ];
+    if let Some(id) = tenant_id {
+        statements.extend([
+            a.s.statement(&format!("{TENANTS} WHERE t.space_id=?"), vec![id.clone()])?,
+            a.s.statement(
+                &format!(
+                    "SELECT * FROM auth_tenant_membership WHERE user_id={who} AND {ACTIVE_MEMBER}"
+                ),
+                vec![digest.clone().into(), id.clone()],
+            )?,
+        ]);
+    }
+    statements.extend([
+        a.s.statement(
             "SELECT id,product FROM billing_feature WHERE id IN (SELECT value FROM json_each(?))",
-            vec![requested.clone().into()],
-        )
-        .await?;
+            vec![requested.clone()],
+        )?,
+        a.s.statement(
+            &format!("SELECT COALESCE((SELECT version FROM billing_user_revision WHERE user_id={who}),0) version"),
+            vec![digest.clone().into()],
+        )?,
+        sources_statement(a, &digest, requested, tenant_id, n)?,
+        a.s.statement(
+            "SELECT CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) db_now",
+            vec![],
+        )?,
+    ]);
+    let mut snapshot = a.s.batch_read(statements).await?.into_iter();
+    let (session, _) = login_sessions::active_result(a, first(&mut snapshot)?, digest, &origin)?;
+    let product = first(&mut snapshot)?;
+    ensure(!product.is_null(), 403, "POLICY_MISMATCH")?;
+    let mut ctx = Context::new();
+    if tenant_id.is_some() {
+        ctx.tenant = first(&mut snapshot)?;
+        ctx.member = first(&mut snapshot)?;
+        require_member(&ctx, ALL_ROLES)?;
+    }
+    let features = snapshot.next().ok_or_else(Failure::unavailable)?;
     ensure(
         features.len() == feature_ids.len()
             && features
@@ -71,34 +177,15 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
         400,
         "FEATURE_UNKNOWN",
     )?;
-    let user_revision=a.s.one("SELECT COALESCE((SELECT version FROM billing_user_revision WHERE user_id=?),0) version",vec![service.user()]).await?;
-    let n = now();
-    let mut sql = PERSONAL.to_string();
-    let mut args = vec![service.user(), n.into(), requested.clone().into()];
-    if !ctx.member.is_null() {
-        sql.push_str(" UNION ALL ");
-        sql.push_str(TENANT);
-        args.extend([
-            ctx.tenant["id"].clone(),
-            ctx.member["id"].clone(),
-            service.user(),
-            n.into(),
-            requested.into(),
-        ]);
-    }
-    // Bound work to the response contract. Overflow is an unavailable result, never
-    // a partial allow/deny computed after silently dropping a source.
-    let rows=a.s.all(&format!("SELECT * FROM ({sql}) ORDER BY feature_id,kind,subscription_id,assignment_id LIMIT 100001"),args).await?;
+    let user_revision = first(&mut snapshot)?;
+    let rows = snapshot.next().ok_or_else(Failure::unavailable)?;
     ensure(rows.len() <= 100000, 503, "AUTH_UNAVAILABLE")?;
-    let access =
-        a.s.one(
-            "SELECT expires_at FROM auth_login_access_token WHERE token_hash=?",
-            vec![service.s["access_hash"].clone()],
-        )
-        .await?;
-    let mut until = number(&service.s, "absolute_expires_at")
-        .min(number(&service.s, "last_active_at") + protocol::ttl("loginIdleSeconds"))
-        .min(number(&access, "expires_at"));
+    let db_now = first(&mut snapshot)?["db_now"]
+        .as_i64()
+        .ok_or_else(Failure::unavailable)?;
+    let mut until = number(&session, "absolute_expires_at")
+        .min(number(&session, "last_active_at") + protocol::ttl("loginIdleSeconds"))
+        .min(number(&session, "access_expires_at"));
     for r in &rows {
         until = until.min(if number(r, "starts_at") > n {
             number(r, "starts_at")
@@ -119,36 +206,9 @@ pub async fn route(a: &mut Auth, method: Method) -> Result<Response> {
     }
     // Sources/decisions are included so crossing a start/end changes the revision even
     // without a database write. evaluatedAt is excluded to keep unchanged reads stable.
-    let revision=hash(&json!({"user":service.user(),"client":service.s["client_id"],"product":product,"scope":b["scope"],"features":b["featureIds"],"userRevision":user_revision["version"],"tenantRevision":ctx.tenant["entitlement_revision"],"tenantVersion":ctx.tenant["version"],"membership":ctx.member,"sessionRevision":service.s["session_revision"],"rows":rows,"decisions":decisions}).to_string());
-    let mut guards = protocol::base(&service)?;
-    guards.extend(ctx.guards);
-    guards.push(a.s.guard(
-        "EXISTS(SELECT 1 FROM auth_client_product WHERE client_id=? AND product=? AND version=?)",
-        vec![
-            service.s["client_id"].clone(),
-            product["product"].clone(),
-            product["version"].clone(),
-        ],
-    )?);
-    guards.push(a.s.guard(
-        "COALESCE((SELECT version FROM billing_user_revision WHERE user_id=?),0)=?",
-        vec![service.user(), user_revision["version"].clone()],
-    )?);
-    if !ctx.tenant.is_null() {
-        guards.push(a.s.guard(
-            "EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND entitlement_revision=?)",
-            vec![
-                ctx.tenant["id"].clone(),
-                ctx.tenant["entitlement_revision"].clone(),
-            ],
-        )?);
-    }
-    // Re-evaluate rather than return a result computed before a time boundary passed.
-    guards.push(a.s.guard(
-        "CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)<?",
-        vec![until.into()],
-    )?);
-    a.s.batch(guards, "VERSION_CONFLICT").await?;
+    let revision=hash(&json!({"user":session["user_id"],"client":session["client_id"],"product":product,"scope":b["scope"],"features":b["featureIds"],"userRevision":user_revision["version"],"tenantRevision":ctx.tenant["entitlement_revision"],"tenantVersion":ctx.tenant["version"],"membership":ctx.member,"sessionRevision":session["session_revision"],"rows":rows,"decisions":decisions}).to_string());
+    // A boundary reached while reading or constructing the result requires re-evaluation.
+    ensure(until > db_now.max(now()), 409, "VERSION_CONFLICT")?;
     Ok(json_response(
         json!({"data":{"scope":b["scope"],"evaluatedAt":iso(&json!(n)),"revision":revision,"decisions":decisions},"requestId":a.request_id}),
         200,

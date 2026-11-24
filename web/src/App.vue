@@ -6,15 +6,16 @@ import {
   type AccountView,
 } from "./lib/account-client.ts";
 import type { AuthCompletion } from "./lib/auth-flow.ts";
-import AccountSecurityEditor from "./components/AccountSecurityEditor.vue";
 import AuthEntry from "./components/AuthEntry.vue";
 import AuthEntryShell from "./components/AuthEntryShell.vue";
-import AccountProfile from "./components/AccountProfile.vue";
 import { entryText } from "./lib/entry-copy.ts";
 import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
 import { accountErrorMessage } from "./lib/errors.ts";
 import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./lib/idempotent-submit.ts";
 import logo from "./assets/molis-logo.png";
+const ConsoleShell = defineAsyncComponent(() => import("./components/ConsoleShell.vue"));
+const AccountProfile = defineAsyncComponent(() => import("./components/AccountProfile.vue"));
+const AccountSecurityEditor = defineAsyncComponent(() => import("./components/AccountSecurityEditor.vue"));
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
@@ -41,9 +42,11 @@ const starting = computed(() => !account.value || startup.value !== 'ready');
 const onLoginEntry = location.pathname === '/login';
 const prefetchedCapabilities = shallowRef<ReturnType<AccountClient['loginCapabilities']>>();
 const SESSION_CHECK_COOLDOWN_MS = 30_000;
+const OPEN_ACTIVITY_DELAY_MS = 150;
 let lastSessionCheckAt: number | undefined;
 let accountScope = 0;
 let openReported = false;
+let openActivityTimer: ReturnType<typeof setTimeout> | undefined;
 let profileMethodsRequested = false;
 let methodsRequest = 0;
 interface Application {
@@ -165,13 +168,15 @@ async function refreshAccount() {
 function confirmAccount(current: AccountView) {
   if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) {
     accountScope++;
+    cancelOpenActivity();
+    openReported = false;
   }
   lastSessionCheckAt = Date.now();
   account.value = current;
   if (current.state === "AUTHENTICATED") {
     document.documentElement.lang = 'zh-CN';
     prefetchedCapabilities.value = undefined;
-    void reportOpenActivity();
+    scheduleOpenActivity();
   }
 }
 async function initializeSession() {
@@ -198,10 +203,22 @@ async function initializeSession() {
   }
   startup.value = 'ready';
 }
-async function reportOpenActivity() {
-  if (openReported) return;
-  openReported = true;
+function cancelOpenActivity() {
+  clearTimeout(openActivityTimer);
+  openActivityTimer = undefined;
+}
+function scheduleOpenActivity() {
+  if (openReported || openActivityTimer !== undefined) return;
   const scope = accountScope;
+  // Let the account watcher queue the initial login-methods read before this write.
+  openActivityTimer = setTimeout(() => {
+    openActivityTimer = undefined;
+    if (scope !== accountScope || account.value?.state !== "AUTHENTICATED") return;
+    openReported = true;
+    void reportOpenActivity(scope);
+  }, OPEN_ACTIVITY_DELAY_MS);
+}
+async function reportOpenActivity(scope: number) {
   try {
     await client.request("/activity", {
       eventId: crypto.randomUUID(),
@@ -265,17 +282,22 @@ async function submitWrite<T>(
     success = "已完成", refreshMessage = "操作已完成，但相关数据暂未刷新。",
   } = options;
   const section = page.value;
+  const scope = accountScope;
   await refreshAfterWrite(
     () => submissions.send(action, method, path, editGeneration ?? body,
       key => client.request<T>(path, body, method, key)),
     result => {
+      if (scope !== accountScope) throw new AuthError("CANCELLED");
       refreshIssues.delete(action);
       committed?.(result);
       showToast(success);
     },
-    after,
+    async result => {
+      if (scope !== accountScope) throw new AuthError("CANCELLED");
+      await after(result);
+    },
     (error, retry) => {
-      if (expireAccount(error) || (error instanceof AuthError && error.code === "CANCELLED")) return;
+      if (scope !== accountScope || expireAccount(error) || (error instanceof AuthError && error.code === "CANCELLED")) return;
       refreshIssues.set(action, { page: section, message: refreshMessage, retry });
     },
   );
@@ -296,7 +318,9 @@ function retryRefresh(action: string) {
   return run(async () => {
     const issue = refreshIssues.get(action);
     if (!issue) return;
+    const scope = accountScope;
     await issue.retry();
+    if (scope !== accountScope || refreshIssues.get(action) !== issue) return;
     refreshIssues.delete(action);
     showToast("已刷新");
   });
@@ -434,6 +458,7 @@ async function finishSecurity(identityHandle?: string) {
 }
 async function logout(all = false) {
   await run(async () => {
+    cancelOpenActivity();
     const result = await client.logout(all);
     clearAccount();
     rememberEmail("");
@@ -446,6 +471,7 @@ async function logout(all = false) {
 }
 function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   accountScope++;
+  cancelOpenActivity();
   prefetchedCapabilities.value = undefined;
   lastSessionCheckAt = undefined;
   openReported = false;
@@ -506,6 +532,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   accountScope++;
+  cancelOpenActivity();
   clearToast();
   client.close(); sessionChanges?.close();
   window.removeEventListener('focus', checkSession);
@@ -530,7 +557,7 @@ onBeforeUnmount(() => {
     </component>
     <AuthEntry v-else :key="accountScope" :client="client" :busy="busy" :language="language" :prefetched-capabilities="prefetchedCapabilities" @authenticating="authenticating = $event" @complete="loggedIn" />
   </AuthEntryShell>
-  <div v-else class="console-shell v2-console">
+  <ConsoleShell v-else>
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
         <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">Molis AI</strong></a>
@@ -619,6 +646,7 @@ onBeforeUnmount(() => {
       </section>
       <TenantPage
         v-if="page === 'tenants'"
+        :key="accountScope"
         :client="client"
         :busy="busy"
         :mutate="mutate"
@@ -696,58 +724,11 @@ onBeforeUnmount(() => {
       </section>
     </main>
     </div>
-  </div>
+  </ConsoleShell>
 </template>
 <style>
-.console-shell.v2-console {
-  display: block;
-  min-height: 100svh;
-}
-.v2-console,
-.v2-console * {
-  box-sizing: border-box;
-}
-.v2-console > .console-header {
-  flex-wrap: wrap;
-}
-.v2-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-}
-.v2-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-.console-shell button {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 14px;
-  background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-  min-height: 40px;
-}
-.console-shell button:enabled:hover {
-  background: var(--accent-soft);
-}
-.console-shell button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
 .v2-form {
   max-width: 520px;
-}
-.console-tabs {
-  flex-wrap: wrap;
-}
-.console-shell footer {
-  margin-top: 30px;
 }
 </style>
 

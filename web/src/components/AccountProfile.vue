@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from 'vue';
+import { defineAsyncComponent, nextTick, onBeforeUnmount, ref } from 'vue';
 import { AccountClient, AuthError, type AccountView } from '../lib/account-client.ts';
-import AvatarCropper from './AvatarCropper.vue';
 import { accountErrorMessage } from '../lib/errors.ts';
+import '../styles/profile.css';
+
+const AvatarCropper = defineAsyncComponent(() => import('./AvatarCropper.vue'));
 const props = defineProps<{ user: NonNullable<AccountView['user']>; githubAccount?: string; client: AccountClient; onSaved: () => Promise<void> }>();
 const emit = defineEmits<{ expired: [error: AuthError] }>();
 const profilePicker = ref<HTMLInputElement>();
