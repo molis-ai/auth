@@ -10,6 +10,7 @@ const ITERATIONS: u32 = 600_000;
 const SALT_BYTES: usize = 16;
 const KEY_BYTES: usize = 32;
 const MAX_BODY_BYTES: usize = 4096;
+const KDF_POOL_SIZE: usize = 16;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -59,9 +60,11 @@ impl DurableObject for PasswordKdf {
 
 pub async fn remote_derive(password: &str, salt: &[u8], env: &Env) -> Result<Vec<u8>> {
     let namespace = env.durable_object("PASSWORD_KDF")?;
-    // A new stateless instance per computation avoids serializing all logins
-    // behind one object. No password, salt or derived key is persisted.
-    let stub = namespace.unique_id()?.get_stub()?;
+    // Spread requests across reusable names. The runtime may evict any instance.
+    let slot = (js_sys::Math::random() * KDF_POOL_SIZE as f64) as usize;
+    let stub = namespace
+        .id_from_name(&format!("password-kdf-pool-{slot}"))?
+        .get_stub()?;
     let body = serde_json::to_string(&Derivation {
         password: password.to_owned(),
         salt: hex::encode(salt),

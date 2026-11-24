@@ -8,7 +8,7 @@ const points = {
   cleanup: ['first', "SET status='READY',busy_until=0"],
   save: ['batch', 'UPDATE auth_web_session SET payload=? WHERE id_hash=?'],
   business: ['batch', 'UPDATE auth_user SET display_name='],
-  'refresh-used': ['first', 'SELECT * FROM auth_login_refresh_token WHERE token_hash='],
+  'refresh-used': ['first', 'FROM auth_login_refresh_token t JOIN auth_login_session s'],
   'refresh-race': ['batch', 'UPDATE auth_login_refresh_token SET used_at='],
   promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
   'session-read-after': ['first', 'SELECT revision,status,busy_until,payload', 'after'],
@@ -21,17 +21,19 @@ const points = {
 }
 
 class D1Database {
-  constructor(db, pause, transform = (sql) => sql) {
+  constructor(db, pause, transform = (sql) => sql, plans) {
     this.db = db
     this.pause = pause
     this.transform = transform
+    this.plans = plans
   }
 
-  prepare(sql, statement = this.db.prepare(this.transform(sql))) {
+  prepare(sql, statement = this.db.prepare(this.transform(sql)), values = []) {
     return {
       sql,
       statement,
-      bind: (...args) => this.prepare(sql, statement.bind(...args)),
+      values,
+      bind: (...args) => this.prepare(sql, statement.bind(...args), args),
       first: async (...args) => {
         await this.pause('first', [sql])
         const result = await statement.first(...args)
@@ -54,6 +56,17 @@ class D1Database {
     await this.pause('batch', queries)
     const result = await this.db.batch(statements.map((entry) => entry.statement))
     await this.pause('batch', queries, 'after')
+    if (this.plans) {
+      for (const { sql, values } of statements) {
+        if (sql.startsWith('WITH actor AS (SELECT') && sql.includes('WHERE id>? ORDER BY id')) {
+          const plan = await this.db
+            .prepare('EXPLAIN QUERY PLAN ' + sql)
+            .bind(...values)
+            .all()
+          this.plans.push(plan.results.map((row) => row.detail))
+        }
+      }
+    }
     return result
   }
 }
@@ -72,6 +85,7 @@ export default {
     }
     const traceTag = [
       'managed-list-trace',
+      'managed-list-explain',
       'managed-list-poison',
       'managed-list-broken',
       'web-session-trace',
@@ -79,6 +93,7 @@ export default {
     ].includes(tag)
     const trace = traceTag || request.headers.get('X-Fixture-D1-Trace') === '1'
     const counts = { read: 0, write: 0 }
+    const plans = tag === 'managed-list-explain' ? [] : undefined
     let protectedQueries = 0
     const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
     const count = (statements, moment) => {
@@ -93,6 +108,7 @@ export default {
         response.headers.set('X-Fixture-D1-Calls', JSON.stringify(counts))
         response.headers.set('X-Fixture-Protected-Queries', String(protectedQueries))
       }
+      if (plans) response.headers.set('X-Fixture-Query-Plans', JSON.stringify(plans))
       return response
     }
     if (traceTag) {
@@ -110,6 +126,7 @@ export default {
             return sql.replace(') SELECT * FROM (', ') SELECT * FROM fixture_missing_table JOIN (')
           return sql
         },
+        plans,
       )
       return respond(DB)
     }

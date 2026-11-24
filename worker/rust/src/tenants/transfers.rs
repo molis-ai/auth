@@ -12,12 +12,15 @@ fn view(r: &Value) -> Value {
 pub fn list() -> Read {
     Read::page(
         format!(
-            "SELECT x.* FROM auth_ownership_transfer x
+            "SELECT x.* FROM auth_tenant_membership f
+                 JOIN auth_ownership_transfer x ON x.from_membership_id=f.id
                  JOIN auth_managed_tenant t ON t.space_id=x.tenant_id
-                 JOIN auth_tenant_membership f ON f.id=x.from_membership_id
-                 JOIN auth_tenant_membership m ON m.id=x.to_membership_id
-                 WHERE t.status='ACTIVE' AND ((f.user_id={ACTOR} AND f.status='ACTIVE') OR
-                 (m.user_id={ACTOR} AND m.status='ACTIVE'))"
+                 WHERE t.status='ACTIVE' AND f.user_id={ACTOR} AND f.status='ACTIVE'
+             UNION
+             SELECT x.* FROM auth_tenant_membership m
+                 JOIN auth_ownership_transfer x ON x.to_membership_id=m.id
+                 JOIN auth_managed_tenant t ON t.space_id=x.tenant_id
+                 WHERE t.status='ACTIVE' AND m.user_id={ACTOR} AND m.status='ACTIVE'"
         ),
         vec![],
         |row| Ok(view(row)),

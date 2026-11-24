@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { secret, challenge, hash } from './fixtures.ts'
@@ -77,6 +78,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         }),
       )
       const counts = r.headers.get('X-Fixture-D1-Calls')
+      const plans = r.headers.get('X-Fixture-Query-Plans')
       return {
         status: r.status,
         ...(await r.json()),
@@ -86,6 +88,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
               protectedQueries: Number(r.headers.get('X-Fixture-Protected-Queries')),
             }
           : {}),
+        ...(plans ? { plans: JSON.parse(plans) as string[][] } : {}),
       }
     }
     function ok(r: any, schema?: string) {
@@ -1484,6 +1487,281 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
               .first()
           ).n,
           1,
+        )
+      },
+    )
+    await suite.test(
+      '0021 ranges and recipient indexes serve actual first and cursor pages',
+      async (t) => {
+        const focus = await create('Pagination fixture tenant', owner.userId)
+        const disabled = await create('Disabled fixture tenant', owner.userId)
+        const focusOwner = (await members(focus.tenantId))[0].membershipId
+        const disabledOwner = (await members(disabled.tenantId))[0].membershipId
+        const focusMember = randomUUID()
+        const historyMember = randomUUID()
+        const disabledMember = randomUUID()
+        const expiry = Date.now() + 3_600_000
+        const workApp = 'molis-work-unified-local-app'
+        await permission(platform, 'CLIENT_READ')
+        await db.batch([
+          db
+            .prepare("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?")
+            .bind(disabled.tenantId),
+          db
+            .prepare(
+              `INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at,ended_at)
+          VALUES (?,?,?,'MEMBER','ACTIVE',0,NULL),(?,?,?,'MEMBER','LEFT',0,1),
+                 (?,?,?,'MEMBER','ACTIVE',0,NULL)`,
+            )
+            .bind(
+              focusMember,
+              focus.tenantId,
+              member.userId,
+              historyMember,
+              focus.tenantId,
+              owner.userId,
+              disabledMember,
+              disabled.tenantId,
+              member.userId,
+            ),
+          db
+            .prepare(
+              `INSERT INTO auth_user_email VALUES
+          ('fixture-email',?,'page@example.test',1,0),
+          ('fixture-email-unverified',?,'unverified-page@example.test',NULL,0),
+          ('fixture-email-unrelated',?,'unrelated-page@example.test',1,0)`,
+            )
+            .bind(owner.userId, owner.userId, outsider.userId),
+        ])
+
+        // A selective actor and tenant amid unrelated rows. Several rows share each
+        // tenant/application so the planner must also range and order by cursor id.
+        const series =
+          'WITH RECURSIVE fixture(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM fixture WHERE n<2048)'
+        await db.batch([
+          db.prepare(`${series} INSERT INTO auth_user
+          SELECT 'fixture-user-'||n,'Fixture User','ACTIVE',NULL,0,0 FROM fixture WHERE n<=512`),
+          db.prepare(`${series} INSERT INTO auth_user_email
+          SELECT 'fixture-email-'||n,'fixture-user-'||n,'fixture-'||n||'@example.test',1,0 FROM fixture WHERE n<=512`),
+          db.prepare(`${series} INSERT INTO auth_user_phone
+          SELECT 'fixture-phone-'||n,'fixture-user-'||n,printf('+86139%08d',n),1,0 FROM fixture WHERE n<=512`),
+          db.prepare(`${series} INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at)
+          SELECT 'fixture-space-'||n,'Fixture Space','TEAM','ACTIVE',0,0 FROM fixture WHERE n<=256`),
+          db.prepare(`${series} INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at)
+          SELECT 'fixture-space-'||n,'ACTIVE','fixture-user-'||n,0,0 FROM fixture WHERE n<=256`),
+          db.prepare(`${series} INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at)
+          SELECT 'fixture-membership-'||n,'fixture-space-'||(1+(n-1)%256),'fixture-user-'||n,
+                 CASE WHEN n<=256 THEN 'OWNER' ELSE 'MEMBER' END,'ACTIVE',0
+          FROM fixture WHERE n<=512`),
+          db
+            .prepare(
+              `${series} INSERT INTO auth_ownership_transfer
+          (id,tenant_id,from_membership_id,to_membership_id,status,created_at,expires_at)
+          SELECT 'fixture-transfer-'||n,'fixture-space-'||(1+(n-1)%256),
+                 'fixture-membership-'||(1+(n-1)%256),'fixture-membership-'||(257+(n-1)%256),
+                 'CANCELLED',0,? FROM fixture`,
+            )
+            .bind(expiry),
+          db
+            .prepare(
+              `${series} INSERT INTO auth_tenant_invitation
+          (id,tenant_id,target_kind,target_user_id,target_email,target_phone,inviter_membership_id,status,created_at,expires_at)
+          SELECT 'fixture-invite-'||n,'fixture-space-'||(1+(n-1)%256),
+                 CASE n%3 WHEN 0 THEN 'USER' WHEN 1 THEN 'EMAIL' ELSE 'PHONE' END,
+                 CASE n%3 WHEN 0 THEN 'fixture-user-'||(1+(n-1)%512) END,
+                 CASE n%3 WHEN 1 THEN 'fixture-'||(1+(n-1)%512)||'@example.test' END,
+                 CASE n%3 WHEN 2 THEN printf('+86139%08d',1+(n-1)%512) END,
+                 'fixture-membership-'||(1+(n-1)%256),'PENDING',0,? FROM fixture`,
+            )
+            .bind(expiry),
+          db.prepare(`${series} INSERT INTO auth_application(id,name)
+          SELECT 'fixture-app-'||n,'Fixture Application' FROM fixture WHERE n<=256`),
+          db
+            .prepare(
+              `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
+          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'CLI','[]','[]'
+          FROM fixture UNION ALL SELECT 'fixture-work-client','fixture-work-client',?,'CLI','[]','[]'`,
+            )
+            .bind(workApp),
+          db.prepare(`INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
+          SELECT client_id,'unified-account-v2','unified-local','[]',0,0 FROM auth_client WHERE client_id LIKE 'fixture-%'`),
+          db.prepare(`INSERT INTO auth_client_product(client_id,product)
+          SELECT client_id,'WORK' FROM auth_client WHERE client_id LIKE 'fixture-%'`),
+          db.prepare(`${series} INSERT INTO auth_management_audit
+          (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
+          SELECT 'fixture-audit-'||n,'fixture-user-'||(1+(n-1)%256),'molis-work-unified-local',
+                 'fixture-space-'||(1+(n-1)%256),'fixture','TENANT','fixture-space-'||(1+(n-1)%256),
+                 'SUCCESS','fixture-request',0 FROM fixture`),
+        ])
+
+        const inviteIds = Array.from({ length: 8 }, () => randomUUID())
+        const inviteValues = [
+          ['USER', owner.userId, null, null, focus.tenantId, focusOwner, 'PENDING', expiry],
+          ['EMAIL', null, 'page@example.test', null, focus.tenantId, focusOwner, 'PENDING', expiry],
+          ['PHONE', null, null, '+8613800000102', focus.tenantId, focusOwner, 'PENDING', expiry],
+          [
+            'EMAIL',
+            null,
+            'unverified-page@example.test',
+            null,
+            focus.tenantId,
+            focusOwner,
+            'PENDING',
+            expiry,
+          ],
+          [
+            'EMAIL',
+            null,
+            'unrelated-page@example.test',
+            null,
+            focus.tenantId,
+            focusOwner,
+            'PENDING',
+            expiry,
+          ],
+          ['USER', owner.userId, null, null, focus.tenantId, focusOwner, 'PENDING', 1],
+          ['USER', owner.userId, null, null, disabled.tenantId, disabledOwner, 'PENDING', expiry],
+          ['USER', owner.userId, null, null, focus.tenantId, focusOwner, 'DECLINED', expiry],
+        ]
+        const transferIds = Array.from({ length: 5 }, () => randomUUID())
+        await db.batch([
+          ...inviteValues.map((row, i) =>
+            db
+              .prepare(
+                `INSERT INTO auth_tenant_invitation
+              (id,target_kind,target_user_id,target_email,target_phone,tenant_id,inviter_membership_id,status,created_at,expires_at)
+              VALUES (?,?,?,?,?,?,?,?,0,?)`,
+              )
+              .bind(inviteIds[i], ...row),
+          ),
+          ...[
+            [focus.tenantId, focusOwner, focusMember, 'CANCELLED', expiry],
+            [focus.tenantId, focusMember, focusOwner, 'PENDING', 1],
+            [focus.tenantId, focusMember, historyMember, 'CANCELLED', expiry],
+            [focus.tenantId, focusOwner, historyMember, 'ACCEPTED', expiry],
+            [disabled.tenantId, disabledOwner, disabledMember, 'CANCELLED', expiry],
+          ].map(([tenantId, from, to, status, expires], i) =>
+            db
+              .prepare(
+                `INSERT INTO auth_ownership_transfer
+              (id,tenant_id,from_membership_id,to_membership_id,status,created_at,expires_at)
+              VALUES (?,?,?,?,?,0,?)`,
+              )
+              .bind(transferIds[i], tenantId, from, to, status, expires),
+          ),
+          db
+            .prepare(
+              `INSERT INTO auth_management_audit
+          (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
+          SELECT id,?,'molis-work-unified-local',?,'fixture','TENANT',?,'SUCCESS','fixture-request',1
+          FROM (SELECT ? AS id UNION ALL SELECT ?)`,
+            )
+            .bind(owner.userId, focus.tenantId, focus.tenantId, randomUUID(), randomUUID()),
+        ])
+        await db.prepare('ANALYZE').run()
+
+        async function walk(path: string, actor: any, indexes: string[]) {
+          const items: any[] = []
+          let cursor: string | null = null
+          let pageNumber = 0
+          do {
+            const response = await call(
+              path + '?limit=1' + (cursor ? '&cursor=' + cursor : ''),
+              undefined,
+              actor,
+              secret(),
+              'GET',
+              undefined,
+              'managed-list-explain',
+            )
+            const page = ok(response)
+            assert.equal(page.items.length, 1)
+            assert.equal(response.plans?.length, 1)
+            const plan = response.plans![0]
+            for (const index of indexes)
+              assert.ok(
+                plan.some((line) => line.startsWith('SEARCH ') && line.includes(index)),
+                path + '\n' + plan.join('\n'),
+              )
+            assert.doesNotMatch(
+              plan.join('\n'),
+              /^SCAN (x|i|m|f|email|phone|c|cp|p|u|t|auth_[a-z_]+)\b/m,
+            )
+            if (++pageNumber <= 2) {
+              const details = plan.filter((line) =>
+                /^(SEARCH (x|i|m|f|e|email|phone|p|c|t|u|cp|auth_[a-z_]+)\b|SCAN |UNION |USE TEMP )/.test(
+                  line,
+                ),
+              )
+              t.diagnostic(path + ' page ' + pageNumber + '\n' + details.join('\n'))
+            }
+            const next: string | null = page.nextCursor
+            if (cursor) {
+              assert.deepEqual(
+                ok(await call(path + '?limit=1&cursor=' + cursor, undefined, actor)).items,
+                page.items,
+              )
+            }
+            items.push(...page.items)
+            assert.ok(pageNumber < 20, 'Unexpected page count for focused fixture')
+            cursor = next
+          } while (cursor)
+          return items
+        }
+        const transfers = await walk('/ownership-transfers', owner, [
+          'ix_tenant_membership_user',
+          'ix_ownership_transfer_from',
+          'ix_ownership_transfer_to',
+        ])
+        const listedTransferIds = transfers.map((item) => item.transferId)
+        assert.deepEqual(listedTransferIds, [...new Set(listedTransferIds)].sort())
+        const focusedTransfers = transfers.filter((item) => item.tenantId === focus.tenantId)
+        assert.deepEqual(
+          focusedTransfers.map((item) => item.transferId),
+          [transferIds[0], transferIds[1], transferIds[3]].sort(),
+        )
+        assert.ok(!transfers.some((item) => item.tenantId === disabled.tenantId))
+        assert.equal(
+          focusedTransfers.find((item) => item.transferId === transferIds[1]).status,
+          'EXPIRED',
+        )
+        const invitationList = await walk('/invitations', owner, [
+          'ix_tenant_invitation_user',
+          'ix_tenant_invitation_email',
+          'ix_tenant_invitation_phone',
+        ])
+        const listedInvitationIds = invitationList.map((item) => item.invitationId)
+        assert.deepEqual(listedInvitationIds, [...new Set(listedInvitationIds)].sort())
+        assert.deepEqual(
+          invitationList
+            .filter((item) => item.tenantId === focus.tenantId)
+            .map((item) => item.invitationId),
+          inviteIds.slice(0, 3).sort(),
+        )
+        assert.ok(!invitationList.some((item) => item.tenantId === disabled.tenantId))
+        assert.equal(
+          (
+            await walk('/tenants/' + focus.tenantId + '/members', owner, [
+              'ix_tenant_membership_tenant_status_id',
+              'ix_user_email_user',
+            ])
+          ).length,
+          2,
+        )
+        assert.equal(
+          (
+            await walk('/platform/applications/' + workApp + '/clients', platform, [
+              'ix_client_application_id',
+            ])
+          ).length,
+          2,
+        )
+        assert.ok(
+          (
+            await walk('/tenants/' + focus.tenantId + '/audit-events', owner, [
+              'ix_management_audit_tenant_id',
+            ])
+          ).length >= 2,
         )
       },
     )

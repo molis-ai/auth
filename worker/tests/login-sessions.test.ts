@@ -224,15 +224,22 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(refreshed.status, 200)
     assert.equal(refreshed.data.session.lastActiveAt, before)
     assert.equal(refreshed.data.session.authenticatedAt, a.session.authenticatedAt)
+    for (const [clientId, refreshToken] of [
+      [work, secret()],
+      [club, refreshed.data.refreshToken],
+      [club, a.refreshToken],
+    ]) {
+      const wrongGrant = await call('/auth/token', {
+        grantType: 'refresh_token',
+        clientId,
+        refreshToken,
+      })
+      assert.equal(wrongGrant.status, 401)
+      assert.equal(wrongGrant.error.code, 'INVALID_GRANT')
+    }
     assert.equal(
-      (
-        await call('/auth/token', {
-          grantType: 'refresh_token',
-          clientId: club,
-          refreshToken: refreshed.data.refreshToken,
-        })
-      ).status,
-      401,
+      (await call('/sessions/current', undefined, refreshed.data.accessToken)).status,
+      200,
     )
     const replay = await call('/auth/token', {
       grantType: 'refresh_token',
@@ -240,10 +247,18 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       refreshToken: a.refreshToken,
     })
     assert.equal(replay.status, 401)
+    assert.equal(replay.error.code, 'INVALID_GRANT')
     assert.equal(
       (await call('/sessions/current', undefined, refreshed.data.accessToken)).status,
       401,
     )
+    const revokedRefresh = await call('/auth/token', {
+      grantType: 'refresh_token',
+      clientId: work,
+      refreshToken: refreshed.data.refreshToken,
+    })
+    assert.equal(revokedRefresh.status, 401)
+    assert.equal(revokedRefresh.error.code, 'SESSION_EXPIRED')
     assert.equal((await call('/sessions/current', undefined, b.accessToken)).status, 200)
     const event = { eventId: 'event-one', kind: 'INTERACT' }
     const activity = (body: typeof event, barrier?: string) =>

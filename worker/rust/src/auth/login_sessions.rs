@@ -76,8 +76,17 @@ pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
 pub(crate) fn client_guard(a: &Auth, c: &Value) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id JOIN auth_client_policy p ON p.client_id=c.client_id JOIN auth_environment e ON e.id=p.environment_id WHERE c.client_id=? AND c.version=? AND p.version=? AND e.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND e.status='ACTIVE' AND p.policy_profile='unified-account-v2')",vec![c["client_id"].clone(),c["version"].clone(),c["policy_version"].clone(),c["environment_version"].clone()])
 }
+const SESSION_COLUMNS: &str =
+    "s.*,c.application_id,us.session_epoch current_epoch,u.status user_status";
+const SESSION_JOINS: &str = "JOIN auth_user_security us ON us.user_id=s.user_id
+     JOIN auth_user u ON u.id=s.user_id JOIN auth_client c ON c.client_id=s.client_id";
+
 pub(crate) async fn session(a: &Auth, id: &str) -> Result<Value> {
-    a.s.one("SELECT s.*,c.application_id,us.session_epoch current_epoch,u.status user_status FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_client c ON c.client_id=s.client_id WHERE s.id=?",vec![id.into()]).await
+    a.s.one(
+        &format!("SELECT {SESSION_COLUMNS} FROM auth_login_session s {SESSION_JOINS} WHERE s.id=?"),
+        vec![id.into()],
+    )
+    .await
 }
 fn live(s: &Value, n: i64) -> bool {
     !s.is_null()
@@ -288,16 +297,22 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     a.rate_ip("v2-token", 120).await?;
     if b["grantType"] == "refresh_token" {
         let digest = hash(&text(b, "refreshToken"));
-        let t =
+        let s =
             a.s.one(
-                "SELECT * FROM auth_login_refresh_token WHERE token_hash=?",
+                &format!("SELECT {SESSION_COLUMNS},t.generation token_generation,
+                        t.session_revision token_session_revision,t.user_epoch token_user_epoch,
+                        t.expires_at token_expires_at,t.used_at token_used_at
+                 FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id
+                 {SESSION_JOINS} WHERE t.token_hash=?"),
                 vec![digest.clone().into()],
             )
             .await?;
-        ensure(!t.is_null(), 401, "INVALID_GRANT")?;
-        let s = session(a, &text(&t, "login_session_id")).await?;
-        ensure(s["client_id"] == c["client_id"], 401, "INVALID_GRANT")?;
-        if !t["used_at"].is_null() {
+        ensure(
+            !s.is_null() && s["client_id"] == c["client_id"],
+            401,
+            "INVALID_GRANT",
+        )?;
+        if !s["token_used_at"].is_null() {
             revoke_replayed_refresh(a, &s, n).await?;
             return Err(Failure {
                 status: 401,
@@ -306,13 +321,13 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         }
         ensure(
             live(&s, n)
-                && number(&t, "expires_at") > n
-                && t["user_epoch"] == s["user_epoch"]
-                && t["session_revision"] == s["session_revision"],
+                && number(&s, "token_expires_at") > n
+                && s["token_user_epoch"] == s["user_epoch"]
+                && s["token_session_revision"] == s["session_revision"],
             401,
             "SESSION_EXPIRED",
         )?;
-        let (result, new_tokens) = tokens(a, &s, n, number(&t, "generation") + 1)?;
+        let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
         let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?];
         writes.extend(new_tokens);
         writes.push(a.s.audit(
