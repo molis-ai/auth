@@ -860,10 +860,11 @@ test(
       return body.data
     }
 
-    async function conflict(response: Response) {
+    async function conflict(response: Response, retryable = false) {
       assert.equal(response.status, 409)
       assert.equal((await response.json()).error.code, 'VERSION_CONFLICT')
       assert.deepEqual(response.headers.getSetCookie(), [])
+      assert.equal(response.headers.get('Retry-After'), retryable ? '0' : null)
     }
 
     async function browser(): Promise<Browser> {
@@ -901,7 +902,7 @@ test(
         .run()
     }
 
-    async function authenticated({ staleAccess = false, usedRefresh = false } = {}) {
+    async function authenticated({ accessTtlMs = 900_000, usedRefresh = false } = {}) {
       const b = await browser()
       const userId = crypto.randomUUID()
       const loginId = crypto.randomUUID()
@@ -930,7 +931,7 @@ test(
         )
         .bind(loginId, userId, clientId, now, now, expiry, seq.seq, now)
         .run()
-      const accessExpiresAt = staleAccess ? now : now + 900_000
+      const accessExpiresAt = now + accessTtlMs
       await db
         .prepare('INSERT INTO auth_login_access_token VALUES (?,?,0,0,?)')
         .bind(hash(accessToken), loginId, accessExpiresAt)
@@ -988,6 +989,12 @@ test(
 
     const logout = { body: { scope: 'CURRENT_LOGIN' } }
     const activity = { body: { eventId: crypto.randomUUID(), kind: 'OPEN' } }
+    const tenantReads = [
+      '/tenant-creation-policy',
+      '/tenants',
+      '/invitations',
+      '/ownership-transfers',
+    ]
     function assertReady(value: Awaited<ReturnType<typeof row>>, revision: number) {
       assert.equal(value.status, 'READY')
       assert.equal(value.busy_until, 0)
@@ -1047,13 +1054,9 @@ test(
       async () => {
         const { b } = await authenticated()
         const before = await row(b)
-        const paths = [
-          '/tenant-creation-policy',
-          '/tenants',
-          '/invitations',
-          '/ownership-transfers',
-        ]
-        const reads = await Promise.all(paths.map((path) => pause(b, 'session-read-after', path)))
+        const reads = await Promise.all(
+          tenantReads.map((path) => pause(b, 'session-read-after', path)),
+        )
         assert.deepEqual(await row(b), before)
         const responses = await Promise.all(reads.map((read) => read()))
         for (const response of responses) {
@@ -1061,11 +1064,43 @@ test(
           assert.deepEqual(response.headers.getSetCookie(), [])
         }
         assert.deepEqual(await row(b), before)
-        for (const path of paths) {
+        for (const path of tenantReads) {
           await data(await traced({ read: 2, write: 0 }, b, path))
         }
       },
     )
+
+    await t.test('parallel tenant reads recover from one near-expiry refresh', async () => {
+      const { b, loginId } = await authenticated({ accessTtlMs: 25_000 })
+      const before = await row(b)
+      const [first, ...others] = tenantReads
+      const pending = await Promise.all(others.map((path) => pause(b, 'session-read-after', path)))
+      const completeRefresh = await pause(b, 'refresh-race', first)
+
+      // These requests all observed the old READY revision, then lost the claim
+      // before their management handlers could query data or issue a cursor.
+      const claimConflicts = await Promise.all(pending.map((complete) => complete()))
+      for (const response of claimConflicts) await conflict(response, true)
+      await conflict(await request(b, '/tenants'), true)
+
+      await data(await completeRefresh())
+      const recovered = await Promise.all(others.map((path) => request(b, path)))
+      for (const response of recovered) {
+        await data(response)
+        assert.equal(response.headers.get('Retry-After'), null)
+      }
+      assertReady(await row(b), Number(before.revision) + 1)
+      const rotation = await db
+        .prepare(
+          'SELECT generation, used_at IS NOT NULL AS used FROM auth_login_refresh_token WHERE login_session_id=? ORDER BY generation',
+        )
+        .bind(loginId)
+        .all()
+      assert.deepEqual(rotation.results, [
+        { generation: 0, used: 1 },
+        { generation: 1, used: 0 },
+      ])
+    })
 
     await t.test('cursor issuance rechecks the initial READY revision', async () => {
       const { b, userId } = await authenticated()
@@ -1171,7 +1206,7 @@ test(
       const until = Date.now() + 120_000
       await expiredLease(b, until)
       const before = await row(b)
-      await conflict(await request(b))
+      await conflict(await request(b), true)
       for (const [options, status] of [
         [{ ...logout, headers: { Origin: 'https://other.example' } }, 403],
         [{ ...logout, headers: { 'X-CSRF-Token': 'wrong' } }, 403],
@@ -1232,7 +1267,7 @@ test(
       const second = await pause(b, 'claim')
       assert.deepEqual(await row(b), before)
       assert.equal((await data(await first())).state, 'ANONYMOUS')
-      await conflict(await second())
+      await conflict(await second(), true)
       assertReady(await row(b), Number(before.revision) + 1)
     })
 
@@ -1241,7 +1276,7 @@ test(
       const before = await row(b)
       const first = await pause(b, 'finish', '/activity', activity)
       await conflict(await request(b, '/activity', activity))
-      await conflict(await request(b))
+      await conflict(await request(b), true)
       assert.equal((await row(b)).revision, Number(before.revision) + 1)
       await data(await first())
       assertReady(await row(b), Number(before.revision) + 1)
@@ -1348,7 +1383,7 @@ test(
       ['refresh-race', false],
     ] as const) {
       await t.test(`stale refresh (${point}) cannot revoke or change tokens`, async () => {
-        const { b, loginId } = await authenticated({ staleAccess: true, usedRefresh })
+        const { b, loginId } = await authenticated({ accessTtlMs: 0, usedRefresh })
         const tokens = () =>
           db
             .prepare('SELECT * FROM auth_login_refresh_token WHERE login_session_id=?')

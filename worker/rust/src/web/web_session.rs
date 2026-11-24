@@ -344,11 +344,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let capabilities = path == "/api/account/auth/capabilities" && method == Method::Get;
     let mut observed_revision = None;
     let mut rejected_read = None;
-    if !create
-        && method == Method::Get
-        && a.request.inner().method() == "GET"
-        && read_without_lease(path)
-    {
+    let can_read_without_lease =
+        method == Method::Get && a.request.inner().method() == "GET" && read_without_lease(path);
+    if !create && can_read_without_lease {
         let loaded_at = now();
         let row = a.s.one(
             "SELECT revision,status,busy_until,payload FROM auth_web_session WHERE id_hash=? AND expires_at>?",
@@ -388,12 +386,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     }
                     rejected_read = Some(result);
                 }
-            } else {
-                ensure(
-                    number(&row, "busy_until") <= loaded_at,
-                    409,
-                    "VERSION_CONFLICT",
-                )?;
+            } else if number(&row, "busy_until") > loaded_at {
+                a.retry_browser_read = true;
+                return Err(version_conflict());
             }
         }
     }
@@ -423,7 +418,14 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         ).await?;
         (0, None)
     } else {
-        let claimed = claim(a, &id, observed_revision, logout).await?;
+        let claimed = claim(a, &id, observed_revision, logout)
+            .await
+            .inspect_err(|failure| {
+                // Only a predispatch conflict is safe to retry. A page that
+                // already reached the backend may have attempted to issue a cursor.
+                a.retry_browser_read =
+                    can_read_without_lease && rejected_read.is_none() && failure.status == 409;
+            })?;
         (
             number(&claimed, "revision"),
             Some(text(&claimed, "payload")),
@@ -577,12 +579,16 @@ async fn claim(a: &Auth, id: &str, expected_revision: Option<i64>, logout: bool)
             401,
             "LOGIN_REQUIRED",
         )?;
-        return Err(Failure {
-            status: 409,
-            code: "VERSION_CONFLICT",
-        });
+        return Err(version_conflict());
     }
     Ok(claimed)
+}
+
+fn version_conflict() -> Failure {
+    Failure {
+        status: 409,
+        code: "VERSION_CONFLICT",
+    }
 }
 
 fn browser_response(

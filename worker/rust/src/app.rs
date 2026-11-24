@@ -135,6 +135,8 @@ async fn handle_response(
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
+    } else if external && status == 409 && a.retry_browser_read {
+        response.headers_mut().set("Retry-After", "0")?;
     }
     let response = with_security_headers(response, id, a.origin.starts_with("https:"))?;
     Ok((response, retry_after_at, error_code))
