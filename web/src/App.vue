@@ -508,7 +508,7 @@ onBeforeUnmount(() => {
   <div v-else class="console-shell v2-console">
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
-        <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">molis AI</strong></a>
+        <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">Molis AI</strong></a>
         <span class="sidebar-current-user">{{ account.user?.displayName }}</span>
       </header>
       <p class="nav-caption">工作台</p>
