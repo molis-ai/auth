@@ -35,7 +35,7 @@ export function createDevOutbound(value = '') {
         return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
-          headers: Object.fromEntries(response.headers),
+          headers: [...response.headers.entries()],
         })
       } catch {
         // Do not include URLs, authorization headers, form bodies or proxy credentials.

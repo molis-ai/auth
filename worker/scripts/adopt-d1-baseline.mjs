@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import targets from '../../config/platform-targets.json' with { type: 'json' }
-import { wranglerOverrides } from './environment.mjs'
+import { cleanWranglerEnv } from './environment.mjs'
 
 const baseline = '0020_auth_baseline.sql'
 const history = new URL('../migration-history/through-0020/', import.meta.url)
@@ -90,8 +90,7 @@ function main(args) {
           ],
         }),
       )
-    const cliEnv = { ...process.env }
-    for (const key of wranglerOverrides) delete cliEnv[key]
+    const cliEnv = cleanWranglerEnv()
     const execute = (sql) => {
       const raw = execFileSync(
         process.execPath,
