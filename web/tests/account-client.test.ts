@@ -88,6 +88,274 @@ const holdUntilAbort = (signal: AbortSignal) =>
   new Promise<never>((_, reject) => {
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
   });
+const accountPath = (url: RequestInfo | URL) => String(url).slice((origin + "/api/account").length);
+const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("P1-4 tenant overview starts four first-page GETs together after CSRF bootstrap", { timeout: 1500 }, async () => {
+  const paths = [
+    "/tenant-creation-policy",
+    "/tenants?limit=20",
+    "/invitations?limit=20",
+    "/ownership-transfers?limit=20",
+  ];
+  const allStarted = Promise.withResolvers<void>();
+  const page = Promise.withResolvers<void>();
+  const calls: string[] = [];
+  const client = new AccountClient({
+    origin,
+    timeoutMs: 1000,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      calls.push(path);
+      if (path === "/session") return reply();
+      assert.equal(init!.method, "GET");
+      assert.equal(init!.credentials, "same-origin");
+      assert.equal(new Headers(init!.headers).get("Authorization"), null);
+      assert.equal(new Headers(init!.headers).get("X-CSRF-Token"), null);
+      if (calls.length === 5) allStarted.resolve();
+      await page.promise;
+      return reply("current-csrf", path);
+    },
+  });
+  try {
+    await client.session();
+    const reads = Promise.all(paths.map(path => client.request<string>(path)));
+    void reads.catch(() => undefined);
+    await allStarted.promise;
+    assert.deepEqual(calls, ["/session", ...paths]);
+    page.resolve();
+    assert.deepEqual(await reads, paths);
+  } finally {
+    page.resolve();
+    client.close();
+  }
+});
+
+test("P1-4 one cold bootstrap orders the queued writes and read", async () => {
+  const calls: [string, string | null][] = [];
+  const bootstrap = Promise.withResolvers<Response>();
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      calls.push([path, new Headers(init!.headers).get("X-CSRF-Token")]);
+      return path === "/session" ? bootstrap.promise : reply();
+    },
+  });
+  const results = Promise.all([
+    client.request("/profile", {}, "PATCH"),
+    client.request("/tenant-creation-policy"),
+    client.request("/tenants", {}),
+  ]);
+  try {
+    await nextTurn();
+    assert.deepEqual(calls, [["/session", null]]);
+    bootstrap.resolve(reply());
+    await results;
+    assert.deepEqual(calls, [
+      ["/session", null], ["/profile", "current-csrf"],
+      ["/tenant-creation-policy", null], ["/tenants", "current-csrf"],
+    ]);
+  } finally {
+    bootstrap.resolve(reply());
+    client.close();
+  }
+});
+
+test("P1-4 an exclusive operation waits for earlier reads and holds later reads", async (t) => {
+  for (const exclusive of [
+    { path: "/profile", method: "PATCH", body: {} },
+    { path: "/tenants?limit=20&cursor=opaque", method: "GET" },
+    { path: "/auth/transactions/handle", method: "GET" },
+    { path: "/auth/capabilities", method: "GET" },
+    { path: "/session", method: "GET" },
+  ]) {
+    await t.test(exclusive.path, async () => {
+      const before = Promise.withResolvers<Response>();
+      const during = Promise.withResolvers<Response>();
+      const calls: string[] = [];
+      const client = new AccountClient({
+        origin,
+        fetch: async url => {
+          const path = accountPath(url);
+          calls.push(path);
+          if (calls.length === 1) return reply();
+          if (path === "/tenant-creation-policy") return before.promise;
+          if (path === exclusive.path) return during.promise;
+          return reply();
+        },
+      });
+      await client.session();
+      const readBefore = client.request("/tenant-creation-policy");
+      const operation = client.request(exclusive.path, exclusive.body, exclusive.method);
+      const readAfter = client.request("/login-methods");
+      const all = Promise.all([readBefore, operation, readAfter]);
+      void all.catch(() => undefined);
+      try {
+        await nextTurn();
+        assert.deepEqual(calls, ["/session", "/tenant-creation-policy"]);
+        before.resolve(reply());
+        await nextTurn();
+        assert.deepEqual(calls, ["/session", "/tenant-creation-policy", exclusive.path]);
+        during.resolve(reply());
+        await all;
+        assert.deepEqual(calls, ["/session", "/tenant-creation-policy", exclusive.path, "/login-methods"]);
+      } finally {
+        before.resolve(reply());
+        during.resolve(reply());
+        client.close();
+      }
+    });
+  }
+});
+
+test("P1-4 only safe reads retry HTTP 409 VERSION_CONFLICT, with at most three retries", async () => {
+  const conflict = { code: "VERSION_CONFLICT", status: 409, requestId: "conflict-id" };
+  const calls = new Map<string, number>();
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      const count = (calls.get(path) ?? 0) + 1;
+      calls.set(path, count);
+      if (path === "/session" || (path === "/tenant-creation-policy" && count === 2)) return reply();
+      const status = path === "/tenants/wrong-status" ? 503 : 409;
+      const code = path === "/tenants/wrong-code" ? "IDEMPOTENCY_CONFLICT" : conflict.code;
+      assert.equal(init!.method, path === "/profile" ? "PATCH" : "GET");
+      return Response.json({ error: { code }, requestId: conflict.requestId }, { status });
+    },
+  });
+  await client.session();
+  await Promise.all([
+    client.request("/tenant-creation-policy"),
+    assert.rejects(client.request("/login-methods"), conflict),
+    assert.rejects(client.request("/tenants?limit=20"), conflict),
+    assert.rejects(client.request("/tenants?limit=20&cursor=opaque"), conflict),
+    assert.rejects(client.request("/auth/transactions/handle"), conflict),
+    assert.rejects(client.request("/profile", {}, "PATCH"), conflict),
+    assert.rejects(client.request("/tenants/wrong-status"), { ...conflict, status: 503 }),
+    assert.rejects(client.request("/tenants/wrong-code"), { ...conflict, code: "IDEMPOTENCY_CONFLICT" }),
+  ]);
+  assert.deepEqual(calls, new Map([
+    ["/session", 1], ["/tenant-creation-policy", 2], ["/login-methods", 4],
+    ["/tenants?limit=20", 1], ["/tenants?limit=20&cursor=opaque", 1],
+    ["/auth/transactions/handle", 1], ["/profile", 1],
+    ["/tenants/wrong-status", 1], ["/tenants/wrong-code", 1],
+  ]));
+  client.close();
+});
+
+test("P1-4 close and logout cancel pending reads and queues without waiting for fetch or JSON", async (t) => {
+  for (const fence of ["close", "logout"] as const) {
+    await t.test(fence, async subtest => {
+      subtest.mock.timers.enable({ apis: ["setTimeout"] });
+      const lateFetch = Promise.withResolvers<Response>();
+      const lateJson = Promise.withResolvers<{ data: unknown }>();
+      const logoutReply = Promise.withResolvers<Response>();
+      const signals: AbortSignal[] = [];
+      const calls: string[] = [];
+      const reads = ["/session", "/tenants", "/login-methods", "/tenants/waiting"];
+      let oldResponseParsed = false;
+      let oldHeaderRead = false;
+      let writeCsrf: string | null = null;
+      const old = reply("obsolete-csrf");
+      old.headers.get = () => {
+        oldHeaderRead = true;
+        return "obsolete-csrf";
+      };
+      const client = new AccountClient({
+        origin,
+        fetch: async (url, init) => {
+          const path = accountPath(url);
+          calls.push(path);
+          if (path === "/session") return reply();
+          if (path === "/logout") return logoutReply.promise;
+          if (path === "/tenants") {
+            signals.push(init!.signal!);
+            return lateFetch.promise;
+          }
+          if (path === "/login-methods") {
+            signals.push(init!.signal!);
+            old.json = () => lateJson.promise;
+            return old;
+          }
+          if (path === "/tenants/waiting") {
+            return Response.json({ error: { code: "VERSION_CONFLICT" } }, { status: 409 });
+          }
+          writeCsrf = new Headers(init!.headers).get("X-CSRF-Token");
+          return reply("logout-csrf");
+        },
+      });
+      await client.session();
+      const requests = [
+        client.request("/tenants"),
+        client.request("/login-methods"),
+        client.request("/tenants/waiting"),
+        client.request("/profile", {}, "PATCH"),
+        client.request("/tenant-creation-policy"),
+      ];
+      const rejected = Promise.all(requests.map(request => assert.rejects(request, cancelled)));
+      void rejected.catch(() => undefined);
+      try {
+        await nextTurn();
+        assert.deepEqual(calls, reads);
+        if (fence === "close") client.close();
+        else {
+          const signingOut = client.logout();
+          const newWrite = client.request("/profile", {}, "PATCH");
+          await nextTurn();
+          assert.deepEqual(calls, [...reads, "/logout"]);
+          logoutReply.resolve(reply("logout-csrf"));
+          await Promise.all([signingOut, newWrite]);
+          assert.equal(writeCsrf, "logout-csrf");
+        }
+        assert.ok(signals.every(signal => signal.aborted));
+        await rejected;
+        const late = reply("older-csrf");
+        late.json = async () => { oldResponseParsed = true; };
+        lateFetch.resolve(late);
+        lateJson.resolve({ data: { private: true } });
+        subtest.mock.timers.tick(500);
+        await nextTurn();
+        assert.equal(oldResponseParsed, false);
+        assert.equal(oldHeaderRead, false);
+        assert.deepEqual(calls, [
+          ...reads,
+          ...(fence === "logout" ? ["/logout", "/profile"] : []),
+        ]);
+      } finally {
+        client.close();
+        lateFetch.resolve(reply());
+        lateJson.resolve({ data: null });
+        logoutReply.resolve(reply());
+      }
+    });
+  }
+});
+
+test("P1-4 a late parallel response cannot restore a superseded CSRF token", async () => {
+  const old = Promise.withResolvers<Response>();
+  let writeCsrf: string | null = null;
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      if (path === "/session") return reply();
+      if (path === "/tenant-creation-policy") return old.promise;
+      if (path === "/login-methods") return reply("new-csrf");
+      writeCsrf = new Headers(init!.headers).get("X-CSRF-Token");
+      return reply("new-csrf");
+    },
+  });
+  await client.session();
+  const earlier = client.request("/tenant-creation-policy");
+  await client.request("/login-methods");
+  old.resolve(reply());
+  await earlier;
+  await client.request("/profile", {}, "PATCH");
+  assert.equal(writeCsrf, "new-csrf");
+  client.close();
+});
 
 test("a POST timeout and a network failure both leave its result unknown", async () => {
   const calls: string[] = [];
