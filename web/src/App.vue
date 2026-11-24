@@ -8,6 +8,7 @@ import {
 import type { AuthCompletion } from "./lib/auth-flow.ts";
 import AccountSecurityEditor from "./components/AccountSecurityEditor.vue";
 import AuthEntry from "./components/AuthEntry.vue";
+import AuthEntryShell from "./components/AuthEntryShell.vue";
 import AccountProfile from "./components/AccountProfile.vue";
 import { entryText } from "./lib/entry-copy.ts";
 import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
@@ -35,7 +36,8 @@ const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
   page = ref("account");
-const startupFailed = ref(false);
+const startup = ref<'loading' | 'error' | 'ready'>('loading');
+const prefetchedCapabilities = shallowRef<ReturnType<AccountClient['loginCapabilities']>>();
 const SESSION_CHECK_COOLDOWN_MS = 30_000;
 let lastSessionCheckAt: number | undefined;
 let accountScope = 0;
@@ -164,20 +166,34 @@ function confirmAccount(current: AccountView) {
   }
   lastSessionCheckAt = Date.now();
   account.value = current;
-  if (current.state === "AUTHENTICATED") void reportOpenActivity();
+  if (current.state === "AUTHENTICATED") {
+    prefetchedCapabilities.value = undefined;
+    void reportOpenActivity();
+  }
 }
 async function initializeSession() {
   if (busy.value || account.value || replacing) return;
   busy.value = true;
-  startupFailed.value = false;
+  startup.value = 'loading';
+  const session = refreshAccount();
+  const capabilities = location.pathname === '/login' ? client.loginCapabilities() : undefined;
+  // The session decides whether this request is needed. Handle rejection even when it is discarded.
+  void capabilities?.catch(() => undefined);
+  prefetchedCapabilities.value = capabilities;
   try {
-    await refreshAccount();
+    await session;
   } catch (error) {
     if (error instanceof AuthError && error.code === "CANCELLED") return;
-    if (!expireAccount(error)) startupFailed.value = true;
+    if (!expireAccount(error)) {
+      prefetchedCapabilities.value = undefined;
+      startup.value = 'error';
+      return;
+    }
+    prefetchedCapabilities.value = capabilities;
   } finally {
     busy.value = false;
   }
+  startup.value = 'ready';
 }
 async function reportOpenActivity() {
   if (openReported) return;
@@ -427,6 +443,7 @@ async function logout(all = false) {
 }
 function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   accountScope++;
+  prefetchedCapabilities.value = undefined;
   lastSessionCheckAt = undefined;
   openReported = false;
   profileMethodsRequested = false;
@@ -497,14 +514,19 @@ onBeforeUnmount(() => {
 <template>
   <p v-if="environmentLabel" class="environment-label" role="status">{{ environmentLabel }}</p>
   <Teleport to="body"><div v-if="toast" class="account-toast" role="status" aria-live="polite"><span>{{ toast }}</span><button type="button" class="account-toast-close" :aria-label="entryLanguage() === 'en' ? 'Dismiss notification' : '关闭提示'" @click="clearToast">×</button></div></Teleport>
-  <main v-if="!account" class="session-startup">
-    <div v-if="startupFailed">
-      <p role="alert">{{ entryText(entryLanguage(), '账号服务暂时不可用，请稍后再试。') }}</p>
-      <button type="button" @click="initializeSession">{{ entryText(entryLanguage(), '重试') }}</button>
-    </div>
-    <p v-else role="status">{{ entryText(entryLanguage(), '正在检查登录状态…') }}</p>
-  </main>
-  <AuthEntry v-else-if="account.state !== 'AUTHENTICATED'" :client="client" :busy="busy" @authenticating="authenticating = $event" @complete="loggedIn" />
+  <AuthEntryShell v-if="account?.state !== 'AUTHENTICATED'" v-slot="{ language, t }">
+    <section v-if="!account || startup !== 'ready'" class="panel login-panel session-startup" :aria-label="t('登录')">
+      <div class="login-welcome"><p>{{ t('欢迎回来') }}</p></div>
+      <div v-if="startup === 'error'" class="entry-content entry-load-error">
+        <p role="alert" class="notice error">{{ t('账号服务暂时不可用，请稍后再试。') }}</p>
+        <button type="button" class="entry-primary" @click="initializeSession">{{ t('重试') }}</button>
+      </div>
+      <div v-else class="entry-content entry-login-content" role="status">
+        <span class="visually-hidden">{{ t('正在检查登录状态…') }}</span>
+      </div>
+    </section>
+    <AuthEntry v-else :key="accountScope" :client="client" :busy="busy" :language="language" :prefetched-capabilities="prefetchedCapabilities" @authenticating="authenticating = $event" @complete="loggedIn" />
+  </AuthEntryShell>
   <div v-else class="console-shell v2-console">
     <aside class="workspace-sidebar">
       <header class="sidebar-brand-row">
