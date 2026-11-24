@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
-import { authEnvironment } from '../scripts/environment.mjs'
+import { authEnvironment, cleanWranglerEnv, compatibilityDate } from '../scripts/environment.mjs'
 
 function fixtureSecrets(env: string) {
   return readFileSync(new URL(`../../secrets.example/${env}.properties`, import.meta.url), 'utf8')
@@ -30,6 +30,36 @@ test('secret property names use upper snake case in every environment template',
         assert.match(line, /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*=/u, env)
     }
   }
+})
+
+test('Wrangler commands keep credentials and explicit flags while stripping target overrides', () => {
+  const base = Object.freeze({
+    CLOUDFLARE_ENV: 'staging',
+    CLOUDFLARE_ACCOUNT_ID: 'wrong-account',
+    CF_ACCOUNT_ID: 'wrong-account',
+    CLOUDFLARE_COMPLIANCE_REGION: 'wrong-region',
+    CLOUDFLARE_API_BASE_URL: 'https://wrong.invalid',
+    CF_API_BASE_URL: 'https://wrong.invalid',
+    WRANGLER_API_ENVIRONMENT: 'staging',
+    WRANGLER_CI_OVERRIDE_NAME: 'wrong-worker',
+    WRANGLER_CI_GENERATE_PREVIEW_ALIAS: 'true',
+    WRANGLER_LOG_SANITIZE: 'false',
+    CLOUDFLARE_API_TOKEN: 'fixture-token',
+    PATH: '/fixture/bin',
+  })
+  assert.deepEqual(
+    cleanWranglerEnv(base, {
+      WRANGLER_LOG_SANITIZE: 'true',
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
+      CLOUDFLARE_ACCOUNT_ID: 'also-wrong',
+    }),
+    {
+      WRANGLER_LOG_SANITIZE: 'true',
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
+      CLOUDFLARE_API_TOKEN: 'fixture-token',
+      PATH: '/fixture/bin',
+    },
+  )
 })
 
 test('V2-01: the Auth test deployment pins account, Worker, route and D1 independently of properties', (t) => {
@@ -68,6 +98,7 @@ test('V2-01: the Auth test deployment pins account, Worker, route and D1 indepen
   writeFileSync(configPath, testConfig)
   const { platform, bindings } = authEnvironment('test', false, root)
   assert.equal(platform.name, 'molis-auth-test')
+  assert.equal(platform.compatibility_date, compatibilityDate)
   assert.deepEqual(platform.routes, [{ pattern: 'auth.test.molis.ai', custom_domain: true }])
   assert.equal(platform.d1_databases[0].database_id, 'a40965f5-e9e9-4d97-b471-d4e76368630e')
   assert.equal(platform.d1_databases[0].remote, undefined)

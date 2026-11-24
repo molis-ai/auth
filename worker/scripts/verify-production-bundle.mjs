@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
+import { compatibilityDate } from './environment.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const fixtureWasm = join(root, 'worker/rust/build/index_bg.wasm')
@@ -74,7 +75,7 @@ try {
     JSON.stringify({
       name: 'molis-auth-production-dry-run',
       main: join(build, 'index.js'),
-      compatibility_date: '2026-09-19',
+      compatibility_date: compatibilityDate,
       workers_dev: false,
       preview_urls: false,
       assets: {

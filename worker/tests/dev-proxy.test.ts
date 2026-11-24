@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import http from 'node:http'
 import { once } from 'node:events'
 import { createDevOutbound } from '../scripts/dev-proxy.mjs'
+import { getRustProxy } from '../scripts/local-runtime.mjs'
+
+const cookies = ['first=one; Path=/', 'second=two; Expires=Wed, 21 Oct 2030 07:28:00 GMT']
+const cookieHeaders = cookies.map((value): [string, string] => ['Set-Cookie', value])
 
 test('development proxy is opt-in and rejects invalid configuration', () => {
   assert.equal(createDevOutbound(''), undefined)
@@ -32,7 +36,15 @@ test('outbound uses CONNECT, preserves POST, does not follow redirects, and bypa
       assert.match(data, /^POST \/token HTTP\/1.1/)
       assert.match(data, /content-type: application\/x-www-form-urlencoded/i)
       socket.end(
-        'HTTP/1.1 302 Found\r\nLocation: https://must-not-follow.invalid/\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok',
+        [
+          'HTTP/1.1 302 Found',
+          'Location: https://must-not-follow.invalid/',
+          ...cookies.map((value) => `Set-Cookie: ${value}`),
+          'Content-Length: 2',
+          'Connection: close',
+          '',
+          'ok',
+        ].join('\r\n'),
       )
     })
   })
@@ -52,6 +64,7 @@ test('outbound uses CONNECT, preserves POST, does not follow redirects, and bypa
       }),
     )
     assert.equal(response.status, 302)
+    assert.deepEqual(response.headers.getSetCookie(), cookies)
     assert.equal(await response.text(), 'ok')
     assert.equal(connections, 1)
     const direct = await outbound.fetch(
@@ -66,6 +79,54 @@ test('outbound uses CONNECT, preserves POST, does not follow redirects, and bypa
     local.close()
     await Promise.all([once(proxy, 'close'), once(local, 'close')])
   }
+})
+
+test('isolated runtime preserves repeated cookies in assets, outbound, and dispatched headers', async (t) => {
+  const assets = {
+    '/headers': new Headers(cookieHeaders),
+    '/pairs': cookieHeaders,
+    '/record': { 'X-Asset-Type': 'fixture' },
+    '/empty': undefined,
+  }
+  const proxy = await getRustProxy(
+    {},
+    () => new Response('outbound', { headers: cookieHeaders }),
+    (request: Request) => ({
+      status: 200,
+      headers: assets[new URL(request.url).pathname as keyof typeof assets],
+      arrayBuffer: () => new Response('asset').arrayBuffer(),
+    }),
+    {
+      passwordKdf: false,
+      fixtureEntrypoint: `export default {
+        fetch(request, env) {
+          const path = new URL(request.url).pathname
+          if (path === '/outbound') return fetch('https://outbound-fixture.invalid/')
+          if (path === '/echo') return Response.json(request.headers.get('Set-Cookie'))
+          return env.ASSETS.fetch(request)
+        },
+      }`,
+    },
+  )
+  t.after(() => proxy.dispose())
+  const request = (path: string, init?: RequestInit) =>
+    proxy.fetch(new Request('http://127.0.0.1' + path, init))
+
+  for (const path of ['/headers', '/pairs', '/outbound']) {
+    const response = await request(path)
+    assert.equal(response.status, 200, path)
+    assert.deepEqual(response.headers.getSetCookie(), cookies, path)
+    assert.equal(await response.text(), path === '/outbound' ? 'outbound' : 'asset')
+  }
+
+  const record = await request('/record')
+  assert.equal(record.headers.get('X-Asset-Type'), 'fixture')
+  assert.equal(await record.text(), 'asset')
+  const empty = await request('/empty')
+  assert.equal(await empty.text(), 'asset')
+
+  const echoed = await request('/echo', { headers: cookieHeaders })
+  assert.equal(await echoed.json(), cookies.join(', '))
 })
 
 test('proxy failure is bounded and never exposes credentials or falls back to direct', async () => {

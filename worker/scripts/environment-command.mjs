@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertPortAvailable, selectEnvironment } from '../../scripts/environment-properties.mjs'
 import { sessionGeneration } from '../../scripts/environment-session.mjs'
-import { authEnvironment, port, root, wranglerOverrides } from './environment.mjs'
+import { authEnvironment, cleanWranglerEnv, port, root, wranglerOverrides } from './environment.mjs'
 import { verifyDeploymentDatabase } from './deployment-readiness.mjs'
 
 const [operation, ...args] = process.argv.slice(2)
@@ -18,13 +18,11 @@ if (local) await assertPortAvailable(port)
 const staging = mkdtempSync(join(tmpdir(), 'molis-auth-'))
 const config = join(staging, 'wrangler.json')
 const secretFile = join(staging, local ? '.dev.vars' : 'bindings.json')
-const wranglerEnv = {
-  ...process.env,
+const wranglerEnv = cleanWranglerEnv(process.env, {
   CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false',
   CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
   WRANGLER_LOG_SANITIZE: 'true',
-}
-for (const key of wranglerOverrides) delete wranglerEnv[key]
+})
 const cwd = fileURLToPath(root)
 function run(command, commandArgs) {
   return new Promise((resolve, reject) => {
