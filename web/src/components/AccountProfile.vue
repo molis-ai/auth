@@ -13,22 +13,13 @@ const props = defineProps<{
   client: AccountClient;
   onSaved: () => Promise<void>;
 }>();
-const emit = defineEmits<{ expired: [error: AuthError]; navigate: [page: string]; copied: [message: string] }>();
+const emit = defineEmits<{ expired: [error: AuthError]; navigate: [page: string] }>();
 const profilePicker = ref<HTMLInputElement>();
 const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(null);
 let active = true;
 const nameInput = ref<HTMLInputElement>();
 const editingName = ref(false), nameSaving = ref(false), inlineName = ref(''), nameError = ref('');
 const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-async function copyUserId() {
-  try {
-    await navigator.clipboard?.writeText(props.user.userId);
-    emit('copied', `已复制账号 ID：${props.user.userId}`);
-  } catch {
-    emit('copied', `账号 ID：${props.user.userId}`);
-  }
-}
 
 async function editName() {
   if (nameSaving.value || cropFile.value) return;
@@ -108,9 +99,6 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
             </div>
           </div>
         </div>
-        <button type="button" class="profile-id-btn" title="点击复制账号 ID" @click="copyUserId">
-          <span class="profile-mono">{{ user.userId }}</span>
-        </button>
       </div>
     </div>
 
@@ -118,9 +106,7 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
       <button type="button" class="profile-summary-tile" @click="emit('navigate', 'security')">
         <div class="profile-tile-kicker">
           <span>账号安全</span>
-          <span class="profile-pill" :class="(boundMethodCount ?? 0) >= 2 ? 'is-success' : 'is-neutral'">
-            {{ (boundMethodCount ?? 0) >= 2 ? '状态良好' : '建议增绑' }}
-          </span>
+          <span class="profile-pill">登录方式</span>
         </div>
         <div class="profile-tile-val">{{ boundMethodCount ?? 0 }} / 4 <span>种登录方式</span></div>
         <span class="profile-tile-foot">管理登录方式与会话 →</span>
@@ -128,8 +114,8 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
 
       <button type="button" class="profile-summary-tile" @click="emit('navigate', 'tenants')">
         <div class="profile-tile-kicker">
-          <span>所属租户</span>
-          <span class="profile-pill is-accent">成员与角色</span>
+          <span>所属团队</span>
+          <span class="profile-pill">成员与角色</span>
         </div>
         <div class="profile-tile-val">团队协作 <span>工作台</span></div>
         <span class="profile-tile-foot">管理团队成员与角色 →</span>
@@ -138,7 +124,7 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
       <button type="button" class="profile-summary-tile" @click="emit('navigate', 'subscriptions')">
         <div class="profile-tile-kicker">
           <span>订阅与账单</span>
-          <span class="profile-pill is-neutral">个人 + 团队</span>
+          <span class="profile-pill">个人 + 团队</span>
         </div>
         <div class="profile-tile-val">套餐与 Credit <span>独立账本</span></div>
         <span class="profile-tile-foot">进入订阅与账单中心 →</span>
@@ -152,11 +138,11 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
       </div>
       <dl class="profile-facts-list">
         <div class="profile-fact-row">
-          <dt>主邮箱</dt>
-          <dd><span>{{ user.email || '未绑定' }}</span><span class="profile-tag">由管理员维护</span></dd>
+          <dt>邮箱</dt>
+          <dd><span>{{ user.email || '未绑定' }}</span></dd>
         </div>
         <div class="profile-fact-row">
-          <dt>绑定手机</dt>
+          <dt>手机</dt>
           <dd class="profile-num">{{ phoneAccount || '未绑定' }}</dd>
         </div>
         <div v-if="githubAccount" class="profile-fact-row">
@@ -164,7 +150,7 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
           <dd>{{ githubAccount }}</dd>
         </div>
         <div class="profile-fact-row">
-          <dt>当前显示时区</dt>
+          <dt>时区</dt>
           <dd>{{ viewerZone }}</dd>
         </div>
       </dl>

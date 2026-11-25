@@ -210,6 +210,7 @@ try {
   await page.viewport(1440,900);
   await click('English');
   await page.wait("document.documentElement.lang==='en' && document.body.textContent.includes('One account.') && document.body.textContent.includes('All your work.')");
+  assert.match(await page.evaluate("document.querySelector('.intro').textContent"), /profile, teams and subscriptions/);
   await page.screenshot(join(evidence,'entry-en-1440.png'));
   await click('简体中文');
   await page.fill('input[autocomplete=current-password]', 'synthetic-visibility-check');
@@ -235,6 +236,7 @@ try {
   );
   await page.wait("Boolean(document.querySelector('.profile-identity'))");
   const stylesheets = () => page.evaluate("[...document.styleSheets].filter(sheet => sheet.href).map(sheet => new URL(sheet.href).pathname)");
+  assert.match(await page.evaluate("document.querySelector('main').textContent"), /所属团队/);
   const profileStylesheets = await stylesheets();
   assert.ok(profileStylesheets.some(path => path.includes("/ConsoleShell-")));
   assert.ok(profileStylesheets.some(path => path.includes("/AccountProfile-")));
@@ -242,17 +244,19 @@ try {
   assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.console-shell')).display"), "grid");
   assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.profile-identity')).display"), "flex");
   console.log("PASS browser phone registration/login");
-  await click("租户");
+  await click("团队");
   await page.wait(
-    "document.querySelector('main')?.textContent.includes('创建租户')",
+    "document.querySelector('main')?.textContent.includes('创建团队')",
   );
+  assert.equal(await page.evaluate("document.querySelector('.collection-list h1').textContent"), "我的团队");
+  assert.equal(await page.evaluate("document.querySelector('.collection-list input[type=search]').placeholder"), "搜索团队…");
   assert.ok((await stylesheets()).some(path => path.includes("/TenantPage-")));
   console.log("PASS console and profile styles arrive on sign-in, tenant styles arrive on navigation");
-  await click("＋ 创建租户");
-  await page.fill("#tenant-create-name", "QA 自助租户");
+  await click("＋ 创建团队");
+  await page.fill("#tenant-create-name", "QA 自助团队");
   await click("创建");
   await page.wait(
-    "document.querySelector('.tm-heading h2')?.textContent==='QA 自助租户'",
+    "document.querySelector('.tm-heading h2')?.textContent==='QA 自助团队'",
   );
   assert.equal(
     (await db.prepare("SELECT count(*) n FROM auth_managed_tenant").first()).n,
@@ -271,7 +275,7 @@ try {
   memberReads.length = 0;
   const tenantStart = await page.evaluate("window.__authPerformance.requests.length");
   await page.evaluate("window.__authPerformance.holdNext.push('/tenants', '/invitations', '/ownership-transfers')");
-  await click("租户");
+  await click("团队");
   await page.wait("['/tenants', '/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
   assert.equal(memberReads.length, 0, 'members wait for the tenant directory response');
   await page.evaluate("window.__authPerformance.gates['/tenants']()");
@@ -297,9 +301,12 @@ try {
   assert.equal(memberReads.length, 2);
   await click("＋ 邀请成员");
   assert.equal(await page.evaluate("document.querySelector('.tm-dialog[open] select')?.value"), "EMAIL");
+  assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.tm-dialog[open] select option')].map(option => option.value)"), ["EMAIL", "PHONE"]);
   await page.click(".tm-dialog[open] button[aria-label=关闭]");
   await click("个人资料");
   const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.space_id).first();
+  await page.wait("Boolean(document.querySelector('.profile-identity'))");
+  assert.ok(await page.evaluate(`!document.querySelector('.profile-identity').textContent.includes(${JSON.stringify(tenantOwner.user_id)})`));
   const invite = db.prepare("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,'USER',?,?,'PENDING',?,?)");
   const invitedAt = Date.now();
   await db.batch([
@@ -307,21 +314,26 @@ try {
     invite.bind("qa-other-invitation", testTenant.space_id, "qa-page-user-2", tenantOwner.id, invitedAt, invitedAt + 600_000),
   ]);
   await page.evaluate("document.querySelector('meta[name=molis-tenant-invite-channels]').content='USER'");
-  await click("租户");
+  await click("团队");
   await click("＋ 邀请成员");
   assert.deepEqual(await page.evaluate(`(() => {
     const dialog = document.querySelector('.tm-dialog[open]');
-    return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim()];
-  })()`), [false, "账号 ID"]);
-  await page.click(".tm-dialog[open] button[aria-label=关闭]");
+    return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim(), dialog.querySelector('input').type];
+  })()`), [false, "邮箱地址", "email"]);
+  assert.match(await page.evaluate("document.querySelector('.tm-dialog[open]').textContent"), /在团队页接受邀请/);
+  await page.fill(".tm-dialog[open] input[type=email]", "qa-web-invite@example.test");
+  await click("创建邀请");
+  await page.wait("!document.querySelector('.tm-dialog[open]')");
+  assert.deepEqual(await db.prepare("SELECT target_kind,target_user_id,status FROM auth_tenant_invitation WHERE target_email=?").bind("qa-web-invite@example.test").first(),
+    { target_kind: "EMAIL", target_user_id: null, status: "PENDING" });
   await page.wait("[...document.querySelectorAll('button')].filter(button => button.textContent.trim() === '加入').length === 1");
-  assert.equal(await page.evaluate("document.querySelector('.tm-heading h2')?.textContent"), 'QA 自助租户');
+  assert.equal(await page.evaluate("document.querySelector('.tm-heading h2')?.textContent"), 'QA 自助团队');
   const earlierTenants = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<20)";
   await db.batch([
-    db.prepare(earlierTenants + " INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) SELECT '0-qa-tenant-'||n,'QA 前页租户 '||n,'TEAM','ACTIVE',0,0 FROM numbers"),
+    db.prepare(earlierTenants + " INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) SELECT '0-qa-tenant-'||n,'QA 前页团队 '||n,'TEAM','ACTIVE',0,0 FROM numbers"),
     db.prepare("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) SELECT id,'ACTIVE',?,0,0 FROM auth_space WHERE id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
     db.prepare("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT space_id,space_id,?,'OWNER','ACTIVE',0 FROM auth_managed_tenant WHERE space_id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
-    db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的租户', testTenant.space_id),
+    db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的团队', testTenant.space_id),
   ]);
   const tenantDetailPath = '/tenants/' + testTenant.space_id;
   const invitationStart = await page.evaluate("window.__authPerformance.requests.length");
@@ -329,7 +341,7 @@ try {
   await click('加入');
   await page.wait(`Boolean(window.__authPerformance.gates['/tenants']) && window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === '/invitations' && request.finished && request.status === 200)`);
   await page.evaluate("window.__authPerformance.gates['/tenants']()");
-  await page.wait("document.querySelector('.tm-heading h2')?.textContent === 'QA 刷新后的租户' && document.querySelector('[aria-current=true] .tenant-choice-name')?.textContent === 'QA 刷新后的租户'");
+  await page.wait("document.querySelector('.tm-heading h2')?.textContent === 'QA 刷新后的团队' && document.querySelector('[aria-current=true] .tenant-choice-name')?.textContent === 'QA 刷新后的团队'");
   assert.ok(await page.evaluate(`window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === ${JSON.stringify(tenantDetailPath)} && request.finished && request.status === 200)`));
   assert.equal(await page.evaluate("document.querySelector('.tm-table-wrap .tm-self')?.textContent"), '（我）');
   assert.equal(await page.evaluate("[...document.querySelectorAll('button')].some(button => button.textContent.trim() === '加入')"), false);
@@ -356,7 +368,17 @@ try {
   await page.wait(`Boolean(window.__authPerformance.gates[${JSON.stringify(memberPath)}]) && window.__authPerformance.requests.slice(${memberWriteStart}).some(request => request.path === '/ownership-transfers' && request.finished && request.status === 200)`);
   await page.evaluate(`window.__authPerformance.gates[${JSON.stringify(memberPath)}]()`);
   await page.wait("[...document.querySelectorAll('.tm-table-wrap tbody tr')].some(row => row.querySelector('strong')?.textContent === 'QA 成员 1' && row.cells[2].textContent === '管理员')");
+  const transferId = "qa-team-name-transfer";
+  await db.prepare("INSERT INTO auth_ownership_transfer(id,tenant_id,from_membership_id,to_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,'PENDING',?,?)")
+    .bind(transferId, testTenant.space_id, tenantOwner.id, "qa-page-member-1", invitedAt, invitedAt + 600_000).run();
+  await click("个人资料");
+  await click("团队");
+  await page.wait("document.querySelector('.tenant-banner.is-warn .tenant-banner-text')?.textContent.trim() === '「QA 刷新后的团队」的所有权交接'");
+  await clickRow("「QA 刷新后的团队」的所有权交接", "取消交接");
+  await page.wait("!document.querySelector('.tenant-banner.is-warn')");
+  assert.equal((await db.prepare("SELECT status FROM auth_ownership_transfer WHERE id=?").bind(transferId).first()).status, "CANCELLED");
   await db.batch([
+    db.prepare("DELETE FROM auth_ownership_transfer WHERE id=?").bind(transferId),
     db.prepare("DELETE FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation')"),
     db.prepare("DELETE FROM auth_tenant_membership WHERE id LIKE 'qa-page-member-%'"),
     db.prepare("DELETE FROM auth_tenant_membership WHERE tenant_id LIKE '0-qa-tenant-%'"),
@@ -365,7 +387,7 @@ try {
     db.prepare("DELETE FROM auth_user WHERE id LIKE 'qa-page-user-%'"),
   ]);
   await click("个人资料");
-  await click("租户");
+  await click("团队");
   console.log(`PASS browser member first page started ${(memberStart - tenantFinished).toFixed(2)} ms after tenants, with both invitation and transfer responses held`);
   console.log("PASS parallel post-write refresh uses the current account, fresh detail for the selected tenant outside page one, and the updated member role");
 
@@ -410,6 +432,22 @@ try {
     await page.screenshot(join(evidence, "security-" + width + ".png"));
   }
   await click("登录会话");
+  const methodsRailTitle = ".security-rail-item:first-child .security-rail-btn";
+  const methodsTitlePoint = await page.evaluate(`(() => {
+    const title = document.querySelector(${JSON.stringify(methodsRailTitle)});
+    const {left, top, height} = title.getBoundingClientRect();
+    return {x: left + 12, y: top + height / 2};
+  })()`);
+  await page.command("Input.dispatchMouseEvent", {type: "mouseMoved", ...methodsTitlePoint});
+  await page.wait(`(() => {
+    const title = document.querySelector(${JSON.stringify(methodsRailTitle)});
+    const card = title.closest(".security-rail-item");
+    return !card.classList.contains("is-active") && title.matches(":hover") && getComputedStyle(card).backgroundColor !== "rgba(0, 0, 0, 0)";
+  })()`);
+  assert.deepEqual(await page.evaluate(`(() => {
+    const title = getComputedStyle(document.querySelector(${JSON.stringify(methodsRailTitle)}));
+    return [title.backgroundColor, title.backgroundImage, title.filter];
+  })()`), ["rgba(0, 0, 0, 0)", "none", "none"], "hover highlights the card without styling its title");
   await click("退出所有产品和设备");
   assert.equal(await page.evaluate(`(() => {
     const dialog = document.querySelector('.logout-confirm[open]');
@@ -687,7 +725,7 @@ try {
     { local: ['molis.auth.locale'], session: 0 },
   );
   await db.prepare("UPDATE auth_login_session SET revoked_at=1").run();
-  await click("租户");
+  await click("团队");
   await page.wait(
     "!document.querySelector('.console-tabs')&&document.body.textContent.includes('登录已过期')",
   );
@@ -751,13 +789,13 @@ try {
   await page.wait("Boolean(document.querySelector('.profile-inline-name input'))");
   const profileInteractiveAt = await page.evaluate("performance.now()");
   await page.evaluate("document.querySelector('.profile-inline-name input').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape'}))");
-  await click('租户');
-  await page.wait("document.querySelector('.console-tabs [aria-current=page]')?.textContent === '租户'");
+  await click('团队');
+  await page.wait("document.querySelector('.console-tabs [aria-current=page]')?.textContent === '团队'");
   const navigationInteractiveAt = await page.evaluate("performance.now()");
   await page.evaluate("window.__authPerformance.gates['/login-methods']()");
   await page.wait("Boolean(window.__authPerformance.gates['/activity'])");
   await page.evaluate("window.__authPerformance.gates['/activity']()");
-  await page.wait("document.querySelector('main')?.textContent.includes('创建租户')");
+  await page.wait("document.querySelector('main')?.textContent.includes('创建团队')");
   await click('个人资料');
   await page.wait("Boolean(document.querySelector('.profile-inline-name [role=button]'))");
   await page.evaluate("window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('focus'))");

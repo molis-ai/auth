@@ -1,6 +1,6 @@
 const english: Record<string, string> = {
   '一个账号，\n连接你的工作': 'One account.\nAll your work.',
-  '登录 Molis 账号，管理个人资料、租户与订阅。': 'Sign in to manage your profile, tenants and subscriptions.',
+  '登录 Molis 账号，管理个人资料、团队与订阅。': 'Sign in to manage your profile, teams and subscriptions.',
   '产品': 'Products',
   '主导航': 'Primary navigation',
   'Molis AI 官网': 'Molis AI home',
@@ -56,7 +56,7 @@ const english: Record<string, string> = {
   '这次操作的状态已变化，请刷新后核对结果。': 'The operation has changed. Refresh to check its result.',
   '该登录方式已被其他账号使用，请换用另一种方式。': 'This sign-in method belongs to another account. Use a different method.',
   '请先添加另一种可用登录方式，再解绑当前方式。': 'Add another sign-in method before removing this one.',
-  '请先完成所有权交接，再退出租户。': 'Transfer ownership before leaving the tenant.',
+  '请先完成所有权交接，再退出团队。': 'Transfer ownership before leaving the team.',
   '席位容量不足，请先核对现有分配。': 'There are not enough seats. Check the current allocation.',
   '当前账号入口的配置不匹配，请联系管理员。': 'This account entry is not configured correctly. Contact your administrator.',
   '这项信息已不存在或无法访问，请刷新后查看。': 'This item no longer exists or is unavailable. Refresh to check.',

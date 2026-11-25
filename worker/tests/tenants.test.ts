@@ -1765,6 +1765,52 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         )
       },
     )
+    await suite.test(
+      'UAS-13: verified email invitations can be accepted in LIVE mode without a notification',
+      async () => {
+        const email = 'live-invite@example.test'
+        const recipient = await signup(email, true, true)
+        const team = await create('Live email invitation', owner.userId)
+        const liveDb = await p.updateBindings({
+          UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+            environmentId: 'unified-local',
+            kind: 'LOCAL',
+            authOrigin: origin,
+            deliveryMode: 'LIVE',
+            providerMode: 'MOCK',
+          }),
+        })
+        await liveDb
+          .prepare("UPDATE auth_environment SET delivery_mode='LIVE' WHERE id='unified-local'")
+          .run()
+        const invitation = await invite(team.tenantId, 'EMAIL', email.toUpperCase())
+        assert.equal((await members(team.tenantId)).length, 1)
+        assert.equal(
+          await liveDb
+            .prepare('SELECT count(*) n FROM auth_mock_notification WHERE destination=?')
+            .bind(email)
+            .first('n'),
+          0,
+        )
+        assert.ok(
+          ok(await call('/invitations', undefined, recipient), 'InvitationPage').items.some(
+            (item: { invitationId: string }) => item.invitationId === invitation.invitationId,
+          ),
+        )
+        assert.equal(
+          (
+            await call(
+              '/invitations/' + invitation.invitationId + '/accept',
+              { expectedVersion: 0 },
+              outsider,
+            )
+          ).status,
+          404,
+        )
+        assert.equal((await accept(invitation, recipient)).membership.role, 'MEMBER')
+        assert.equal((await members(team.tenantId)).length, 2)
+      },
+    )
   } finally {
     for (const { proceed } of barriers.values()) proceed.resolve()
     await p.dispose()

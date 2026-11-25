@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
           v-for="[id, label] in [
             ['account', '个人资料'],
             ['security', '账号安全'],
-            ['tenants', '租户'],
+            ['tenants', '团队'],
             ['subscriptions', '订阅与账单'],
           ]"
           :key="id"
@@ -620,7 +620,6 @@ onBeforeUnmount(() => {
         :on-saved="refreshAccount"
         @expired="expireWithToast"
         @navigate="navigate"
-        @copied="showToast"
       />
       <section v-if="page === 'security'" class="console-card security-page">
         <div class="collection-layout security-layout">

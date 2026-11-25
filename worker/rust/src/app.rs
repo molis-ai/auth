@@ -376,9 +376,9 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             &config["kind"],
             &config["deliveryMode"],
         ) {
-            "EMAIL PHONE USER"
+            "EMAIL PHONE"
         } else {
-            "USER"
+            "EMAIL"
         };
         let mut metadata =
             format!("<meta name=\"molis-tenant-invite-channels\" content=\"{channels}\">");

@@ -266,7 +266,7 @@ onMounted(() => void run(load));
 .pu-avatar.is-lg { width: 42px; height: 42px; font-size: 16px; }
 .pu-user-copy { min-width: 0; flex: 1; display: grid; gap: 1px; }
 .pu-user-name { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pu-user-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pu-user-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pu-rail .pu-status-btn { min-height: 28px; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; justify-self: start; }
 
 .pu-detail { min-width: 0; padding: 28px 36px 72px; }
@@ -279,7 +279,7 @@ onMounted(() => void run(load));
 
 .pu-selected-head { display: flex; align-items: center; gap: 12px; }
 .pu-selected-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pu-selected-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.pu-selected-head h2 { margin: 0; font-size: 22px; font-weight: 650; line-height: 1.3; letter-spacing: -0.02em; }
 .pu-selected-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .pu-pill { padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 550; }
 .pu-pill.is-success { background: #ecf7f0; color: #216b46; }

@@ -16,7 +16,7 @@ const props = defineProps<{
   page: number;
   size: number;
   hasNext: boolean;
-  invitationChannels: string[];
+  canInviteByPhone: boolean;
   refreshPending: boolean;
   reload: (tenant: Tenant) => Promise<void>;
   ownMembership: (tenant: Tenant) => Promise<Member | undefined>;
@@ -39,8 +39,7 @@ const emit = defineEmits<{
 const action = 'tenant-member:' + props.tenant.tenantId;
 onBeforeUnmount(() => { props.discard(action); dialog.value?.close(); });
 const query = ref(''), sort = ref('role'), dialog = ref<HTMLDialogElement>();
-const operation = ref(''), target = ref<Member>(), role = ref('MEMBER'), invite = ref(''), inviteKind = ref(props.invitationChannels[0] ?? 'USER'), saving = ref(false), error = ref('');
-const inviteLabels: Record<string, string> = { EMAIL: '邮箱', PHONE: '手机号', USER: '账号 ID' };
+const operation = ref(''), target = ref<Member>(), role = ref('MEMBER'), invite = ref(''), inviteKind = ref<'EMAIL' | 'PHONE'>('EMAIL'), saving = ref(false), error = ref('');
 const labels: Record<string,string> = { OWNER: '所有者', ADMIN: '管理员', MEMBER: '成员' };
 const weights: Record<string,number> = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
 const active = computed(() => props.tenant.status === 'ACTIVE');
@@ -54,7 +53,7 @@ watch([role, () => invite.value.trim(), inviteKind, () => props.tenant.version],
 async function open(kind: string, member?: Member) {
   if (props.busy || props.loading || props.refreshPending) return;
   props.discard(action);
-  if (kind === 'invite') inviteKind.value = props.invitationChannels[0] ?? 'USER';
+  if (kind === 'invite') inviteKind.value = 'EMAIL';
   operation.value = kind; target.value = member; role.value = member?.role ?? 'MEMBER'; invite.value = ''; error.value = '';
   await nextTick(); dialog.value?.showModal();
 }
@@ -89,12 +88,12 @@ async function submit() {
       path = base + '/members/' + encodeURIComponent(member.membershipId) + (kind === 'role' ? '/role' : '/remove');
       body = { expectedVersion: member.version, ...(kind === 'role' ? { role: role.value } : {}) };
     }
-    const success = kind === 'invite' ? '邀请已发送' : '操作已完成';
+    const success = kind === 'invite' ? '邀请已创建' : '操作已完成';
     await props.submitWrite(path, body, {
       action,
       method: kind === 'role' ? 'PATCH' : 'POST',
       success,
-      refreshMessage: success + '，但成员或租户数据暂未刷新。',
+      refreshMessage: success + '，但成员或团队数据暂未刷新。',
       committed: () => {
         dialog.value?.close();
         if (kind === 'leave') emit('left', tenant.tenantId);
@@ -163,12 +162,20 @@ async function submit() {
       <footer class="tm-pagination"><span>本页 {{ rows.length }} 位成员</span><label>每页 <select :value="size" :disabled="busy || loading" @change="emit('resize', Number(($event.target as HTMLSelectElement).value))"><option :value="10">10</option><option :value="20">20</option><option :value="50">50</option></select> 人</label><button :disabled="page<=1 || busy || loading" aria-label="上一页" @click="emit('previous')">‹</button><span>第 {{ page }} 页</span><button :disabled="!hasNext || busy || loading" aria-label="下一页" @click="emit('next')">›</button></footer>
     </div>
     <dialog ref="dialog" class="tm-dialog" aria-labelledby="tm-dialog-title" @cancel.prevent="close"><form @submit.prevent="submit"><header><h2 id="tm-dialog-title">{{ title }}</h2><button type="button" aria-label="关闭" :disabled="saving" @click="close">×</button></header>
-      <template v-if="operation==='invite'"><label v-if="invitationChannels.length > 1">邀请方式<select v-model="inviteKind" :disabled="saving"><option v-for="channel in invitationChannels" :key="channel" :value="channel">{{ inviteLabels[channel] }}</option></select></label><label>{{ inviteKind==='EMAIL'?'邮箱地址':inviteKind==='PHONE'?'手机号（含国家区号）':'账号 ID' }}<input v-model="invite" :type="inviteKind==='EMAIL'?'email':'text'" required :disabled="saving" autocomplete="off" /></label><p>对方接受后以成员身份加入，之后可以调整角色。</p></template>
+      <template v-if="operation === 'invite'">
+        <label v-if="canInviteByPhone">邀请方式
+          <select v-model="inviteKind" :disabled="saving"><option value="EMAIL">邮箱</option><option value="PHONE">手机号</option></select>
+        </label>
+        <label>{{ inviteKind === 'EMAIL' ? '邮箱地址' : '手机号（含国家区号）' }}
+          <input v-model="invite" :type="inviteKind === 'EMAIL' ? 'email' : 'tel'" required :disabled="saving" autocomplete="off" />
+        </label>
+        <p>对方使用此{{ inviteKind === 'EMAIL' ? '邮箱' : '手机号' }}登录后，可在团队页接受邀请。</p>
+      </template>
       <template v-else-if="operation==='role'"><p>{{ target?.displayName }}</p><label>团队角色<select v-model="role" :disabled="saving"><option value="ADMIN">管理员</option><option value="MEMBER">成员</option></select></label><p>管理员可以邀请成员和移除普通成员；所有权需要单独交接。</p></template>
       <p v-else-if="operation==='remove'">确定移除 {{ target?.displayName }}？该成员的团队席位会同时释放。</p>
       <p v-else-if="operation==='transfer'">将所有权交接给 {{ target?.displayName }}。对方接受后，你将不再是所有者。</p>
       <p v-else>确定退出 {{ tenant.name }}？你在该团队的席位会同时释放。</p>
-      <p v-if="error" role="alert" class="tm-danger">{{ error }}</p><footer><button type="button" :disabled="saving" @click="close">取消</button><button class="tm-primary" :disabled="saving || (operation==='role' && role===target?.role)" type="submit">{{ saving?'正在提交…':operation==='invite'?'发送邀请':'确认' }}</button></footer>
+      <p v-if="error" role="alert" class="tm-danger">{{ error }}</p><footer><button type="button" :disabled="saving" @click="close">取消</button><button class="tm-primary" :disabled="saving || (operation==='role' && role===target?.role)" type="submit">{{ saving?'正在提交…':operation==='invite'?'创建邀请':'确认' }}</button></footer>
     </form></dialog>
   </section>
 </template>
@@ -303,7 +310,6 @@ tbody tr:hover td { background: #fafafc; }
 .tm-danger { color: #a62b33; }
 
 @media (max-width: 760px) {
-  .tm-heading h2 { font-size: 19px; }
   .tm-tools { padding: 14px 16px; }
   .tm-actions { min-width: 140px; }
   .tm-pagination { flex-wrap: wrap; padding: 12px 16px; }

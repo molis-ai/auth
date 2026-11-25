@@ -228,7 +228,7 @@ Invitation 含 `invitationId,tenantId,targetSummary,status:PENDING/ACCEPTED/DECL
 
 AUTH-07 与 AUTH-10 已开放本节接口，返回形状以可执行合同为准。成员列表仅含 ACTIVE 成员；本人邀请列表仅含当前身份匹配、未过期且租户启用的 PENDING 邀请。管理员的租户邀请列表保留历史状态，交接列表按仍有效的参与成员关系查询。列表使用服务端保存的随机游标，有效 15 分钟，绑定用户、客户端、路由、页大小及当前管理权限/成员版本；每次请求及最终返回前复核权限。
 
-邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。EMAIL/SMS 在 LOCAL/TEST 的显式 MOCK 模式中写入独立通知 outbox，USER 邀请从本人邀请列表读取，不触发外部发送。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
+邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。Auth 网页默认按邮箱创建邀请，受邀者使用匹配的已验证邮箱登录后，从本人邀请列表接受。EMAIL 在 LOCAL/TEST 显式 MOCK 模式中写入模拟通知 outbox，其余环境直接创建站内邀请。手机号邀请目前只支持 Mock 通知。USER 目标继续供已有 API 调用方使用，不出现在 Auth 网页邀请表单。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 本人已成功 leave 的同键、同请求重试，可在仍有效的原用户/客户端会话下取回本人旧成员的 LEFT 结果；仍须租户启用、该旧成员确为对应版本的 LEFT。它不要求已离开的成员仍 ACTIVE，不返回其他租户数据，也不会退出后来重新加入的成员。移除他人的回执仍要求操作者当前具备对应管理权限。新的幂等键按当前成员和版本处理，不复用历史操作。
 

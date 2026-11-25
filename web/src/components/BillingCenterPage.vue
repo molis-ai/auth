@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
 }
 .billing-rail-head { padding: 0 10px; }
 .billing-rail-head h1 {
-  margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); line-height: 1.4;
+  margin: 0; font-size: 16px; font-weight: 650; color: var(--ink);
 }
 .billing-rail-group { display: grid; gap: 6px; }
 .billing-rail-label {

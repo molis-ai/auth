@@ -47,9 +47,9 @@ const props = defineProps<{
   refreshPending: (action: string) => boolean;
 }>();
 const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: []; openBilling: [tenantId: string] }>();
-const invitationChannels = document.querySelector<HTMLMetaElement>(
+const canInviteByPhone = document.querySelector<HTMLMetaElement>(
   'meta[name="molis-tenant-invite-channels"]',
-)?.content.split(" ") ?? ["USER"];
+)?.content.split(" ").includes("PHONE") ?? false;
 const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 
 const directory = cursorCollection<Tenant>(props.client);
@@ -82,7 +82,7 @@ const moreMembers = computed(() =>
 );
 const invitations = computed(() => received.items.value.filter(item => item.status === "PENDING"));
 const transfers = computed(() => ownership.items.value.filter(item => item.status === "PENDING"));
-const transferMembers = ref<Record<string, string>>({});
+const transferTeams = ref<Record<string, Pick<Tenant, "name" | "membershipId"> | null>>({});
 const creationMode = ref("");
 const tenantName = ref("");
 const tenantCreateDialog = ref<HTMLDialogElement>();
@@ -190,17 +190,14 @@ async function readTransfers(append = false, refreshedDirectory?: Promise<void>)
   const request = ++transferRead;
   transfersLoading.value = true;
   try {
-    // Load the transfer page in parallel, then resolve its participant IDs from the refreshed directory.
+    // Reuse the team details for the transfer label and the current member’s available action.
     await Promise.all([append ? ownership.more() : ownership.first("/ownership-transfers"), refreshedDirectory]);
     if (disposed || request !== transferRead) return;
-    const known = append ? transferMembers.value : {};
+    const known = append ? transferTeams.value : {};
     const ids = [...new Set(transfers.value.map(transfer => transfer.tenantId))]
       .filter(id => !Object.hasOwn(known, id));
-    const memberships = await Promise.all(ids.map(async id => {
-      const tenant = await lookupTenant(id);
-      return [id, tenant?.membershipId ?? ""] as const;
-    }));
-    if (!disposed && request === transferRead) transferMembers.value = { ...known, ...Object.fromEntries(memberships) };
+    const teams = await Promise.all(ids.map(async id => [id, (await lookupTenant(id)) ?? null] as const));
+    if (!disposed && request === transferRead) transferTeams.value = { ...known, ...Object.fromEntries(teams) };
   } catch (error) {
     if (!disposed && request === transferRead) throw error;
   } finally {
@@ -208,7 +205,7 @@ async function readTransfers(append = false, refreshedDirectory?: Promise<void>)
   }
 }
 function transferOperation(transfer: Transfer): "accept" | "cancel" | undefined {
-  const member = transferMembers.value[transfer.tenantId];
+  const member = transferTeams.value[transfer.tenantId]?.membershipId;
   if (member === transfer.toMembershipId) return "accept";
   if (member === transfer.fromMembershipId) return "cancel";
 }
@@ -225,7 +222,7 @@ function updateTransfer(transfer: Transfer) {
         clearMembers();
       },
       after: refreshDirectoryAndTransfers,
-      refreshMessage: "所有权交接已更新，但交接或租户列表暂未刷新。",
+      refreshMessage: "所有权交接已更新，但交接或团队列表暂未刷新。",
     },
   );
 }
@@ -239,7 +236,7 @@ function updateInvitation(invitation: Invitation, operation: "accept" | "decline
         if (operation === "accept") await Promise.all([refreshDirectory(), refreshInvitations()]);
         else await refreshInvitations();
       },
-      refreshMessage: operation === "accept" ? "已接受邀请，但租户或邀请列表暂未刷新。" : "已拒绝邀请，但邀请列表暂未刷新。",
+      refreshMessage: operation === "accept" ? "已接受邀请，但团队或邀请列表暂未刷新。" : "已拒绝邀请，但邀请列表暂未刷新。",
     },
   );
 }
@@ -271,8 +268,8 @@ function createTenant() {
   if (!name) return;
   return props.mutate<Tenant>("/tenants", { name }, {
     action: "create-tenant",
-    success: "租户已创建",
-    refreshMessage: "租户已创建，但租户列表或成员暂未刷新。",
+    success: "团队已创建",
+    refreshMessage: "团队已创建，但团队列表或成员暂未刷新。",
     committed: created => {
       tenantCreateDialog.value?.close();
       tenantName.value = "";
@@ -315,28 +312,28 @@ onBeforeUnmount(() => {
 <template>
   <section class="console-card collection-page tenant-page">
     <div class="collection-layout">
-      <aside class="collection-list" aria-label="租户列表" :aria-busy="tenantsLoading">
+      <aside class="collection-list" aria-label="团队列表" :aria-busy="tenantsLoading">
         <div class="tenant-rail-head">
-          <h1>我的租户</h1>
+          <h1>我的团队</h1>
           <span class="tenant-rail-count">{{ tenants.length }}</span>
         </div>
-        <input v-model="tenantSearch" type="search" aria-label="搜索已加载的租户" placeholder="搜索租户…" />
-        <button v-if="creationMode === 'SELF_SERVICE'" class="tenant-create-trigger" :disabled="busy" @click="openTenantCreate">＋ 创建租户</button>
-        <p v-else-if="creationMode" class="tenant-policy-note">租户由平台创建并分配。</p>
+        <input v-model="tenantSearch" type="search" aria-label="搜索已加载的团队" placeholder="搜索团队…" />
+        <button v-if="creationMode === 'SELF_SERVICE'" class="tenant-create-trigger" :disabled="busy" @click="openTenantCreate">＋ 创建团队</button>
+        <p v-else-if="creationMode" class="tenant-policy-note">团队由平台创建并分配。</p>
         <div v-if="errors.policy" role="alert">{{ errors.policy.message }} <button @click="errors.policy.retry()">重试</button></div>
         <dialog ref="tenantCreateDialog" class="tenant-create-dialog" aria-labelledby="tenant-create-title" @cancel.prevent="closeTenantCreate">
           <form @submit.prevent="createTenant">
-            <header><h2 id="tenant-create-title">创建租户</h2><button type="button" aria-label="关闭创建租户" :disabled="busy" @click="closeTenantCreate">×</button></header>
-            <label for="tenant-create-name">租户名称</label>
+            <header><h2 id="tenant-create-title">创建团队</h2><button type="button" aria-label="关闭创建团队" :disabled="busy" @click="closeTenantCreate">×</button></header>
+            <label for="tenant-create-name">团队名称</label>
             <input id="tenant-create-name" v-model="tenantName" maxlength="80" required autofocus autocomplete="off" :disabled="busy" placeholder="例如：产品研发团队" />
-            <p>创建后，你将成为该租户的所有者，可以邀请成员加入。</p>
+            <p>创建后，你将成为该团队的所有者，可以邀请成员加入。</p>
             <footer><button type="button" :disabled="busy" @click="closeTenantCreate">取消</button><button type="submit" :disabled="busy || !tenantName.trim()">{{ busy ? '正在创建…' : '创建' }}</button></footer>
           </form>
         </dialog>
 
         <div class="tenant-rail-group">
-          <p class="tenant-rail-label">租户目录</p>
-          <nav class="tenant-directory" aria-label="选择租户">
+          <p class="tenant-rail-label">团队目录</p>
+          <nav class="tenant-directory" aria-label="选择团队">
             <button
               v-for="tenant in tenants"
               :key="tenant.tenantId"
@@ -358,10 +355,10 @@ onBeforeUnmount(() => {
           </nav>
         </div>
 
-        <p v-if="tenantsLoading" class="console-muted" role="status">正在加载租户…</p>
+        <p v-if="tenantsLoading" class="console-muted" role="status">正在加载团队…</p>
         <div v-else-if="errors.directory" role="alert">{{ errors.directory.message }} <button @click="errors.directory.retry()">重试</button></div>
-        <p v-else-if="!tenants.length" class="console-muted">{{ tenantSearch ? "已加载的租户中没有匹配项。" : "还没有租户，可在这里创建或接受邀请。" }}</p>
-        <button v-if="moreTenants && !errors.directory" class="tenant-load-more" :disabled="busy || tenantsLoading" @click="read('directory', directory.more, refreshDirectory)">加载更多租户</button>
+        <p v-else-if="!tenants.length" class="console-muted">{{ tenantSearch ? "已加载的团队中没有匹配项。" : "还没有团队，可在这里创建或接受邀请。" }}</p>
+        <button v-if="moreTenants && !errors.directory" class="tenant-load-more" :disabled="busy || tenantsLoading" @click="read('directory', directory.more, refreshDirectory)">加载更多团队</button>
 
         <div class="tenant-rail-note">
           <template v-if="invitations.length + transfers.length > 0">
@@ -389,7 +386,9 @@ onBeforeUnmount(() => {
 
           <div v-if="transfers.length" class="tenant-banners" aria-label="所有权交接">
             <div v-for="transfer in transfers" :key="transfer.transferId" class="v2-row tenant-banner is-warn">
-              <span class="tenant-banner-text">租户 {{ transfer.tenantId }} 所有权交接</span>
+              <span class="tenant-banner-text">
+                {{ transferTeams[transfer.tenantId]?.name ? `「${transferTeams[transfer.tenantId]?.name}」的所有权交接` : "团队所有权交接" }}
+              </span>
               <button v-if="transferOperation(transfer)" :disabled="busy || transfersLoading" @click="updateTransfer(transfer)">
                 {{ transferOperation(transfer) === 'accept' ? '接受交接' : '取消交接' }}
               </button>
@@ -404,7 +403,7 @@ onBeforeUnmount(() => {
           <div v-else-if="errors.transfers" role="alert">{{ errors.transfers.message }} <button @click="errors.transfers.retry()">重试</button></div>
           <button v-if="moreTransfers && !errors.transfers" :disabled="busy || transfersLoading" @click="read('transfers', () => readTransfers(true), () => readTransfers())">加载更多交接</button>
 
-          <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个租户，查看成员与管理设置</p>
+          <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个团队，查看成员与管理设置</p>
           <div v-if="teamTab === 'members' && errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
           <TenantMembers
             v-if="selectedTenant"
@@ -420,7 +419,7 @@ onBeforeUnmount(() => {
             :page="memberPage"
             :size="memberSize"
             :has-next="moreMembers"
-            :invitation-channels="invitationChannels"
+            :can-invite-by-phone="canInviteByPhone"
             :refresh-pending="refreshPending('tenant-member:' + selectedTenant.tenantId)"
             :submit-write="submitWrite"
             :discard="discard"

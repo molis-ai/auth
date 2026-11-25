@@ -752,7 +752,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="billing-entry-meta">
                 <span>{{ localTime(entry.occurredAt) }}</span>
-                <span v-if="ownerKind === 'TENANT' && canManage">操作者 {{ entry.actorUserId || "系统" }}</span>
+                <span v-if="ownerKind === 'TENANT' && canManage">操作者 {{ entry.actorUserId ? (entry.actorUserId === viewerId ? "本人" : "其他成员") : "系统" }}</span>
                 <span v-if="entry.referenceId" class="billing-mono">关联 {{ entry.referenceId }}</span>
               </div>
             </li>
@@ -822,7 +822,7 @@ onBeforeUnmount(() => {
 .billing-subject { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .billing-subject-copy { min-width: 0; }
 .billing-subject-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.billing-header h2 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.3; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.billing-header h2 { margin: 0; font-size: 22px; font-weight: 650; line-height: 1.3; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .billing-subject-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
 
 .billing-avatar {

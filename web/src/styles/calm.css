@@ -4,6 +4,7 @@
   --workspace-bg: #f6f6f7; --surface: #fff; --sidebar: #f1f1f3;
   --ink: #19191b; --muted: #62626b; --line: #e7e7ea;
   --accent: #5068b7; --accent-soft: #e9edfb; --primary: #202023;
+  --auth-content-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px; color: var(--ink); background: var(--workspace-bg);
   --el-font-family: inherit; --el-font-size-base: 14px;
@@ -16,6 +17,11 @@
   --el-fill-color-blank: #fff; --el-disabled-bg-color: #f1f1f3;
 }
 body { min-width: 320px; line-height: 1.6; }
+.auth-entry .layout, .v2-console .workspace-body {
+  font-family: var(--auth-content-font);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
 button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea { transition: background-color 160ms, border-color 160ms, color 160ms; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

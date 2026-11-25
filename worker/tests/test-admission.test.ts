@@ -118,7 +118,7 @@ test(`ENV-10 AC-AUTH-06: ${artifact} enforces test admission before delivery`, a
     assert.deepEqual((await capabilities.json()).data.methods, ['ACCOUNT_PASSWORD'])
     const page = await p.fetch(new Request(origin + '/console'))
     assert.equal(page.status, 200)
-    assert.match(await page.text(), /name="molis-tenant-invite-channels" content="USER"/)
+    assert.match(await page.text(), /name="molis-tenant-invite-channels" content="EMAIL"/)
 
     for (const purpose of ['LOGIN', 'PASSWORD_RESET']) {
       const unsupported = await sendChallenge(purpose, 'EMAIL_CODE', 'EMAIL', approvedEmail)

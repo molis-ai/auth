@@ -231,7 +231,7 @@ try {
     await assertAbsent(panel);
   };
   const createTeam = async (name) => {
-    await click("＋ 创建租户");
+    await click("＋ 创建团队");
     await page.fill("#tenant-create-name", name);
     await click("创建", ".tenant-create-dialog button");
     await waitText(".tm-heading", name);
@@ -249,7 +249,7 @@ try {
   await nav("个人资料");
   await page.wait("Boolean(document.querySelector('.profile-identity'))");
   const beforeTenantSetup = trace.length;
-  await nav("租户");
+  await nav("团队");
   const managerTeam = await createTeam("账单验收团队");
   const otherTeam = await createTeam("独立账单团队");
   await waitText(".tm-tabs [aria-current]", "成员管理");
@@ -365,7 +365,7 @@ try {
   await save("A04-expired");
   console.log("PASS A04 logout/relogin, same quote and deadline, alternate pending order, 409 and expired list status");
 
-  await nav("租户");
+  await nav("团队");
   await waitText(".tenant-directory", "账单验收团队");
   const selectTeam = async (name) => {
     const expression = `[...document.querySelectorAll('.tenant-choice')].find(button =>
@@ -451,7 +451,7 @@ try {
   billing.useCredit(managerTeam, buyer, "my-work-task");
   billing.useCredit(managerTeam, "fixture-colleague", "other-work-task");
   await nav("个人资料");
-  await nav("租户");
+  await nav("团队");
   await selectTeam("账单验收团队");
   const memberTraceStart = trace.length;
   await click("套餐与账单");
@@ -481,12 +481,14 @@ try {
   await waitText(".billing-credit", "0 Credit");
   assert.equal(await page.evaluate(includes(panel, paid.id)), false);
   await run(authDb, "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES ('fixture-admin',?,?,'ADMIN','ACTIVE',0)", managerTeam, admin);
-  await nav("租户");
+  await nav("团队");
   await selectTeam("账单验收团队");
   await click("套餐与账单");
   await openHistoryTab("Credit 流水");
   await waitText(".billing-ledger", "other-work-task");
   await waitText(".billing-ledger", "my-work-task");
+  await waitText(".billing-ledger", "操作者 其他成员");
+  assert.equal(await page.evaluate(includes(".billing-ledger", "fixture-colleague")), false);
   await waitText(".billing-ledger", "发放");
   await openHistoryTab("订单");
   await click("继续付款");
