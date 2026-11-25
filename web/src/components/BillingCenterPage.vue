@@ -24,12 +24,13 @@ const props = defineProps<{
   viewerId: string;
   viewerName: string;
   viewerEmail?: string | null;
+  initialSubjectId?: string;
 }>();
 const emit = defineEmits<{ expired: [error: AuthError] }>();
 
 const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 const credits = new Intl.NumberFormat("zh-CN");
-const selectedKey = ref<string>("personal");
+const selectedKey = ref<string>(props.initialSubjectId || "personal");
 const tenantDirectory = cursorCollection<TenantLedger>(props.client);
 const { items: tenants, loading: tenantsLoading, nextCursor: moreTenants } = tenantDirectory;
 const tenantsError = ref("");

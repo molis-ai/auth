@@ -66,7 +66,12 @@ interface Method {
 }
 const applications = ref<Application[]>([]),
   selectedApplication = ref<Application>(),
-  methods = ref<Method[]>([]);
+  methods = ref<Method[]>([]),
+  billingSubjectId = ref("personal");
+const boundMethodCount = computed(() => {
+  const types = new Set(methods.value.map(item => item.type));
+  return ["EMAIL", "PHONE", "GOOGLE", "GITHUB"].filter(type => types.has(type)).length;
+});
 const newApplicationName = ref(""),
   appName = ref(""),
   appStatus = ref("ACTIVE");
@@ -240,8 +245,9 @@ watch([() => account.value?.user?.userId, page], ([userId, target]) => {
     if (scope === accountScope) expireWithToast(error);
   });
 });
-async function navigate(target: string) {
+async function navigate(target: string, subjectId?: string) {
   await cancelSecurity();
+  billingSubjectId.value = target === "subscriptions" ? (subjectId ?? "personal") : "personal";
   page.value = target;
   if (target === 'security') securityTab.value = 'methods';
   selectedApplication.value = undefined;
@@ -251,6 +257,9 @@ async function navigate(target: string) {
     else if (target === "applications")
       applications.value = await list("/platform/applications");
   });
+}
+function openTeamBilling(tenantId: string) {
+  void navigate("subscriptions", tenantId);
 }
 async function loggedIn({ account: current }: AuthCompletion) {
   clearToast();
@@ -600,43 +609,137 @@ onBeforeUnmount(() => {
           <button type="button" :disabled="busy" @click="retryRefresh(action)">刷新</button>
         </p>
       </template>
-      <AccountProfile v-if="page === 'account' && account.user" :key="account.user.userId" :user="account.user" :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel" :client="client" :on-saved="refreshAccount" @expired="expireWithToast">
-      </AccountProfile>
+      <AccountProfile
+        v-if="page === 'account' && account.user"
+        :key="account.user.userId"
+        :user="account.user"
+        :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel"
+        :phone-account="methods.find(item => item.type === 'PHONE')?.maskedLabel"
+        :bound-method-count="boundMethodCount"
+        :client="client"
+        :on-saved="refreshAccount"
+        @expired="expireWithToast"
+        @navigate="navigate"
+        @copied="showToast"
+      />
       <section v-if="page === 'security'" class="console-card security-page">
         <div class="collection-layout security-layout">
-          <nav class="collection-list security-nav" aria-label="账号安全分类">
+          <aside class="collection-list security-nav" aria-label="账号安全分类">
             <h1>账号安全</h1>
-            <button v-for="[id,label] in [['methods','登录方式'],['password','登录密码'],['sessions','登录会话']]" :key="id" :aria-current="securityTab === id ? 'page' : undefined" :disabled="busy" @click="selectSecurityTab(id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/><path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/><path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/></svg>{{ label }}</button>
-          </nav>
-          <div class="collection-detail">
-            <section v-if="securityTab === 'sessions'" class="session-actions security-panel-card"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button ref="logoutTrigger" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
-            <dialog ref="logoutDialog" class="logout-confirm" aria-labelledby="logout-confirm-title" @close="logoutTrigger?.focus()"><h2 id="logout-confirm-title">退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button autofocus @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
-            <section v-if="securityTab === 'password'" class="security-panel-card"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
-            <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
-              <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method" :class="{ 'is-editing-phone': type === 'PHONE' && binding?.type === 'PHONE' && securityAction === 'BIND_METHOD' }">
-                <div class="security-method-info">
-                <h3>{{ label }}<span v-if="type === 'EMAIL'" class="security-info"><button type="button" class="security-info-trigger" aria-label="邮箱维护说明" aria-describedby="email-management-tip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="4.8" r=".6" fill="currentColor" stroke="none"/></svg></button><span id="email-management-tip" role="tooltip" class="security-info-tip">邮箱由管理员维护，如需修改请联系管理员。</span></span></h3>
-                  <p v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="security-method-account">{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</p>
-                  <p v-if="!methods.some(item => item.type === type)" class="security-method-account">-</p>
-                </div>
-                <div class="security-method-controls">
-                <template v-if="!(securityAction && binding?.type === type)">
-                  <div v-for="m in methods.filter(item => item.type === type && type !== 'EMAIL')" :key="m.bindingId" class="security-method-actions">
-                    <button :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button>
-                  </div>
-                  <div v-if="type !== 'EMAIL' && !methods.some(item => item.type === type)" class="security-method-actions">
-                    <button :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button>
-                  </div>
-                </template>
-                  <span class="security-method-status" :class="{ 'is-bound': methods.some(item => item.type === type) }" role="status">
-                    <span class="security-status-dot" aria-hidden="true"></span>
-                    {{ methods.some(item => item.type === type) ? '已绑定' : '未绑定' }}
-                  </span>
-                </div>
-                <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+            <div class="security-rail-list">
+              <div
+                v-for="[id,label,sub] in [
+                  ['methods','登录方式',`${boundMethodCount}/4 已绑定`],
+                  ['password','登录密码','密码安全管理'],
+                  ['sessions','登录会话','多产品独立会话'],
+                ]"
+                :key="id"
+                class="security-rail-item"
+                :class="{ 'is-active': securityTab === id }"
+                @click="!busy && selectSecurityTab(id)"
+              >
+                <svg class="security-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/>
+                  <path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>
+                  <path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/>
+                </svg>
+                <span class="security-rail-body">
+                  <button
+                    type="button"
+                    class="security-rail-btn"
+                    :aria-current="securityTab === id ? 'page' : undefined"
+                    :disabled="busy"
+                    @click.stop="selectSecurityTab(id)"
+                  >{{ label }}</button>
+                  <span class="security-rail-sub">{{ sub }}</span>
+                </span>
               </div>
-            </section>
-<AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+            </div>
+            <div class="security-rail-note">
+              <strong>安全保护提示</strong>
+              修改密码、解绑敏感登录方式前会触发身份验证，确保账号操作安全。
+            </div>
+          </aside>
+          <div class="collection-detail">
+            <div class="security-detail-inner">
+              <template v-if="securityTab === 'sessions'">
+                <header class="security-page-head">
+                  <div>
+                    <h2>登录会话</h2>
+                    <p>每个 Molis 产品维护独立会话，你可随时一键注销全部设备</p>
+                  </div>
+                  <button ref="logoutTrigger" type="button" class="security-danger-btn" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button>
+                </header>
+                <section class="session-actions security-panel-card">
+                  <div class="security-card-head">
+                    <div>
+                      <h3>当前浏览器会话</h3>
+                      <p>采用同源 HttpOnly Cookie 保护，浏览器端不持久化明文凭证。</p>
+                    </div>
+                    <span class="security-method-status is-bound"><span class="security-status-dot" aria-hidden="true"></span>当前会话</span>
+                  </div>
+                  <p class="security-session-hint">点击右上角“退出所有产品和设备”将立即撤销你在 Molis 全线产品与其它设备上的有效登录态。</p>
+                </section>
+              </template>
+              <dialog ref="logoutDialog" class="logout-confirm" aria-labelledby="logout-confirm-title" @close="logoutTrigger?.focus()"><h2 id="logout-confirm-title">退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button autofocus @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
+
+              <template v-if="securityTab === 'password'">
+                <header class="security-page-head">
+                  <div>
+                    <h2>登录密码</h2>
+                    <p>定期更新高强度密码可提升账号安全性</p>
+                  </div>
+                </header>
+                <section class="security-panel-card">
+                  <div class="security-card-head">
+                    <div>
+                      <h3>修改密码</h3>
+                      <p>设置或修改用于账号登录的密码，建议使用大小写字母、数字与符号组合。</p>
+                    </div>
+                    <button v-if="securityAction !== 'CHANGE_PASSWORD'" type="button" class="security-primary-btn" :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button>
+                  </div>
+                  <AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+                </section>
+              </template>
+
+              <section v-if="securityTab === 'methods'">
+                <header class="security-page-head">
+                  <div>
+                    <h2>登录方式</h2>
+                    <p>绑定多种方式可避免账号失联，建议至少保留 2 种可用登录凭证</p>
+                  </div>
+                </header>
+                <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method" :class="{ 'is-editing-phone': type === 'PHONE' && binding?.type === 'PHONE' && securityAction === 'BIND_METHOD' }">
+                  <div class="security-method-head">
+                    <span class="security-method-icon" aria-hidden="true">
+                      <svg v-if="type === 'EMAIL'" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3 7 9 6 9-6"/></svg>
+                      <svg v-else-if="type === 'PHONE'" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M11 18h2"/></svg>
+                      <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+                    </span>
+                    <div class="security-method-info">
+                      <h3>{{ label }}<span v-if="type === 'EMAIL'" class="security-info"><button type="button" class="security-info-trigger" aria-label="邮箱维护说明" aria-describedby="email-management-tip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="4.8" r=".6" fill="currentColor" stroke="none"/></svg></button><span id="email-management-tip" role="tooltip" class="security-info-tip">邮箱由管理员维护，如需修改请联系管理员。</span></span></h3>
+                      <p v-for="m in methods.filter(item => item.type === type)" :key="m.bindingId" class="security-method-account">{{ type === 'EMAIL' ? account.user?.email : m.maskedLabel }}</p>
+                      <p v-if="!methods.some(item => item.type === type)" class="security-method-account">尚未绑定，绑定后可直接用于一键登录</p>
+                    </div>
+                  </div>
+                  <div class="security-method-controls">
+                    <span class="security-method-status" :class="{ 'is-bound': methods.some(item => item.type === type) }" role="status">
+                      <span class="security-status-dot" aria-hidden="true"></span>
+                      {{ methods.some(item => item.type === type) ? '已绑定' : '未绑定' }}
+                    </span>
+                    <template v-if="!(securityAction && binding?.type === type)">
+                      <div v-for="m in methods.filter(item => item.type === type && type !== 'EMAIL')" :key="m.bindingId" class="security-method-actions">
+                        <button type="button" :disabled="busy" @click="verify('UNLINK_METHOD',m)">解绑</button>
+                      </div>
+                      <div v-if="type !== 'EMAIL' && !methods.some(item => item.type === type)" class="security-method-actions">
+                        <button type="button" class="is-bind-primary" :disabled="busy" @click="verify('BIND_METHOD',{bindingId:'',type,maskedLabel:'',verified:false,usableForLogin:false})">{{ action }}</button>
+                      </div>
+                    </template>
+                  </div>
+                  <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+                </div>
+              </section>
+            </div>
           </div>
         </div>
       </section>
@@ -654,14 +757,16 @@ onBeforeUnmount(() => {
         @expired="handleTenantError"
         @dispose="disposeTenantPage"
         @clear-toast="clearToast"
+        @open-billing="openTeamBilling"
       />
       <BillingCenterPage
         v-if="page === 'subscriptions' && account.user && !endingSession"
-        :key="accountScope"
+        :key="accountScope + ':' + billingSubjectId"
         :client="client"
         :viewer-id="account.user.userId"
         :viewer-name="account.user.displayName"
         :viewer-email="account.user.email"
+        :initial-subject-id="billingSubjectId"
         @expired="expireWithToast"
       />
       <PlatformUsers

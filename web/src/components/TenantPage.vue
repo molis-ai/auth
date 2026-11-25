@@ -46,7 +46,7 @@ const props = defineProps<{
   discard: (action: string) => void;
   refreshPending: (action: string) => boolean;
 }>();
-const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: [] }>();
+const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: []; openBilling: [tenantId: string] }>();
 const invitationChannels = document.querySelector<HTMLMetaElement>(
   'meta[name="molis-tenant-invite-channels"]',
 )?.content.split(" ") ?? ["USER"];
@@ -314,12 +314,15 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="console-card collection-page tenant-page">
-    <h1>我的租户</h1>
     <div class="collection-layout">
       <aside class="collection-list" aria-label="租户列表" :aria-busy="tenantsLoading">
-        <input v-model="tenantSearch" type="search" aria-label="搜索已加载的租户" placeholder="搜索租户" />
+        <div class="tenant-rail-head">
+          <h1>我的租户</h1>
+          <span class="tenant-rail-count">{{ tenants.length }}</span>
+        </div>
+        <input v-model="tenantSearch" type="search" aria-label="搜索已加载的租户" placeholder="搜索租户…" />
         <button v-if="creationMode === 'SELF_SERVICE'" class="tenant-create-trigger" :disabled="busy" @click="openTenantCreate">＋ 创建租户</button>
-        <p v-else-if="creationMode">租户由平台创建并分配。</p>
+        <p v-else-if="creationMode" class="tenant-policy-note">租户由平台创建并分配。</p>
         <div v-if="errors.policy" role="alert">{{ errors.policy.message }} <button @click="errors.policy.retry()">重试</button></div>
         <dialog ref="tenantCreateDialog" class="tenant-create-dialog" aria-labelledby="tenant-create-title" @cancel.prevent="closeTenantCreate">
           <form @submit.prevent="createTenant">
@@ -330,68 +333,110 @@ onBeforeUnmount(() => {
             <footer><button type="button" :disabled="busy" @click="closeTenantCreate">取消</button><button type="submit" :disabled="busy || !tenantName.trim()">{{ busy ? '正在创建…' : '创建' }}</button></footer>
           </form>
         </dialog>
-        <nav class="tenant-directory" aria-label="选择租户">
-          <button v-for="tenant in tenants" :key="tenant.tenantId" class="v2-row collection-item tenant-choice" :class="{ selected: selectedTenant?.tenantId === tenant.tenantId }" :aria-current="selectedTenant?.tenantId === tenant.tenantId ? 'true' : undefined" :disabled="busy" @click="selectTenant(tenant)">
-            <span class="tenant-choice-name">{{ tenant.name }}</span>
-            <span>{{ roleLabels[tenant.myRole] }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
-          </button>
-        </nav>
+
+        <div class="tenant-rail-group">
+          <p class="tenant-rail-label">租户目录</p>
+          <nav class="tenant-directory" aria-label="选择租户">
+            <button
+              v-for="tenant in tenants"
+              :key="tenant.tenantId"
+              class="v2-row collection-item tenant-choice"
+              :class="{ selected: selectedTenant?.tenantId === tenant.tenantId }"
+              :aria-current="selectedTenant?.tenantId === tenant.tenantId ? 'true' : undefined"
+              :disabled="busy"
+              @click="selectTenant(tenant)"
+            >
+              <i class="tenant-choice-avatar" aria-hidden="true">{{ tenant.name.slice(0, 1) }}</i>
+              <div class="tenant-choice-body">
+                <div class="tenant-choice-top">
+                  <span class="tenant-choice-name">{{ tenant.name }}</span>
+                  <i class="tenant-choice-dot" :class="tenant.status === 'ACTIVE' ? 'is-on' : 'is-off'" aria-hidden="true"></i>
+                </div>
+                <span class="tenant-choice-meta">{{ roleLabels[tenant.myRole] }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+
         <p v-if="tenantsLoading" class="console-muted" role="status">正在加载租户…</p>
         <div v-else-if="errors.directory" role="alert">{{ errors.directory.message }} <button @click="errors.directory.retry()">重试</button></div>
         <p v-else-if="!tenants.length" class="console-muted">{{ tenantSearch ? "已加载的租户中没有匹配项。" : "还没有租户，可在这里创建或接受邀请。" }}</p>
-        <button v-if="moreTenants && !errors.directory" :disabled="busy || tenantsLoading" @click="read('directory', directory.more, refreshDirectory)">加载更多租户</button>
+        <button v-if="moreTenants && !errors.directory" class="tenant-load-more" :disabled="busy || tenantsLoading" @click="read('directory', directory.more, refreshDirectory)">加载更多租户</button>
+
+        <div class="tenant-rail-note">
+          <template v-if="invitations.length + transfers.length > 0">
+            <strong>待处理事项（{{ invitations.length + transfers.length }}）</strong>
+            {{ invitations.length }} 条加入邀请 · {{ transfers.length }} 条所有权交接，可在右侧直接处理。
+          </template>
+          <template v-else>
+            <strong>人钱分离</strong>
+            本页专注管理成员与权限；团队套餐与 Credit 账单可在「订阅与账单」统一管理。
+          </template>
+        </div>
       </aside>
       <div class="collection-detail">
-        <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个租户，查看成员与管理设置</p>
-        <div v-if="teamTab === 'members' && errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
-        <TenantMembers
-          v-if="selectedTenant"
-          :key="selectedTenant.tenantId"
-          v-model:tab="teamTab"
-          :client="client"
-          :viewer-id="viewerId"
-          :billing-enabled="billingEnabled"
-          :tenant="selectedTenant"
-          :members="members"
-          :loading="membersLoading"
-          :busy="busy"
-          :page="memberPage"
-          :size="memberSize"
-          :has-next="moreMembers"
-          :invitation-channels="invitationChannels"
-          :refresh-pending="refreshPending('tenant-member:' + selectedTenant.tenantId)"
-          :submit-write="submitWrite"
-          :discard="discard"
-          :reload="reloadMembers"
-          :own-membership="ownMembership"
-          :refresh-transfers="readTransfers"
-          :leave="refreshDirectoryAndTransfers"
-          @expired="emit('expired', $event)"
-          @order-access-denied="read('directory', refreshDirectory)"
-          @left="left"
-          @previous="memberPage--"
-          @next="nextMemberPage"
-          @resize="changeMemberSize"
-        />
-        <div v-for="transfer in transfers" :key="transfer.transferId" class="v2-row">
-          <span>租户 {{ transfer.tenantId }} 所有权交接</span>
-          <button v-if="transferOperation(transfer)" :disabled="busy || transfersLoading" @click="updateTransfer(transfer)">
-            {{ transferOperation(transfer) === 'accept' ? '接受交接' : '取消交接' }}
-          </button>
-        </div>
-        <p v-if="transfersLoading" class="console-muted" role="status">正在加载所有权交接…</p>
-        <div v-else-if="errors.transfers" role="alert">{{ errors.transfers.message }} <button @click="errors.transfers.retry()">重试</button></div>
-        <button v-if="moreTransfers && !errors.transfers" :disabled="busy || transfersLoading" @click="read('transfers', () => readTransfers(true), () => readTransfers())">加载更多交接</button>
+        <div class="tenant-detail-inner">
+          <div v-if="invitations.length" class="tenant-banners" aria-label="收到的邀请">
+            <h2 class="visually-hidden">收到的邀请</h2>
+            <div v-for="invitation in invitations" :key="invitation.invitationId" class="v2-row tenant-banner is-info">
+              <span class="tenant-banner-text">{{ invitation.targetSummary }}</span>
+              <div class="tenant-banner-actions">
+                <button class="tenant-banner-primary" :disabled="busy" @click="updateInvitation(invitation, 'accept')">加入</button>
+                <button :disabled="busy" @click="updateInvitation(invitation, 'decline')">拒绝</button>
+              </div>
+            </div>
+          </div>
 
-        <h2 v-if="invitations.length">收到的邀请</h2>
-        <div v-for="invitation in invitations" :key="invitation.invitationId" class="v2-row">
-          <span>{{ invitation.targetSummary }}</span>
-          <button :disabled="busy" @click="updateInvitation(invitation, 'accept')">加入</button>
-          <button :disabled="busy" @click="updateInvitation(invitation, 'decline')">拒绝</button>
+          <div v-if="transfers.length" class="tenant-banners" aria-label="所有权交接">
+            <div v-for="transfer in transfers" :key="transfer.transferId" class="v2-row tenant-banner is-warn">
+              <span class="tenant-banner-text">租户 {{ transfer.tenantId }} 所有权交接</span>
+              <button v-if="transferOperation(transfer)" :disabled="busy || transfersLoading" @click="updateTransfer(transfer)">
+                {{ transferOperation(transfer) === 'accept' ? '接受交接' : '取消交接' }}
+              </button>
+            </div>
+          </div>
+
+          <p v-if="invitationsLoading" class="console-muted" role="status">正在加载邀请…</p>
+          <div v-else-if="errors.invitations" role="alert">{{ errors.invitations.message }} <button @click="errors.invitations.retry()">重试</button></div>
+          <button v-if="moreInvitations && !errors.invitations" :disabled="busy || invitationsLoading" @click="read('invitations', received.more, refreshInvitations)">加载更多邀请</button>
+
+          <p v-if="transfersLoading" class="console-muted" role="status">正在加载所有权交接…</p>
+          <div v-else-if="errors.transfers" role="alert">{{ errors.transfers.message }} <button @click="errors.transfers.retry()">重试</button></div>
+          <button v-if="moreTransfers && !errors.transfers" :disabled="busy || transfersLoading" @click="read('transfers', () => readTransfers(true), () => readTransfers())">加载更多交接</button>
+
+          <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个租户，查看成员与管理设置</p>
+          <div v-if="teamTab === 'members' && errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
+          <TenantMembers
+            v-if="selectedTenant"
+            :key="selectedTenant.tenantId"
+            v-model:tab="teamTab"
+            :client="client"
+            :viewer-id="viewerId"
+            :billing-enabled="billingEnabled"
+            :tenant="selectedTenant"
+            :members="members"
+            :loading="membersLoading"
+            :busy="busy"
+            :page="memberPage"
+            :size="memberSize"
+            :has-next="moreMembers"
+            :invitation-channels="invitationChannels"
+            :refresh-pending="refreshPending('tenant-member:' + selectedTenant.tenantId)"
+            :submit-write="submitWrite"
+            :discard="discard"
+            :reload="reloadMembers"
+            :own-membership="ownMembership"
+            :refresh-transfers="readTransfers"
+            :leave="refreshDirectoryAndTransfers"
+            @expired="emit('expired', $event)"
+            @order-access-denied="read('directory', refreshDirectory)"
+            @open-billing="emit('openBilling', $event)"
+            @left="left"
+            @previous="memberPage--"
+            @next="nextMemberPage"
+            @resize="changeMemberSize"
+          />
         </div>
-        <p v-if="invitationsLoading" class="console-muted" role="status">正在加载邀请…</p>
-        <div v-else-if="errors.invitations" role="alert">{{ errors.invitations.message }} <button @click="errors.invitations.retry()">重试</button></div>
-        <button v-if="moreInvitations && !errors.invitations" :disabled="busy || invitationsLoading" @click="read('invitations', received.more, refreshInvitations)">加载更多邀请</button>
       </div>
     </div>
   </section>

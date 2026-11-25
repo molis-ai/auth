@@ -1,81 +1,136 @@
-/* Match the compact team-management screen; keep shell and account forms unchanged. */
-.v2-console .tenant-page { font-size:13px; font-weight:400; line-height:1.5; }
-.v2-console .tenant-page h1 { font-size:16px; font-weight:500; margin-bottom:22px; }
-.v2-console .tenant-page .collection-layout { grid-template-columns:220px minmax(0,1fr); }
-.v2-console .tenant-page .collection-detail { padding:4px 0 24px 24px; }
-.v2-console .tenant-page input:not([type=checkbox]),
-.v2-console .tenant-page select { height:34px; min-height:34px; padding:6px 10px; border-radius:6px; font-family:inherit; font-size:13px; font-weight:400; line-height:20px; box-sizing:border-box; }
-.v2-console .tenant-page input::placeholder { font-size:13px; font-weight:400; color:#85858f; }
-.v2-console .tenant-page button { min-height:32px; padding:5px 10px; border-radius:6px; font-family:inherit; font-size:13px; font-weight:400; line-height:20px; }
-.v2-console .tenant-page label { font-size:12px; font-weight:400; margin:10px 0; }
-.v2-console .tenant-page .collection-list > input { margin:0 0 14px; }
-.v2-console .tenant-page .collection-list form { padding-bottom:12px; margin-bottom:8px; }
-.v2-console .tenant-page .collection-item { gap:0; padding:5px 8px; margin:2px 0; }
-.v2-console .tenant-page .collection-item button { min-height:26px; padding:3px 0; font-size:13px; }
-.v2-console .tenant-page .collection-item span { font-size:11px; font-weight:400; padding-bottom:2px; }
-.v2-console .tenant-page .tm-heading { gap:12px; padding:0 0 16px; }
-.v2-console .tenant-page .tm-heading h2 { font-size:18px; line-height:26px; font-weight:500; margin:0 0 3px; }
-.v2-console .tenant-page .tm-heading p { font-size:12px; line-height:18px; font-weight:400; margin:0; }
-.v2-console .tenant-page .tm-team-avatar { width:38px; height:38px; border-radius:9px; font-size:16px; flex-shrink:0; }
-.v2-console .tenant-page .tm-tabs { margin-bottom:16px; }
-.v2-console .tenant-page .tm-tabs button { padding:8px 0 10px; border-radius:0; font-size:13px; font-weight:400; }
-.v2-console .tenant-page .tm-tools { gap:10px; margin-bottom:12px; }
-.v2-console .tenant-page .tm-tools input { max-width:260px; margin:0; }
-.v2-console .tenant-page .tm-tools button { height:34px; padding:6px 12px; font-size:12px; }
-.v2-console .tenant-page .tm-table-wrap { min-height:0; }
-.v2-console .tenant-page table { font-size:13px; }
-.v2-console .tenant-page th { padding:8px; font-size:12px; font-weight:400; line-height:20px; }
-.v2-console .tenant-page th button { min-height:0; padding:0; border:0; background:transparent; box-shadow:none; font-size:12px; color:var(--muted); }
-.v2-console .tenant-page td { padding:10px 8px; font-size:13px; line-height:20px; }
-.v2-console .tenant-page .tm-initial { width:30px; height:30px; font-size:12px; }
-.v2-console .tenant-page .tm-person strong { font-size:13px; font-weight:400; }
-.v2-console .tenant-page .tm-person small { margin-top:1px; font-size:11px; font-weight:400; }
-.v2-console .tenant-page .tm-actions button { min-height:28px; padding:3px 7px; font-size:12px; }
-.v2-console .tenant-page .tm-pagination { margin-top:0; padding:16px 0 0; gap:10px; font-size:12px; font-weight:400; }
-.v2-console .tenant-page .tm-pagination label { display:flex; margin:0; gap:6px; }
-.v2-console .tenant-page .tm-pagination select { width:52px; height:30px; min-height:30px; padding:3px 6px; margin:0; font-size:12px; }
-.v2-console .tenant-page .tm-pagination button { min-height:28px; padding:3px 8px; }
-.v2-console .tenant-page .tm-dialog h2 { font-size:18px; font-weight:500; }
-.v2-console .tenant-page .tm-dialog p { font-size:13px; font-weight:400; }
-.v2-console .tenant-page .tm-dialog footer { margin-top:20px; }
-@media(max-width:760px) {
- .v2-console .tenant-page .collection-layout { grid-template-columns:1fr; }
- .v2-console .tenant-page .collection-detail { padding:20px 0 0; }
- .v2-console .tenant-page input:not([type=checkbox]) { font-size:16px; height:40px; }
- .v2-console .tenant-page button { min-height:40px; }
- .v2-console .tenant-page th button { min-height:32px; }
- .v2-console .tenant-page .tm-actions button { min-height:40px; }
-}
-.v2-console .tenant-page .tenant-directory { display:grid; gap:4px; padding:0; margin:0; }
-.v2-console .tenant-page .tenant-choice { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; width:100%; min-height:48px; margin:0; text-align:left; border:0; border-radius:6px; background:transparent; padding:6px 10px; gap:1px; }
-.v2-console .tenant-page .tenant-choice > span { margin:0; padding:0; line-height:16px; }
+/* Calm Workspace v2 Team / Tenant Management layout matching Billing & Security rails. */
+.v2-console .workspace-body main:has(.tenant-page) { padding: 0; }
+.v2-console .tenant-page { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.v2-console .tenant-page .collection-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100svh; }
 
-.v2-console .tenant-page .tenant-choice.selected { background:var(--accent-soft); color:var(--accent); }
-.v2-console .tenant-page .tenant-choice .tenant-choice-name { font-size:13px; line-height:18px; padding:0; color:inherit; }
-.v2-console .tenant-page th.tm-actions { width:236px; text-align:center; }
-.v2-console .tenant-page .tm-action-slots { position:relative; display:grid; grid-template-columns:76px 88px 48px; gap:4px; min-height:28px; width:220px; }
-.v2-console .tenant-page .tm-action-slots > span { display:flex; align-items:center; justify-content:center; }
-.v2-console .tenant-page .tm-action-slots button { margin:0; }
-.v2-console .tenant-page .tm-action-slots .tm-no-actions { position:absolute; inset:0; pointer-events:none; color:var(--muted); }
-/* The secondary rail owns both gutters; do not combine main's left padding
-   with the collection's unrelated right padding. */
-@media(min-width:761px) {
- .v2-console .workspace-body main:has(.tenant-page) { padding-left:0; }
- .v2-console .tenant-page > h1 { margin-left:18px; color:var(--ink); font-weight:650; }
- .v2-console .tenant-page .collection-layout { grid-template-columns:256px minmax(0,1fr); }
- .v2-console .tenant-page .collection-list { padding-left:18px; padding-right:18px; background:#f9f9fb; border-radius:12px 0 0 12px; }
+.v2-console .tenant-page .collection-list {
+  position: sticky; top: 0; height: 100svh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 22px 12px 24px; background: #f9f9fb; border-right: 1px solid var(--line);
 }
-.v2-console .tenant-page .tenant-directory { grid-auto-rows:48px; }
-.v2-console .tenant-page .tenant-choice { height:48px; min-height:48px; max-height:48px; min-width:0; box-sizing:border-box; overflow:hidden; }
-.v2-console .tenant-page .tenant-choice > span { display:block; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.v2-console .tenant-page .tenant-create-trigger { width:100%; margin:0 0 12px; text-align:left; background:transparent; border:1px dashed var(--line); color:var(--muted); }
-.v2-console .tenant-page .tenant-create-dialog { width:min(420px,calc(100vw - 32px)); padding:24px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); max-height:calc(100dvh - 32px); }
-.v2-console .tenant-page .tenant-create-dialog::backdrop { background:#19191b55; }
-.v2-console .tenant-page .tenant-create-dialog form { padding:0; margin:0; border:0; }
-.v2-console .tenant-page .tenant-create-dialog header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
-.v2-console .tenant-page .tenant-create-dialog h2 { margin:0; font-size:18px; font-weight:500; }
-.v2-console .tenant-page .tenant-create-dialog header button { border:0; background:transparent; }
-.v2-console .tenant-page .tenant-create-dialog p { font-size:12px; color:var(--muted); line-height:1.7; }
-.v2-console .tenant-page .tenant-create-dialog [role=alert] { color:#b42318; }
-.v2-console .tenant-page .tenant-create-dialog footer { display:flex; justify-content:flex-end; gap:8px; margin:24px 0 0; }
-.v2-console .tenant-page .tenant-create-dialog button[type=submit] { background:var(--primary); color:white; }
+.tenant-rail-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px;
+}
+.v2-console .tenant-page .tenant-rail-head h1 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); line-height: 1.4; }
+.tenant-rail-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; height: 22px; padding: 0 8px; border-radius: 999px;
+  background: #efeff2; border: 1px solid #e2e2e7; color: var(--muted);
+  font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+}
+.v2-console .tenant-page .collection-list > input {
+  width: 100%; height: 34px; min-height: 34px; padding: 0 10px; margin: 0;
+  border-radius: 8px; border: 1px solid #d5d5db; background: var(--surface); font-size: 12.5px;
+}
+.v2-console .tenant-page .tenant-create-trigger {
+  width: 100%; height: 34px; min-height: 34px; margin: 0; padding: 0 12px;
+  border-radius: 8px; border: 1px dashed #c8c8d4; background: var(--surface); color: var(--ink);
+  font-size: 12.5px; font-weight: 550; text-align: center;
+}
+.v2-console .tenant-page .tenant-create-trigger:enabled:hover {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+}
+.tenant-policy-note { margin: 0; padding: 0 10px; font-size: 12px; color: var(--muted); }
+.tenant-rail-group { display: grid; gap: 6px; }
+.tenant-rail-label { margin: 0; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.v2-console .tenant-page .tenant-directory { display: grid; gap: 4px; padding: 0; margin: 0; }
+
+.v2-console .tenant-page .tenant-choice {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px;
+  margin: 0; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px;
+  background: transparent; color: var(--ink); text-align: left; box-sizing: border-box;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+.v2-console .tenant-page .tenant-choice:enabled:hover { background: #efeff4; }
+.v2-console .tenant-page .collection-item.tenant-choice.selected {
+  background: var(--surface); border-color: var(--line); color: var(--ink);
+  box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
+}
+.tenant-choice-avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: #eae9f9; color: #4b4899; font-style: normal; font-size: 12px; font-weight: 650;
+  display: grid; place-items: center;
+}
+.tenant-choice-body { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.tenant-choice-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.v2-console .tenant-page .tenant-choice .tenant-choice-name {
+  display: block; font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0;
+}
+.tenant-choice-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; font-style: normal; }
+.tenant-choice-dot.is-on { background: #26925c; }
+.tenant-choice-dot.is-off { background: #c5c5cf; }
+.v2-console .tenant-page .tenant-choice .tenant-choice-meta {
+  display: block; font-size: 11.5px; line-height: 1.3; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0;
+}
+
+.v2-console .tenant-page .tenant-load-more {
+  width: 100%; height: 32px; min-height: 32px; border-radius: 8px; font-size: 12px;
+}
+.tenant-rail-note {
+  margin-top: auto; padding: 12px; border-radius: 10px; background: var(--surface);
+  border: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+.tenant-rail-note strong { display: block; color: var(--ink); margin-bottom: 3px; font-size: 12px; }
+
+.v2-console .tenant-page .collection-detail { min-width: 0; padding: 28px 36px 76px; }
+.tenant-detail-inner { max-width: 940px; margin: 0 auto; display: grid; gap: 16px; }
+
+.tenant-banners { display: grid; gap: 8px; }
+.tenant-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px;
+  padding: 12px 16px; border-radius: 10px; font-size: 13px; line-height: 1.5;
+}
+.tenant-banner.is-info { background: #f5f6fa; border: 1px solid #dfe3f0; color: #414d75; }
+.tenant-banner.is-warn { background: #fff8e6; border: 1px solid #f2dfb3; color: #8a5a10; }
+.tenant-banner-text { flex: 1; min-width: 0; }
+.tenant-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.v2-console .tenant-page .tenant-banner button {
+  height: 30px; min-height: 30px; padding: 0 11px; border-radius: 7px; font-size: 12px; font-weight: 500;
+  border: 1px solid #d5d5db; background: var(--surface); color: var(--ink);
+}
+.v2-console .tenant-page .tenant-banner button.tenant-banner-primary {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+}
+
+.v2-console .tenant-page input:not([type=checkbox]),
+.v2-console .tenant-page select {
+  height: 34px; min-height: 34px; padding: 6px 10px; border-radius: 8px;
+  font-family: inherit; font-size: 13px; font-weight: 400; line-height: 20px; box-sizing: border-box;
+}
+.v2-console .tenant-page input::placeholder { font-size: 12.5px; font-weight: 400; color: #85858f; }
+.v2-console .tenant-page th.tm-actions { width: 236px; text-align: right; }
+.v2-console .tenant-page .tm-action-slots { position: relative; display: inline-grid; grid-template-columns: 76px 88px 48px; gap: 4px; min-height: 28px; width: 220px; }
+.v2-console .tenant-page .tm-action-slots > span { display: flex; align-items: center; justify-content: flex-end; }
+.v2-console .tenant-page .tm-action-slots button { margin: 0; }
+.v2-console .tenant-page .tm-action-slots .tm-no-actions { position: absolute; inset: 0; pointer-events: none; color: var(--muted); justify-content: flex-end; }
+
+.v2-console .tenant-page .tenant-create-dialog {
+  width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--surface); color: var(--ink); max-height: calc(100dvh - 32px);
+}
+.v2-console .tenant-page .tenant-create-dialog::backdrop { background: rgba(25, 25, 27, 0.42); backdrop-filter: blur(2px); }
+.v2-console .tenant-page .tenant-create-dialog form { padding: 0; margin: 0; border: 0; }
+.v2-console .tenant-page .tenant-create-dialog header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.v2-console .tenant-page .tenant-create-dialog h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.v2-console .tenant-page .tenant-create-dialog header button { border: 0; background: transparent; padding: 0 8px; }
+.v2-console .tenant-page .tenant-create-dialog p { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+.v2-console .tenant-page .tenant-create-dialog [role=alert] { color: #a62b33; }
+.v2-console .tenant-page .tenant-create-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin: 22px 0 0; }
+.v2-console .tenant-page .tenant-create-dialog button[type=submit] { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.tenant-page .visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+@media (max-width: 960px) {
+  .v2-console .tenant-page .collection-layout { grid-template-columns: 1fr; min-height: 0; }
+  .v2-console .tenant-page .collection-list { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+  .tenant-rail-note { display: none; }
+  .v2-console .tenant-page .collection-detail { padding: 20px 16px 56px; }
+}
+@media (max-width: 760px) {
+  .v2-console .tenant-page input:not([type=checkbox]) { font-size: 16px; height: 40px; }
+}

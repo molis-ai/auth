@@ -5,14 +5,30 @@ import { accountErrorMessage } from '../lib/errors.ts';
 import '../styles/profile.css';
 
 const AvatarCropper = defineAsyncComponent(() => import('./AvatarCropper.vue'));
-const props = defineProps<{ user: NonNullable<AccountView['user']>; githubAccount?: string; client: AccountClient; onSaved: () => Promise<void> }>();
-const emit = defineEmits<{ expired: [error: AuthError] }>();
+const props = defineProps<{
+  user: NonNullable<AccountView['user']>;
+  githubAccount?: string;
+  phoneAccount?: string;
+  boundMethodCount?: number;
+  client: AccountClient;
+  onSaved: () => Promise<void>;
+}>();
+const emit = defineEmits<{ expired: [error: AuthError]; navigate: [page: string]; copied: [message: string] }>();
 const profilePicker = ref<HTMLInputElement>();
 const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(null);
 let active = true;
 const nameInput = ref<HTMLInputElement>();
 const editingName = ref(false), nameSaving = ref(false), inlineName = ref(''), nameError = ref('');
 const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+async function copyUserId() {
+  try {
+    await navigator.clipboard?.writeText(props.user.userId);
+    emit('copied', `已复制账号 ID：${props.user.userId}`);
+  } catch {
+    emit('copied', `账号 ID：${props.user.userId}`);
+  }
+}
 
 async function editName() {
   if (nameSaving.value || cropFile.value) return;
@@ -63,32 +79,70 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
   <section class="console-card profile-page">
     <header class="profile-header">
       <h1>个人资料</h1>
-      <p class="profile-subtitle">管理你的公开头像、显示昵称及 Molis 全线产品基础身份信息</p>
+      <p class="profile-subtitle">管理你的公开头像、显示昵称以及账号全局概览</p>
     </header>
 
     <div class="profile-card">
       <div class="profile-identity">
-        <button type="button" class="profile-portrait profile-avatar-trigger" :class="{ selected: avatarSelected }" aria-label="编辑头像" @click="pickProfileAvatar" @blur="avatarSelected=false">
-          <img v-if="user.avatarUrl" :src="user.avatarUrl" alt="头像">
-          <span v-else>{{ user.displayName.slice(0,1) || 'M' }}</span>
-          <span class="profile-avatar-pencil">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z"/></svg>
-          </span>
-        </button>
-        <h2 class="profile-inline-name" :class="{ 'is-editing': editingName }">
-          <span v-if="!editingName" tabindex="0" role="button" aria-label="修改昵称" @click="editName" @keydown.enter.prevent="editName" @keydown.space.prevent="editName">{{ user.displayName }}</span>
-          <span v-else class="profile-name-field">
-            <span aria-hidden="true">{{ inlineName || '昵称' }}</span>
-            <input ref="nameInput" v-model="inlineName" aria-label="修改昵称" maxlength="80" autocomplete="nickname" :readonly="nameSaving" :aria-busy="nameSaving" @blur="saveName" @keydown="nameKey">
-          </span>
-        </h2>
-        <p v-if="nameSaving" class="profile-name-status" role="status">正在保存...</p>
-        <p v-else-if="nameError" class="profile-name-status profile-name-error" role="alert">{{ nameError }}</p>
-        <div class="profile-badges">
-          <p v-if="user.email" class="profile-email">{{ user.email }}</p>
-          <p v-if="githubAccount" class="profile-github">GitHub · {{ githubAccount }}</p>
+        <div class="profile-hero-left">
+          <button type="button" class="profile-portrait profile-avatar-trigger" :class="{ selected: avatarSelected }" aria-label="编辑头像" @click="pickProfileAvatar" @blur="avatarSelected=false">
+            <img v-if="user.avatarUrl" :src="user.avatarUrl" alt="头像">
+            <span v-else>{{ user.displayName.slice(0,1) || 'M' }}</span>
+            <span class="profile-avatar-pencil" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z"/></svg>
+            </span>
+          </button>
+          <div class="profile-hero-meta">
+            <h2 class="profile-inline-name" :class="{ 'is-editing': editingName }">
+              <span v-if="!editingName" tabindex="0" role="button" aria-label="修改昵称" @click="editName" @keydown.enter.prevent="editName" @keydown.space.prevent="editName">{{ user.displayName }}<svg class="profile-inline-pencil" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z"/></svg></span>
+              <span v-else class="profile-name-field">
+                <span aria-hidden="true">{{ inlineName || '昵称' }}</span>
+                <input ref="nameInput" v-model="inlineName" aria-label="修改昵称" maxlength="80" autocomplete="nickname" :readonly="nameSaving" :aria-busy="nameSaving" @blur="saveName" @keydown="nameKey">
+              </span>
+            </h2>
+            <p v-if="nameSaving" class="profile-name-status" role="status">正在保存...</p>
+            <p v-else-if="nameError" class="profile-name-status profile-name-error" role="alert">{{ nameError }}</p>
+            <div v-if="user.email || githubAccount" class="profile-badges">
+              <span v-if="user.email" class="profile-email">{{ user.email }}</span>
+              <span v-if="githubAccount" class="profile-github">GitHub · {{ githubAccount }}</span>
+            </div>
+          </div>
         </div>
+        <button type="button" class="profile-id-btn" title="点击复制账号 ID" @click="copyUserId">
+          <span class="profile-mono">{{ user.userId }}</span>
+        </button>
       </div>
+    </div>
+
+    <div class="profile-summary-grid">
+      <button type="button" class="profile-summary-tile" @click="emit('navigate', 'security')">
+        <div class="profile-tile-kicker">
+          <span>账号安全</span>
+          <span class="profile-pill" :class="(boundMethodCount ?? 0) >= 2 ? 'is-success' : 'is-neutral'">
+            {{ (boundMethodCount ?? 0) >= 2 ? '状态良好' : '建议增绑' }}
+          </span>
+        </div>
+        <div class="profile-tile-val">{{ boundMethodCount ?? 0 }} / 4 <span>种登录方式</span></div>
+        <span class="profile-tile-foot">管理登录方式与会话 →</span>
+      </button>
+
+      <button type="button" class="profile-summary-tile" @click="emit('navigate', 'tenants')">
+        <div class="profile-tile-kicker">
+          <span>所属租户</span>
+          <span class="profile-pill is-accent">成员与角色</span>
+        </div>
+        <div class="profile-tile-val">团队协作 <span>工作台</span></div>
+        <span class="profile-tile-foot">管理团队成员与角色 →</span>
+      </button>
+
+      <button type="button" class="profile-summary-tile" @click="emit('navigate', 'subscriptions')">
+        <div class="profile-tile-kicker">
+          <span>订阅与账单</span>
+          <span class="profile-pill is-neutral">个人 + 团队</span>
+        </div>
+        <div class="profile-tile-val">套餐与 Credit <span>独立账本</span></div>
+        <span class="profile-tile-foot">进入订阅与账单中心 →</span>
+      </button>
     </div>
 
     <section class="profile-card profile-facts-card" aria-label="基础账号信息">
@@ -98,12 +152,12 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
       </div>
       <dl class="profile-facts-list">
         <div class="profile-fact-row">
-          <dt>账号 ID</dt>
-          <dd class="profile-mono">{{ user.userId }}</dd>
-        </div>
-        <div v-if="user.email" class="profile-fact-row">
           <dt>主邮箱</dt>
-          <dd><span>{{ user.email }}</span><span class="profile-tag">由管理员维护</span></dd>
+          <dd><span>{{ user.email || '未绑定' }}</span><span class="profile-tag">由管理员维护</span></dd>
+        </div>
+        <div class="profile-fact-row">
+          <dt>绑定手机</dt>
+          <dd class="profile-num">{{ phoneAccount || '未绑定' }}</dd>
         </div>
         <div v-if="githubAccount" class="profile-fact-row">
           <dt>GitHub 账号</dt>
