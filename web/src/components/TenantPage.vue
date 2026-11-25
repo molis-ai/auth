@@ -120,7 +120,7 @@ async function refreshDirectory(reconcileSelection = true) {
   if (disposed || request !== directoryRead || selectedTenant.value !== selected) return;
   selectedTenant.value = latest;
   if (latest?.status !== "ACTIVE") clearMembers();
-  else if (latest.membershipId !== selected.membershipId || selected.status !== "ACTIVE") {
+  else if (latest.membershipId !== selected.membershipId || latest.myRole !== selected.myRole || selected.status !== "ACTIVE") {
     clearMembers();
     await read("members", () => reloadMembers(latest));
   }
@@ -367,6 +367,7 @@ onBeforeUnmount(() => {
           :refresh-transfers="readTransfers"
           :leave="refreshDirectoryAndTransfers"
           @expired="emit('expired', $event)"
+          @order-access-denied="read('directory', refreshDirectory)"
           @left="left"
           @previous="memberPage--"
           @next="nextMemberPage"

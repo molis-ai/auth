@@ -316,6 +316,7 @@ try {
   await assertAbsent(".billing-future");
   assert.equal((currentOrder(buyer, "REFUNDED")).id, monthlyRenewal.id);
   assert.equal((currentOrder(buyer, "PAID")).id, paid.id);
+  await save("A07-refunded");
   console.log("PASS A07 renewal appears immediately, pre-start refund restores paid-through and preserves the active order and balance");
 
   await click("继续付款");
@@ -337,6 +338,8 @@ try {
   await waitText(".billing-panel > [role=alert]", "订单超时");
   await page.wait("Boolean(document.querySelector('.billing-order-status[data-status=EXPIRED]'))");
   assert.ok(trace.some(item => item.status === 409 && item.code === "ORDER_EXPIRED"));
+  await page.evaluate("document.querySelector('.billing-order-status[data-status=EXPIRED]').scrollIntoView({block:'center'})");
+  await save("A04-expired");
   console.log("PASS A04 logout/relogin, same quote and deadline, alternate pending order, 409 and expired list status");
 
   await nav("租户");
@@ -395,10 +398,14 @@ try {
   await waitText(".billing-balance [role=alert]", "账务服务暂时不可用");
   await waitText(".billing-subscription", "已付至");
   await assertAbsent(".billing-credit");
+  await waitReady();
+  await save("A11-balance-retry");
   useMissingBinding = () => false;
+  const retryTraceStart = trace.length;
   await click("重试余额");
   await waitText(".billing-credit", "500 Credit");
   await waitReady();
+  assert.deepEqual(trace.slice(retryTraceStart).map(item => item.path), ["/credits/balance"]);
   await run(authDb, "UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?", managerTeam);
   await click("刷新账单");
   await waitText(".billing-panel > [role=alert]", "团队已停用");
@@ -470,6 +477,28 @@ try {
   assert.ok(trace.some(item => item.code === "ORDER_NOT_REFUNDABLE" && item.status === 409));
   assert.equal(billing.order(teamPending.id).status, "PAID");
   console.log("PASS A09 member-only usage, admin ledger and former member order; A07 service-start refusal");
+
+  await waitReady();
+  await run(authDb, "UPDATE auth_tenant_membership SET role='MEMBER' WHERE tenant_id=? AND user_id=?", managerTeam, admin);
+  billing.useCredit(managerTeam, admin, "my-work-after-downgrade");
+  const downgradeTraceStart = trace.length;
+  await click("刷新账单");
+  await waitText(".tm-heading p", "成员 ·");
+  await waitText('.tenant-choice[aria-current=true] span:last-child', "成员 · 正常");
+  await waitText(".billing-ledger", "my-work-after-downgrade");
+  await waitReady();
+  assert.ok(trace.slice(downgradeTraceStart).some(item => item.path === "/orders" && item.status === 403));
+  await assertAbsent(".billing-orders");
+  await assertAbsent(".billing-purchase");
+  assert.equal(await page.evaluate(includes(panel, "other-work-task")), false);
+  assert.equal(await page.evaluate(includes(panel, "发放")), false);
+  assert.equal(await page.evaluate(includes(panel, teamPending.id)), false);
+  await page.evaluate("document.querySelector('.billing-ledger').scrollIntoView({block:'center'})");
+  await save("A09-role-downgraded");
+  await click("成员管理");
+  await page.wait("document.querySelector('.tm-self')?.closest('tr')?.cells[2].innerText === '成员'");
+  await assertAbsent(".tm-tools .tm-primary");
+  console.log("PASS A09 open billing panel clears order controls and unrelated ledger on role downgrade");
 
   assert.ifError(handlerError);
   writeFileSync(join(evidence, "billing-requests.json"), JSON.stringify(trace, null, 2) + "\n");

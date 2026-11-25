@@ -16,7 +16,7 @@ const props = defineProps<{
   tenantId?: string;
   canManageOrders: boolean;
 }>();
-const emit = defineEmits<{ expired: [error: AuthError] }>();
+const emit = defineEmits<{ expired: [error: AuthError]; orderAccessDenied: [] }>();
 const ownerKind = props.tenantId === undefined ? "USER" : "TENANT";
 const ownerId = props.tenantId ?? props.viewerId;
 const query = new URLSearchParams({ product: "WORK", ownerKind, ownerId });
@@ -152,6 +152,7 @@ function accessChanged(error: unknown, fromOrder: boolean, subjectRead: boolean)
     closeConfirmation();
     actionError.value = "";
     notice.value = "";
+    emit("orderAccessDenied");
     void refresh();
     return true;
   }

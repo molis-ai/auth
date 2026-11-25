@@ -30,6 +30,7 @@ const BillingPanel = defineAsyncComponent(() => import('./BillingPanel.vue'));
 const emit = defineEmits<{
   left: [tenantId: string];
   expired: [error: unknown];
+  orderAccessDenied: [];
   previous: [];
   next: [];
   resize: [size: number];
@@ -118,7 +119,8 @@ async function submit() {
     </nav>
     <BillingPanel v-if="tab === 'billing' && billingEnabled" :key="billingScope" :client="client"
       :viewer-id="viewerId" :tenant-id="tenant.tenantId" :owner-name="tenant.name"
-      :can-manage-orders="['OWNER', 'ADMIN'].includes(tenant.myRole)" @expired="emit('expired', $event)" />
+      :can-manage-orders="['OWNER', 'ADMIN'].includes(tenant.myRole)" @expired="emit('expired', $event)"
+      @order-access-denied="emit('orderAccessDenied')" />
     <div v-show="tab === 'members'">
     <div class="tm-tools"><input v-model="query" type="search" placeholder="搜索本页名称或邮箱" aria-label="搜索本页名称或邮箱"/><button v-if="manager" class="tm-primary" :disabled="saving || busy || loading || refreshPending" @click="open('invite')">＋ 邀请成员</button></div>
     <p v-if="error && !dialog?.open" role="alert">{{ error }}</p>
