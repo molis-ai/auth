@@ -61,9 +61,9 @@
    with the collection's unrelated right padding. */
 @media(min-width:761px) {
  .v2-console .workspace-body main:has(.tenant-page) { padding-left:0; }
- .v2-console .tenant-page > h1 { margin-left:18px; }
+ .v2-console .tenant-page > h1 { margin-left:18px; color:var(--ink); font-weight:650; }
  .v2-console .tenant-page .collection-layout { grid-template-columns:256px minmax(0,1fr); }
- .v2-console .tenant-page .collection-list { padding-left:18px; padding-right:18px; }
+ .v2-console .tenant-page .collection-list { padding-left:18px; padding-right:18px; background:#f9f9fb; border-radius:12px 0 0 12px; }
 }
 .v2-console .tenant-page .tenant-directory { grid-auto-rows:48px; }
 .v2-console .tenant-page .tenant-choice { height:48px; min-height:48px; max-height:48px; min-width:0; box-sizing:border-box; overflow:hidden; }

@@ -72,7 +72,7 @@ function toggleLanguage() {
       </nav>
     </header>
     <main class="layout">
-      <section class="story"><div class="brand-note"><h1>{{ t('一个账号，\n连接你的工作') }}</h1><p class="intro">{{ t('登录 Molis 账号，管理个人资料、租户与订阅。') }}</p></div></section>
+      <section class="story"><div class="brand-note"><div class="story-rule" aria-hidden="true"></div><h1>{{ t('一个账号，\n连接你的工作') }}</h1><p class="intro">{{ t('登录 Molis 账号，管理个人资料、租户与订阅。') }}</p></div></section>
       <slot :language="language" :t="t" />
     </main>
   </div>

@@ -609,9 +609,9 @@ onBeforeUnmount(() => {
             <button v-for="[id,label] in [['methods','登录方式'],['password','登录密码'],['sessions','登录会话']]" :key="id" :aria-current="securityTab === id ? 'page' : undefined" :disabled="busy" @click="selectSecurityTab(id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path v-if="id === 'methods'" d="M4 5h16v14H4zM4 6l8 6 8-6"/><path v-else-if="id === 'password'" d="M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3M12 14v3"/><path v-else d="M3 4h18v13H3zM8 21h8M12 17v4"/></svg>{{ label }}</button>
           </nav>
           <div class="collection-detail">
-            <section v-if="securityTab === 'sessions'" class="session-actions"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button ref="logoutTrigger" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
+            <section v-if="securityTab === 'sessions'" class="session-actions security-panel-card"><h2>登录会话</h2><p>退出当前账号在所有产品和设备上的登录。</p><button ref="logoutTrigger" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button></section>
             <dialog ref="logoutDialog" class="logout-confirm" aria-labelledby="logout-confirm-title" @close="logoutTrigger?.focus()"><h2 id="logout-confirm-title">退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button autofocus @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
-            <section v-if="securityTab === 'password'"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
+            <section v-if="securityTab === 'password'" class="security-panel-card"><h2>登录密码</h2><p>设置或修改用于账号登录的密码。</p><button :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button></section>
             <section v-if="securityTab === 'methods'"><h2>登录方式</h2>
               <div v-for="[type,label,action] in [['EMAIL','邮箱','绑定邮箱'],['PHONE','手机号','绑定手机'],['GOOGLE','Google','绑定 Google'],['GITHUB','GitHub','绑定 GitHub']]" :key="type" class="security-method" :class="{ 'is-editing-phone': type === 'PHONE' && binding?.type === 'PHONE' && securityAction === 'BIND_METHOD' }">
                 <div class="security-method-info">
@@ -669,12 +669,13 @@ onBeforeUnmount(() => {
         :client="client"
         :capabilities="account.capabilities ?? []"
       />
-      <section v-if="page === 'applications'" class="console-card collection-page">
+      <section v-if="page === 'applications'" class="console-card collection-page applications-page">
+        <div class="collection-layout applications-layout"><aside class="collection-list applications-rail" aria-label="应用列表">
         <h1>应用管理</h1>
-        <div class="collection-layout"><aside class="collection-list" aria-label="应用列表">
         <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用" />
         <form
           v-if="can('APPLICATION_WRITE')"
+          class="app-create-form"
           @submit.prevent="createApplication"
         >
           <label
@@ -690,12 +691,13 @@ onBeforeUnmount(() => {
             {{ a.name }}</button
           ><span>{{ a.status }}</span>
         </div>
-        </aside><div class="collection-detail">
+        </aside><div class="collection-detail applications-detail">
         <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
-        <template v-if="selectedApplication">
+        <div v-if="selectedApplication" class="applications-detail-inner">
           <div class="detail-heading"><span class="detail-avatar">{{ selectedApplication.name.slice(0,1) }}</span><div><h2>{{ selectedApplication.name }}</h2><p>{{ selectedApplication.status }}</p></div></div>
           <form
             v-if="can('APPLICATION_WRITE')"
+            class="app-edit-card"
             @submit.prevent="editApplication"
           >
             <label>名称<input v-model="appName" :disabled="busy" required /></label
@@ -713,7 +715,7 @@ onBeforeUnmount(() => {
             :client="client"
             :capabilities="account.capabilities ?? []"
           />
-        </template>
+        </div>
         </div></div>
       </section>
     </main>
