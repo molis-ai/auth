@@ -19,7 +19,7 @@ const AccountSecurityEditor = defineAsyncComponent(() => import("./components/Ac
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
-const BillingPanel = defineAsyncComponent(() => import("./components/BillingPanel.vue"));
+const BillingCenterPage = defineAsyncComponent(() => import("./components/BillingCenterPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
             ['account', '个人资料'],
             ['security', '账号安全'],
             ['tenants', '租户'],
-            ['subscriptions', '个人订阅'],
+            ['subscriptions', '订阅与账单'],
           ]"
           :key="id"
           :aria-current="page === id ? 'page' : undefined"
@@ -655,12 +655,15 @@ onBeforeUnmount(() => {
         @dispose="disposeTenantPage"
         @clear-toast="clearToast"
       />
-      <section v-if="page === 'subscriptions' && account.user && !endingSession" class="console-card billing-page" :key="accountScope">
-        <h1>个人订阅</h1>
-        <BillingPanel :client="client" :viewer-id="account.user.userId"
-          :owner-name="account.user.displayName" :can-manage-orders="true"
-          @expired="expireWithToast" />
-      </section>
+      <BillingCenterPage
+        v-if="page === 'subscriptions' && account.user && !endingSession"
+        :key="accountScope"
+        :client="client"
+        :viewer-id="account.user.userId"
+        :viewer-name="account.user.displayName"
+        :viewer-email="account.user.email"
+        @expired="expireWithToast"
+      />
       <PlatformUsers
         v-if="page === 'users'"
         :client="client"

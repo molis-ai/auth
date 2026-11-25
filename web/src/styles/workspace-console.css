@@ -104,7 +104,8 @@
 .security-layout .session-actions { margin:0; border:0; }
 
 /* Secondary navigation is a full-height column adjoining the primary rail. */
-.v2-console .workspace-body main:has(.security-page) { padding:0; }
+.v2-console .workspace-body main:has(.security-page),
+.v2-console .workspace-body main:has(.billing-center-page) { padding:0; }
 .v2-console .security-page { margin:0; }
 .v2-console .security-layout { grid-template-columns:var(--navigation-width) minmax(0,1fr); min-height:100svh; }
 .v2-console .security-nav { padding:24px 12px; border-right:1px solid var(--line); }

@@ -186,12 +186,25 @@ try {
   const panel = ".billing-panel";
   const dialog = ".billing-dialog[open]";
   const interval = async (value) => {
-    await page.wait("Boolean(document.querySelector('.billing-purchase select'))");
+    const selector = `.billing-segmented button[data-interval="${value}"]`;
+    await page.wait(`Boolean(document.querySelector(${JSON.stringify(selector)}) && !document.querySelector(${JSON.stringify(selector)}).disabled)`);
+    await page.click(selector);
+  };
+  const openHistoryTab = async (prefixText) => {
+    const button = `[...document.querySelectorAll('.billing-tab')].find(button =>
+      button.innerText.trim().startsWith(${JSON.stringify(prefixText)}) && !button.disabled && button.getClientRects().length)`;
+    await page.wait(`Boolean(${button})`);
     await page.evaluate(`{
-      const select = document.querySelector('.billing-purchase select');
-      select.value = ${JSON.stringify(value)};
-      select.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('[data-billing-tab]')?.removeAttribute('data-billing-tab');
+      (${button}).dataset.billingTab = '';
     }`);
+    await page.click("[data-billing-tab]");
+  };
+  const selectLedger = async (name) => {
+    const button = `[...document.querySelectorAll('.billing-rail-item')].find(button =>
+      button.querySelector('.billing-rail-name')?.innerText.trim() === ${JSON.stringify(name)})`;
+    await page.wait(`Boolean(${button})`);
+    await page.evaluate(`(${button}).click()`);
   };
   const save = name => page.screenshot(join(evidence, name + ".png"));
   const assertAbsent = async (selector) => assert.equal(await page.evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`), false);
@@ -228,7 +241,7 @@ try {
   const buyer = await login(phones[0]);
   assert.equal(trace.length, 0, "login and profile never read Billing");
   useMissingBinding = () => true;
-  await nav("个人订阅");
+  await nav("订阅与账单");
   await waitText(".billing-panel > [role=alert]", "账务服务暂时不可用");
   await assertAbsent(".billing-credit");
   assert.ok(trace.some(item => item.code === "BILLING_UNAVAILABLE" && item.status === 503));
@@ -243,7 +256,8 @@ try {
   assert.equal(trace.length, beforeTenantSetup);
   useMissingBinding = () => false;
 
-  await nav("个人订阅");
+  await nav("订阅与账单");
+  await waitText(".billing-rail", "账单验收团队");
   await waitText(".billing-subscription", "暂无生效套餐");
   await waitText(".billing-credit", "0 Credit");
   await waitText(".billing-quote", "10.00");
@@ -264,17 +278,17 @@ try {
   await waitText(".billing-orders", "支付成功");
   const paid = currentOrder(buyer, "PAID");
   assert.equal(paid.servicePeriod.startsAt, paid.paidAt);
-  const originalPaidThrough = await page.evaluate("document.querySelector('.billing-subscription dl:last-of-type dd').innerText");
+  const originalPaidThrough = await page.evaluate("document.querySelector('.billing-paid-through dd').innerText");
   await assertAbsent(".billing-orders button");
   await save("A02-personal-paid");
   await page.command("Emulation.setTimezoneOverride", { timezoneId: "America/New_York" });
   await nav("个人资料");
-  await nav("个人订阅");
+  await nav("订阅与账单");
   await waitText(".billing-subscription", "America/New_York，UTC-");
   assert.equal(paid.billingTimeZone, "Asia/Shanghai");
   await page.command("Emulation.setTimezoneOverride", { timezoneId: "Asia/Shanghai" });
   await nav("个人资料");
-  await nav("个人订阅");
+  await nav("订阅与账单");
   await waitText(".billing-subscription", "UTC+08:00");
   console.log("PASS A02 personal monthly checkout, payment timestamp, ¥10 and 100 Credit");
 
@@ -287,7 +301,7 @@ try {
   await click("关闭", dialog + " button");
   await logout();
   assert.equal(await login(phones[0]), buyer);
-  await nav("个人订阅");
+  await nav("订阅与账单");
   await click("继续付款");
   await waitText(dialog, renewal.id);
   assert.equal(await page.evaluate("document.querySelector('.billing-dialog dl > div:last-child dd').innerText"), deadline);
@@ -303,7 +317,7 @@ try {
   await click("确认模拟支付", dialog + " button");
   await waitText(".billing-future", monthlyRenewal.id);
   await waitText(".billing-credit", "100 Credit");
-  assert.notEqual(await page.evaluate("document.querySelector('.billing-subscription dl:nth-of-type(2) dd').innerText"), originalPaidThrough);
+  assert.notEqual(await page.evaluate("document.querySelector('.billing-paid-through dd').innerText"), originalPaidThrough);
   await click("申请退款");
   await waitText(dialog, "退款将撤回本订单的下期服务");
   await waitText(dialog, "10.00");
@@ -312,7 +326,7 @@ try {
   await waitText(".billing-notice", "已退款");
   await waitText(".billing-credit", "100 Credit");
   await waitText(".billing-orders", "退款金额");
-  assert.equal(await page.evaluate("document.querySelector('.billing-subscription dl:last-of-type dd').innerText"), originalPaidThrough);
+  assert.equal(await page.evaluate("document.querySelector('.billing-paid-through dd').innerText"), originalPaidThrough);
   await assertAbsent(".billing-future");
   assert.equal((currentOrder(buyer, "REFUNDED")).id, monthlyRenewal.id);
   assert.equal((currentOrder(buyer, "PAID")).id, paid.id);
@@ -324,6 +338,15 @@ try {
   await click("确认模拟支付", dialog + " button");
   await waitText(".billing-future", renewal.id);
   assert.equal((currentOrder(buyer, "PAID")).id, renewal.id);
+
+  // Verify switching to a team ledger directly inside the unified Billing Center left rail.
+  await selectLedger("独立账单团队");
+  await waitText(".billing-header h2", "独立账单团队");
+  await waitText(".billing-credit", "0 Credit");
+  await waitText(".billing-quote", "30.00");
+  await selectLedger("Molis 用户");
+  await waitText(".billing-credit", "100 Credit");
+  await waitText(".billing-future", renewal.id);
 
   // Keep a pending order while the fixture clock reaches its original deadline.
   await click("申请退款");
@@ -361,7 +384,7 @@ try {
   await waitText(".billing-credit", "500 Credit");
   await waitText(".billing-orders", "支付成功");
   await waitText(".billing-subscription", "已付至");
-  const teamPaidThrough = await page.evaluate("document.querySelector('.billing-subscription dl:last-of-type dd').innerText");
+  const teamPaidThrough = await page.evaluate("document.querySelector('.billing-paid-through dd').innerText");
   const teamAnnual = currentOrder(managerTeam, "PAID");
   assert.equal(teamAnnual.amountMinor, 30000);
   assert.equal(teamAnnual.interval, "YEAR");
@@ -415,7 +438,7 @@ try {
   await click("重试账单");
   await waitText(".billing-credit", "500 Credit");
   await waitText(".billing-subscription", "已付至");
-  assert.equal(await page.evaluate("document.querySelector('.billing-subscription dl:last-of-type dd').innerText"), teamPaidThrough);
+  assert.equal(await page.evaluate("document.querySelector('.billing-paid-through dd').innerText"), teamPaidThrough);
   await click("成员管理");
   await page.wait("Boolean(document.querySelector('.tm-table-wrap').getClientRects().length)");
   await assertAbsent(panel);
@@ -454,16 +477,18 @@ try {
   await logout();
   const admin = await login(phones[1]);
   assert.notEqual(admin, buyer);
-  await nav("个人订阅");
+  await nav("订阅与账单");
   await waitText(".billing-credit", "0 Credit");
   assert.equal(await page.evaluate(includes(panel, paid.id)), false);
   await run(authDb, "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES ('fixture-admin',?,?,'ADMIN','ACTIVE',0)", managerTeam, admin);
   await nav("租户");
   await selectTeam("账单验收团队");
   await click("套餐与账单");
+  await openHistoryTab("Credit 流水");
   await waitText(".billing-ledger", "other-work-task");
   await waitText(".billing-ledger", "my-work-task");
   await waitText(".billing-ledger", "发放");
+  await openHistoryTab("订单");
   await click("继续付款");
   await waitText(dialog, teamPending.id);
   await click("确认模拟支付", dialog + " button");

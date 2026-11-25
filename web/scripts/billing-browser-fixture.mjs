@@ -85,12 +85,15 @@ export function billingBrowserFixture(verify, shared) {
         paidThroughAt: (next ?? active)?.servicePeriod.endsAt ?? null });
     }
     if (path === "/api/v1/credits/balance") {
-      const available = active ? active.monthlyCredits + movements.filter(item => item.kind === "CONSUME").reduce((total, item) => total + item.deltaAvailable, 0) : 0;
+      const granted = active ? active.monthlyCredits : 0;
+      const consumed = active ? movements.filter(item => item.kind === "CONSUME").reduce((total, item) => total + item.deltaConsumed, 0) : 0;
+      const reserved = active ? movements.reduce((total, item) => total + item.deltaReserved, 0) : 0;
+      const available = active ? Math.max(0, granted - consumed - reserved) : 0;
       const currentCreditPeriod = active ? {
         startsAt: active.servicePeriod.startsAt,
         expiresAt: Math.min(addMonths(active.servicePeriod.startsAt, 1), active.servicePeriod.endsAt),
       } : null;
-      return response({ ...subject, available, currentCreditPeriod });
+      return response({ ...subject, available, granted, reserved, consumed, currentCreditPeriod });
     }
     if (path === "/api/v1/credits/ledger") {
       return page(canManage ? movements : movements.filter(entry => entry.actorUserId === userId && entry.kind === "CONSUME"));

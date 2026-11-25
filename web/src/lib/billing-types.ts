@@ -75,6 +75,9 @@ export interface BillingSubscription extends BillingSubject {
 
 export interface BillingBalance extends BillingSubject {
   available: number;
+  granted?: number;
+  reserved?: number;
+  consumed?: number;
   currentCreditPeriod: { startsAt: number; expiresAt: number } | null;
 }
 
