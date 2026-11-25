@@ -51,6 +51,7 @@ pub(crate) fn failure_route(path: &str) -> &'static str {
         "/account/handoff/start" => "/account/handoff/start",
         "/account/handoff/finish" => "/account/handoff/finish",
         "/account/callback" => "/account/callback",
+        _ if crate::web::billing::matches(path) => "/api/account/billing/*",
         "/" | "/login" | "/console" => "/",
         _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
         _ => ROUTES
@@ -212,6 +213,23 @@ pub fn token(s: &str) -> bool {
     s.len() == 43
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+pub(crate) fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+pub(crate) fn billing_request_id(request: &worker::Request) -> String {
+    request
+        .headers()
+        .get("X-Request-Id")
+        .ok()
+        .flatten()
+        .filter(|id| valid_id(id))
+        .unwrap_or_else(crate::security::uuid)
 }
 pub fn email(v: &Value) -> Result<String> {
     #[allow(

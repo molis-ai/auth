@@ -3,10 +3,15 @@ const secretFormat = /^[A-Za-z0-9_-]{43}$/u
 const localBillingOrigin = 'http://127.0.0.1:8788'
 const boundBillingOrigin = 'https://billing.internal'
 const internalPaths = new Set(['/internal/v1/sessions/introspect', '/internal/v1/subjects/verify'])
-const billingReadPath =
-  /^\/api\/v1\/(?:catalog\/plans|subscriptions|credits\/(?:balance|ledger)|orders(?:\/[A-Za-z0-9_-]+)?)$/u
-const billingWritePath =
-  /^\/api\/v1\/(?:orders(?:\/[A-Za-z0-9_-]+\/(?:mock-pay|refund))?|entitlements\/check)$/u
+const orderId = String.raw`(?!\.{1,2}(?:/|$))[A-Za-z0-9_.-]{1,128}`
+const billingReadPath = new RegExp(
+  `^/api/v1/(?:catalog/plans|subscriptions|credits/(?:balance|ledger)|orders(?:/${orderId})?)$`,
+  'u',
+)
+const billingWritePath = new RegExp(
+  `^/api/v1/(?:orders(?:/${orderId}/(?:mock-pay|refund))?|entitlements/check)$`,
+  'u',
+)
 
 function serviceError(status, code) {
   const requestId = crypto.randomUUID()

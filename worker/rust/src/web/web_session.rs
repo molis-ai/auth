@@ -1,4 +1,5 @@
 //! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
+use super::billing;
 use crate::{
     auth::{login_capabilities, login_sessions},
     http::*,
@@ -298,6 +299,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         400,
         "INVALID_REQUEST",
     )?;
+    let billing = billing::matches(path)
+        .then(|| billing::Route::parse(path, &a.request.inner().method()))
+        .transpose()?;
+    let success_status = billing.as_ref().map_or(200, billing::Route::status);
     let request_url = a.request.url()?;
     if path != "/account/callback"
         && (path == "/api/account/session"
@@ -359,8 +364,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let session_read = path == "/api/account/session" && method == Method::Get;
     let mut observed_revision = None;
     let mut rejected_read = None;
-    let can_read_without_lease =
-        method == Method::Get && a.request.inner().method() == "GET" && read_without_lease(path);
+    let can_read_without_lease = method == Method::Get
+        && a.request.inner().method() == "GET"
+        && (billing.is_some() || read_without_lease(path));
     if !create && can_read_without_lease {
         let loaded_at = now();
         let row = a.s.one(
@@ -389,11 +395,13 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 {
                     let result = if session_read {
                         session.account_view().await
+                    } else if let Some(route) = &billing {
+                        route.call(&session, Value::Null).await
                     } else {
                         management(&session, path, Method::Get, json!({})).await
                     };
                     if !should_clear(&result) {
-                        return browser_response(a, path, &key, &id, None, result);
+                        return browser_response(a, path, &key, &id, None, result, success_status);
                     }
                     rejected_read = Some(result);
                 }
@@ -405,7 +413,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     }
     ensure(!create || session_read, 401, "LOGIN_REQUIRED")?;
     let logout = path == "/api/account/logout" && method == Method::Post;
-    let body = write_input(a, &key, &id, method.clone(), logout).await;
+    let body = write_input(a, &key, &id, method.clone(), logout, billing.as_ref()).await;
     if body.is_err() {
         // Retain the missing-session response for invalid writes without
         // checking existence on the normal, single-statement claim.
@@ -472,7 +480,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             crate::web::web_auth::route(&mut session, path, method, &mut body).await
         } else {
             match session.fresh().await {
-                Ok(()) => management(&session, path, method, body).await,
+                Ok(()) => match &billing {
+                    Some(route) => route.call(&session, body).await,
+                    None => management(&session, path, method, body).await,
+                },
                 Err(failure) => Err(failure),
             }
         };
@@ -515,6 +526,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         &browser_id,
         set_cookie.then_some(cookie.as_str()),
         completed?,
+        success_status,
     )
 }
 
@@ -524,15 +536,23 @@ async fn write_input(
     id: &str,
     method: Method,
     logout: bool,
+    billing: Option<&billing::Route<'_>>,
 ) -> Result<Value> {
     if method == Method::Get {
-        return Ok(json!({}));
+        return Ok(if billing.is_some() {
+            Value::Null
+        } else {
+            json!({})
+        });
     }
     ensure(
         a.header("Origin") == a.origin && a.header("X-CSRF-Token") == csrf(key, id),
         403,
         "FORBIDDEN",
     )?;
+    if let Some(route) = billing {
+        return route.body(a).await;
+    }
     ensure(
         a.header("Content-Type").split(';').next() == Some("application/json"),
         400,
@@ -605,6 +625,7 @@ fn browser_response(
     browser_id: &str,
     cookie: Option<&str>,
     result: Result<Value>,
+    success_status: u16,
 ) -> Result<Response> {
     let mut response = if path == "/account/callback" {
         let (message, status) = match &result {
@@ -628,7 +649,10 @@ fn browser_response(
         page.headers_mut().set("Referrer-Policy", "no-referrer")?;
         page
     } else {
-        json_response(json!({"data":result?,"requestId":a.request_id}), 200)?
+        json_response(
+            json!({"data":result?,"requestId":a.request_id}),
+            success_status,
+        )?
     };
     response
         .headers_mut()

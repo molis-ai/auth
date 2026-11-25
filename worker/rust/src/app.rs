@@ -8,7 +8,12 @@ use serde_json::{Value, json};
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    let (response, _) = handle_inner(req, env, None, None, uuid()).await?;
+    let id = if crate::web::billing::matches(&req.path()) {
+        billing_request_id(&req)
+    } else {
+        uuid()
+    };
+    let (response, _) = handle_inner(req, env, None, None, id).await?;
     Ok(response)
 }
 pub(crate) async fn handle_internal(
@@ -99,13 +104,18 @@ async fn handle_response(
         return Ok((response, None, None));
     }
     let external = access.is_none();
+    let is_billing = crate::web::billing::matches(url.path());
     let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
             log_failure(log.env, id, log.route, "initialize", &e, log.started);
             let code = e.code;
-            let response =
-                with_security_headers(error_response(e, id)?, id, url.scheme() == "https")?;
+            let response = if is_billing {
+                crate::web::billing::error_response(e, id)?
+            } else {
+                error_response(e, id)?
+            };
+            let response = with_security_headers(response, id, url.scheme() == "https")?;
             return Ok((response, None, Some(code)));
         }
     };
@@ -135,6 +145,8 @@ async fn handle_response(
                     json!({"error":{"code":e.code,"retryAfterSeconds":retry_after},"requestId":id}),
                     429,
                 )?
+            } else if is_billing {
+                crate::web::billing::error_response(e, id)?
             } else {
                 error_response(e, id)?
             }

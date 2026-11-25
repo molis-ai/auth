@@ -4,7 +4,6 @@ use crate::{
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
     http::*,
     identity::Auth,
-    security::uuid,
     tenants::{ACTIVE_MEMBER, ALL_ROLES, Context, TENANTS, require_member},
     web::web_session::setting,
 };
@@ -40,14 +39,6 @@ enum Owner {
     Tenant { id: String },
 }
 
-fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 128
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-}
-
 // worker-build places free Wasm functions on the default Worker prototype.
 // Keep the bridge on a module class that the runtime adapter does not re-export.
 #[wasm_bindgen]
@@ -67,7 +58,7 @@ impl AuthBillingIdentity {
 }
 
 async fn respond(request: Request, env: &Env) -> worker::Result<Response> {
-    let id = uuid();
+    let id = billing_request_id(&request);
     let path = match request.path().as_str() {
         INTROSPECT => INTROSPECT,
         VERIFY => VERIFY,
