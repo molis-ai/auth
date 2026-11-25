@@ -26,7 +26,8 @@ export function cursorCollection<T>(client: Pick<AccountClient, "request">) {
     loading.value = true;
     try {
       const page = await client.request<Page<T>>(
-        path + "?limit=" + limit + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+        path + (path.includes("?") ? "&" : "?") + "limit=" + limit +
+          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
       );
       if (generation !== request) return false;
       if (cursor && page.nextCursor && pages.value.some(previous => previous.nextCursor === page.nextCursor)) {

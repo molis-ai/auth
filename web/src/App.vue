@@ -19,6 +19,7 @@ const AccountSecurityEditor = defineAsyncComponent(() => import("./components/Ac
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
+const BillingPanel = defineAsyncComponent(() => import("./components/BillingPanel.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -37,6 +38,7 @@ const client = new AccountClient(),
   account = ref<AccountView>(),
   busy = ref(false),
   page = ref("account");
+const endingSession = ref(false);
 const startup = ref<'loading' | 'error' | 'ready'>('loading');
 const starting = computed(() => !account.value || startup.value !== 'ready');
 const onLoginEntry = location.pathname === '/login';
@@ -67,16 +69,7 @@ const applications = ref<Application[]>([]),
   methods = ref<Method[]>([]);
 const newApplicationName = ref(""),
   appName = ref(""),
-  appStatus = ref("ACTIVE"),
-  subscriptions = ref<
-    {
-      subscriptionId: string;
-      status: string;
-      startsAt: string;
-      expiresAt: string;
-      planId: string;
-    }[]
-  >([]);
+  appStatus = ref("ACTIVE");
 const securityAction = ref(""),
   binding = ref<Method>(),
   reauth = ref(""),
@@ -257,8 +250,6 @@ async function navigate(target: string) {
     if (target === "security") await refreshLoginMethods();
     else if (target === "applications")
       applications.value = await list("/platform/applications");
-    else if (target === "subscriptions")
-      subscriptions.value = await list("/subscriptions");
   });
 }
 async function loggedIn({ account: current }: AuthCompletion) {
@@ -459,7 +450,13 @@ async function finishSecurity(identityHandle?: string) {
 async function logout(all = false) {
   await run(async () => {
     cancelOpenActivity();
-    const result = await client.logout(all);
+    endingSession.value = true;
+    let result: Awaited<ReturnType<AccountClient["logout"]>>;
+    try {
+      result = await client.logout(all);
+    } finally {
+      endingSession.value = false;
+    }
     clearAccount();
     rememberEmail("");
     sessionChanges?.postMessage('changed');
@@ -482,7 +479,6 @@ function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   page.value = 'account'; securityTab.value = 'methods';
   applicationSearch.value = '';
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
-  subscriptions.value = [];
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
   newIdentity.value = false; securityIdentity.value = ''; newPassword.value = ''; confirmPassword.value = '';
@@ -570,7 +566,7 @@ onBeforeUnmount(() => {
             ['account', '个人资料'],
             ['security', '账号安全'],
             ['tenants', '租户'],
-            ['subscriptions', '订阅'],
+            ['subscriptions', '个人订阅'],
           ]"
           :key="id"
           :aria-current="page === id ? 'page' : undefined"
@@ -645,9 +641,11 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <TenantPage
-        v-if="page === 'tenants'"
+        v-if="page === 'tenants' && account.user"
         :key="accountScope"
         :client="client"
+        :viewer-id="account.user.userId"
+        :billing-enabled="!endingSession"
         :busy="busy"
         :mutate="mutate"
         :submit-write="submitMemberWrite"
@@ -657,18 +655,11 @@ onBeforeUnmount(() => {
         @dispose="disposeTenantPage"
         @clear-toast="clearToast"
       />
-      <section v-if="page === 'subscriptions'" class="console-card">
+      <section v-if="page === 'subscriptions' && account.user && !endingSession" class="console-card billing-page" :key="accountScope">
         <h1>个人订阅</h1>
-        <p v-if="!subscriptions.length">暂无订阅。</p>
-        <article
-          v-for="s in subscriptions"
-          :key="s.subscriptionId"
-          class="v2-row"
-        >
-          <strong>{{ s.planId }}</strong
-          ><span>{{ s.status }}</span
-          ><span>{{ s.startsAt }} — {{ s.expiresAt }}</span>
-        </article>
+        <BillingPanel :client="client" :viewer-id="account.user.userId"
+          :owner-name="account.user.displayName" :can-manage-orders="true"
+          @expired="expireWithToast" />
       </section>
       <PlatformUsers
         v-if="page === 'users'"

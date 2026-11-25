@@ -305,6 +305,45 @@ test("new console collections retry only marked conflicts on their first pages",
   }
 });
 
+test("leaving a Billing subject cancels its reads and releases the existing console queue", async () => {
+  const scope = new AbortController();
+  const held = Promise.withResolvers<Response>();
+  const started = Promise.withResolvers<AbortSignal>();
+  const balance = "/billing/credits/balance?ownerKind=TENANT&ownerId=team-a";
+  const catalog = "/billing/catalog/plans?ownerKind=TENANT&ownerId=team-a";
+  const paths: string[] = [];
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      paths.push(path);
+      if (path === balance) {
+        started.resolve(init!.signal!);
+        return held.promise;
+      }
+      return reply();
+    },
+  });
+  try {
+    await client.session();
+    const pending = client.request(balance, undefined, "GET", undefined, scope.signal);
+    const cancelled = assert.rejects(pending, /CANCELLED/);
+    const fetchSignal = await started.promise;
+    await client.request(catalog, undefined, "GET", undefined, scope.signal);
+    const profile = client.request("/profile", {}, "PATCH");
+    scope.abort();
+    await cancelled;
+    assert.equal(fetchSignal.aborted, true);
+    await profile;
+    held.resolve(reply("stale-csrf"));
+    await assert.rejects(client.request(catalog, undefined, "GET", undefined, scope.signal), /CANCELLED/);
+    assert.deepEqual(paths, ["/session", balance, catalog, "/profile"]);
+  } finally {
+    held.resolve(reply());
+    client.close();
+  }
+});
+
 test("P1-4 one cold bootstrap orders the queued writes and read", async () => {
   const calls: [string, string | null][] = [];
   const bootstrap = Promise.withResolvers<Response>();

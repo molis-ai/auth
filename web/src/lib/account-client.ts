@@ -60,11 +60,17 @@ function isConcurrentFirstPage(path: string): boolean {
     /^\/platform\/(applications\/[A-Za-z0-9_-]+\/clients|users\/[A-Za-z0-9_-]+\/permissions)$/.test(resource);
 }
 
+function isBillingRead(path: string): boolean {
+  // All Billing GET routes use the Auth session's read-without-lease path.
+  return path.startsWith("/billing/");
+}
+
 function settled(result: Promise<unknown>): Promise<void> {
   return result.then(() => undefined, () => undefined);
 }
 
 function retryDelay(signal: AbortSignal, attempt: number): Promise<void> {
+  if (signal.aborted) return Promise.reject(new AuthError("CANCELLED"));
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", cancel);
@@ -127,8 +133,9 @@ export class AccountClient {
     body?: unknown,
     method = body === undefined ? "GET" : "POST",
     key?: string,
+    signal?: AbortSignal,
   ): Promise<T> {
-    if (this.closed) return Promise.reject(new AuthError("CANCELLED"));
+    if (this.closed || signal?.aborted) return Promise.reject(new AuthError("CANCELLED"));
     if (
       !/^\/[A-Za-z0-9/_?=&%.-]+$/.test(path) ||
       /\.\.|%2e|%2f|%5c/i.test(path) ||
@@ -141,13 +148,14 @@ export class AccountClient {
     if (get && path === LOGIN_CAPABILITIES_PATH) {
       return this.track(Promise.resolve(), (generation, signal) =>
         this.send<T>(path, body, method, generation, signal),
+        signal,
       );
     }
     const idempotent = get && isIdempotentRead(path);
-    const firstPage = get && isConcurrentFirstPage(path);
+    const predispatchRetry = get && (isConcurrentFirstPage(path) || isBillingRead(path));
     // Session can create a browser session when its cookie
     // expires, even when the client still holds a CSRF token.
-    const concurrent = Boolean(this.csrf) && (idempotent || firstPage);
+    const concurrent = Boolean(this.csrf) && (idempotent || predispatchRetry);
     const mayRetry = idempotent || (get && path === "/session");
     // Exclusive operations wait for the reads already queued. Later reads
     // wait for that operation, so an account write cannot overtake a read.
@@ -169,7 +177,7 @@ export class AccountClient {
           const beforeDispatch = error instanceof ConflictBeforeDispatch;
           if (!(error instanceof AuthError) || error.status !== 409 ||
               error.code !== "VERSION_CONFLICT" || attempt >= 3 ||
-              !(mayRetry || (firstPage && beforeDispatch))) throw error;
+              !(mayRetry || (predispatchRetry && beforeDispatch))) throw error;
           this.checkGeneration(generation);
           // Give the request holding the refresh lease time to finish, even
           // when refresh takes longer than the backoff. Waiting only for first
@@ -181,7 +189,7 @@ export class AccountClient {
           await retryDelay(signal, attempt);
         }
       }
-    });
+    }, signal);
     const barrier = settled(result);
     if (concurrent) {
       this.reads.add(barrier);
@@ -242,6 +250,7 @@ export class AccountClient {
   private async track<T>(
     ready: Promise<unknown>,
     run: (generation: number, signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     const generation = this.generation;
     const controller = new AbortController();
@@ -249,8 +258,12 @@ export class AccountClient {
     const cancellation = new Promise<never>((_, reject) => {
       controller.signal.addEventListener("abort", () => reject(new AuthError("CANCELLED")), { once: true });
     });
+    const cancel = () => controller.abort(CANCEL);
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
     const work = ready.then(() => {
       this.checkGeneration(generation);
+      if (controller.signal.aborted) throw new AuthError("CANCELLED");
       return run(generation, controller.signal);
     });
     try {
@@ -258,6 +271,7 @@ export class AccountClient {
       this.checkGeneration(generation);
       return result;
     } finally {
+      signal?.removeEventListener("abort", cancel);
       this.pending.delete(controller);
     }
   }
@@ -270,6 +284,7 @@ export class AccountClient {
     key?: string,
   ): Promise<T> {
     this.checkGeneration(generation);
+    if (signal.aborted) throw new AuthError("CANCELLED");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(TIMEOUT), this.timeout);
     const cancel = () => {

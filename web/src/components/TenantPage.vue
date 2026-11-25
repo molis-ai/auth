@@ -38,6 +38,8 @@ type Transfer = {
 type Write = <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 const props = defineProps<{
   client: AccountClient;
+  viewerId: string;
+  billingEnabled: boolean;
   busy: boolean;
   mutate: Write;
   submitWrite: Write;
@@ -62,6 +64,7 @@ const transfersLoading = ref(false);
 let transferRead = 0;
 let directoryRead = 0;
 const selectedTenant = ref<Tenant>();
+const teamTab = ref<"members" | "billing">("members");
 const tenantSearch = ref("");
 const tenants = computed(() => {
   const loaded = directory.items.value;
@@ -340,10 +343,14 @@ onBeforeUnmount(() => {
       </aside>
       <div class="collection-detail">
         <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个租户，查看成员与管理设置</p>
-        <div v-if="errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
+        <div v-if="teamTab === 'members' && errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
         <TenantMembers
           v-if="selectedTenant"
           :key="selectedTenant.tenantId"
+          v-model:tab="teamTab"
+          :client="client"
+          :viewer-id="viewerId"
+          :billing-enabled="billingEnabled"
           :tenant="selectedTenant"
           :members="members"
           :loading="membersLoading"

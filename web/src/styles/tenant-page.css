@@ -18,7 +18,7 @@
 .v2-console .tenant-page .tm-heading p { font-size:12px; line-height:18px; font-weight:400; margin:0; }
 .v2-console .tenant-page .tm-team-avatar { width:38px; height:38px; border-radius:9px; font-size:16px; flex-shrink:0; }
 .v2-console .tenant-page .tm-tabs { margin-bottom:16px; }
-.v2-console .tenant-page .tm-tabs span { padding:8px 0 10px; font-size:13px; font-weight:400; }
+.v2-console .tenant-page .tm-tabs button { padding:8px 0 10px; border-radius:0; font-size:13px; font-weight:400; }
 .v2-console .tenant-page .tm-tools { gap:10px; margin-bottom:12px; }
 .v2-console .tenant-page .tm-tools input { max-width:260px; margin:0; }
 .v2-console .tenant-page .tm-tools button { height:34px; padding:6px 12px; font-size:12px; }
