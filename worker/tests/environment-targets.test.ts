@@ -11,10 +11,13 @@ function fixtureSecrets(env: string) {
     .replace(/^PREVIEW_ACCOUNT_EMAIL=$/mu, 'PREVIEW_ACCOUNT_EMAIL=fixture-user@example.test')
     .replace(/^PREVIEW_ACCOUNT_PASSWORD=$/mu, 'PREVIEW_ACCOUNT_PASSWORD=fixture-only-password')
     .replace(/^([A-Z_]+)=$/gmu, (_, key: string) => {
-      const value =
-        key === 'AUTH_WEB_SESSION_KEY' || key === 'PROVIDER_STATE_KEY'
-          ? 'A'.repeat(43)
-          : key + '-fixture'
+      const value = [
+        'AUTH_WEB_SESSION_KEY',
+        'PROVIDER_STATE_KEY',
+        'MOLIS_INTERNAL_SECRET',
+      ].includes(key)
+        ? 'A'.repeat(43)
+        : key + '-fixture'
       return `${key}=${value}`
     })
 }
@@ -104,6 +107,11 @@ test('V2-01: the Auth test deployment pins account, Worker, route and D1 indepen
   assert.equal(platform.d1_databases[0].remote, undefined)
   assert.equal(platform.vars.AUTH_TEST_ADMISSION, undefined)
   assert.equal(platform.vars.ALIYUN_SMS_TEST_ALLOWLIST, undefined)
+  assert.equal(platform.vars.MOLIS_INTERNAL_SECRET, undefined)
+  assert.equal(bindings.MOLIS_INTERNAL_SECRET, 'A'.repeat(43))
+  assert.deepEqual(platform.services, [
+    { binding: 'BILLING', service: 'molis-billing-test', entrypoint: 'BillingInternal' },
+  ])
   assert.equal(bindings.ALIYUN_MAIL_TEST_ALLOWLIST, 'allowed@example.test')
   assert.equal(bindings.ALIYUN_SMS_TEST_ALLOWLIST, '+8613800000000')
   assert.deepEqual(JSON.parse(bindings.AUTH_TEST_ADMISSION), {
@@ -111,6 +119,7 @@ test('V2-01: the Auth test deployment pins account, Worker, route and D1 indepen
     phones: ['+8613800000000'],
   })
   assert.equal(authEnvironment('test', true, root).platform.d1_databases[0].remote, true)
+  assert.equal(authEnvironment('test', true, root).platform.services, undefined)
   assert.equal(platform.observability, undefined)
 
   writeFileSync(configPath, `${testConfig.trimEnd()}\ngrafanaLogsDestination=molis-grafana-logs\n`)
@@ -156,7 +165,11 @@ test('only local dev reads the shared account and keeps both credentials out of 
         '649fadf9-f897-4d37-915c-b404ec336e69',
       )
       assert.throws(() => authEnvironment('prod', true, root), /deploy only/u)
+      assert.deepEqual(settings.platform.services, [
+        { binding: 'BILLING', service: 'molis-billing-production', entrypoint: 'BillingInternal' },
+      ])
     }
+    if (env === 'dev') assert.equal(settings.platform.services, undefined)
     const providerBindings = settings.bindings
     assert.equal(providerBindings.ALIYUN_MAIL_REGION, 'cn-hangzhou')
     assert.equal(providerBindings.ALIYUN_MAIL_ACCOUNT_NAME, 'ALIYUN_MAIL_ACCOUNT_NAME-fixture')

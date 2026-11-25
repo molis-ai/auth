@@ -8,12 +8,14 @@
   },
   "test": {
     "workerName": "molis-auth-test",
+    "billingWorkerName": "molis-billing-test",
     "databaseName": "molis-auth-test",
     "databaseId": "a40965f5-e9e9-4d97-b471-d4e76368630e",
     "authOrigin": "https://auth.test.molis.ai"
   },
   "prod": {
     "workerName": "molis-auth-production",
+    "billingWorkerName": "molis-billing-production",
     "databaseName": "molis-auth-prod",
     "databaseId": "649fadf9-f897-4d37-915c-b404ec336e69",
     "authOrigin": "https://auth.molis.ai"

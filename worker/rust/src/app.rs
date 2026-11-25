@@ -80,6 +80,20 @@ async fn handle_response(
     log: &RequestLog<'_>,
 ) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
     let id = log.id;
+    if url.path() == "/internal/v1" || url.path().starts_with("/internal/v1/") {
+        let response = with_security_headers(
+            error_response(
+                Failure {
+                    status: 404,
+                    code: "NOT_FOUND",
+                },
+                id,
+            )?,
+            id,
+            url.scheme() == "https",
+        )?;
+        return Ok((response, None, Some("NOT_FOUND")));
+    }
     if req.method() == Method::Get && url.path() == "/api/v2/health" {
         let response = with_security_headers(health_response(id)?, id, url.scheme() == "https")?;
         return Ok((response, None, None));
@@ -149,7 +163,7 @@ fn health_response(id: &str) -> worker::Result<Response> {
     )
 }
 
-fn with_security_headers(
+pub(crate) fn with_security_headers(
     mut response: Response,
     id: &str,
     https: bool,

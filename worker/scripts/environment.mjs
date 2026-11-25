@@ -83,6 +83,7 @@ export function authEnvironment(name, local, configRoot = root) {
       ALIYUN_ACCESS_KEY_ID: required,
       ALIYUN_ACCESS_KEY_SECRET: required,
       AUTH_WEB_SESSION_KEY: sessionKey,
+      MOLIS_INTERNAL_SECRET: (value) => !value || sessionKey(value),
       PROVIDER_STATE_KEY: sessionKey,
       SYNC_READ_SIGNING_JWK: optional,
       UNIFIED_GOOGLE_CLIENT_SECRET: required,
@@ -130,6 +131,7 @@ export function authEnvironment(name, local, configRoot = root) {
       : secrets.UNIFIED_GITHUB_CLIENT_SECRET,
   }
   if (secrets.SYNC_READ_SIGNING_JWK) bindings.SYNC_READ_SIGNING_JWK = secrets.SYNC_READ_SIGNING_JWK
+  if (secrets.MOLIS_INTERNAL_SECRET) bindings.MOLIS_INTERNAL_SECRET = secrets.MOLIS_INTERNAL_SECRET
   if (name !== 'prod') {
     const emails = contacts(secrets.TEST_ALLOWED_EMAILS)
     const phones = contacts(secrets.TEST_ALLOWED_PHONES)
@@ -161,7 +163,7 @@ export function authEnvironment(name, local, configRoot = root) {
   const platform = {
     name: config.workerName,
     ...(config.accountId ? { account_id: config.accountId } : {}),
-    main: path('worker/rust/build/index.js'),
+    main: path('worker/rust/src/runtime/entrypoint.js'),
     compatibility_date: compatibilityDate,
     workers_dev: false,
     preview_urls: false,
@@ -182,7 +184,16 @@ export function authEnvironment(name, local, configRoot = root) {
         }
       : {}),
     ...(!local && name !== 'dev'
-      ? { routes: [{ pattern: new URL(origin).hostname, custom_domain: true }] }
+      ? {
+          routes: [{ pattern: new URL(origin).hostname, custom_domain: true }],
+          services: [
+            {
+              binding: 'BILLING',
+              service: target.billingWorkerName,
+              entrypoint: 'BillingInternal',
+            },
+          ],
+        }
       : {}),
     assets: webAssetConfig(),
     vars,

@@ -1,5 +1,6 @@
 //! AUTH-08/09 catalog, subscriptions, seat management and commercial audit.
 
+pub(crate) mod bridge;
 pub(crate) mod catalog;
 pub(crate) mod entitlements;
 pub(crate) mod seats;

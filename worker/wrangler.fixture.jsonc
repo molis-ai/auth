@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "molis-auth-local",
-  "main": "rust/build/index.js",
+  "main": "rust/src/runtime/entrypoint.js",
   "build": {
     "command": "node scripts/rust-build.mjs",
     "watch_dir": [
