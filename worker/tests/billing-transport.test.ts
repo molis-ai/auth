@@ -11,7 +11,11 @@ const header = 'X-Molis-Internal-Secret'
 const shared = secret()
 const authOrigin = 'http://127.0.0.1:8787'
 const accessToken = secret()
-const bridgePaths = ['/internal/v1/sessions/introspect', '/internal/v1/subjects/verify']
+const bridgePaths = [
+  '/internal/v1/sessions/introspect',
+  '/internal/v1/subjects/verify',
+  '/internal/v1/platform/audit/authorize',
+]
 
 async function expectError(response: Response, status: number, code: string) {
   assert.equal(response.status, status)
@@ -28,7 +32,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   const origin = 'https://auth.test.molis.ai'
   const boundOrigin = 'https://auth.internal'
   const clientId = 'molis-auth-web-local'
-  const [introspect, verify] = bridgePaths
+  const [introspect, verify, audit] = bridgePaths
   const root = new URL('../rust/', import.meta.url)
   const workerPath = (path: string) => fileURLToPath(new URL(path, root))
   const authWorker = {
@@ -266,6 +270,41 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await run("UPDATE auth_managed_tenant SET status='ACTIVE'")
   await expectData(await call(verify, team), { ...team, userId: 'user-1', role: 'OWNER' })
 
+  const legacyAudit = () =>
+    direct.fetch(origin + '/api/v2/platform/audit-events', {
+      headers: { Authorization: 'Bearer ' + accessToken },
+    })
+  await expectError(await call(audit, {}), 403, 'FORBIDDEN')
+  await expectError(await legacyAudit(), 403, 'FORBIDDEN')
+  await expectError(await call(audit, { permission: 'AUDIT_READ' }), 400, 'INVALID_REQUEST')
+  await expectError(await call(audit, {}, ''), 401, 'UNAUTHENTICATED')
+  await run(
+    "INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at) VALUES ('user-1','AUDIT_READ','ACTIVE','user-1',?)",
+    at,
+  )
+  await run(
+    "INSERT INTO auth_management_audit(id,actor_user_id,client_id,operation,target_type,target_id,outcome,request_id,occurred_at) VALUES ('old-audit','user-1',?,'fixture.operation','PLAN','old-plan','SUCCESS','old-request',?)",
+    clientId,
+    at,
+  )
+  const allowed = await call(audit, {}, undefined, { 'X-Request-Id': 'billing-audit-fixture' })
+  assert.equal(allowed.headers.get('X-Request-Id'), 'billing-audit-fixture')
+  await expectData(allowed, { userId: 'user-1', permission: 'AUDIT_READ' })
+  const legacy = await legacyAudit()
+  assert.equal(legacy.status, 200)
+  const legacyBody = await legacy.json()
+  assert.deepEqual(
+    legacyBody.data.items.map((item: { auditEventId: string; operation: string }) => [
+      item.auditEventId,
+      item.operation,
+    ]),
+    [['old-audit', 'fixture.operation']],
+  )
+  await run("UPDATE auth_platform_permission SET status='REVOKED',revoked_at=?", at + 1)
+  await expectError(await call(audit, {}), 403, 'FORBIDDEN')
+  await expectError(await legacyAudit(), 403, 'FORBIDDEN')
+  await run("UPDATE auth_platform_permission SET status='ACTIVE',revoked_at=NULL")
+
   await expectError(await call(introspect, {}, ''), 401, 'UNAUTHENTICATED')
   await expectError(await call(introspect, {}, 'Bearer ' + secret()), 401, 'SESSION_EXPIRED')
   await expectError(
@@ -287,12 +326,14 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await run("UPDATE auth_login_session SET client_id='other-client'")
   await expectError(await call(introspect, {}), 403, 'FORBIDDEN')
   await expectError(await call(verify, team), 403, 'FORBIDDEN')
+  await expectError(await call(audit, {}), 403, 'FORBIDDEN')
   await run('UPDATE auth_login_session SET client_id=?', clientId)
   await run('UPDATE auth_login_access_token SET expires_at=?', at)
   await expectError(await call(introspect, {}), 401, 'SESSION_EXPIRED')
   await run('UPDATE auth_login_access_token SET expires_at=?', at + 900_000)
   await run('UPDATE auth_login_session SET revoked_at=?', at + 1)
   await expectError(await call(verify, team), 401, 'SESSION_EXPIRED')
+  await expectError(await call(audit, {}), 401, 'SESSION_EXPIRED')
   await run('UPDATE auth_login_session SET revoked_at=NULL,session_revision=1')
   await expectError(await call(introspect, {}), 401, 'SESSION_EXPIRED')
   await run('UPDATE auth_login_session SET session_revision=0')
@@ -336,6 +377,18 @@ test('Auth bridge enforces the private channel and reads current Work billing id
       body: JSON.stringify(team),
     }),
     { ...team, userId: 'user-1', role: 'OWNER' },
+  )
+  await expectData(
+    await local.fetch(authOrigin + audit, {
+      method: 'POST',
+      headers: {
+        [header]: shared,
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    }),
+    { userId: 'user-1', permission: 'AUDIT_READ' },
   )
   assert.equal(
     (await db.prepare('SELECT last_active_at FROM auth_login_session').first()).last_active_at,
@@ -439,6 +492,7 @@ test('Billing outbound refuses unexpected paths, redirects and upstream transpor
     '/api/v1/orders/..',
     '/api/v1/orders/%2Ffoo',
     '/internal/v1/credits/holds',
+    '/internal/v1/audit-events',
   ]) {
     await expectError(await billingFetch(outbound, { ...goodInput, path }), 400, 'INVALID_REQUEST')
   }

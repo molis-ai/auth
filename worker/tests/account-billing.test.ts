@@ -390,6 +390,8 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   await expectError(call(browser, balance + teamOne + '&ownerId=team-two'), 400, 'INVALID_REQUEST')
   await expectError(call(browser, balance + '?limit=1'), 400, 'INVALID_REQUEST')
   await expectError(call(browser, '/billing/internal/v1/credits/holds', purchase), 404, 'NOT_FOUND')
+  await expectError(call(browser, '/billing/internal/v1/audit-events'), 404, 'NOT_FOUND')
+  await expectError(call(browser, '/billing/audit-events'), 404, 'NOT_FOUND')
   await expectError(call(browser, '/billing/credits/consume', purchase), 404, 'NOT_FOUND')
   await expectError(call(browser, '/billing/webhooks/mock', purchase), 404, 'NOT_FOUND')
   await expectError(call(browser, orders + '/order%2Fone'), 404, 'NOT_FOUND')

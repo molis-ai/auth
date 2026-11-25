@@ -4,7 +4,7 @@ use crate::{
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
     http::*,
     identity::Auth,
-    tenants::{ACTIVE_MEMBER, ALL_ROLES, Context, TENANTS, require_member},
+    tenants::{ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, TENANTS, require_member},
     web::web_session::setting,
 };
 use serde::Deserialize;
@@ -14,10 +14,12 @@ use worker::{Env, Request, Response, web_sys};
 
 const INTROSPECT: &str = "/internal/v1/sessions/introspect";
 const VERIFY: &str = "/internal/v1/subjects/verify";
+const AUTHORIZE_AUDIT: &str = "/internal/v1/platform/audit/authorize";
+const AUDIT_READ: &str = "AUDIT_READ";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Introspect {}
+struct EmptyBody {}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,6 +64,7 @@ async fn respond(request: Request, env: &Env) -> worker::Result<Response> {
     let path = match request.path().as_str() {
         INTROSPECT => INTROSPECT,
         VERIFY => VERIFY,
+        AUTHORIZE_AUDIT => AUTHORIZE_AUDIT,
         _ => {
             return error_response(
                 Failure {
@@ -134,7 +137,7 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
         ensure(id.is_none_or(valid_id), 400, "INVALID_REQUEST")?;
         Some(owner)
     } else {
-        let Introspect {} = serde_json::from_str(&body)?;
+        let EmptyBody {} = serde_json::from_str(&body)?;
         None
     };
     let (digest, credential) = login_sessions::active_lookup(a, raw)?;
@@ -154,6 +157,22 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
             <[_; 3]>::try_from(snapshot).map_err(|_| Failure::unavailable())?;
         ctx.tenant = tenant.into_iter().next().unwrap_or_default();
         ctx.member = member.into_iter().next().unwrap_or_default();
+        credential.into_iter().next().unwrap_or_default()
+    } else if path == AUTHORIZE_AUDIT {
+        // Recheck the current permission with the credential on every audit page.
+        let snapshot = a
+            .s
+            .batch_read(vec![
+                credential,
+                a.s.statement(
+                    &format!("SELECT permission FROM auth_platform_permission WHERE user_id={ACCESS_USER_ID} AND {ACTIVE_PERMISSION}"),
+                    vec![digest.clone().into(), AUDIT_READ.into()],
+                )?,
+            ])
+            .await?;
+        let [credential, permission] =
+            <[_; 2]>::try_from(snapshot).map_err(|_| Failure::unavailable())?;
+        ctx.permission = permission.into_iter().next().unwrap_or_default();
         credential.into_iter().next().unwrap_or_default()
     } else {
         a.s.first(credential).await?
@@ -182,6 +201,10 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
         .filter(|id| valid_id(id))
         .ok_or_else(Failure::unavailable)?;
     match owner {
+        None if path == AUTHORIZE_AUDIT => {
+            ensure(ctx.permission["permission"] == AUDIT_READ, 403, "FORBIDDEN")?;
+            Ok(json!({ "userId": user, "permission": AUDIT_READ }))
+        }
         None => Ok(json!({ "userId": user })),
         Some(Owner::User { id }) => {
             ensure(id.is_none_or(|id| id == user), 403, "FORBIDDEN")?;
