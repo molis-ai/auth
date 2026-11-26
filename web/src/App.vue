@@ -254,8 +254,10 @@ async function navigate(target: string, subjectId?: string) {
   securityAction.value = "";
   await run(async () => {
     if (target === "security") await refreshLoginMethods();
-    else if (target === "applications")
+    else if (target === "applications") {
       applications.value = await list("/platform/applications");
+      if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
+    }
   });
 }
 function openTeamBilling(tenantId: string) {
@@ -747,53 +749,91 @@ onBeforeUnmount(() => {
         :capabilities="account.capabilities ?? []"
       />
       <section v-if="page === 'applications'" class="console-card collection-page applications-page">
-        <div class="collection-layout applications-layout"><aside class="collection-list applications-rail" aria-label="应用列表">
-        <h1>应用管理</h1>
-        <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用" />
-        <form
-          v-if="can('APPLICATION_WRITE')"
-          class="app-create-form"
-          @submit.prevent="createApplication"
-        >
-          <label
-            >应用名称<input
-              v-model="newApplicationName"
-              :disabled="busy"
-              required
-              maxlength="80" /></label
-          ><button :disabled="busy">创建应用</button>
-        </form>
-        <div v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))" :key="a.applicationId" class="v2-row collection-item" :class="{ selected: selectedApplication?.applicationId === a.applicationId }">
-          <button :disabled="busy" @click="openApplication(a)">
-            {{ a.name }}</button
-          ><span>{{ a.status }}</span>
+        <div class="collection-layout applications-layout">
+          <aside class="collection-list applications-rail" aria-label="应用列表">
+            <div class="apps-rail-head">
+              <h1>应用管理</h1>
+              <span class="apps-rail-count">{{ applications.length }}</span>
+            </div>
+            <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用…" />
+            <form
+              v-if="can('APPLICATION_WRITE')"
+              class="app-create-form"
+              @submit.prevent="createApplication"
+            >
+              <label>
+                应用名称
+                <input
+                  v-model="newApplicationName"
+                  :disabled="busy"
+                  required
+                  maxlength="80"
+                  placeholder="例如：Molis Studio"
+                />
+              </label>
+              <button class="app-create-submit" :disabled="busy || !newApplicationName.trim()">创建应用</button>
+            </form>
+            <div class="apps-rail-list">
+              <div
+                v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))"
+                :key="a.applicationId"
+                class="v2-row collection-item app-rail-item"
+                :class="{ selected: selectedApplication?.applicationId === a.applicationId }"
+                @click="!busy && openApplication(a)"
+              >
+                <span class="app-avatar-sm" aria-hidden="true">{{ a.name.slice(0, 1) }}</span>
+                <div class="app-rail-body">
+                  <div class="app-rail-top">
+                    <button type="button" class="app-rail-btn" :disabled="busy" @click.stop="openApplication(a)">{{ a.name }}</button>
+                    <i class="app-dot" :class="a.status === 'ACTIVE' ? 'is-on' : 'is-off'" aria-hidden="true"></i>
+                  </div>
+                  <span class="app-rail-sub">{{ a.status }}</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+          <div class="collection-detail applications-detail">
+            <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
+            <div v-if="selectedApplication" class="applications-detail-inner">
+              <header class="detail-heading app-page-head">
+                <span class="detail-avatar">{{ selectedApplication.name.slice(0, 1) }}</span>
+                <div>
+                  <div class="app-head-row">
+                    <h2>{{ selectedApplication.name }}</h2>
+                    <span class="app-status-pill" :class="selectedApplication.status === 'ACTIVE' ? 'is-active' : 'is-disabled'">
+                      <i class="app-status-dot" aria-hidden="true"></i>{{ selectedApplication.status }}
+                    </span>
+                  </div>
+                  <p class="app-head-meta">{{ selectedApplication.applicationId }}</p>
+                </div>
+              </header>
+              <section v-if="can('APPLICATION_WRITE')" class="app-settings-card">
+                <div class="app-card-head">
+                  <h3>应用基础设置</h3>
+                  <p>修改应用显示名称或启停应用登录入口</p>
+                </div>
+                <form class="app-edit-card" @submit.prevent="editApplication">
+                  <label>名称<input v-model="appName" :disabled="busy" required /></label>
+                  <label class="app-status-field">
+                    应用状态
+                    <select v-model="appStatus" :disabled="busy" aria-label="应用状态">
+                      <option>ACTIVE</option>
+                      <option>DISABLED</option>
+                    </select>
+                  </label>
+                  <button class="app-save-btn" :disabled="busy || (appName === selectedApplication.name && appStatus === selectedApplication.status)">保存应用</button>
+                </form>
+              </section>
+              <PlatformClients
+                v-if="can('CLIENT_READ') || can('CLIENT_WRITE')"
+                :key="selectedApplication.applicationId"
+                :application-id="selectedApplication.applicationId"
+                :client="client"
+                :capabilities="account.capabilities ?? []"
+              />
+            </div>
+          </div>
         </div>
-        </aside><div class="collection-detail applications-detail">
-        <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
-        <div v-if="selectedApplication" class="applications-detail-inner">
-          <div class="detail-heading"><span class="detail-avatar">{{ selectedApplication.name.slice(0,1) }}</span><div><h2>{{ selectedApplication.name }}</h2><p>{{ selectedApplication.status }}</p></div></div>
-          <form
-            v-if="can('APPLICATION_WRITE')"
-            class="app-edit-card"
-            @submit.prevent="editApplication"
-          >
-            <label>名称<input v-model="appName" :disabled="busy" required /></label
-            ><label
-              >应用状态<select v-model="appStatus" :disabled="busy" aria-label="应用状态">
-                <option>ACTIVE</option>
-                <option>DISABLED</option>
-              </select></label
-            ><button :disabled="busy || (appName === selectedApplication.name && appStatus === selectedApplication.status)">保存应用</button>
-          </form>
-          <PlatformClients
-            v-if="can('CLIENT_READ') || can('CLIENT_WRITE')"
-            :key="selectedApplication.applicationId"
-            :application-id="selectedApplication.applicationId"
-            :client="client"
-            :capabilities="account.capabilities ?? []"
-          />
-        </div>
-        </div></div>
       </section>
     </main>
     </div>
