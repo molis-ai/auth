@@ -312,8 +312,18 @@ try {
   await page.evaluate("window.__authPerformance.holdNext.push('/invitations', '/ownership-transfers')");
   await click("待处理");
   await page.wait("['/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
+  assert.equal(await page.evaluate("document.querySelector('.pending-empty-card[role=status]')?.textContent.trim()"), "正在检查待处理事项…");
+  assert.equal(await page.evaluate("document.querySelectorAll('.pending-group-card').length"), 0);
   await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
   await page.wait("document.querySelector('.pending-empty')?.textContent.trim() === '暂无待处理事项'");
+  await page.evaluate("window.__authPerformance.holdNext.push('/invitations', '/ownership-transfers')");
+  await click("刷新检查");
+  await page.wait("['/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
+  assert.equal(await page.evaluate("document.querySelector('.pending-empty')?.textContent.trim()"), "暂无待处理事项");
+  assert.equal(await page.evaluate("document.querySelector('.pending-empty-actions button:disabled')?.textContent.trim()"), "检查中…");
+  assert.equal(await page.evaluate("document.querySelectorAll('.pending-group-card').length"), 0);
+  await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
+  await page.wait("document.querySelector('.pending-empty-actions button:enabled')?.textContent.trim() === '刷新检查'");
   await click("个人资料");
   const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.space_id).first();
   await page.wait("Boolean(document.querySelector('.profile-identity'))");

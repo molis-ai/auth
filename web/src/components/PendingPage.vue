@@ -44,7 +44,9 @@ const transfers = computed(() => ownership.items.value.filter(item => item.statu
 const { loading: invitationsLoading, nextCursor: moreInvitations } = received;
 const { nextCursor: moreTransfers } = ownership;
 const transfersLoading = ref(false);
+const initialLoading = ref(true);
 const refreshing = ref(false);
+const loading = computed(() => initialLoading.value || refreshing.value || invitationsLoading.value || transfersLoading.value);
 const category = ref<Category>("all");
 const teams = ref<Record<string, Team | null>>({});
 const lastHandled = ref<{ message: string; jumpToTeams: boolean } | null>(null);
@@ -53,10 +55,14 @@ const confirmDialog = ref<HTMLDialogElement>();
 const lifetime = new AbortController();
 
 const errors = reactive<Partial<Record<Section, { message: string; retry: () => Promise<void> }>>>({});
-const hasInvitationsBlock = computed(() => Boolean(invitationsLoading.value || invitations.value.length > 0 || moreInvitations.value || errors.invitations));
-const hasTransfersBlock = computed(() => Boolean(transfersLoading.value || transfers.value.length > 0 || moreTransfers.value || errors.transfers));
-const showInvitations = computed(() => (category.value === "all" || category.value === "invitations") && hasInvitationsBlock.value);
-const showTransfers = computed(() => (category.value === "all" || category.value === "transfers") && hasTransfersBlock.value);
+const showInvitations = computed(() =>
+  !initialLoading.value && category.value !== "transfers" &&
+  Boolean(invitations.value.length || moreInvitations.value || errors.invitations),
+);
+const showTransfers = computed(() =>
+  !initialLoading.value && category.value !== "invitations" &&
+  Boolean(transfers.value.length || moreTransfers.value || errors.transfers),
+);
 
 const totalCount = computed(() => invitations.value.length + transfers.value.length);
 const needMeCount = computed(() =>
@@ -166,14 +172,18 @@ async function loadTransfers(append = false) {
   }
 }
 
+async function loadPending() {
+  await Promise.all([
+    read("invitations", refreshInvitations),
+    read("transfers", () => loadTransfers(false)),
+  ]);
+}
+
 async function refreshAll() {
-  if (refreshing.value || props.busy) return;
+  if (loading.value || props.busy) return;
   refreshing.value = true;
   try {
-    await Promise.all([
-      read("invitations", refreshInvitations),
-      read("transfers", () => loadTransfers(false)),
-    ]);
+    await loadPending();
   } finally {
     if (!lifetime.signal.aborted) refreshing.value = false;
   }
@@ -257,9 +267,9 @@ function updateInvitation(invitation: Invitation, operation: "accept" | "decline
   );
 }
 
-onMounted(() => {
-  void read("invitations", refreshInvitations);
-  void read("transfers", loadTransfers);
+onMounted(async () => {
+  await loadPending();
+  if (!lifetime.signal.aborted) initialLoading.value = false;
 });
 onBeforeUnmount(() => {
   lifetime.abort();
@@ -297,7 +307,7 @@ onBeforeUnmount(() => {
                 <span class="pending-rail-name">全部待处理</span>
                 <span class="pending-rail-count" :class="{ 'is-zero': totalCount === 0 }">{{ totalCount }}</span>
               </span>
-              <span class="pending-rail-sub">{{ totalCount > 0 ? `${needMeCount} 项需你确认` : "当前已清空" }}</span>
+              <span class="pending-rail-sub">{{ initialLoading ? "正在检查…" : totalCount > 0 ? `${needMeCount} 项需你确认` : "当前已清空" }}</span>
             </span>
           </button>
 
@@ -344,11 +354,6 @@ onBeforeUnmount(() => {
             </span>
           </button>
         </nav>
-
-        <div class="pending-rail-note">
-          <strong>时效与权限说明</strong>
-          团队邀请与所有权交接均设有过期时间，超时后将自动失效。接受所有权交接前会进行二次确认，确保团队归属变更安全。
-        </div>
       </aside>
 
       <div class="pending-detail">
@@ -361,7 +366,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="pending-btn"
-              :disabled="busy || refreshing || invitationsLoading || transfersLoading"
+              :disabled="busy || loading"
               @click="refreshAll"
             >
               <svg :class="{ 'is-spinning': refreshing }" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -383,7 +388,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div v-if="category === 'all' && totalCount > 0" class="pending-summary-strip">
+          <div v-if="!initialLoading && category === 'all' && totalCount > 0" class="pending-summary-strip">
             <div class="pending-summary-chip">
               <div>
                 <div class="pending-summary-label">待你确认</div>
@@ -554,14 +559,17 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-if="!showInvitations && !showTransfers" class="pending-empty-card">
+          <div v-if="initialLoading" class="pending-empty-card" role="status">
+            <p>正在检查待处理事项…</p>
+          </div>
+          <section v-else-if="!showInvitations && !showTransfers" class="pending-empty-card">
             <div class="pending-empty-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9" /><path d="m9 12 2 2 4-4" /></svg>
             </div>
             <h3 class="pending-empty">{{ emptyCopy.title }}</h3>
             <p>{{ emptyCopy.desc }}</p>
             <div class="pending-empty-actions">
-              <button type="button" class="pending-btn" :disabled="busy || refreshing" @click="refreshAll">刷新检查</button>
+              <button type="button" class="pending-btn" :disabled="busy || loading" @click="refreshAll">{{ refreshing ? "检查中…" : "刷新检查" }}</button>
               <button type="button" class="pending-btn pending-primary" :disabled="busy" @click="emit('navigate', 'tenants')">查看我的团队 →</button>
             </div>
           </section>
@@ -644,12 +652,6 @@ onBeforeUnmount(() => {
 .pending-rail-item.is-active .pending-rail-count { background: var(--primary); color: #fff; }
 .pending-rail-count.is-zero { background: transparent; color: #8e8e98; font-weight: 500; }
 .pending-rail-item.is-active .pending-rail-count.is-zero { background: transparent; color: var(--muted); }
-
-.pending-rail-note {
-  margin-top: auto; padding: 12px; border-radius: 10px; background: var(--surface);
-  border: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.55;
-}
-.pending-rail-note strong { display: block; color: var(--ink); margin-bottom: 4px; font-size: 12px; }
 
 .pending-detail { min-width: 0; padding: 28px 36px 76px; }
 .pending-detail-inner { max-width: 900px; margin: 0 auto; display: grid; gap: 18px; }
@@ -831,7 +833,6 @@ onBeforeUnmount(() => {
   .pending-rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px 20px; }
   .pending-rail-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .pending-rail-item { width: auto; min-width: 140px; min-height: 42px; }
-  .pending-rail-note { display: none; }
   .pending-detail { padding: 20px 20px 64px; }
   .pending-summary-strip { grid-template-columns: 1fr; }
 }
