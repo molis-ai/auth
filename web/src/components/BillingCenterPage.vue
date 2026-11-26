@@ -173,11 +173,6 @@ onBeforeUnmount(() => {
           </div>
           <p v-else class="billing-rail-hint">暂无所属团队，创建或加入团队后可在此切换查看团队账单。</p>
         </div>
-
-        <div class="billing-rail-note">
-          <strong>分账隔离说明</strong>
-          <span>个人账本与各团队账本独立核算、不混扣。点击左侧账本即可切换查看对应套餐、余额与流水。</span>
-        </div>
       </aside>
 
       <div class="billing-directory-detail">
@@ -267,13 +262,6 @@ onBeforeUnmount(() => {
   min-height: 32px; height: 32px; margin-top: 2px; padding: 0 10px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px;
 }
-.billing-rail-note {
-  margin-top: auto; padding: 12px; border-radius: 10px;
-  background: var(--surface); border: 1px solid var(--line);
-  font-size: 12px; color: var(--muted); line-height: 1.5;
-}
-.billing-rail-note strong { display: block; color: var(--ink); margin-bottom: 3px; font-size: 12px; }
-
 .billing-directory-detail { min-width: 0; padding: 28px 36px 72px; }
 .billing-directory-inner { max-width: 940px; margin: 0 auto; }
 
@@ -286,7 +274,6 @@ onBeforeUnmount(() => {
   }
   .billing-rail-list { display: flex; flex-wrap: wrap; gap: 8px; }
   .billing-rail .billing-rail-item { width: auto; min-width: 170px; flex: 0 1 auto; min-height: 44px; padding: 7px 10px; }
-  .billing-rail-note { display: none; }
   .billing-directory-detail { padding: 22px 20px 64px; }
 }
 @media (max-width: 540px) {

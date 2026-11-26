@@ -264,6 +264,13 @@ try {
   await page.wait(
     "document.querySelector('.tm-heading h2')?.textContent==='QA 自助团队'",
   );
+  await page.wait("document.querySelector('.tm-pagination > span')?.textContent.trim() === '本页 1 位成员' && Boolean(document.querySelector('.tm-page-size-trigger:enabled'))");
+  assert.equal(await page.evaluate("document.querySelector('.tm-page-navigation span')?.textContent.trim()"), "第 1 页");
+  assert.equal(await page.evaluate("document.querySelectorAll('.tm-page-navigation button:disabled').length"), 2);
+  const pageSizeMenu = "#tm-page-sizes:popover-open";
+  await page.click(".tm-page-size-trigger");
+  await page.click(`${pageSizeMenu} button[aria-pressed=true]`);
+  await page.wait(`!document.querySelector('${pageSizeMenu}')`);
   assert.equal(
     (await db.prepare("SELECT count(*) n FROM auth_managed_tenant").first()).n,
     1,
@@ -305,9 +312,44 @@ try {
   await page.click("[aria-label=上一页]");
   await page.wait("document.querySelector('.tm-pagination')?.textContent.includes('第 1 页')");
   assert.equal(memberReads.length, 2);
+  for (const width of [1440, 390]) {
+    await page.viewport(width, 900);
+    await page.click(".tm-page-size-trigger");
+    await page.wait(`Boolean(document.querySelector('${pageSizeMenu}'))`);
+    assert.deepEqual(await page.evaluate(`Array.from(document.querySelectorAll('${pageSizeMenu} button'), option =>
+      [option.textContent.trim(), option.getAttribute('aria-pressed')])`), [["10 人", "true"], ["20 人", "false"], ["50 人", "false"]]);
+    assert.ok(await page.evaluate(`(() => {
+      const trigger = document.querySelector('.tm-page-size-trigger').getBoundingClientRect();
+      const menu = document.querySelector('${pageSizeMenu}').getBoundingClientRect();
+      return menu.left >= 0 && menu.right <= innerWidth && Math.abs(trigger.right - menu.right) < 1 &&
+        (menu.bottom <= trigger.top || menu.top >= trigger.bottom);
+    })()`), "the page size menu stays by its trigger inside the viewport");
+    await page.screenshot(join(evidence, 'tenant-pagination-' + width + '.png'));
+    await page.command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await page.command("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await page.wait(`!document.querySelector('${pageSizeMenu}')`);
+  }
+  await page.viewport(1440, 900);
+  await page.click(".tm-page-size-trigger");
+  await page.click(`${pageSizeMenu} button:nth-child(2)`);
+  await page.wait(`!document.querySelector('${pageSizeMenu}')`);
+  await page.wait("document.querySelector('.tm-page-size-trigger')?.textContent.trim() === '每页 20 人' && document.querySelectorAll('.tm-table-wrap tbody tr').length === 13");
+  assert.equal(memberReads.at(-1).get("limit"), "20");
+  await page.click(".tm-page-size-trigger");
+  await page.click(`${pageSizeMenu} button:first-child`);
+  await page.wait(`!document.querySelector('${pageSizeMenu}')`);
+  await page.wait("document.querySelector('.tm-page-size-trigger')?.textContent.trim() === '每页 10 人' && document.querySelectorAll('.tm-table-wrap tbody tr').length === 10");
+  assert.equal(memberReads.at(-1).get("limit"), "10");
+  console.log("PASS team pagination keeps controls visible on a single page and works on desktop and mobile");
   await click("＋ 邀请成员");
   assert.equal(await page.evaluate("document.querySelector('.tm-dialog[open] select')?.value"), "EMAIL");
   assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.tm-dialog[open] select option')].map(option => option.value)"), ["EMAIL", "PHONE"]);
+  await page.evaluate(`{
+    const method = document.querySelector('.tm-dialog[open] select');
+    method.value = 'PHONE';
+    method.dispatchEvent(new Event('change', {bubbles: true}));
+  }`);
+  await page.wait("Boolean(document.querySelector('.tm-dialog[open] input[type=tel]'))");
   await page.click(".tm-dialog[open] button[aria-label=关闭]");
   await page.evaluate("window.__authPerformance.holdNext.push('/invitations', '/ownership-transfers')");
   await click("待处理");
@@ -342,6 +384,20 @@ try {
     return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim(), dialog.querySelector('input').type];
   })()`), [false, "邮箱地址", "email"]);
   assert.match(await page.evaluate("document.querySelector('.tm-dialog[open]').textContent"), /在「待处理」接受邀请/);
+  assert.equal(await page.evaluate("document.activeElement === document.querySelector('.tm-invite-dialog input[type=email]')"), true);
+  assert.equal(await page.evaluate("document.activeElement.placeholder"), "colleague@molis.ai");
+  for (const width of [1440, 390]) {
+    await page.viewport(width, 900);
+    assert.ok(await page.evaluate(`(() => {
+      const dialog = document.querySelector('.tm-invite-dialog[open]');
+      const {left, right, width} = dialog.getBoundingClientRect();
+      const footer = dialog.querySelector('footer');
+      return width === Math.min(440, innerWidth - 32) && left >= 16 && right <= innerWidth - 16 &&
+        getComputedStyle(footer).borderTopWidth === '1px' && footer.scrollWidth <= footer.clientWidth;
+    })()`), "invite form and footer fit the viewport");
+    await page.screenshot(join(evidence, 'team-invite-' + width + '.png'));
+  }
+  await page.viewport(1440, 900);
   await page.fill(".tm-dialog[open] input[type=email]", "qa-web-invite@example.test");
   await click("创建邀请");
   await page.wait("!document.querySelector('.tm-dialog[open]')");

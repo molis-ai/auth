@@ -43,6 +43,8 @@ const labels: Record<string,string> = { OWNER: '所有者', ADMIN: '管理员', 
 const weights: Record<string,number> = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
 const active = computed(() => props.tenant.status === 'ACTIVE');
 const manager = computed(() => active.value && ['OWNER','ADMIN'].includes(props.tenant.myRole));
+const pageSizes = [10, 20, 50] as const;
+const pageSizeMenu = ref<HTMLElement>();
 const billingScope = computed(() => JSON.stringify([
   props.viewerId, props.tenant.tenantId, props.tenant.membershipId, props.tenant.myRole, props.tenant.status,
 ]));
@@ -84,6 +86,10 @@ watch(tab, () => { openMoreId.value = null; });
 
 function toggleMore(membershipId: string) {
   openMoreId.value = openMoreId.value === membershipId ? null : membershipId;
+}
+function selectPageSize(size: number) {
+  pageSizeMenu.value?.hidePopover();
+  if (size !== props.size) emit('resize', size);
 }
 async function open(kind: string, member?: Member) {
   openMoreId.value = null;
@@ -304,10 +310,39 @@ async function submit() {
 
         <footer class="tm-pagination">
           <span>本页 {{ rows.length }} 位成员</span>
-          <label>每页 <select :value="size" :disabled="busy || loading" @change="emit('resize', Number(($event.target as HTMLSelectElement).value))"><option :value="10">10</option><option :value="20">20</option><option :value="50">50</option></select> 人</label>
-          <button :disabled="page<=1 || busy || loading" aria-label="上一页" @click="emit('previous')">‹</button>
-          <span>第 {{ page }} 页</span>
-          <button :disabled="!hasNext || busy || loading" aria-label="下一页" @click="emit('next')">›</button>
+          <div class="tm-page-controls">
+            <button
+              type="button"
+              class="tm-page-size-trigger"
+              popovertarget="tm-page-sizes"
+              :disabled="busy || loading"
+            >
+              每页 {{ size }} 人
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+            </button>
+            <div id="tm-page-sizes" ref="pageSizeMenu" class="tm-page-size-menu" popover role="group" aria-label="每页人数">
+              <button
+                v-for="option in pageSizes"
+                :key="option"
+                type="button"
+                :aria-pressed="size === option"
+                :disabled="busy || loading"
+                @click="selectPageSize(option)"
+              >
+                {{ option }} 人
+                <svg v-if="size === option" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-6" /></svg>
+              </button>
+            </div>
+            <nav class="tm-page-navigation" aria-label="成员分页">
+              <button type="button" :disabled="page <= 1 || busy || loading" aria-label="上一页" @click="emit('previous')">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 4-4 4 4 4" /></svg>
+              </button>
+              <span>第 {{ page }} 页</span>
+              <button type="button" :disabled="!hasNext || busy || loading" aria-label="下一页" @click="emit('next')">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
+              </button>
+            </nav>
+          </div>
         </footer>
       </div>
     </div>
@@ -316,22 +351,63 @@ async function submit() {
       <strong>权限说明：</strong>所有者可调整角色、交接所有权并管理账单；管理员可邀请或移除普通成员；成员可使用团队共享资源。
     </div>
 
-    <dialog ref="dialog" class="tm-dialog" aria-labelledby="tm-dialog-title" @cancel.prevent="close"><form @submit.prevent="submit"><header><h2 id="tm-dialog-title">{{ title }}</h2><button type="button" aria-label="关闭" :disabled="saving" @click="close">×</button></header>
-      <template v-if="operation === 'invite'">
-        <label v-if="canInviteByPhone">邀请方式
-          <select v-model="inviteKind" :disabled="saving"><option value="EMAIL">邮箱</option><option value="PHONE">手机号</option></select>
-        </label>
-        <label>{{ inviteKind === 'EMAIL' ? '邮箱地址' : '手机号（含国家区号）' }}
-          <input v-model="invite" :type="inviteKind === 'EMAIL' ? 'email' : 'tel'" required :disabled="saving" autocomplete="off" />
-        </label>
-        <p>对方使用此{{ inviteKind === 'EMAIL' ? '邮箱' : '手机号' }}登录后，可在「待处理」接受邀请。</p>
-      </template>
-      <template v-else-if="operation==='role'"><p>{{ target?.displayName }}</p><label>团队角色<select v-model="role" :disabled="saving"><option value="ADMIN">管理员</option><option value="MEMBER">成员</option></select></label><p>管理员可以邀请成员和移除普通成员；所有权需要单独交接。</p></template>
-      <p v-else-if="operation==='remove'">确定移除 {{ target?.displayName }}？该成员的团队席位会同时释放。</p>
-      <p v-else-if="operation==='transfer'">将所有权交接给 {{ target?.displayName }}。对方接受后，你将不再是所有者。</p>
-      <p v-else>确定退出 {{ tenant.name }}？你在该团队的席位会同时释放。</p>
-      <p v-if="error" role="alert" class="tm-danger">{{ error }}</p><footer><button type="button" :disabled="saving" @click="close">取消</button><button class="tm-primary" :disabled="saving || (operation==='role' && role===target?.role)" type="submit">{{ saving?'正在提交…':operation==='invite'?'创建邀请':'确认' }}</button></footer>
-    </form></dialog>
+    <dialog
+      ref="dialog"
+      class="tm-dialog"
+      :class="{ 'tm-invite-dialog': operation === 'invite' }"
+      aria-labelledby="tm-dialog-title"
+      @cancel.prevent="close"
+    >
+      <form @submit.prevent="submit">
+        <header>
+          <h2 id="tm-dialog-title">{{ title }}</h2>
+          <button type="button" aria-label="关闭" :disabled="saving" @click="close">×</button>
+        </header>
+        <div class="tm-dialog-body">
+          <template v-if="operation === 'invite'">
+            <label v-if="canInviteByPhone">邀请方式
+              <select v-model="inviteKind" :disabled="saving">
+                <option value="EMAIL">邮箱</option>
+                <option value="PHONE">手机号</option>
+              </select>
+            </label>
+            <label>{{ inviteKind === 'EMAIL' ? '邮箱地址' : '手机号（含国家区号）' }}
+              <input
+                v-model="invite"
+                :type="inviteKind === 'EMAIL' ? 'email' : 'tel'"
+                :placeholder="inviteKind === 'EMAIL' ? 'colleague@molis.ai' : undefined"
+                aria-describedby="tm-invite-help"
+                autocomplete="off"
+                autofocus
+                required
+                :disabled="saving"
+              />
+            </label>
+            <p id="tm-invite-help">对方使用此{{ inviteKind === 'EMAIL' ? '邮箱' : '手机号' }}登录后，可在「待处理」接受邀请。</p>
+          </template>
+          <template v-else-if="operation === 'role'">
+            <p>{{ target?.displayName }}</p>
+            <label>团队角色
+              <select v-model="role" :disabled="saving">
+                <option value="ADMIN">管理员</option>
+                <option value="MEMBER">成员</option>
+              </select>
+            </label>
+            <p>管理员可以邀请成员和移除普通成员；所有权需要单独交接。</p>
+          </template>
+          <p v-else-if="operation === 'remove'">确定移除 {{ target?.displayName }}？该成员的团队席位会同时释放。</p>
+          <p v-else-if="operation === 'transfer'">将所有权交接给 {{ target?.displayName }}。对方接受后，你将不再是所有者。</p>
+          <p v-else>确定退出 {{ tenant.name }}？你在该团队的席位会同时释放。</p>
+          <p v-if="error" role="alert" class="tm-danger">{{ error }}</p>
+        </div>
+        <footer>
+          <button type="button" :disabled="saving" @click="close">取消</button>
+          <button class="tm-primary" :disabled="saving || (operation === 'role' && role === target?.role)" type="submit">
+            {{ saving ? '正在提交…' : operation === 'invite' ? '创建邀请' : '确认' }}
+          </button>
+        </footer>
+      </form>
+    </dialog>
   </section>
 </template>
 <style scoped>
@@ -501,14 +577,37 @@ tbody tr:hover td { background: #fafafc; }
 .tenant-members button.tm-clear-btn { height: 28px; min-height: 28px; padding: 0 10px; margin-left: 8px; font-size: 12px; border-radius: 7px; }
 
 .tm-pagination {
-  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
-  font-size: 12px; color: var(--muted); padding: 12px 20px;
-  border-top: 1px solid var(--line); background: #fafafb; border-radius: 0 0 14px 14px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
+  font-size: 12px; color: var(--muted); padding: 8px 20px;
+  border-top: 1px solid var(--line); border-radius: 0 0 14px 14px;
+  font-variant-numeric: tabular-nums;
 }
-.tm-pagination > span:first-child { margin-right: auto; }
-.tm-pagination label { display: flex; align-items: center; gap: 6px; margin: 0; }
-.tm-pagination select { width: auto; margin: 0; padding: 3px 6px; height: 28px; min-height: 28px; }
-.tenant-members .tm-pagination button { height: 28px; min-height: 28px; padding: 0 9px; font-size: 12px; }
+.tm-page-controls, .tm-page-navigation { display: flex; align-items: center; gap: 4px; }
+.tm-page-controls { margin-inline-start: auto; gap: 10px; }
+.tm-page-navigation span { min-width: 46px; white-space: nowrap; text-align: center; }
+.tenant-members .tm-pagination button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 30px; min-height: 30px; padding: 0 8px; font-size: 12px;
+  background: transparent; border-color: transparent; color: var(--muted);
+}
+.tenant-members .tm-pagination button:hover:not(:disabled) { background: #f2f2f6; color: var(--ink); }
+.tenant-members .tm-page-navigation button { width: 30px; padding: 0; }
+.tm-pagination svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.tm-page-size-trigger { anchor-name: --tm-page-size-trigger; }
+.tm-page-size-menu {
+  width: 108px; box-sizing: border-box; padding: 4px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); color: var(--ink);
+  box-shadow: 0 4px 16px rgba(25, 25, 27, 0.10);
+}
+.tm-page-size-menu:popover-open { display: grid; gap: 2px; }
+.tenant-members .tm-page-size-menu button { justify-content: space-between; width: 100%; color: var(--ink); }
+.tenant-members .tm-page-size-menu button[aria-pressed=true] { background: #efeff3; }
+@supports (position-anchor: --tm-page-size-trigger) {
+  .tm-page-size-menu {
+    position-anchor: --tm-page-size-trigger; inset: auto; right: anchor(right); bottom: calc(anchor(top) + 6px);
+    margin: 0; position-try-fallbacks: flip-block;
+  }
+}
 
 .tm-role-footnote {
   padding: 12px 18px; border-radius: 11px; background: var(--surface);
@@ -532,6 +631,32 @@ tbody tr:hover td { background: #fafafc; }
 .tm-dialog form { margin: 0; }
 .tm-danger { color: #a62b33; }
 
+.tm-invite-dialog {
+  width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
+  box-shadow: 0 24px 60px rgba(25, 25, 27, 0.18);
+}
+.tenant-members .tm-invite-dialog form { margin: 0; }
+.tm-invite-dialog header { margin: 0; padding: 18px 22px 14px; border-bottom: 1px solid var(--line); }
+.tm-invite-dialog h2 { font-size: 16px; font-weight: 650; }
+.tenant-members .tm-invite-dialog header button {
+  width: 28px; min-height: 28px; padding: 0; border-radius: 7px; color: var(--muted); font-size: 18px;
+}
+.tenant-members .tm-invite-dialog header button:hover:not(:disabled) { background: #f2f2f5; color: var(--ink); }
+.tm-invite-dialog .tm-dialog-body { padding: 18px 22px; display: grid; gap: 12px; color: #3f3f46; }
+.tm-invite-dialog label { display: grid; gap: 6px; margin: 0; font-size: 13px; font-weight: 400; }
+.tenant-members .tm-invite-dialog .tm-dialog-body input,
+.tenant-members .tm-invite-dialog .tm-dialog-body select {
+  height: 36px; min-height: 36px; margin: 0; padding: 0 10px;
+  border: 1px solid #d5d5db; border-radius: 8px; background: var(--surface); color: var(--ink);
+}
+.tm-invite-dialog input:focus-visible, .tm-invite-dialog select:focus-visible { outline-offset: -2px; }
+.tm-invite-dialog p { margin: 0; font-size: 12px; }
+.tm-invite-dialog p[role=alert] { color: #a62b33; }
+.tm-invite-dialog footer {
+  margin: 0; padding: 14px 22px 18px; border-top: 1px solid var(--line); background: #fafafb;
+}
+.tenant-members .tm-invite-dialog footer button { min-height: 34px; padding: 0 13px; }
+
 @media (max-width: 760px) {
   .tm-heading h2 { font-size: 19px; }
   .tm-card-topbar { padding: 0 16px; }
@@ -540,6 +665,14 @@ tbody tr:hover td { background: #fafafc; }
   .tm-filter-bar { padding: 12px 16px; }
   .tm-filter-hint { display: none; }
   th, td { padding-inline: 14px; }
-  .tm-pagination { flex-wrap: wrap; padding: 12px 16px; }
+  .tm-pagination { padding: 6px 12px; }
+  .tm-page-controls { gap: 4px; }
+  .tm-page-navigation { gap: 0; }
+  .tenant-members .tm-pagination button { min-height: 44px; }
+  .tenant-members .tm-page-navigation button { width: 44px; }
+  .tenant-members .tm-invite-dialog header button { width: 44px; height: 44px; }
+  .tenant-members .tm-invite-dialog .tm-dialog-body input,
+  .tenant-members .tm-invite-dialog .tm-dialog-body select { min-height: 44px; font-size: 16px; }
+  .tenant-members .tm-invite-dialog footer button { min-height: 44px; }
 }
 </style>
