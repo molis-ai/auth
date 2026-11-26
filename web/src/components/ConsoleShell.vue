@@ -22,7 +22,9 @@ const workbenchItems = [
 ];
 const platformItems = [
   { id: "users", label: "用户与权限", capability: "USER_READ" },
+  { id: "platform-tenants", label: "团队管理", capability: "TENANT_READ" },
   { id: "applications", label: "应用管理", capability: "APPLICATION_READ" },
+  { id: "audit", label: "审计日志", capability: "AUDIT_READ" },
 ];
 const navigationGroups = computed(() => [
   { label: "工作台", items: workbenchItems },
@@ -80,6 +82,15 @@ const navigationGroups = computed(() => [
                 <template v-else-if="id === 'users'">
                   <circle cx="9" cy="8" r="3" />
                   <path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5" />
+                </template>
+                <template v-else-if="id === 'platform-tenants'">
+                  <rect x="3" y="4" width="7" height="16" rx="1.5" />
+                  <rect x="14" y="8" width="7" height="12" rx="1.5" />
+                  <path d="M6.5 8h.01M6.5 12h.01M6.5 16h.01M17.5 12h.01M17.5 16h.01" />
+                </template>
+                <template v-else-if="id === 'audit'">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                  <path d="M14 2v6h6M8 13h8M8 17h5" />
                 </template>
                 <template v-else>
                   <rect x="4" y="4" width="6" height="6" rx="1.5" />

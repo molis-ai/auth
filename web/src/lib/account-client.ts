@@ -46,7 +46,8 @@ function isIdempotentRead(path: string): boolean {
   return path === "/tenant-creation-policy" ||
     path === "/login-methods" ||
     path === "/login-sessions" ||
-    /^\/tenants\/[A-Za-z0-9_-]+$/.test(path);
+    /^\/tenants\/[A-Za-z0-9_-]+$/.test(path) ||
+    /^\/platform\/tenants\/[A-Za-z0-9_-]+$/.test(path);
 }
 
 function isConcurrentFirstPage(path: string): boolean {
@@ -56,7 +57,7 @@ function isConcurrentFirstPage(path: string): boolean {
   if (query !== -1 && !/^\?limit=([1-9][0-9]?|100)$/.test(path.slice(query))) return false;
   const resource = query === -1 ? path : path.slice(0, query);
   // These console collections also use web_session::read_without_lease.
-  return /^\/(tenants|invitations|ownership-transfers|subscriptions|platform\/(applications|users))$/.test(resource) ||
+  return /^\/(tenants|invitations|ownership-transfers|subscriptions|platform\/(applications|users|tenants|audit-events))$/.test(resource) ||
     /^\/tenants\/[A-Za-z0-9_-]+\/(members|invitations)$/.test(resource) ||
     /^\/platform\/(applications\/[A-Za-z0-9_-]+\/clients|users\/[A-Za-z0-9_-]+\/permissions)$/.test(resource);
 }

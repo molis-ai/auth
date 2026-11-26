@@ -18,6 +18,8 @@ const AccountSecurityEditor = defineAsyncComponent(() => import("./components/Ac
 const AccountPassword = defineAsyncComponent(() => import("./components/AccountPassword.vue"));
 const AccountSessions = defineAsyncComponent(() => import("./components/AccountSessions.vue"));
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
+const PlatformTenants = defineAsyncComponent(() => import("./components/PlatformTenants.vue"));
+const PlatformAudit = defineAsyncComponent(() => import("./components/PlatformAudit.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
 const PendingPage = defineAsyncComponent(() => import("./components/PendingPage.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
@@ -69,7 +71,9 @@ interface Method {
 const applications = ref<Application[]>([]),
   selectedApplication = ref<Application>(),
   methods = ref<Method[]>([]),
-  billingSubjectId = ref("personal");
+  billingSubjectId = ref("personal"),
+  platformTenantFocus = ref<string>(),
+  auditTenantScope = ref<string | null>(null);
 const applicationClientCounts = ref(new Map<string, number>());
 const createApplicationDialog = ref<HTMLDialogElement>();
 const createApplicationError = ref("");
@@ -256,6 +260,8 @@ watch([() => account.value?.user?.userId, page], ([userId, target]) => {
 async function navigate(target: string, subjectId?: string) {
   await cancelSecurity();
   billingSubjectId.value = target === "subscriptions" ? (subjectId ?? "personal") : "personal";
+  platformTenantFocus.value = target === "platform-tenants" ? subjectId : undefined;
+  auditTenantScope.value = target === "audit" ? (subjectId ?? null) : null;
   page.value = target;
   if (target === 'security') securityTab.value = 'methods';
   selectedApplication.value = undefined;
@@ -271,6 +277,12 @@ async function navigate(target: string, subjectId?: string) {
 }
 function openTeamBilling(tenantId: string) {
   void navigate("subscriptions", tenantId);
+}
+function openPlatformAudit(tenantId?: string) {
+  void navigate("audit", tenantId);
+}
+function openPlatformTenant(tenantId: string) {
+  void navigate("platform-tenants", tenantId);
 }
 async function loggedIn({ account: current }: AuthCompletion) {
   clearToast();
@@ -506,6 +518,8 @@ function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   refreshIssues.clear();
   account.value = next;
   page.value = 'account'; securityTab.value = 'methods';
+  platformTenantFocus.value = undefined;
+  auditTenantScope.value = null;
   applicationSearch.value = '';
   applicationClientCounts.value.clear();
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
@@ -779,6 +793,27 @@ onBeforeUnmount(() => {
         :capabilities="account.capabilities ?? []"
         :submit-write="submitWrite"
         @expired="expireWithToast"
+      />
+      <PlatformTenants
+        v-if="page === 'platform-tenants'"
+        :key="accountScope"
+        :client="client"
+        :capabilities="account.capabilities ?? []"
+        :submit-write="submitWrite"
+        :initial-tenant-id="platformTenantFocus"
+        @expired="expireWithToast"
+        @notify="showToast"
+        @open-audit="openPlatformAudit"
+      />
+      <PlatformAudit
+        v-if="page === 'audit'"
+        :key="accountScope"
+        :client="client"
+        :capabilities="account.capabilities ?? []"
+        :initial-tenant-scope="auditTenantScope"
+        @expired="expireWithToast"
+        @notify="showToast"
+        @open-tenant="openPlatformTenant"
       />
       <section v-if="page === 'applications'" class="applications-page">
         <div class="applications-layout">
