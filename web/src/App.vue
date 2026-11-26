@@ -729,6 +729,7 @@ onBeforeUnmount(() => {
         :mutate="mutate"
         @expired="handleTenantError"
         @dispose="disposePageIssues('pending')"
+        @navigate="navigate"
       />
       <BillingCenterPage
         v-if="page === 'subscriptions' && account.user && !endingSession"

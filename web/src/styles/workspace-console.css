@@ -203,10 +203,12 @@
 
 /* Secondary navigation is a full-height column adjoining the primary rail. */
 .v2-console .workspace-body main:has(.security-page),
+.v2-console .workspace-body main:has(.pending-page),
 .v2-console .workspace-body main:has(.billing-center-page),
 .v2-console .workspace-body main:has(.platform-users-page),
 .v2-console .workspace-body main:has(.applications-page) { padding:0; }
 .v2-console .security-page,
+.v2-console .pending-page,
 .v2-console .applications-page { margin:0; }
 .v2-console .security-layout { grid-template-columns:248px minmax(0,1fr); min-height:100svh; }
 .v2-console .security-nav { position:sticky; top:0; height:100svh; padding:22px 12px 24px; background:#f9f9fb; border-right:1px solid var(--line); }
