@@ -70,6 +70,14 @@ const applications = ref<Application[]>([]),
   selectedApplication = ref<Application>(),
   methods = ref<Method[]>([]),
   billingSubjectId = ref("personal");
+const applicationClientCounts = ref(new Map<string, number>());
+const createApplicationDialog = ref<HTMLDialogElement>();
+const createApplicationError = ref("");
+const platformClients = ref<{ openCreate: () => void; busy: boolean }>();
+const filteredApplications = computed(() => {
+  const query = applicationSearch.value.trim().toLowerCase();
+  return applications.value.filter(application => application.name.toLowerCase().includes(query));
+});
 const boundMethodCount = computed(() => {
   const types = new Set(methods.value.map(item => item.type));
   return ["EMAIL", "PHONE", "GOOGLE", "GITHUB"].filter(type => types.has(type)).length;
@@ -255,6 +263,7 @@ async function navigate(target: string, subjectId?: string) {
   await run(async () => {
     if (target === "security") await refreshLoginMethods();
     else if (target === "applications") {
+      applicationClientCounts.value.clear();
       applications.value = await list("/platform/applications");
       if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
     }
@@ -343,17 +352,37 @@ function openApplication(a: Application) {
   appName.value = a.name;
   appStatus.value = a.status;
 }
-function createApplication() {
-  return mutate<Application>("/platform/applications", { name: newApplicationName.value }, {
-    action: "create-application",
-    success: "应用已创建",
-    refreshMessage: "应用已创建，但应用列表暂未刷新。",
-    committed: created => {
-      newApplicationName.value = "";
-      applications.value = [...applications.value.filter(a => a.applicationId !== created.applicationId), created];
-    },
-    after: async () => { applications.value = await list("/platform/applications"); },
-  });
+function openCreateApplication() {
+  if (busy.value) return;
+  newApplicationName.value = "";
+  createApplicationError.value = "";
+  createApplicationDialog.value?.showModal();
+}
+function closeCreateApplication() {
+  if (!busy.value) createApplicationDialog.value?.close();
+}
+async function createApplication() {
+  const name = newApplicationName.value.trim();
+  if (busy.value || !name) return;
+  createApplicationError.value = "";
+  try {
+    await submitBusyWrite<Application>("/platform/applications", { name }, {
+      action: "create-application",
+      success: "应用已创建",
+      refreshMessage: "应用已创建，但应用列表暂未刷新。",
+      committed: created => {
+        newApplicationName.value = "";
+        applications.value = [...applications.value.filter(a => a.applicationId !== created.applicationId), created];
+        applicationSearch.value = "";
+        createApplicationDialog.value?.close();
+        openApplication(created);
+      },
+      after: async () => { applications.value = await list("/platform/applications"); },
+    });
+  } catch (error) {
+    if (error instanceof AuthError && error.code === "CANCELLED") return;
+    if (!expireAccount(error)) createApplicationError.value = accountErrorMessage(error);
+  }
 }
 function editApplication() {
   const application = selectedApplication.value;
@@ -478,6 +507,7 @@ function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   account.value = next;
   page.value = 'account'; securityTab.value = 'methods';
   applicationSearch.value = '';
+  applicationClientCounts.value.clear();
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
@@ -747,93 +777,136 @@ onBeforeUnmount(() => {
         v-if="page === 'users'"
         :client="client"
         :capabilities="account.capabilities ?? []"
+        :submit-write="submitWrite"
+        @expired="expireWithToast"
       />
-      <section v-if="page === 'applications'" class="console-card collection-page applications-page">
-        <div class="collection-layout applications-layout">
-          <aside class="collection-list applications-rail" aria-label="应用列表">
+      <section v-if="page === 'applications'" class="applications-page">
+        <div class="applications-layout">
+          <aside class="applications-rail" aria-label="应用列表">
             <div class="apps-rail-head">
               <h1>应用管理</h1>
               <span class="apps-rail-count">{{ applications.length }}</span>
             </div>
-            <input v-model="applicationSearch" type="search" aria-label="搜索应用" placeholder="搜索应用…" />
-            <form
-              v-if="can('APPLICATION_WRITE')"
-              class="app-create-form"
-              @submit.prevent="createApplication"
-            >
-              <label>
-                应用名称
-                <input
-                  v-model="newApplicationName"
-                  :disabled="busy"
-                  required
-                  maxlength="80"
-                  placeholder="例如：Molis Studio"
-                />
-              </label>
-              <button class="app-create-submit" :disabled="busy || !newApplicationName.trim()">创建应用</button>
-            </form>
+            <input v-model="applicationSearch" class="app-search" type="search" aria-label="搜索应用" placeholder="搜索应用…" />
+            <button v-if="can('APPLICATION_WRITE')" type="button" class="app-create-trigger" :disabled="busy" @click="openCreateApplication">
+              ＋ 创建应用
+            </button>
             <div class="apps-rail-list">
-              <div
-                v-for="a in applications.filter(a => a.name.toLowerCase().includes(applicationSearch.toLowerCase()))"
-                :key="a.applicationId"
-                class="v2-row collection-item app-rail-item"
-                :class="{ selected: selectedApplication?.applicationId === a.applicationId }"
-                @click="!busy && openApplication(a)"
+              <button
+                v-for="application in filteredApplications"
+                :key="application.applicationId"
+                type="button"
+                class="app-rail-item"
+                :aria-current="selectedApplication?.applicationId === application.applicationId ? 'true' : undefined"
+                :disabled="busy"
+                @click="openApplication(application)"
               >
-                <span class="app-avatar-sm" aria-hidden="true">{{ a.name.slice(0, 1) }}</span>
-                <div class="app-rail-body">
-                  <div class="app-rail-top">
-                    <button type="button" class="app-rail-btn" :disabled="busy" @click.stop="openApplication(a)">{{ a.name }}</button>
-                    <i class="app-dot" :class="a.status === 'ACTIVE' ? 'is-on' : 'is-off'" aria-hidden="true"></i>
-                  </div>
-                  <span class="app-rail-sub">{{ a.status }}</span>
-                </div>
-              </div>
+                <span class="app-avatar-sm" aria-hidden="true">{{ application.name.slice(0, 1) }}</span>
+                <span class="app-rail-body">
+                  <span class="app-rail-top">
+                    <span class="app-rail-name">{{ application.name }}</span>
+                    <span class="app-dot" :class="{ 'is-on': application.status === 'ACTIVE' }" aria-hidden="true" />
+                  </span>
+                  <span class="app-rail-sub">
+                    {{ can('CLIENT_READ') && applicationClientCounts.has(application.applicationId)
+                      ? applicationClientCounts.get(application.applicationId) + ' 个客户端'
+                      : application.status }}
+                  </span>
+                </span>
+              </button>
+              <p v-if="applicationSearch.trim() && !filteredApplications.length" class="app-list-hint">没有匹配的应用</p>
             </div>
           </aside>
-          <div class="collection-detail applications-detail">
-            <p v-if="!selectedApplication" class="collection-empty">选择一个应用，管理资料与客户端</p>
+
+          <div class="applications-detail">
+            <p v-if="!selectedApplication && !busy" class="app-list-hint">暂无可管理的应用</p>
             <div v-if="selectedApplication" class="applications-detail-inner">
-              <header class="detail-heading app-page-head">
-                <span class="detail-avatar">{{ selectedApplication.name.slice(0, 1) }}</span>
-                <div>
-                  <div class="app-head-row">
-                    <h2>{{ selectedApplication.name }}</h2>
-                    <span class="app-status-pill" :class="selectedApplication.status === 'ACTIVE' ? 'is-active' : 'is-disabled'">
-                      <i class="app-status-dot" aria-hidden="true"></i>{{ selectedApplication.status }}
-                    </span>
+              <header class="app-page-head">
+                <div class="app-head-left">
+                  <span class="app-avatar-lg" aria-hidden="true">{{ selectedApplication.name.slice(0, 1) }}</span>
+                  <div class="app-head-copy">
+                    <div class="app-head-row">
+                      <h2>{{ selectedApplication.name }}</h2>
+                      <span class="app-status-pill" :class="selectedApplication.status === 'ACTIVE' ? 'is-active' : 'is-disabled'">
+                        <i class="app-status-dot" aria-hidden="true"></i>{{ selectedApplication.status }}
+                      </span>
+                    </div>
+                    <p class="app-head-meta">
+                      {{ selectedApplication.applicationId }}<template v-if="can('CLIENT_READ') && applicationClientCounts.has(selectedApplication.applicationId)">
+                        · {{ applicationClientCounts.get(selectedApplication.applicationId) }} 个已登记客户端
+                      </template>
+                    </p>
                   </div>
-                  <p class="app-head-meta">{{ selectedApplication.applicationId }}</p>
                 </div>
+                <button
+                  v-if="can('CLIENT_WRITE')"
+                  type="button"
+                  class="app-button is-primary"
+                  :disabled="busy || !platformClients || platformClients.busy"
+                  @click="platformClients?.openCreate()"
+                >
+                  ＋ 登记登录客户端
+                </button>
               </header>
+
               <section v-if="can('APPLICATION_WRITE')" class="app-settings-card">
-                <div class="app-card-head">
-                  <h3>应用基础设置</h3>
-                  <p>修改应用显示名称或启停应用登录入口</p>
-                </div>
+                <div class="app-card-head"><h3>应用基础设置</h3></div>
                 <form class="app-edit-card" @submit.prevent="editApplication">
-                  <label>名称<input v-model="appName" :disabled="busy" required /></label>
-                  <label class="app-status-field">
-                    应用状态
+                  <label class="app-field app-name-field">
+                    应用名称
+                    <input v-model="appName" :disabled="busy" required maxlength="80" />
+                  </label>
+                  <label class="app-field app-status-field">
+                    状态
                     <select v-model="appStatus" :disabled="busy" aria-label="应用状态">
                       <option>ACTIVE</option>
                       <option>DISABLED</option>
                     </select>
                   </label>
-                  <button class="app-save-btn" :disabled="busy || (appName === selectedApplication.name && appStatus === selectedApplication.status)">保存应用</button>
+                  <button type="submit" class="app-button is-primary" :disabled="busy || (appName === selectedApplication.name && appStatus === selectedApplication.status)">保存应用</button>
                 </form>
               </section>
+
               <PlatformClients
                 v-if="can('CLIENT_READ') || can('CLIENT_WRITE')"
                 :key="selectedApplication.applicationId"
+                ref="platformClients"
                 :application-id="selectedApplication.applicationId"
                 :client="client"
                 :capabilities="account.capabilities ?? []"
+                :submit-write="submitWrite"
+                @count="(id, count) => applicationClientCounts.set(id, count)"
+                @expired="expireWithToast"
               />
             </div>
           </div>
         </div>
+
+        <dialog
+          v-if="can('APPLICATION_WRITE')"
+          ref="createApplicationDialog"
+          class="app-operation-dialog app-create-dialog"
+          aria-labelledby="app-create-title"
+          @cancel.prevent="closeCreateApplication"
+        >
+          <form @submit.prevent="createApplication">
+            <header class="app-dialog-head">
+              <h3 id="app-create-title">创建应用</h3>
+              <button type="button" class="app-dialog-close" aria-label="关闭" :disabled="busy" @click="closeCreateApplication">×</button>
+            </header>
+            <div class="app-dialog-body">
+              <label class="app-field">
+                应用名称
+                <input v-model="newApplicationName" :disabled="busy" required autofocus maxlength="80" placeholder="例如：Molis Studio" />
+              </label>
+              <p v-if="createApplicationError" class="app-dialog-error" role="alert">{{ createApplicationError }}</p>
+            </div>
+            <footer class="app-dialog-foot">
+              <button type="button" class="app-button" :disabled="busy" @click="closeCreateApplication">取消</button>
+              <button type="submit" class="app-button is-primary" :disabled="busy || !newApplicationName.trim()">创建</button>
+            </footer>
+          </form>
+        </dialog>
       </section>
     </main>
     </div>

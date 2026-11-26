@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { AuthError, type AccountClient } from "../lib/account-client.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
-import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { AccountClient } from "../lib/account-client.ts";
+import type { WriteOptions } from "../lib/idempotent-submit.ts";
+
 declare const __AUTH_PLATFORM_CAPABILITIES__: readonly string[];
-const props = defineProps<{ client: AccountClient; capabilities: string[] }>();
+const props = defineProps<{
+  client: AccountClient;
+  capabilities: string[];
+  submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
+}>();
+const emit = defineEmits<{ expired: [error: unknown] }>();
+
 interface User {
   userId: string;
   displayName: string;
@@ -16,6 +24,12 @@ interface Grant {
   status: string;
   version: number;
 }
+type AuditAction = { user: User } & (
+  | { kind: "email"; email: string }
+  | { kind: "status"; disabling: boolean }
+  | { kind: "permission"; capability: string; grant?: Grant }
+);
+
 const capabilityDescriptions: Record<string, string> = {
   USER_READ: "查看平台用户列表与基础资料",
   USER_STATUS: "停用或恢复平台用户账号状态",
@@ -33,192 +47,225 @@ const capabilityDescriptions: Record<string, string> = {
   SUBSCRIPTION_READ: "查看平台侧订阅与账务审计状态",
   AUDIT_READ: "查看平台审计日志与安全变更记录",
 };
-const emailDraft = ref("");
-const search = ref("");
-const users = ref<User[]>([]),
-  selected = ref<User>(),
-  grants = ref<Grant[]>([]),
-  reason = ref(""),
-  busy = ref(false),
-  message = ref("");
 const capabilities = __AUTH_PLATFORM_CAPABILITIES__;
+const canSetStatus = computed(() => props.capabilities.includes("USER_STATUS"));
+const canEditEmail = computed(() => props.capabilities.includes("USER_EMAIL_WRITE"));
+const canManagePermissions = computed(() => props.capabilities.includes("PLATFORM_PERMISSION_WRITE"));
+const users = ref<User[]>([]);
+const selected = ref<User>();
+const grants = ref<Grant[]>([]);
+const search = ref("");
+const emailDraft = ref("");
+const busy = ref(false);
+const message = ref("");
+const auditDialog = ref<HTMLDialogElement>();
+const audit = ref<AuditAction>();
+const reason = ref("");
+const auditError = ref("");
+let active = true;
+
 const filteredUsers = computed(() => {
   const q = search.value.trim().toLowerCase();
-  if (!q) return users.value;
-  return users.value.filter(
-    u => u.displayName.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q) || u.userId.toLowerCase().includes(q),
-  );
+  return users.value.filter(user => [user.displayName, user.email ?? "", user.userId]
+    .some(text => text.toLowerCase().includes(q)));
 });
-const grantedCount = computed(() => grants.value.filter(g => g.status === "ACTIVE").length);
-let active = true;
-onBeforeUnmount(() => {
-  active = false;
+const grantsByCapability = computed(() => new Map(grants.value.map(grant => [grant.capability, grant])));
+const grantedCount = computed(() => grants.value.filter(grant => grant.status === "ACTIVE").length);
+const auditTitle = computed(() => {
+  const action = audit.value;
+  if (!action) return "";
+  if (action.kind === "email") return "填写操作原因并变更邮箱";
+  if (action.kind === "status") return (action.disabling ? "停用 " : "恢复 ") + action.user.displayName + "？";
+  return action.grant?.status === "ACTIVE" ? "撤销平台权限？" : "授予平台权限？";
 });
-async function run(fn: () => Promise<void>) {
+const auditDanger = computed(() => {
+  const action = audit.value;
+  return (action?.kind === "status" && action.disabling) ||
+    (action?.kind === "permission" && action.grant?.status === "ACTIVE");
+});
+
+async function run(task: () => Promise<void>, errorMessage = message) {
   if (busy.value) return;
   busy.value = true;
-  message.value = "";
+  errorMessage.value = "";
   try {
-    await fn();
-  } catch (e) {
-    if (active) message.value = accountErrorMessage(e);
+    await task();
+  } catch (error) {
+    if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
+    errorMessage.value = accountErrorMessage(error);
+    emit("expired", error);
   } finally {
     if (active) busy.value = false;
   }
 }
+
 async function list<T>(path: string) {
   const values: T[] = [];
   let cursor: string | null = null;
   const seen = new Set<string>();
   do {
-    const p: { items: T[]; nextCursor: string | null } =
-      await props.client.request(
-        path +
-          "?limit=100" +
-          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-      );
-    values.push(...p.items);
-    cursor = p.nextCursor;
+    const result: { items: T[]; nextCursor: string | null } = await props.client.request(
+      path + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+    );
+    values.push(...result.items);
+    cursor = result.nextCursor;
     if (cursor && seen.has(cursor)) throw Error("分页状态已变化");
     if (cursor) seen.add(cursor);
-  } while (cursor);
+  } while (cursor && active);
   return values;
 }
-async function load(autoSelect = false) {
+
+function userPath(user: User) {
+  return "/platform/users/" + encodeURIComponent(user.userId);
+}
+
+async function select(user: User) {
+  const data = canManagePermissions.value ? await list<Grant>(userPath(user) + "/permissions") : [];
+  if (!active) return;
+  selected.value = user;
+  emailDraft.value = user.email ?? "";
+  grants.value = data;
+}
+
+async function load() {
   const data = await list<User>("/platform/users");
   if (!active) return;
   users.value = data;
-  if (autoSelect && !selected.value && data[0]) {
-    await select(data[0]);
+  const current = data.find(user => user.userId === selected.value?.userId) ?? data[0];
+  if (current) {
+    await select(current);
+  } else {
+    selected.value = undefined;
   }
 }
-async function select(u: User) {
-  const data = props.capabilities.includes("PLATFORM_PERMISSION_WRITE")
-    ? await list<Grant>("/platform/users/" + u.userId + "/permissions")
-    : [];
-  if (active) {
-    selected.value = u;
-    emailDraft.value = u.email ?? "";
-    grants.value = data;
+
+async function openAudit(action: AuditAction) {
+  if (busy.value || audit.value) return;
+  audit.value = action;
+  auditError.value = "";
+  reason.value = "";
+  await nextTick();
+  if (active) auditDialog.value?.showModal();
+}
+
+function closeAudit() {
+  auditDialog.value?.close();
+  audit.value = undefined;
+  auditError.value = "";
+  reason.value = "";
+}
+
+function cancelAudit() {
+  if (!busy.value) closeAudit();
+}
+
+function confirmAudit() {
+  return run(submitAudit, auditError);
+}
+
+async function submitAudit() {
+  const action = audit.value;
+  const auditReason = reason.value.trim();
+  if (!action || !auditReason) return;
+  const path = userPath(action.user);
+
+  if (action.kind === "permission") {
+    const enabled = action.grant?.status !== "ACTIVE";
+    await props.submitWrite<Grant>(path + "/permissions/" + encodeURIComponent(action.capability), {
+      enabled,
+      expectedVersion: action.grant?.version ?? null,
+      reason: auditReason,
+    }, {
+      method: "PATCH",
+      success: enabled ? "已授予平台权限" : "已撤销平台权限",
+      after: async updated => {
+        if (!active) return;
+        grants.value = [...grants.value.filter(grant => grant.capability !== updated.capability), updated];
+        closeAudit();
+      },
+    });
+    return;
   }
-}
-async function changeEmail() {
-  const u = selected.value!;
-  await props.client.request(
-    "/platform/users/" + u.userId + "/email",
-    { email: emailDraft.value.trim(), expectedVersion: u.version, reason: reason.value },
-    "PATCH",
-    crypto.randomUUID(),
-  );
-  await load();
-  selected.value = undefined;
-  emailDraft.value = "";
-  reason.value = "";
-}
-async function status(u: User) {
-  if (!reason.value.trim()) throw Error("请填写操作原因");
-  await props.client.request(
-    "/platform/users/" + u.userId + "/status",
-    {
-      status: u.status === "ACTIVE" ? "DISABLED" : "ACTIVE",
-      expectedVersion: u.version,
-      reason: reason.value,
+
+  const change = action.kind === "email"
+    ? { email: action.email }
+    : { status: action.disabling ? "DISABLED" : "ACTIVE" };
+  await props.submitWrite<User>(path + "/" + action.kind, {
+    ...change,
+    expectedVersion: action.user.version,
+    reason: auditReason,
+  }, {
+    method: "PATCH",
+    success: action.kind === "email" ? "邮箱已更新，登录会话已撤销" : action.disabling ? "账号已停用" : "账号已恢复",
+    after: async updated => {
+      if (!active) return;
+      users.value = users.value.map(user => user.userId === updated.userId ? updated : user);
+      selected.value = updated;
+      if (action.kind === "email") emailDraft.value = updated.email ?? "";
+      closeAudit();
     },
-    "PATCH",
-    crypto.randomUUID(),
-  );
-  await load();
-  selected.value = undefined;
-  reason.value = "";
+  });
 }
-async function permission(capability: string) {
-  const u = selected.value!,
-    g = grants.value.find(g => g.capability === capability);
-  if (!reason.value.trim()) throw Error("请填写操作原因");
-  await props.client.request(
-    "/platform/users/" + u.userId + "/permissions/" + capability,
-    {
-      enabled: g?.status !== "ACTIVE",
-      expectedVersion: g?.version ?? null,
-      reason: reason.value,
-    },
-    "PATCH",
-    crypto.randomUUID(),
-  );
-  await select(u);
-  reason.value = "";
-}
-onMounted(() => void run(() => load(true)));
+
+onMounted(() => void run(load));
+onBeforeUnmount(() => {
+  active = false;
+  auditDialog.value?.close();
+});
 </script>
+
 <template>
-  <section class="console-card platform-users-page">
+  <section class="platform-users-page">
     <div class="pu-shell">
       <aside class="pu-rail" aria-label="平台用户目录">
         <div class="pu-rail-head">
-          <div class="pu-rail-title">
-            <h1>用户与权限</h1>
-            <span class="pu-rail-count">{{ users.length }}</span>
-          </div>
-          <button type="button" class="pu-refresh" :disabled="busy" @click="run(() => load())">刷新</button>
+          <h1>用户与权限</h1>
+          <span class="pu-pill pu-rail-count">{{ users.length }}</span>
         </div>
 
-        <input v-model="search" type="search" class="pu-search" aria-label="搜索平台用户" placeholder="搜索昵称、邮箱或 ID…" />
+        <input v-model="search" type="search" class="pu-search" aria-label="搜索平台用户" placeholder="搜索昵称或邮箱…" />
 
         <div class="pu-list">
-          <div
-            v-for="u in filteredUsers"
-            :key="u.userId"
-            class="v2-row pu-user-item"
-            :class="{ 'is-active': selected?.userId === u.userId }"
-            @click="!busy && run(() => select(u))"
+          <button
+            v-for="user in filteredUsers"
+            :key="user.userId"
+            type="button"
+            class="pu-user-item"
+            :aria-current="selected?.userId === user.userId ? 'true' : undefined"
+            :disabled="busy"
+            @click="run(() => select(user))"
           >
-            <div class="pu-user-head">
-              <span class="pu-avatar" aria-hidden="true">{{ u.displayName.slice(0, 1) || "U" }}</span>
-              <div class="pu-user-copy">
-                <div class="pu-user-top">
-                  <button type="button" class="pu-user-select" :disabled="busy" @click.stop="run(() => select(u))">{{ u.displayName }}</button>
-                  <i class="pu-dot" :class="u.status === 'ACTIVE' ? 'is-on' : 'is-danger'" aria-hidden="true"></i>
-                </div>
-                <span class="pu-user-meta">{{ u.email ? `${u.email} · ` : "" }}{{ u.userId }} · {{ u.status }}</span>
-              </div>
-            </div>
-            <div v-if="capabilities.includes('USER_STATUS') && props.capabilities.includes('USER_STATUS')" class="pu-user-foot">
-              <button
-                type="button"
-                class="pu-status-btn"
-                :class="u.status === 'ACTIVE' ? 'is-danger' : 'is-primary'"
-                :disabled="busy || !reason.trim()"
-                @click.stop="run(() => status(u))"
-              >
-                {{ u.status === "ACTIVE" ? "停用账号" : "恢复账号" }}
-              </button>
-            </div>
-          </div>
+            <span class="pu-avatar" aria-hidden="true">{{ user.displayName.slice(0, 1) || "U" }}</span>
+            <span class="pu-user-copy">
+              <span class="pu-user-top">
+                <span class="pu-user-name">{{ user.displayName }}</span>
+                <span class="pu-dot" :class="{ 'is-danger': user.status !== 'ACTIVE' }" :title="user.status === 'ACTIVE' ? '正常启用' : '已停用'" />
+              </span>
+              <span class="pu-user-meta">{{ user.email ?? "未绑定邮箱" }}</span>
+            </span>
+          </button>
+          <p v-if="busy && !users.length" class="pu-list-hint" role="status">正在读取用户…</p>
+          <p v-else-if="search.trim() && !filteredUsers.length" class="pu-list-hint">没有匹配的用户</p>
         </div>
 
-        <div class="pu-rail-note">
+        <div v-if="canSetStatus || canEditEmail || canManagePermissions" class="pu-rail-note">
           <strong>审计要求</strong>
-          停用账号、变更邮箱或调整平台权限前，请先在右侧填写审计操作原因，所有变更将写入平台审计日志。
+          停用或恢复账号、变更邮箱或调整平台权限时，弹窗将要求填写审计原因并写入平台审计日志。
         </div>
       </aside>
 
       <div class="pu-detail">
         <div class="pu-detail-inner">
-          <p v-if="message" class="pu-alert" role="alert">{{ message }}</p>
-
-          <section class="pu-card pu-audit-bar">
-            <label class="pu-reason-label">
-              <span>操作原因</span>
-              <input v-model="reason" maxlength="500" placeholder="例如：工单 #4021 核验企业邮箱变更或权限审批" />
-            </label>
-            <p class="pu-reason-hint">停用/恢复账号、维护邮箱或调整权限前需填写审计原因。</p>
-          </section>
+          <div v-if="message" class="pu-alert" role="alert">
+            <span>{{ message }}</span>
+            <button type="button" class="pu-button is-small" :disabled="busy" @click="run(load)">刷新</button>
+          </div>
 
           <template v-if="selected">
             <header class="pu-selected-head">
               <div class="pu-selected-left">
                 <span class="pu-avatar is-lg" aria-hidden="true">{{ selected.displayName.slice(0, 1) || "U" }}</span>
-                <div>
+                <div class="pu-selected-copy">
                   <div class="pu-selected-row">
                     <h2>{{ selected.displayName }}</h2>
                     <span class="pu-pill" :class="selected.status === 'ACTIVE' ? 'is-success' : 'is-danger'">
@@ -226,231 +273,241 @@ onMounted(() => void run(() => load(true)));
                       {{ selected.status === "ACTIVE" ? "正常启用" : "已停用" }}
                     </span>
                   </div>
-                  <p class="pu-selected-meta">{{ selected.userId }}{{ selected.email ? ` · ${selected.email}` : "" }}</p>
+                  <p class="pu-selected-meta">{{ selected.userId }}{{ selected.email ? " · " + selected.email : "" }}</p>
                 </div>
               </div>
               <button
-                v-if="capabilities.includes('USER_STATUS') && props.capabilities.includes('USER_STATUS')"
+                v-if="canSetStatus"
                 type="button"
-                class="pu-head-action"
-                :class="selected.status === 'ACTIVE' ? 'is-danger' : 'is-primary'"
-                :disabled="busy || !reason.trim()"
-                @click="run(() => status(selected!))"
+                class="pu-button pu-head-action"
+                :class="selected.status === 'ACTIVE' ? 'is-danger-soft' : 'is-primary'"
+                :disabled="busy"
+                @click="openAudit({ kind: 'status', user: selected!, disabling: selected!.status === 'ACTIVE' })"
               >
                 {{ selected.status === "ACTIVE" ? "停用账号" : "恢复账号" }}
               </button>
             </header>
 
-            <form v-if="props.capabilities.includes('USER_EMAIL_WRITE')" class="pu-card pu-email-form" @submit.prevent="run(changeEmail)">
-              <div class="pu-card-head">
-                <div>
-                  <h3>维护登录邮箱</h3>
-                  <p>修改后，该用户在所有产品与设备上的登录会话都会立即失效，请先核实邮箱归属。</p>
-                </div>
-              </div>
-              <div class="pu-email-controls">
-                <label class="pu-email-field">邮箱<input v-model="emailDraft" type="email" required maxlength="254" placeholder="name@company.com" /></label>
-                <button class="pu-primary-btn" :disabled="busy || !reason.trim() || !emailDraft.trim()">保存邮箱并撤销登录</button>
-              </div>
-            </form>
+            <section v-if="canEditEmail" class="pu-card">
+              <header class="pu-card-head">
+                <h3>维护登录邮箱</h3>
+                <p>修改后该用户在所有产品与设备上的登录会话都会立即失效，请先核实归属</p>
+              </header>
+              <form class="pu-email-form" @submit.prevent="openAudit({ kind: 'email', user: selected!, email: emailDraft.trim() })">
+                <label class="pu-field pu-email-field">
+                  邮箱地址
+                  <input v-model="emailDraft" type="email" required maxlength="254" :disabled="busy" />
+                </label>
+                <button type="submit" class="pu-button is-primary" :disabled="busy">保存邮箱并撤销登录</button>
+              </form>
+            </section>
 
-            <section class="pu-card pu-cap-section">
-              <h2 class="pu-cap-title">
-                <span class="pu-cap-heading">
-                  <span>{{ selected.displayName }} 的平台权限</span>
-                  <small>已授予 {{ grantedCount }} / {{ capabilities.length }} 项平台能力（与团队内角色相互独立）</small>
-                </span>
-                <span class="pu-cap-badge">{{ grantedCount }} / {{ capabilities.length }}</span>
-              </h2>
-              <div
-                v-for="capability in capabilities"
-                :key="capability"
-                class="v2-row pu-cap-card"
-                :class="{ 'is-granted': grants.find(g => g.capability === capability)?.status === 'ACTIVE' }"
-              >
-                <span class="pu-cap-info">
-                  <span class="pu-cap-top">
-                    <strong>{{ capability }}</strong><i class="pu-cap-sep" aria-hidden="true"> · </i><small class="pu-cap-state" :class="{ 'is-active': grants.find(g => g.capability === capability)?.status === 'ACTIVE' }">{{ grants.find(g => g.capability === capability)?.status ?? "未授予" }}</small>
-                  </span>
-                  <span v-if="capabilityDescriptions[capability]" class="pu-cap-desc">{{ capabilityDescriptions[capability] }}</span>
-                </span>
-                <button
-                  v-if="props.capabilities.includes('PLATFORM_PERMISSION_WRITE')"
-                  type="button"
-                  class="pu-cap-btn"
-                  :class="grants.find(g => g.capability === capability)?.status === 'ACTIVE' ? 'is-danger' : 'is-primary'"
-                  :disabled="busy || !reason.trim()"
-                  @click="run(() => permission(capability))"
+            <section v-if="canManagePermissions" class="pu-card pu-cap-section">
+              <header class="pu-card-head">
+                <h3>平台级权限矩阵</h3>
+                <p>已授予 {{ grantedCount }} / {{ capabilities.length }} 项平台能力（与团队内角色相互独立）</p>
+              </header>
+              <div class="pu-cap-grid">
+                <div
+                  v-for="capability in capabilities"
+                  :key="capability"
+                  class="pu-cap-card"
+                  :class="{ 'is-granted': grantsByCapability.get(capability)?.status === 'ACTIVE' }"
                 >
-                  {{ grants.find(g => g.capability === capability)?.status === "ACTIVE" ? "撤销" : "授予" }}
-                </button>
+                  <span class="pu-cap-info">
+                    <strong>{{ capability }}</strong>
+                    <span class="pu-cap-desc">{{ capabilityDescriptions[capability] }}</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="pu-button is-small"
+                    :class="grantsByCapability.get(capability)?.status === 'ACTIVE' ? 'is-danger-soft' : 'is-primary'"
+                    :disabled="busy"
+                    @click="openAudit({ kind: 'permission', user: selected!, capability, grant: grantsByCapability.get(capability) })"
+                  >
+                    {{ grantsByCapability.get(capability)?.status === "ACTIVE" ? "撤销" : "授予" }}
+                  </button>
+                </div>
               </div>
             </section>
           </template>
 
-          <div v-else class="pu-card pu-empty">
-            <p>从左侧选择一位用户，查看或维护其登录邮箱与平台权限矩阵。</p>
-          </div>
+          <p v-else-if="!busy && !message" class="pu-card pu-empty">暂无平台用户</p>
         </div>
       </div>
     </div>
+
+    <dialog ref="auditDialog" class="pu-dialog" aria-labelledby="pu-audit-title" @cancel.prevent="cancelAudit">
+      <form v-if="audit" @submit.prevent="confirmAudit">
+        <header class="pu-dialog-head">
+          <h3 id="pu-audit-title">{{ auditTitle }}</h3>
+          <button type="button" class="pu-dialog-close" aria-label="关闭" :disabled="busy" @click="cancelAudit">×</button>
+        </header>
+        <div class="pu-dialog-body">
+          <p v-if="audit.kind === 'email'" class="pu-email-warning">
+            将把 <strong>{{ audit.user.displayName }}</strong> 的邮箱改为 <strong>{{ audit.email }}</strong>，并撤销其所有在线会话。
+          </p>
+          <p v-else-if="audit.kind === 'permission'" class="pu-permission-target">
+            {{ audit.user.displayName }} · <strong>{{ audit.capability }}</strong>
+          </p>
+          <label class="pu-field">
+            审计原因（必填）
+            <input
+              v-model="reason"
+              required
+              autofocus
+              maxlength="500"
+              :disabled="busy"
+              :placeholder="audit.kind === 'email' ? '例如：工单 #4021 核验企业邮箱变更' : '请说明本次操作原因'"
+            />
+          </label>
+          <p v-if="auditError" class="pu-dialog-error" role="alert">{{ auditError }}</p>
+        </div>
+        <footer class="pu-dialog-foot">
+          <button type="button" class="pu-button" :disabled="busy" @click="cancelAudit">取消</button>
+          <button type="submit" class="pu-button" :class="auditDanger ? 'is-danger' : 'is-primary'" :disabled="busy || !reason.trim()">
+            {{ busy ? "正在提交…" : audit.kind === "email" ? "确认保存" : "确认" }}
+          </button>
+        </footer>
+      </form>
+    </dialog>
   </section>
 </template>
 
 <style scoped>
-.platform-users-page { margin: 0; }
-.pu-shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100svh; }
+.pu-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100svh; }
 .pu-rail {
   position: sticky; top: 0; height: 100svh; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 16px;
   padding: 22px 12px 24px; background: #f9f9fb; border-right: 1px solid var(--line);
 }
-.pu-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
-.pu-rail-title { display: flex; align-items: center; gap: 8px; }
-.pu-rail-head h1 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); line-height: 1.4; }
-.pu-rail-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 24px; height: 22px; padding: 0 7px; border-radius: 999px;
-  background: #efeff2; border: 1px solid #e2e2e7; color: var(--muted);
-  font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+.pu-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; }
+.pu-rail-head h1 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); }
+.pu-pill {
+  display: inline-flex; align-items: center; gap: 5px; height: 23px; padding: 0 9px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 500; white-space: nowrap; border: 1px solid transparent;
 }
-.platform-users-page button.pu-refresh {
-  min-height: 28px; height: 28px; padding: 0 10px; border-radius: 7px;
-  border: 1px solid #d5d5db; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 500;
+.pu-rail-count { background: #efeff2; border-color: #e2e2e7; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pu-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pu-pill.is-success { background: #ecf7f0; color: #216b46; border-color: #cbe8d7; }
+.pu-pill.is-danger { background: #fdf1f2; color: #a62b33; border-color: #f4d3d6; }
+.pu-search, .pu-field input {
+  width: 100%; min-width: 0; margin: 0; height: 38px; padding: 0 11px;
+  border: 1px solid #d5d5db; border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13.5px;
 }
-.platform-users-page button.pu-refresh:enabled:hover { background: #fafafb; border-color: #c2c2cb; }
-.pu-search {
-  width: 100%; min-height: 34px; height: 34px; padding: 0 10px; margin: 0;
-  border-radius: 8px; font-size: 12.5px;
-}
+.pu-search { height: 34px; padding: 0 10px; font-size: 12.5px; }
+.pu-search:focus, .pu-field input:focus { outline: 2px solid rgba(80, 104, 183, 0.25); outline-offset: 0; border-color: var(--accent); }
+
 .pu-list { display: grid; gap: 4px; }
-.pu-user-item {
-  display: grid; gap: 8px; padding: 9px 10px; border: 1px solid transparent;
-  border-radius: 10px; background: transparent; cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+.platform-users-page button.pu-user-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 44px;
+  padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; text-align: left;
 }
-.pu-user-item:hover { background: #efeff4; }
-.pu-user-item.is-active {
-  background: var(--surface); border-color: var(--line);
-  box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
+.platform-users-page button.pu-user-item:enabled:hover { background: #efeff4; }
+.platform-users-page button.pu-user-item[aria-current] {
+  background: var(--surface); border-color: var(--line); box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
 }
-.pu-user-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pu-user-copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .pu-user-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
-.platform-users-page button.pu-user-select {
-  display: block; flex: 1; min-width: 0; min-height: 0; height: auto; padding: 0; margin: 0;
-  border: 0; background: transparent; box-shadow: none; text-align: left;
-  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.35;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.pu-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; font-style: normal; }
-.pu-dot.is-on { background: #26925c; }
+.pu-user-name, .pu-user-meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pu-user-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.pu-user-meta { font-size: 11.5px; color: var(--muted); }
+.pu-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #26925c; }
 .pu-dot.is-danger { background: #c93b44; }
 .pu-avatar {
   width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center;
   background: #e3e8f8; color: #40558f; font-size: 12px; font-weight: 650;
 }
 .pu-avatar.is-lg { width: 42px; height: 42px; font-size: 17px; }
-.pu-user-copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
-.pu-user-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pu-user-foot { display: flex; justify-content: flex-end; }
-.platform-users-page button.pu-status-btn {
-  min-height: 26px; height: 26px; padding: 0 9px; border-radius: 6px; font-size: 11.5px; font-weight: 500;
-}
+.pu-list-hint { margin: 0; padding: 8px 10px; font-size: 12px; color: var(--muted); }
 .pu-rail-note {
   margin-top: auto; padding: 12px; border-radius: 10px; background: var(--surface);
-  border: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.55;
+  border: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.5;
 }
-.pu-rail-note strong { display: block; color: var(--ink); margin-bottom: 3px; font-size: 12px; }
+.pu-rail-note strong { display: block; color: var(--ink); margin-bottom: 3px; }
 
 .pu-detail { min-width: 0; padding: 28px 36px 76px; }
 .pu-detail-inner { max-width: 940px; margin: 0 auto; display: grid; gap: 16px; }
-.pu-alert { margin: 0; padding: 11px 14px; border-radius: 10px; background: #fdf1f2; border: 1px solid #f4d3d6; color: #a32921; font-size: 13px; }
-.pu-card {
-  padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px;
-  background: var(--surface); box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
-}
-.pu-audit-bar { padding: 14px 18px; display: grid; gap: 6px; }
-.pu-reason-label { display: grid; gap: 6px; margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.pu-reason-hint { margin: 0; font-size: 12px; color: var(--muted); font-weight: 400; }
-.pu-reason-label input { margin: 0; height: 38px; min-height: 38px; font-weight: 400; }
-
-.pu-selected-head {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
-}
+.pu-selected-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
 .pu-selected-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pu-selected-copy { min-width: 0; overflow-wrap: anywhere; }
 .pu-selected-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pu-selected-head h2 { margin: 0; font-size: 22px; font-weight: 650; line-height: 1.3; letter-spacing: -0.02em; }
-.pu-selected-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; overflow-wrap: anywhere; }
-.pu-pill {
-  display: inline-flex; align-items: center; gap: 5px; height: 23px; padding: 0 9px;
-  border-radius: 999px; font-size: 11.5px; font-weight: 500; border: 1px solid transparent;
-}
-.pu-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; font-style: normal; }
-.pu-pill.is-success { background: #ecf7f0; color: #216b46; border-color: #cbe8d7; }
-.pu-pill.is-danger { background: #fdf1f2; color: #a62b33; border-color: #f4d3d6; }
-.platform-users-page button.pu-head-action {
-  height: 36px; min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
-}
+.pu-selected-meta { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
 
+.pu-card {
+  min-width: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
+}
 .pu-card-head { margin-bottom: 14px; }
-.pu-email-form { max-width: none; margin: 0; }
-.pu-email-form h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
-.pu-email-form p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
-.pu-email-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
-.pu-email-field { flex: 1; min-width: 240px; display: grid; gap: 5px; margin: 0; font-size: 12.5px; font-weight: 500; color: #3f3f46; }
-.pu-email-field input { margin: 0; height: 38px; min-height: 38px; }
-.platform-users-page button.pu-primary-btn {
-  height: 38px; min-height: 38px; padding: 0 16px; border-radius: 8px;
-  background: var(--primary); color: #fff; border-color: var(--primary); font-size: 13px; font-weight: 500;
-}
-.platform-users-page button.pu-primary-btn:enabled:hover { background: #343439; border-color: #343439; }
-
-.pu-cap-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.pu-cap-title {
-  grid-column: 1 / -1;
-  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px;
-  margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--ink);
-}
-.pu-cap-heading { display: grid; gap: 2px; }
-.pu-cap-heading small { font-size: 12.5px; font-weight: 400; color: var(--muted); }
-.pu-cap-badge {
-  display: inline-flex; align-items: center; height: 23px; padding: 0 9px; border-radius: 999px;
-  background: #efeff2; border: 1px solid #e2e2e7; color: var(--muted);
-  font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums;
-}
+.pu-card-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.pu-card-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.pu-email-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 0; }
+.pu-field { display: grid; gap: 5px; min-width: 0; font-size: 12.5px; font-weight: 500; color: #3f3f46; }
+.pu-email-field { flex: 1 1 240px; }
+.pu-cap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .pu-cap-card {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fafafb;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fafafb;
 }
 .pu-cap-card.is-granted { background: #f5f8ff; border-color: #d3ddf6; }
-.pu-cap-info { display: grid; gap: 3px; min-width: 0; }
-.pu-cap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.pu-cap-info strong {
-  font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 600; color: var(--ink); overflow-wrap: anywhere;
-}
-.pu-cap-sep { display: none; }
-.pu-cap-state {
-  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 999px;
-  background: #efeff2; color: var(--muted); font-size: 10.5px; font-weight: 500;
-}
-.pu-cap-state.is-active { background: #ecf7f0; color: #216b46; }
-.pu-cap-desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
-.platform-users-page button.pu-cap-btn {
-  min-height: 30px; height: 30px; padding: 0 11px; border-radius: 7px; font-size: 12px; font-weight: 500; flex-shrink: 0;
-}
-.platform-users-page button.is-danger { color: #a62b33; border-color: #f4d3d6; background: var(--surface); }
-.platform-users-page button.is-danger:enabled:hover { background: #fdf1f2; }
-.platform-users-page button.is-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.platform-users-page button.is-primary:enabled:hover { background: #343439; border-color: #343439; }
-.pu-empty { text-align: center; padding: 48px 20px; }
-.pu-empty p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.pu-cap-info { display: grid; gap: 2px; min-width: 0; }
+.pu-cap-info strong { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.pu-selected-meta, .pu-cap-info strong, .pu-permission-target strong { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.pu-cap-desc { font-size: 12px; color: var(--muted); }
+.pu-empty { margin: 0; text-align: center; color: var(--muted); }
 
-@media (max-width: 1040px) {
+.platform-users-page button.pu-button {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  height: 36px; min-height: 36px; padding: 0 14px; border: 1px solid #d5d5db; border-radius: 8px;
+  background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.platform-users-page button.pu-button:enabled:hover { background: #fafafb; border-color: #c2c2cb; }
+.platform-users-page button.pu-button.is-small { min-height: 30px; height: 30px; padding: 0 11px; border-radius: 7px; font-size: 12px; }
+.platform-users-page button.pu-button.is-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.platform-users-page button.pu-button.is-primary:enabled:hover { background: #343439; border-color: #343439; }
+.platform-users-page button.pu-button.is-danger-soft { color: #a62b33; border-color: #f4d3d6; }
+.platform-users-page button.pu-button.is-danger-soft:enabled:hover { background: #fdf1f2; border-color: #f4d3d6; }
+.platform-users-page button.pu-button.is-danger { background: #a62b33; border-color: #a62b33; color: #fff; }
+.platform-users-page button.pu-button.is-danger:enabled:hover { background: #8d242b; border-color: #8d242b; }
+.pu-alert {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border: 1px solid #f4d3d6; border-radius: 10px; background: #fdf1f2; color: #a62b33; font-size: 13px;
+}
+
+.pu-dialog {
+  width: min(465px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink);
+  box-shadow: 0 24px 60px rgba(25, 25, 27, 0.18);
+}
+.pu-dialog::backdrop { background: rgba(25, 25, 27, 0.42); backdrop-filter: blur(2px); }
+.pu-dialog form { margin: 0; }
+.pu-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 18px 22px 14px; border-bottom: 1px solid var(--line); }
+.pu-dialog-head h3 { margin: 0; font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.platform-users-page .pu-dialog-close { flex: none; width: 30px; min-height: 30px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
+.platform-users-page .pu-dialog-close:enabled:hover { background: #f2f2f5; color: var(--ink); }
+.pu-dialog-body { display: grid; gap: 14px; padding: 18px 22px; }
+.pu-dialog-body p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.pu-email-warning { padding: 10px 13px; border: 1px solid #f2dfb3; border-radius: 10px; background: #fff8e6; color: #8a5a10; }
+.pu-dialog-error { color: #a62b33; }
+.platform-users-page .pu-dialog-foot {
+  display: flex; justify-content: flex-end; gap: 10px; margin: 0; padding: 14px 22px 18px;
+  border-top: 1px solid var(--line); background: #fafafb;
+}
+
+@media (max-width: 1080px) {
   .pu-shell { grid-template-columns: 1fr; min-height: 0; }
-  .pu-rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .pu-rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px 20px; }
+  .pu-list { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 6px; max-height: 260px; overflow-y: auto; }
   .pu-rail-note { display: none; }
-  .pu-detail { padding: 20px 16px 56px; }
-  .pu-cap-section { grid-template-columns: 1fr; }
+  .pu-detail { padding: 20px 20px 68px; }
+  .pu-cap-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .pu-card { padding: 16px; }
+  .pu-search, .pu-field input { min-height: 44px; font-size: 16px; }
+  .platform-users-page button.pu-button, .platform-users-page button.pu-button.is-small,
+  .platform-users-page .pu-dialog-close { min-height: 44px; }
+  .platform-users-page .pu-dialog-close { width: 44px; }
 }
 </style>

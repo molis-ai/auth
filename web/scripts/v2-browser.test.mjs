@@ -640,10 +640,12 @@ try {
   );
   assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.sidebar-nav-group .nav-caption')].map(label => label.textContent)"), ["工作台", "平台管理"]);
   assert.equal(await page.evaluate("document.querySelector('.sidebar-nav-group:last-child button[aria-current=page]')?.textContent"), "应用管理");
-  await fillLabel("应用名称", "QA 应用");
-  await click("创建应用");
-  await click("QA 应用");
-  await fillLabel("名称", "QA 应用改名");
+  assert.equal(await page.evaluate("document.querySelector('.app-create-dialog').open"), false);
+  await click("＋ 创建应用");
+  await fillLabel("应用名称", "QA 应用", ".app-create-dialog[open]");
+  await click("创建");
+  await page.wait("document.querySelector('.app-page-head h2')?.textContent === 'QA 应用' && !document.querySelector('.app-create-dialog[open]')");
+  await fillLabel("应用名称", "QA 应用改名", ".app-edit-card");
   await click("保存应用");
   await page.wait(
     "document.querySelector('main h2')?.textContent==='QA 应用改名'",
@@ -658,7 +660,7 @@ try {
     );
     await click("保存应用");
     await page.wait(
-      `Array.from(document.querySelectorAll('.v2-row')).some(r=>r.textContent.includes('QA 应用改名')&&r.textContent.includes(${JSON.stringify(status)}))`,
+      `document.querySelector('.app-page-head .app-status-pill')?.textContent.trim() === ${JSON.stringify(status)}`,
     );
     assert.equal(
       (
@@ -671,31 +673,40 @@ try {
     );
   }
   console.log("PASS browser application creation, rename and status changes");
-  await page.wait("Boolean(document.querySelector('.v2-client-create'))");
+  await page.wait("document.querySelector('.app-head-meta')?.textContent.includes('0 个已登记客户端')");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.v2-client-create[open]'))"), false);
+  await click("＋ 登记登录客户端");
+  await page.wait("Boolean(document.querySelector('.v2-client-create[open]'))");
   assert.ok([...scripts].some(path => path.includes("/PlatformClients-")));
   assert.ok([...scripts].every(path => !path.includes("/PlatformUsers-")));
-  await fillLabel("客户端 ID", "qa-v2-client", ".v2-client-create");
-  await fillLabel("环境 ID", "unified-local", ".v2-client-create");
-  await fillLabel("产品来源", "http://127.0.0.1:43999", ".v2-client-create");
+  await page.viewport(390, 900);
+  assert.equal(await page.evaluate("document.querySelector('.v2-client-create[open]').getBoundingClientRect().width <= innerWidth - 32"), true);
+  await page.screenshot(join(evidence, "platform-client-create-390.png"));
+  await page.viewport(1440, 900);
+  await fillLabel("客户端 ID", "qa-v2-client", ".v2-client-create[open]");
+  await fillLabel("环境 ID", "unified-local", ".v2-client-create[open]");
+  await fillLabel("允许来源", "http://127.0.0.1:43999", ".v2-client-create[open]");
   await fillLabel(
     "精确回调地址",
     "http://127.0.0.1:43999/account/callback",
-    ".v2-client-create",
+    ".v2-client-create[open]",
   );
-  await click("登记客户端");
-  await click("修改客户端");
+  await click("登记");
+  await page.wait("!document.querySelector('.v2-client-create[open]') && document.querySelector('.app-rail-item[aria-current] .app-rail-sub')?.textContent.trim() === '1 个客户端'");
+  await page.wait("document.querySelector('.app-head-meta')?.textContent.includes('1 个已登记客户端')");
+  await click("配置白名单");
   await fillLabel(
     "允许来源（每行一个）",
     "http://127.0.0.1:44999",
-    ".v2-client-edit",
+    ".v2-client-edit[open]",
   );
   await fillLabel(
     "精确回调地址（每行一个）",
     "http://127.0.0.1:44999/account/callback",
-    ".v2-client-edit",
+    ".v2-client-edit[open]",
   );
   await click("保存客户端");
-  await page.wait("!document.querySelector('.v2-client-edit')");
+  await page.wait("!document.querySelector('.v2-client-edit[open]') && document.querySelector('.pc-item')?.textContent.includes('44999')");
   const registered = await db
     .prepare(
       "SELECT c.redirects,p.allowed_origins FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id WHERE c.client_id='qa-v2-client'",
@@ -708,13 +719,14 @@ try {
     "http://127.0.0.1:44999",
   ]);
   for (const status of ["DISABLED", "ACTIVE"]) {
-    await click("修改客户端");
+    await click("配置白名单");
+    await page.wait("Boolean(document.querySelector('.v2-client-edit[open]'))");
     await page.evaluate(
       `{const select=document.querySelector('select[aria-label="客户端状态"]');select.value=${JSON.stringify(status)};select.dispatchEvent(new Event('change',{bubbles:true}));}`,
     );
     await click("保存客户端");
     await page.wait(
-      `!document.querySelector('.v2-client-edit')&&Array.from(document.querySelectorAll('.v2-row')).some(r=>r.textContent.includes('qa-v2-client')&&r.textContent.includes(${JSON.stringify(status)}))`,
+      `!document.querySelector('.v2-client-edit[open]') && document.querySelector('.pc-item .pc-pill:last-child')?.textContent.trim() === ${JSON.stringify(status)}`,
     );
     assert.equal(
       (
@@ -730,6 +742,13 @@ try {
   console.log(
     "PASS browser client registration, exact callback editing and status changes",
   );
+  for (const width of [1440, 390]) {
+    await page.viewport(width, 900);
+    await page.evaluate("scrollTo(0,0)");
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+    await page.screenshot(join(evidence, "platform-applications-" + width + ".png"));
+  }
+  await page.viewport(1440, 900);
   assert.ok(
     await page.evaluate(
       "!document.body.textContent.includes('服务凭据')&&!document.body.textContent.includes('创建服务凭据')",
@@ -737,18 +756,35 @@ try {
   );
   console.log("PASS V2C-01 retired service credential controls are absent");
   await click("用户与权限");
+  await page.wait("Boolean(document.querySelector('.pu-search'))");
+  await page.fill(".pu-search", "QA 目标用户");
   await page.wait(
-    "Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='QA 目标用户'&&!b.disabled)",
+    "document.querySelectorAll('.pu-user-item').length === 1 && !document.querySelector('.pu-user-item').disabled",
   );
+  assert.equal(await page.evaluate("document.querySelector('.pu-user-name').textContent"), "QA 目标用户");
+  await page.click(".pu-user-item");
+  await page.wait("document.querySelector('.pu-selected-meta')?.textContent.includes('qa-v2-target')");
+  assert.equal(await page.evaluate("document.querySelector('.pu-user-item').textContent.includes('qa-v2-target')"), false);
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.platform-users-page input[maxlength=\"500\"]'))"), false);
+  await page.fill(".pu-search", "");
   assert.ok([...scripts].some(path => path.includes("/PlatformUsers-")));
+
+  const auditModal = ".pu-dialog[open]";
+  await click("停用账号");
+  await page.wait(`Boolean(document.querySelector('${auditModal} button[type=submit]:disabled'))`);
+  await click("取消");
+  await page.wait(`!document.querySelector('${auditModal}')`);
+  assert.equal((await db.prepare("SELECT status FROM auth_user WHERE id='qa-v2-target'").first()).status, "ACTIVE");
   for (const [button, status] of [
     ["停用账号", "DISABLED"],
     ["恢复账号", "ACTIVE"],
   ]) {
-    await fillLabel("操作原因", "浏览器验收账号状态");
-    await clickRow("qa-v2-target", button);
+    await click(button);
+    await fillLabel("审计原因（必填）", "浏览器验收账号状态", auditModal);
+    await click("确认");
+    await page.wait(`!document.querySelector('${auditModal}')`);
     await page.wait(
-      `Array.from(document.querySelectorAll('.v2-row')).some(r=>r.textContent.includes('qa-v2-target')&&r.textContent.includes(${JSON.stringify(status)}))`,
+      `document.querySelector('.pu-selected-head .pu-pill')?.textContent.trim() === ${JSON.stringify(status === "ACTIVE" ? "正常启用" : "已停用")}`,
     );
     assert.equal(
       (
@@ -759,27 +795,26 @@ try {
       status,
     );
   }
-  await click("QA 目标用户");
-  await page.wait(
-    "document.querySelector('main')?.textContent.includes('QA 目标用户 的平台权限')",
-  );
+  assert.equal(await page.evaluate("document.querySelector('.pu-cap-section h3').textContent"), "平台级权限矩阵");
   const expectedPlatformCapabilities = [...new Set(policy.permissions
     .map(({ authority }) => authority)
     .filter(authority => authority.startsWith("platform:"))
     .map(authority => authority.slice("platform:".length)))];
   assert.deepEqual(
-    await page.evaluate("[...document.querySelectorAll('main h2 ~ .v2-row > span')].map(row => row.textContent.split(' ·')[0].trim())"),
+    await page.evaluate("[...document.querySelectorAll('.pu-cap-card strong')].map(code => code.textContent.trim())"),
     expectedPlatformCapabilities,
   );
+  const userReadCard = ".pu-cap-card:nth-child(" + (expectedPlatformCapabilities.indexOf("USER_READ") + 1) + ")";
   for (const [button, status] of [
     ["授予", "ACTIVE"],
     ["撤销", "REVOKED"],
   ]) {
-    await fillLabel("操作原因", "浏览器验收平台权限");
-    await clickRow("USER_READ", button);
-    await page.wait(
-      `Array.from(document.querySelectorAll('.v2-row')).some(r=>r.textContent.includes('USER_READ')&&r.textContent.includes(${JSON.stringify(status)}))`,
-    );
+    assert.equal(await page.evaluate(`document.querySelector('${userReadCard} button').textContent.trim()`), button);
+    await page.click(userReadCard + " button");
+    await fillLabel("审计原因（必填）", "浏览器验收平台权限", auditModal);
+    await click("确认");
+    await page.wait(`!document.querySelector('${auditModal}')`);
+    assert.equal(await page.evaluate(`document.querySelector('${userReadCard}').classList.contains('is-granted')`), status === "ACTIVE");
     assert.equal(
       (
         await db
@@ -791,10 +826,13 @@ try {
       status,
     );
   }
-  await fillLabel('操作原因','核实归属后维护测试邮箱');
-  await fillLabel('邮箱','qa-admin-maintained@example.test');
+  await fillLabel('邮箱地址','qa-admin-maintained@example.test');
   await click('保存邮箱并撤销登录');
-  await page.wait("!document.querySelector('main input[type=email]')");
+  await page.wait(`document.querySelector('${auditModal} .pu-email-warning')?.textContent.includes('qa-admin-maintained@example.test')`);
+  await fillLabel("审计原因（必填）", "核实归属后维护测试邮箱", auditModal);
+  await page.screenshot(join(evidence, "platform-email-audit.png"));
+  await click("确认保存");
+  await page.wait(`!document.querySelector('${auditModal}') && document.querySelector('.pu-selected-meta')?.textContent.includes('qa-admin-maintained@example.test')`);
   assert.equal((await db.prepare("SELECT canonical_email FROM auth_user_email WHERE user_id='qa-v2-target'").first()).canonical_email,'qa-admin-maintained@example.test');
   console.log('PASS browser administrator maintains email');
   for (const width of [1440, 1024, 390]) {
