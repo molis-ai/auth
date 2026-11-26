@@ -76,12 +76,9 @@
   height: 34px; min-height: 34px; padding: 6px 10px; border-radius: 8px;
   font-family: inherit; font-size: 13px; font-weight: 400; line-height: 20px; box-sizing: border-box;
 }
+.v2-console .tenant-page .tm-search-box input[type=search] { padding-left: 30px; }
 .v2-console .tenant-page input::placeholder { font-size: 12.5px; font-weight: 400; color: #85858f; }
-.v2-console .tenant-page th.tm-actions { width: 236px; text-align: right; }
-.v2-console .tenant-page .tm-action-slots { position: relative; display: inline-grid; grid-template-columns: 76px 88px 48px; gap: 4px; min-height: 28px; width: 220px; }
-.v2-console .tenant-page .tm-action-slots > span { display: flex; align-items: center; justify-content: flex-end; }
-.v2-console .tenant-page .tm-action-slots button { margin: 0; }
-.v2-console .tenant-page .tm-action-slots .tm-no-actions { position: absolute; inset: 0; pointer-events: none; color: var(--muted); justify-content: flex-end; }
+.v2-console .tenant-page th.tm-actions { width: 156px; text-align: right; }
 
 .v2-console .tenant-page .tenant-create-dialog {
   width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--line);
