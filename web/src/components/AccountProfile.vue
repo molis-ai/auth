@@ -19,7 +19,11 @@ const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(nu
 let active = true;
 const nameInput = ref<HTMLInputElement>();
 const editingName = ref(false), nameSaving = ref(false), inlineName = ref(''), nameError = ref('');
-const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const viewerTime = new Intl.DateTimeFormat('en-US', { timeZoneName: 'longOffset' });
+const viewerZone = viewerTime.resolvedOptions().timeZone;
+const zoneOffset = viewerTime.formatToParts().find(part => part.type === 'timeZoneName')?.value;
+const utcOffset = zoneOffset === 'GMT' ? 'UTC+00:00' : zoneOffset?.replace('GMT', 'UTC');
+const viewerTimeZone = utcOffset ? `${viewerZone}（${utcOffset}）` : viewerZone;
 
 async function editName() {
   if (nameSaving.value || cropFile.value) return;
@@ -151,7 +155,7 @@ onBeforeUnmount(() => { active = false; cropFile.value=null; });
         </div>
         <div class="profile-fact-row">
           <dt>时区</dt>
-          <dd>{{ viewerZone }}</dd>
+          <dd>{{ viewerTimeZone }}</dd>
         </div>
       </dl>
     </section>

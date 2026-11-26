@@ -25,16 +25,6 @@ type Member = {
   status: string;
   version: number;
 };
-type Invitation = { invitationId: string; targetSummary: string; status: string; version: number };
-type Transfer = {
-  transferId: string;
-  tenantId: string;
-  fromMembershipId: string;
-  toMembershipId: string;
-  status: string;
-  version: number;
-};
-
 type Write = <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 const props = defineProps<{
   client: AccountClient;
@@ -54,14 +44,8 @@ const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理�
 
 const directory = cursorCollection<Tenant>(props.client);
 const memberDirectory = cursorCollection<Member>(props.client);
-const received = cursorCollection<Invitation>(props.client);
-const ownership = cursorCollection<Transfer>(props.client);
 const { loading: tenantsLoading, nextCursor: moreTenants } = directory;
 const { loading: membersLoading } = memberDirectory;
-const { loading: invitationsLoading, nextCursor: moreInvitations } = received;
-const { nextCursor: moreTransfers } = ownership;
-const transfersLoading = ref(false);
-let transferRead = 0;
 let directoryRead = 0;
 const selectedTenant = ref<Tenant>();
 const teamTab = ref<"members" | "billing">("members");
@@ -80,15 +64,12 @@ const members = computed(() => memberDirectory.pages.value[memberPage.value - 1]
 const moreMembers = computed(() =>
   memberPage.value < memberDirectory.pages.value.length || Boolean(memberDirectory.nextCursor.value),
 );
-const invitations = computed(() => received.items.value.filter(item => item.status === "PENDING"));
-const transfers = computed(() => ownership.items.value.filter(item => item.status === "PENDING"));
-const transferTeams = ref<Record<string, Pick<Tenant, "name" | "membershipId"> | null>>({});
 const creationMode = ref("");
 const tenantName = ref("");
 const tenantCreateDialog = ref<HTMLDialogElement>();
 let disposed = false;
 
-type Section = "policy" | "directory" | "members" | "invitations" | "transfers";
+type Section = "policy" | "directory" | "members";
 const errors = reactive<Partial<Record<Section, { message: string; retry: () => Promise<void> }>>>({});
 async function read(section: Section, task: () => Promise<unknown>, restart = task) {
   if (disposed) return;
@@ -125,10 +106,6 @@ async function refreshDirectory(reconcileSelection = true) {
     await read("members", () => reloadMembers(latest));
   }
 }
-const refreshInvitations = async () => {
-  if (!disposed) await received.first("/invitations");
-};
-
 function clearMembers() {
   delete errors.members;
   memberPage.value = 1;
@@ -185,61 +162,6 @@ async function lookupTenant(id: string) {
   }
 }
 
-async function readTransfers(append = false, refreshedDirectory?: Promise<void>) {
-  if (disposed || (append && transfersLoading.value)) return;
-  const request = ++transferRead;
-  transfersLoading.value = true;
-  try {
-    // Reuse the team details for the transfer label and the current member’s available action.
-    await Promise.all([append ? ownership.more() : ownership.first("/ownership-transfers"), refreshedDirectory]);
-    if (disposed || request !== transferRead) return;
-    const known = append ? transferTeams.value : {};
-    const ids = [...new Set(transfers.value.map(transfer => transfer.tenantId))]
-      .filter(id => !Object.hasOwn(known, id));
-    const teams = await Promise.all(ids.map(async id => [id, (await lookupTenant(id)) ?? null] as const));
-    if (!disposed && request === transferRead) transferTeams.value = { ...known, ...Object.fromEntries(teams) };
-  } catch (error) {
-    if (!disposed && request === transferRead) throw error;
-  } finally {
-    if (request === transferRead) transfersLoading.value = false;
-  }
-}
-function transferOperation(transfer: Transfer): "accept" | "cancel" | undefined {
-  const member = transferTeams.value[transfer.tenantId]?.membershipId;
-  if (member === transfer.toMembershipId) return "accept";
-  if (member === transfer.fromMembershipId) return "cancel";
-}
-function updateTransfer(transfer: Transfer) {
-  const operation = transferOperation(transfer);
-  if (!operation) return;
-  return props.mutate(
-    "/ownership-transfers/" + encodeURIComponent(transfer.transferId) + "/" + operation,
-    { expectedVersion: transfer.version },
-    {
-      committed: () => {
-        ownership.remove(item => item.transferId === transfer.transferId);
-        selectedTenant.value = undefined;
-        clearMembers();
-      },
-      after: refreshDirectoryAndTransfers,
-      refreshMessage: "所有权交接已更新，但交接或团队列表暂未刷新。",
-    },
-  );
-}
-function updateInvitation(invitation: Invitation, operation: "accept" | "decline") {
-  return props.mutate(
-    "/invitations/" + encodeURIComponent(invitation.invitationId) + "/" + operation,
-    { expectedVersion: invitation.version },
-    {
-      committed: () => received.remove(item => item.invitationId === invitation.invitationId),
-      after: async () => {
-        if (operation === "accept") await Promise.all([refreshDirectory(), refreshInvitations()]);
-        else await refreshInvitations();
-      },
-      refreshMessage: operation === "accept" ? "已接受邀请，但团队或邀请列表暂未刷新。" : "已拒绝邀请，但邀请列表暂未刷新。",
-    },
-  );
-}
 function left(id: string) {
   if (selectedTenant.value?.tenantId === id) {
     selectedTenant.value = undefined;
@@ -247,10 +169,6 @@ function left(id: string) {
   }
   directory.remove(tenant => tenant.tenantId === id);
 }
-function refreshDirectoryAndTransfers() {
-  return readTransfers(false, refreshDirectory());
-}
-
 watch(() => tenantName.value.trim(), () => props.discard("create-tenant"), { flush: "sync" });
 function openTenantCreate() {
   tenantName.value = "";
@@ -298,12 +216,11 @@ onMounted(() => {
       await selectTenant(directory.items.value[0]);
     }
   });
-  void read("invitations", refreshInvitations);
-  void read("transfers", () => readTransfers());
 });
 onBeforeUnmount(() => {
   disposed = true;
-  for (const collection of [directory, memberDirectory, received, ownership]) collection.clear();
+  directory.clear();
+  memberDirectory.clear();
   props.discard("create-tenant");
   emit("dispose");
 });
@@ -357,52 +274,12 @@ onBeforeUnmount(() => {
 
         <p v-if="tenantsLoading" class="console-muted" role="status">正在加载团队…</p>
         <div v-else-if="errors.directory" role="alert">{{ errors.directory.message }} <button @click="errors.directory.retry()">重试</button></div>
-        <p v-else-if="!tenants.length" class="console-muted">{{ tenantSearch ? "已加载的团队中没有匹配项。" : "还没有团队，可在这里创建或接受邀请。" }}</p>
+        <p v-else-if="!tenants.length" class="console-muted">{{ tenantSearch ? "已加载的团队中没有匹配项。" : "还没有团队，可前往「待处理」查看收到的邀请。" }}</p>
         <button v-if="moreTenants && !errors.directory" class="tenant-load-more" :disabled="busy || tenantsLoading" @click="read('directory', directory.more, refreshDirectory)">加载更多团队</button>
 
-        <div class="tenant-rail-note">
-          <template v-if="invitations.length + transfers.length > 0">
-            <strong>待处理事项（{{ invitations.length + transfers.length }}）</strong>
-            {{ invitations.length }} 条加入邀请 · {{ transfers.length }} 条所有权交接，可在右侧直接处理。
-          </template>
-          <template v-else>
-            <strong>人钱分离</strong>
-            本页专注管理成员与权限；团队套餐与 Credit 账单可在「订阅与账单」统一管理。
-          </template>
-        </div>
       </aside>
       <div class="collection-detail">
         <div class="tenant-detail-inner">
-          <div v-if="invitations.length" class="tenant-banners" aria-label="收到的邀请">
-            <h2 class="visually-hidden">收到的邀请</h2>
-            <div v-for="invitation in invitations" :key="invitation.invitationId" class="v2-row tenant-banner is-info">
-              <span class="tenant-banner-text">{{ invitation.targetSummary }}</span>
-              <div class="tenant-banner-actions">
-                <button class="tenant-banner-primary" :disabled="busy" @click="updateInvitation(invitation, 'accept')">加入</button>
-                <button :disabled="busy" @click="updateInvitation(invitation, 'decline')">拒绝</button>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="transfers.length" class="tenant-banners" aria-label="所有权交接">
-            <div v-for="transfer in transfers" :key="transfer.transferId" class="v2-row tenant-banner is-warn">
-              <span class="tenant-banner-text">
-                {{ transferTeams[transfer.tenantId]?.name ? `「${transferTeams[transfer.tenantId]?.name}」的所有权交接` : "团队所有权交接" }}
-              </span>
-              <button v-if="transferOperation(transfer)" :disabled="busy || transfersLoading" @click="updateTransfer(transfer)">
-                {{ transferOperation(transfer) === 'accept' ? '接受交接' : '取消交接' }}
-              </button>
-            </div>
-          </div>
-
-          <p v-if="invitationsLoading" class="console-muted" role="status">正在加载邀请…</p>
-          <div v-else-if="errors.invitations" role="alert">{{ errors.invitations.message }} <button @click="errors.invitations.retry()">重试</button></div>
-          <button v-if="moreInvitations && !errors.invitations" :disabled="busy || invitationsLoading" @click="read('invitations', received.more, refreshInvitations)">加载更多邀请</button>
-
-          <p v-if="transfersLoading" class="console-muted" role="status">正在加载所有权交接…</p>
-          <div v-else-if="errors.transfers" role="alert">{{ errors.transfers.message }} <button @click="errors.transfers.retry()">重试</button></div>
-          <button v-if="moreTransfers && !errors.transfers" :disabled="busy || transfersLoading" @click="read('transfers', () => readTransfers(true), () => readTransfers())">加载更多交接</button>
-
           <p v-if="!selectedTenant && !tenantsLoading" class="collection-empty">选择一个团队，查看成员与管理设置</p>
           <div v-if="teamTab === 'members' && errors.members" role="alert">{{ errors.members.message }} <button @click="errors.members.retry()">重试</button></div>
           <TenantMembers
@@ -425,8 +302,7 @@ onBeforeUnmount(() => {
             :discard="discard"
             :reload="reloadMembers"
             :own-membership="ownMembership"
-            :refresh-transfers="readTransfers"
-            :leave="refreshDirectoryAndTransfers"
+            :leave="refreshDirectory"
             @expired="emit('expired', $event)"
             @order-access-denied="read('directory', refreshDirectory)"
             @open-billing="emit('openBilling', $event)"

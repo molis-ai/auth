@@ -173,6 +173,8 @@ AUTH-06 的资料及绑定管理共用 UserView.version；资料更新只推进�
 
 密码更新、保留会话集合与撤销版本必须原子提交。请求不能提交任意 `exceptSessionId`；保留对象只取可信当前会话。被撤销会话的刷新、正在完成的旧授权码和重新绑定结果不得在提交后恢复它；当前保留会话仍沿原 30/90 天期限，不借改密延长登录。
 
+Auth 控制台的登录密码页通过本人资料读取 `passwordEnabled`。修改已设置的密码时，控制台在同源 `POST /api/account/reauthentications` 提交 `currentPassword`，由 BFF 按当前已登录账号校验后签发本次操作所需的授权。首次设置密码使用现有的会话授权。
+
 ## 5 API-04 会话 活动与退出
 
 | 方法与路径 | 请求 | 返回与规则 |
@@ -194,6 +196,8 @@ AUTH-06 的资料及绑定管理共用 UserView.version；资料更新只推进�
 撤销端点支持有效 access，或提交仅用于撤销的 refresh 证明（当前 access 已过期时）；后者校验摘要、客户端、所属登录和期限，不签发新 Token。当前登录已结束时，只允许凭保留的摘要返回该登录 ALREADY_ENDED，不借已失效证明执行全局撤销。logout-all 要求仍有效的登录；响应丢失时可凭相同幂等键和原请求证明查询短期保留的同次撤销结果，已撤销证明仅能读取该最小结果，不能发起新的撤销或访问账号接口。无可验证结果时返回未确认，不能假报成功。
 
 离线普通退出可返回 `{localCleared:true,remoteRevocation:UNCONFIRMED}`，不能显示已退出全部设备。全局退出须得到中央成功才可确认；连接失败显示未完成的远端结果。本地缓存身份只用于提示，不证明云会话、成员或权益有效。
+
+Auth 控制台专用 `GET /api/account/login-sessions` 使用同源登录 Cookie 读取当前账号在同一环境的有效会话。返回 `{items,hasMore}`，每项含 `productName,clientType,lastActiveAt,current`，当前会话置顶，其余按最近活跃时间排序，最多返回 100 条。读取不更新活跃时间，也不返回会话 ID、凭据或位置。
 
 ## 6 API-05 租户与成员
 

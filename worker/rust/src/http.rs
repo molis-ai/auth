@@ -50,6 +50,7 @@ pub(crate) fn failure_route(path: &str) -> &'static str {
         "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
         "/account/handoff/start" => "/account/handoff/start",
         "/account/handoff/finish" => "/account/handoff/finish",
+        "/api/account/login-sessions" => "/api/account/login-sessions",
         "/account/callback" => "/account/callback",
         _ if crate::web::billing::matches(path) => "/api/account/billing/*",
         "/" | "/login" | "/console" => "/",

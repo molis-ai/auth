@@ -313,6 +313,14 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     {
         ensure(request_url.query().is_none(), 400, "INVALID_REQUEST")?;
     }
+    if path == "/api/account/login-sessions" {
+        ensure(
+            a.request.inner().method() == "GET",
+            405,
+            "METHOD_NOT_ALLOWED",
+        )?;
+        ensure(request_url.query().is_none(), 400, "INVALID_REQUEST")?;
+    }
     if method == Method::Get {
         ensure(
             a.header("Transfer-Encoding").is_empty()
@@ -685,6 +693,7 @@ fn read_without_lease(path: &str) -> bool {
     const ROUTES: &[&str] = &[
         "/api/account/session",
         "/api/account/login-methods",
+        "/api/account/login-sessions",
         "/api/account/me",
         "/api/account/platform/users",
         "/api/account/platform/users/{userId}",
@@ -721,12 +730,11 @@ fn read_without_lease(path: &str) -> bool {
 
 fn product_target(path: &str, query: Option<&str>) -> String {
     let suffix = path.strip_prefix("/api/account").expect("prefix");
-    let prefix = if suffix.starts_with("/subscriptions") {
-        "/api/v2/users/me"
-    } else {
-        "/api/v2"
+    let mut target = match suffix {
+        "/me" => "/api/v2/users/me".to_owned(),
+        path if path.starts_with("/subscriptions") => format!("/api/v2/users/me{path}"),
+        path => format!("/api/v2{path}"),
     };
-    let mut target = format!("{prefix}{suffix}");
     if let Some(query) = query {
         target.push('?');
         target.push_str(query);
@@ -776,6 +784,15 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
                 Some(&s.a.header("Idempotency-Key")),
             )
             .await;
+    }
+    if path == "/api/account/login-sessions" && method == Method::Get {
+        return login_sessions::web_login_sessions(
+            s.a,
+            s.data["tokens"]["accessToken"].as_str().unwrap_or(""),
+        )
+        .await
+        .map_err(|failure| v2_failure(failure.status, failure.code))
+        .map_err(session_failure);
     }
     if path == "/api/account/login-methods" && method == Method::Get {
         return s
@@ -841,8 +858,8 @@ mod tests {
 
         let origin = "https://auth.example";
         for (request, target) in [
-            ("/api/account/me", "/api/v2/me"),
-            ("/api/account/me?", "/api/v2/me?"),
+            ("/api/account/me", "/api/v2/users/me"),
+            ("/api/account/me?", "/api/v2/users/me?"),
             (
                 "/api/account/subscriptions",
                 "/api/v2/users/me/subscriptions",

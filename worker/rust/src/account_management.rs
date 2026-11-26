@@ -195,6 +195,58 @@ pub(crate) async fn web_account_view(a: &Auth, access_token: &str) -> Result<Val
     // V2 request carried only the browser session's access token.
     account_view(a, access_token, "", false).await
 }
+pub(crate) async fn verify_web_password(
+    a: &Auth,
+    access_token: &str,
+    password: &str,
+) -> Result<()> {
+    let (digest, credential) = sessions::active_lookup(a, access_token)?;
+    let [credentials, passwords] =
+        a.s.batch_read(vec![
+            credential,
+            a.s.statement(
+                &format!(
+                    "SELECT password_hash FROM auth_local_credential WHERE user_id={}",
+                    sessions::ACCESS_USER_ID
+                ),
+                vec![digest.clone().into()],
+            )?,
+        ])
+        .await?
+        .try_into()
+        .map_err(|_| Failure::unavailable())?;
+    let (session, _) = sessions::active_result(
+        a,
+        credentials.into_iter().next().unwrap_or(Value::Null),
+        digest,
+        "",
+    )
+    .map_err(|error| {
+        if error.status == 401 {
+            Failure {
+                status: 401,
+                code: "SESSION_EXPIRED",
+            }
+        } else {
+            error
+        }
+    })?;
+    let user_id = text(&session, "user_id");
+    a.rate_batch(&[
+        ("v2-password", &a.client_ip, 30, 60_000),
+        ("web-current-password", &user_id, 10, 300_000),
+    ])
+    .await?;
+    let stored = passwords
+        .first()
+        .and_then(|row| row["password_hash"].as_str());
+    let dummy = format!("{VERSION}{}", "00".repeat(48));
+    ensure(
+        matches(password, stored.unwrap_or(&dummy), a).await? && stored.is_some(),
+        401,
+        "INVALID_CREDENTIALS",
+    )
+}
 fn version_guard(a: &Auth, user: &str, us: &Value) -> Result<D1PreparedStatement> {
     a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
 }

@@ -18,7 +18,7 @@ export async function accountCycles({page,browser,db,origin}) {
     if(label==='退出所有产品和设备') { await click(p,'账号安全'); await click(p,'登录会话'); }
     await wait(p,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`);
     await p.evaluate(`{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled);for(let i=0;i<${repeat};i++)b.click();}`);
-    if(label==='退出所有产品和设备') await click(p,'确认退出');
+    if(label==='退出所有产品和设备') await click(p,'确认退出全部');
   }
   const state= p=>p.evaluate(`(async()=>{for(let attempt=0;attempt<10;attempt++){const response=await fetch('/api/account/session',{cache:'no-store'});const reply=await response.json();if(response.ok)return reply.data;if(reply.error?.code!=='VERSION_CONFLICT')throw Error(reply.error?.code);await new Promise(resolve=>setTimeout(resolve,30));}throw Error('session read contention did not settle');})()`);
   async function login(p,email,password) {
@@ -65,11 +65,11 @@ export async function accountCycles({page,browser,db,origin}) {
   const code=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('cycle-b@example.test').first();
   await page.fill('input[autocomplete=one-time-code]',code.credential);await click(page,'验证');
   await wait(page,authenticated);
-  await click(page,'账号安全');await click(page,'登录密码');await click(page,'设置或修改密码');
+  await click(page,'账号安全');await click(page,'登录密码');
   await wait(page,"document.querySelectorAll('input[autocomplete=new-password]').length===2");
   await page.fill('input[autocomplete=new-password]','Synthetic-Cycle-B-Password-61');
   await page.fill('label:has(input[autocomplete=new-password]):last-of-type input','Synthetic-Cycle-B-Password-61');
-  await click(page,'确认修改密码');await wait(page,"!document.querySelector('.security-editor')");
+  await click(page,'保存新密码');await wait(page,"document.querySelector('.password-panel .is-bound')?.textContent.trim() === '已设置密码'");
   const b=await state(page);assert.notEqual(a.user.userId,b.user.userId);
   await logout(page);
   const B={email:'cycle-b@example.test',password:'Synthetic-Cycle-B-Password-61'};

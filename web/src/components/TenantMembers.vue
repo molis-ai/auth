@@ -20,7 +20,6 @@ const props = defineProps<{
   refreshPending: boolean;
   reload: (tenant: Tenant) => Promise<void>;
   ownMembership: (tenant: Tenant) => Promise<Member | undefined>;
-  refreshTransfers: () => Promise<void>;
   leave: () => Promise<void>;
   discard: (action: string) => void;
   submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
@@ -88,19 +87,20 @@ async function submit() {
       path = base + '/members/' + encodeURIComponent(member.membershipId) + (kind === 'role' ? '/role' : '/remove');
       body = { expectedVersion: member.version, ...(kind === 'role' ? { role: role.value } : {}) };
     }
-    const success = kind === 'invite' ? '邀请已创建' : '操作已完成';
+    const success = kind === 'invite' ? '邀请已创建'
+      : kind === 'transfer' ? '交接已发起，可在「待处理」查看。' : '操作已完成';
     await props.submitWrite(path, body, {
       action,
       method: kind === 'role' ? 'PATCH' : 'POST',
       success,
-      refreshMessage: success + '，但成员或团队数据暂未刷新。',
+      refreshMessage: '操作已完成，但成员或团队数据暂未刷新。',
       committed: () => {
         dialog.value?.close();
         if (kind === 'leave') emit('left', tenant.tenantId);
       },
       after: async () => {
         if (kind === 'leave') await props.leave();
-        else await Promise.all([props.reload(tenant), props.refreshTransfers()]);
+        else await props.reload(tenant);
       },
     });
   } catch(e) {
@@ -169,7 +169,7 @@ async function submit() {
         <label>{{ inviteKind === 'EMAIL' ? '邮箱地址' : '手机号（含国家区号）' }}
           <input v-model="invite" :type="inviteKind === 'EMAIL' ? 'email' : 'tel'" required :disabled="saving" autocomplete="off" />
         </label>
-        <p>对方使用此{{ inviteKind === 'EMAIL' ? '邮箱' : '手机号' }}登录后，可在团队页接受邀请。</p>
+        <p>对方使用此{{ inviteKind === 'EMAIL' ? '邮箱' : '手机号' }}登录后，可在「待处理」接受邀请。</p>
       </template>
       <template v-else-if="operation==='role'"><p>{{ target?.displayName }}</p><label>团队角色<select v-model="role" :disabled="saving"><option value="ADMIN">管理员</option><option value="MEMBER">成员</option></select></label><p>管理员可以邀请成员和移除普通成员；所有权需要单独交接。</p></template>
       <p v-else-if="operation==='remove'">确定移除 {{ target?.displayName }}？该成员的团队席位会同时释放。</p>

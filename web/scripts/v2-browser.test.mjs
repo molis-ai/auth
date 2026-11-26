@@ -168,7 +168,6 @@ try {
   assert.equal(await page.evaluate("Boolean(document.querySelector('.auth-entry'))"), false);
   await page.click(".session-startup button");
   const click = async (text) => {
-    if(text==='设置或修改密码') await click('登录密码');
     if(text.startsWith('绑定') && text !== '绑定') await click('登录方式');
     if(['退出登录','切换账号'].includes(text)) await page.click('[aria-label="账号菜单"]');
     await page.wait(
@@ -200,6 +199,10 @@ try {
   // ENTRY-01: the original visual composition opens directly on the V2 form.
   await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('button[type=submit]').disabled");
   assert.deepEqual(await page.evaluate("window.__authPerformance.requests.slice(0, 3).map(item => item.path)"), ['/session', '/session', '/auth/capabilities']);
+  await page.wait("Boolean(document.querySelector('.auth-entry img.brand-logo')?.naturalWidth)");
+  assert.ok(await page.evaluate(`performance.getEntriesByType('resource').some(entry =>
+    entry.name === document.querySelector('.auth-entry img.brand-logo').currentSrc &&
+    entry.transferSize === 0 && entry.decodedBodySize > 0)`), "the login logo is cached by Chrome");
   await page.evaluate("history.replaceState(null, '', '/')");
   console.log("PASS P0-1 startup outage is visible and retry restores the anonymous entry");
   for (const width of [1440,1024,390]) {
@@ -235,6 +238,9 @@ try {
     "document.querySelector('.console-tabs')?.textContent.includes('个人资料')",
   );
   await page.wait("Boolean(document.querySelector('.profile-identity'))");
+  assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.sidebar-nav-group .nav-caption')].map(label => label.textContent)"), ["工作台"]);
+  assert.equal(await page.evaluate("document.querySelector('.workspace-sidebar').getBoundingClientRect().width"), 212);
+  assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.console-tabs button[aria-current=page]')).fontWeight"), "600");
   const stylesheets = () => page.evaluate("[...document.styleSheets].filter(sheet => sheet.href).map(sheet => new URL(sheet.href).pathname)");
   assert.match(await page.evaluate("document.querySelector('main').textContent"), /所属团队/);
   const profileStylesheets = await stylesheets();
@@ -274,21 +280,21 @@ try {
   await click("个人资料");
   memberReads.length = 0;
   const tenantStart = await page.evaluate("window.__authPerformance.requests.length");
-  await page.evaluate("window.__authPerformance.holdNext.push('/tenants', '/invitations', '/ownership-transfers')");
+  await page.evaluate("window.__authPerformance.holdNext.push('/tenants')");
   await click("团队");
-  await page.wait("['/tenants', '/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
+  await page.wait("Boolean(window.__authPerformance.gates['/tenants'])");
   assert.equal(memberReads.length, 0, 'members wait for the tenant directory response');
   await page.evaluate("window.__authPerformance.gates['/tenants']()");
   await page.wait("!document.querySelector('[aria-label=下一页]')?.disabled && document.querySelectorAll('.tm-table-wrap tbody tr').length===10");
   assert.equal(memberReads.length, 1);
   assert.equal(memberReads[0].get("limit"), "10");
   assert.equal(memberReads[0].has("cursor"), false);
-  assert.ok(await page.evaluate("['/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])"));
   const tenantFirstPage = await page.evaluate(`window.__authPerformance.requests.slice(${tenantStart})`);
   const tenantFinished = tenantFirstPage.find(request => request.path === '/tenants').finished;
   const memberStart = tenantFirstPage.find(request => request.path.endsWith('/members')).started;
   assert.ok(tenantFinished <= memberStart);
-  await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
+  assert.ok(tenantFirstPage.every(request => !['/invitations', '/ownership-transfers'].includes(request.path)));
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.tenant-rail-note, .tenant-banners'))"), false);
   assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /角色/);
   await page.click(".tm-table-wrap th:first-child button");
   assert.match(await page.evaluate("document.querySelector('th[aria-sort=ascending]').textContent"), /用户/);
@@ -303,6 +309,11 @@ try {
   assert.equal(await page.evaluate("document.querySelector('.tm-dialog[open] select')?.value"), "EMAIL");
   assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.tm-dialog[open] select option')].map(option => option.value)"), ["EMAIL", "PHONE"]);
   await page.click(".tm-dialog[open] button[aria-label=关闭]");
+  await page.evaluate("window.__authPerformance.holdNext.push('/invitations', '/ownership-transfers')");
+  await click("待处理");
+  await page.wait("['/invitations', '/ownership-transfers'].every(path => window.__authPerformance.gates[path])");
+  await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
+  await page.wait("document.querySelector('.pending-empty')?.textContent.trim() === '暂无待处理事项'");
   await click("个人资料");
   const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.space_id).first();
   await page.wait("Boolean(document.querySelector('.profile-identity'))");
@@ -320,31 +331,23 @@ try {
     const dialog = document.querySelector('.tm-dialog[open]');
     return [Boolean(dialog.querySelector('select')), dialog.querySelector('label').textContent.trim(), dialog.querySelector('input').type];
   })()`), [false, "邮箱地址", "email"]);
-  assert.match(await page.evaluate("document.querySelector('.tm-dialog[open]').textContent"), /在团队页接受邀请/);
+  assert.match(await page.evaluate("document.querySelector('.tm-dialog[open]').textContent"), /在「待处理」接受邀请/);
   await page.fill(".tm-dialog[open] input[type=email]", "qa-web-invite@example.test");
   await click("创建邀请");
   await page.wait("!document.querySelector('.tm-dialog[open]')");
   assert.deepEqual(await db.prepare("SELECT target_kind,target_user_id,status FROM auth_tenant_invitation WHERE target_email=?").bind("qa-web-invite@example.test").first(),
     { target_kind: "EMAIL", target_user_id: null, status: "PENDING" });
-  await page.wait("[...document.querySelectorAll('button')].filter(button => button.textContent.trim() === '加入').length === 1");
   assert.equal(await page.evaluate("document.querySelector('.tm-heading h2')?.textContent"), 'QA 自助团队');
-  const earlierTenants = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<20)";
-  await db.batch([
-    db.prepare(earlierTenants + " INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) SELECT '0-qa-tenant-'||n,'QA 前页团队 '||n,'TEAM','ACTIVE',0,0 FROM numbers"),
-    db.prepare("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) SELECT id,'ACTIVE',?,0,0 FROM auth_space WHERE id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
-    db.prepare("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT space_id,space_id,?,'OWNER','ACTIVE',0 FROM auth_managed_tenant WHERE space_id LIKE '0-qa-tenant-%'").bind(tenantOwner.user_id),
-    db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的团队', testTenant.space_id),
-  ]);
-  const tenantDetailPath = '/tenants/' + testTenant.space_id;
-  const invitationStart = await page.evaluate("window.__authPerformance.requests.length");
-  await page.evaluate("window.__authPerformance.holdNext.push('/tenants')");
-  await click('加入');
-  await page.wait(`Boolean(window.__authPerformance.gates['/tenants']) && window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === '/invitations' && request.finished && request.status === 200)`);
-  await page.evaluate("window.__authPerformance.gates['/tenants']()");
+  await db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的团队', testTenant.space_id).run();
+  await click("待处理");
+  await page.wait("document.querySelectorAll('.pending-item.is-info').length === 1");
+  assert.equal(await page.evaluate("document.querySelector('.console-tabs [aria-current=page]')?.textContent"), "待处理");
+  await clickRow("账号邀请", "接受");
+  await page.wait("document.querySelector('.pending-empty')?.textContent.trim() === '暂无待处理事项'");
+  await click("团队");
   await page.wait("document.querySelector('.tm-heading h2')?.textContent === 'QA 刷新后的团队' && document.querySelector('[aria-current=true] .tenant-choice-name')?.textContent === 'QA 刷新后的团队'");
-  assert.ok(await page.evaluate(`window.__authPerformance.requests.slice(${invitationStart}).some(request => request.path === ${JSON.stringify(tenantDetailPath)} && request.finished && request.status === 200)`));
-  assert.equal(await page.evaluate("document.querySelector('.tm-table-wrap .tm-self')?.textContent"), '（我）');
-  assert.equal(await page.evaluate("[...document.querySelectorAll('button')].some(button => button.textContent.trim() === '加入')"), false);
+  await page.wait("document.querySelector('.tm-table-wrap .tm-self')?.textContent === '（我）'");
+  const tenantDetailPath = '/tenants/' + testTenant.space_id;
   assert.deepEqual((await db.prepare("SELECT status,accepted_membership_id FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation') ORDER BY id").all()).results, [
     { status: 'ACCEPTED', accepted_membership_id: tenantOwner.id },
     { status: 'PENDING', accepted_membership_id: null },
@@ -365,31 +368,34 @@ try {
   const memberWriteStart = await page.evaluate("window.__authPerformance.requests.length");
   await page.evaluate(`window.__authPerformance.holdNext.push(${JSON.stringify(memberPath)})`);
   await click('确认');
-  await page.wait(`Boolean(window.__authPerformance.gates[${JSON.stringify(memberPath)}]) && window.__authPerformance.requests.slice(${memberWriteStart}).some(request => request.path === '/ownership-transfers' && request.finished && request.status === 200)`);
+  await page.wait(`Boolean(window.__authPerformance.gates[${JSON.stringify(memberPath)}])`);
+  assert.ok(await page.evaluate(`window.__authPerformance.requests.slice(${memberWriteStart}).every(request => request.path !== '/ownership-transfers')`));
   await page.evaluate(`window.__authPerformance.gates[${JSON.stringify(memberPath)}]()`);
   await page.wait("[...document.querySelectorAll('.tm-table-wrap tbody tr')].some(row => row.querySelector('strong')?.textContent === 'QA 成员 1' && row.cells[2].textContent === '管理员')");
   const transferId = "qa-team-name-transfer";
   await db.prepare("INSERT INTO auth_ownership_transfer(id,tenant_id,from_membership_id,to_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,'PENDING',?,?)")
     .bind(transferId, testTenant.space_id, tenantOwner.id, "qa-page-member-1", invitedAt, invitedAt + 600_000).run();
-  await click("个人资料");
-  await click("团队");
-  await page.wait("document.querySelector('.tenant-banner.is-warn .tenant-banner-text')?.textContent.trim() === '「QA 刷新后的团队」的所有权交接'");
+  await click("待处理");
+  await page.wait("document.querySelector('.pending-item.is-warn .pending-item-text')?.textContent.trim() === '「QA 刷新后的团队」的所有权交接'");
+  for (const width of [1440, 390]) {
+    await page.viewport(width, 900);
+    assert.ok(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'));
+    await page.screenshot(join(evidence, 'pending-' + width + '.png'));
+  }
+  await page.viewport(1440, 900);
   await clickRow("「QA 刷新后的团队」的所有权交接", "取消交接");
-  await page.wait("!document.querySelector('.tenant-banner.is-warn')");
+  await page.wait("document.querySelector('.pending-empty')?.textContent.trim() === '暂无待处理事项'");
   assert.equal((await db.prepare("SELECT status FROM auth_ownership_transfer WHERE id=?").bind(transferId).first()).status, "CANCELLED");
   await db.batch([
     db.prepare("DELETE FROM auth_ownership_transfer WHERE id=?").bind(transferId),
     db.prepare("DELETE FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation')"),
     db.prepare("DELETE FROM auth_tenant_membership WHERE id LIKE 'qa-page-member-%'"),
-    db.prepare("DELETE FROM auth_tenant_membership WHERE tenant_id LIKE '0-qa-tenant-%'"),
-    db.prepare("DELETE FROM auth_managed_tenant WHERE space_id LIKE '0-qa-tenant-%'"),
-    db.prepare("DELETE FROM auth_space WHERE id LIKE '0-qa-tenant-%'"),
     db.prepare("DELETE FROM auth_user WHERE id LIKE 'qa-page-user-%'"),
   ]);
   await click("个人资料");
   await click("团队");
-  console.log(`PASS browser member first page started ${(memberStart - tenantFinished).toFixed(2)} ms after tenants, with both invitation and transfer responses held`);
-  console.log("PASS parallel post-write refresh uses the current account, fresh detail for the selected tenant outside page one, and the updated member role");
+  console.log(`PASS browser member first page started ${(memberStart - tenantFinished).toFixed(2)} ms after the team directory, without fetching pending items`);
+  console.log("PASS standalone pending page loads both queues, handles invitations and transfers, and returns to refreshed team details");
 
   // CONSOLE-01: original sidebar and list/detail composition at desktop and phone widths.
   await page.wait("Boolean(document.querySelector('.tm-heading'))");
@@ -406,7 +412,7 @@ try {
   await page.fill('input[maxlength="80"]', "QA 昵称");
   await page.evaluate("document.querySelector('input[aria-label=修改昵称]').blur()");
   await page.wait(
-    "document.querySelector('header')?.textContent.includes('QA 昵称') && !document.querySelector('input[aria-label=修改昵称]') && Boolean(document.querySelector('.profile-inline-name [role=button]'))",
+    "document.querySelector('.account-menu-name')?.textContent === 'QA 昵称' && document.querySelector('.profile-inline-name [role=button]')?.textContent === 'QA 昵称' && !document.querySelector('input[aria-label=修改昵称]')",
   );
   console.log("PASS browser profile update");
   const {profileEditorChecks}=await import('./profile-editor-checks.mjs');
@@ -425,7 +431,7 @@ try {
     );
     assert.ok(
       await page.evaluate(
-        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>760 ? nav.right<=main.left : nav.bottom<=main.top})()",
+        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>820 ? nav.right<=main.left : nav.bottom<=main.top})()",
       ),
       "CONSOLE-01 navigation stays beside desktop content and above mobile content without overlap",
     );
@@ -448,15 +454,30 @@ try {
     const title = getComputedStyle(document.querySelector(${JSON.stringify(methodsRailTitle)}));
     return [title.backgroundColor, title.backgroundImage, title.filter];
   })()`), ["rgba(0, 0, 0, 0)", "none", "none"], "hover highlights the card without styling its title");
+  await page.wait("document.querySelector('.login-session-table tbody .is-bound')?.textContent === '当前会话'");
+  assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.login-session-table th')].map(cell => cell.textContent)"),
+    ["产品", "设备与客户端", "位置", "状态"]);
+  assert.equal(await page.evaluate("document.querySelector('.login-session-table .login-session-location').textContent"), "未知");
+  assert.ok(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "session table fits the mobile page");
   await click("退出所有产品和设备");
   assert.equal(await page.evaluate(`(() => {
     const dialog = document.querySelector('.logout-confirm[open]');
     return document.getElementById(dialog.getAttribute('aria-labelledby')).textContent.trim()
       + '/' + document.activeElement.textContent.trim();
   })()`), "退出所有产品和设备？/取消");
+  assert.equal(await page.evaluate("document.querySelector('.logout-confirm-submit').textContent"), "确认退出全部");
+  for (const width of [390, 1440]) {
+    await page.viewport(width, 900);
+    assert.equal(await page.evaluate("document.querySelector('.logout-confirm').getBoundingClientRect().width"), Math.min(465, width - 32));
+    await page.screenshot(join(evidence, "logout-confirm-" + width + ".png"));
+  }
+  await page.viewport(390, 900);
+  await page.click(".logout-confirm-close");
+  await page.wait("!document.querySelector('.logout-confirm[open]') && document.activeElement?.textContent.trim()==='退出所有产品和设备'");
+  await click("退出所有产品和设备");
   await page.click(".logout-confirm[open] button[autofocus]");
-  await page.wait("document.activeElement?.textContent.trim()==='退出所有产品和设备'");
-  console.log("PASS browser logout confirmation label and restored focus");
+  await page.wait("!document.querySelector('.logout-confirm[open]') && document.activeElement?.textContent.trim()==='退出所有产品和设备'");
+  console.log("PASS browser logout confirmation label, close button, cancel and restored focus");
   await click("登录方式");
 
   const verifyCurrentPhone = async () => {
@@ -488,33 +509,38 @@ try {
   console.log('PASS admin-managed email is read-only for account owner');
   // Bound methods expose unlink; replacement was removed from the current UI.
   assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.security-method')].find(e=>e.querySelector('h3')?.textContent==='手机号').querySelector('.security-method-actions').textContent.trim()"),'解绑');
-  const verifiedBefore=(await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t;
-  assert.ok([...scripts].every(path => !path.includes("/AccountSecurityEditor-")));
-  await click("设置或修改密码");
-  await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
-  assert.ok([...scripts].some(path => path.includes("/AccountSecurityEditor-")));
-  assert.equal(await page.evaluate("Boolean(document.querySelector('input[autocomplete=current-password]'))"),false);
-  await click('取消');
-  await page.wait("!document.querySelector('.security-editor')");
-  assert.equal((await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t,verifiedBefore,'reuse must not renew recent-auth time');
+  const verifiedBefore = (await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t;
+  assert.ok([...scripts].every(path => !path.includes("/AccountPassword-")));
+  await click("登录密码");
+  await page.wait("document.querySelectorAll('.password-form input[autocomplete=new-password]').length === 2");
+  assert.ok([...scripts].some(path => path.includes("/AccountPassword-")));
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.password-form input[autocomplete=current-password]'))"), false);
+  await click("登录方式");
+  assert.equal((await db.prepare('SELECT MAX(identity_verified_at) t FROM auth_login_session').first()).t, verifiedBefore, 'opening the form must not request authorization');
   await db.prepare('UPDATE auth_login_session SET identity_verified_at=?').bind(Date.now()-300001).run();
-  await click("设置或修改密码");
-  await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
-  assert.equal(await page.evaluate("Boolean(document.querySelector('input[autocomplete=current-password]'))"),false,'old verification timestamp must not trigger a second login');
-  console.log('PASS active session skips second login, inline phone form and cancellation');
-  await page.fill(
-    "input[autocomplete=new-password]",
-    "Synthetic-Browser-Jupiter-94",
-  );
-  await page.fill(
-    "form label:nth-of-type(2) input",
-    "Synthetic-Browser-Jupiter-94",
-  );
-  await click("确认修改密码");
-  await page.wait(
-    "!document.querySelector('input[autocomplete=new-password]')&&!document.querySelector('.v2-form')",
-  );
-  console.log("PASS browser reauth and password change");
+  await click("登录密码");
+  await page.wait("Boolean(document.querySelector('.password-form input[autocomplete=new-password]'))");
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.password-form input[autocomplete=current-password]'))"), false, 'first-time password setup uses the current session');
+  const newPassword = '.password-form label:has(input[autocomplete=new-password])';
+  await page.fill('.password-form input[autocomplete=new-password]', "Synthetic-Browser-Jupiter-94");
+  await page.fill(newPassword + ':last-of-type input', "Synthetic-Browser-Jupiter-94");
+  await click("保存新密码");
+  await page.wait("document.querySelector('.password-panel .is-bound')?.textContent.trim() === '已设置密码'");
+  await page.fill('.password-form input[autocomplete=current-password]', "Synthetic-Wrong-Password-94");
+  await page.fill('.password-form input[autocomplete=new-password]', "Synthetic-Browser-Jupiter-95");
+  await page.fill(newPassword + ':last-of-type input', "Synthetic-Browser-Jupiter-95");
+  await click("保存新密码");
+  await page.wait("document.querySelector('.password-error')?.textContent === '当前密码不正确。'");
+  await page.fill('.password-form input[autocomplete=current-password]', "Synthetic-Browser-Jupiter-94");
+  await click("保存新密码");
+  await page.wait("document.querySelector('.account-toast')?.textContent.includes('密码已更新') && document.querySelector('.password-form input[autocomplete=current-password]')?.value === ''");
+  for (const width of [1440, 390]) {
+    await page.viewport(width, 900);
+    await page.evaluate('scrollTo(0,0)');
+    assert.ok(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'));
+    await page.screenshot(join(evidence, 'password-form-' + width + '.png'));
+  }
+  console.log("PASS browser inline password setup, incorrect current password and verified password change");
   assert.ok(
     await page.evaluate(
       "!document.querySelector('.console-tabs').textContent.includes('应用管理')",
@@ -546,6 +572,8 @@ try {
   await page.wait(
     "document.querySelector('main h1')?.textContent==='应用管理'",
   );
+  assert.deepEqual(await page.evaluate("[...document.querySelectorAll('.sidebar-nav-group .nav-caption')].map(label => label.textContent)"), ["工作台", "平台管理"]);
+  assert.equal(await page.evaluate("document.querySelector('.sidebar-nav-group:last-child button[aria-current=page]')?.textContent"), "应用管理");
   await fillLabel("应用名称", "QA 应用");
   await click("创建应用");
   await click("QA 应用");
@@ -711,7 +739,7 @@ try {
     );
     assert.ok(
       await page.evaluate(
-        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>760 ? nav.right<=main.left : nav.bottom<=main.top})()",
+        "(() => {const nav=document.querySelector('.workspace-sidebar').getBoundingClientRect(), main=document.querySelector('main').getBoundingClientRect();return innerWidth>820 ? nav.right<=main.left : nav.bottom<=main.top})()",
       ),
       "the platform header stays above the current page at every width",
     );
@@ -757,11 +785,11 @@ try {
   const entryCode=await db.prepare('SELECT credential FROM auth_mock_delivery WHERE destination=? ORDER BY created_at DESC LIMIT 1').bind('entry-union@example.test').first();
   await page.fill('input[autocomplete=one-time-code]',entryCode.credential);await click('验证');
   await page.wait("Boolean(document.querySelector('.console-tabs'))");
-  await click('账号安全');await click('设置或修改密码');
+  await click('账号安全');await click('登录密码');
   await page.wait("Boolean(document.querySelector('input[autocomplete=new-password]'))");
   await page.fill('input[autocomplete=new-password]','Synthetic-Entry-Password-49');
-  await page.fill('form label:nth-of-type(2) input','Synthetic-Entry-Password-49');await click('确认修改密码');
-  await page.wait("!document.querySelector('.security-editor')");
+  await page.fill('form label:nth-of-type(2) input','Synthetic-Entry-Password-49');await click('保存新密码');
+  await page.wait("document.querySelector('.password-panel .is-bound')?.textContent.trim() === '已设置密码'");
   await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
   await page.fill('input[autocomplete=username]','entry-union@example.test');await page.fill('input[autocomplete=current-password]','Synthetic-Entry-Password-49');
   const passwordStart = await page.evaluate("window.__authPerformance.requests.length");
@@ -817,7 +845,8 @@ try {
   assert.ok(methodsToActivity >= 0);
   assert.ok(profileInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/activity').finished);
   assert.ok(navigationInteractiveAt < authenticatedStartup.requests.find(item => item.path === '/login-methods').finished);
-  for (const extension of ['.js', '.css', '.png']) {
+  assert.ok(authenticatedStartup.assets.every(asset => !asset.path.startsWith('/auth-ui/assets/molis-logo-')), 'the console uses its inline brand mark');
+  for (const extension of ['.js', '.css']) {
     assert.ok(authenticatedStartup.assets.some(asset => asset.path.endsWith(extension) &&
       asset.transferSize === 0 && asset.decodedBodySize > 0), extension + ' is cached by Chrome');
   }

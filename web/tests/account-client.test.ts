@@ -187,7 +187,7 @@ test("logout and close cancel in-flight login capability reads", async () => {
   }
 });
 
-test("P1-4 tenant overview starts four first-page GETs together after CSRF bootstrap", { timeout: 1500 }, async () => {
+test("P1-4 team and pending page reads can run together after CSRF bootstrap", { timeout: 1500 }, async () => {
   const paths = [
     "/tenant-creation-policy",
     "/tenants?limit=20",
@@ -227,7 +227,7 @@ test("P1-4 tenant overview starts four first-page GETs together after CSRF boots
   }
 });
 
-test("tenant members start when tenants completes while invitations and transfers are still pending", async () => {
+test("tenant member reads are not blocked by slow invitation and transfer reads", async () => {
   const tenants = Promise.withResolvers<Response>();
   const slow = Promise.withResolvers<void>();
   const calls: string[] = [];

@@ -45,6 +45,7 @@ interface ReadBatch {
 function isIdempotentRead(path: string): boolean {
   return path === "/tenant-creation-policy" ||
     path === "/login-methods" ||
+    path === "/login-sessions" ||
     /^\/tenants\/[A-Za-z0-9_-]+$/.test(path);
 }
 

@@ -12,12 +12,14 @@ import { entryText } from "./lib/entry-copy.ts";
 import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
 import { accountErrorMessage } from "./lib/errors.ts";
 import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./lib/idempotent-submit.ts";
-import logo from "./assets/molis-logo.png";
 const ConsoleShell = defineAsyncComponent(() => import("./components/ConsoleShell.vue"));
 const AccountProfile = defineAsyncComponent(() => import("./components/AccountProfile.vue"));
 const AccountSecurityEditor = defineAsyncComponent(() => import("./components/AccountSecurityEditor.vue"));
+const AccountPassword = defineAsyncComponent(() => import("./components/AccountPassword.vue"));
+const AccountSessions = defineAsyncComponent(() => import("./components/AccountSessions.vue"));
 const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
 const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
+const PendingPage = defineAsyncComponent(() => import("./components/PendingPage.vue"));
 const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
 const BillingCenterPage = defineAsyncComponent(() => import("./components/BillingCenterPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
@@ -79,9 +81,7 @@ const securityAction = ref(""),
   binding = ref<Method>(),
   reauth = ref(""),
   newIdentity = ref(false),
-  securityIdentity = ref(""),
-  newPassword = ref(""),
-  confirmPassword = ref("");
+  securityIdentity = ref("");
 const submissions = new IdempotentSubmit();
 const refreshIssues = shallowReactive(new Map<string, {
   page: string;
@@ -96,7 +96,7 @@ watch(newApplicationName, () => submissions.discard("create-application"), { flu
 watch([appName, appStatus, () => selectedApplication.value?.applicationId, () => selectedApplication.value?.version],
   () => submissions.discard("edit-application"), { flush: "sync" });
 let securityEdits = 0;
-watch([securityAction, () => binding.value?.bindingId, reauth, securityIdentity, newPassword,
+watch([securityAction, () => binding.value?.bindingId, reauth, securityIdentity,
   () => account.value?.user?.version], () => {
   securityEdits++;
   submissions.discard("security");
@@ -305,7 +305,10 @@ async function submitWrite<T>(
 function mutate<T>(path: string, body: unknown, options: WriteOptions<T>) {
   return run(() => submitWrite(path, body, options));
 }
-async function submitMemberWrite<T>(path: string, body: unknown, options: WriteOptions<T>) {
+function discardPasswordWrite() {
+  submissions.discard("change-password");
+}
+async function submitBusyWrite<T>(path: string, body: unknown, options: WriteOptions<T>) {
   busy.value = true;
   clearToast();
   try {
@@ -328,9 +331,9 @@ function retryRefresh(action: string) {
 function handleTenantError(error: unknown) {
   if (expireAccount(error)) showToast(accountErrorMessage(error));
 }
-function disposeTenantPage() {
+function disposePageIssues(target: string) {
   for (const [action, issue] of refreshIssues) {
-    if (issue.page === "tenants") refreshIssues.delete(action);
+    if (issue.page === target) refreshIssues.delete(action);
   }
 }
 function openApplication(a: Application) {
@@ -386,11 +389,9 @@ async function verify(operation: string, item?: Method) {
   newIdentity.value = false;
 }
 function target(): Record<string, string> {
-  return securityAction.value === "CHANGE_PASSWORD"
-    ? { kind: "PASSWORD" }
-    : securityAction.value === "BIND_METHOD"
-      ? { method: binding.value?.type ?? "EMAIL" }
-      : { bindingId: binding.value!.bindingId };
+  return securityAction.value === "BIND_METHOD"
+    ? { method: binding.value?.type ?? "EMAIL" }
+    : { bindingId: binding.value!.bindingId };
 }
 async function cancelSecurity() {
   authorizationPopup.value?.close();
@@ -400,8 +401,6 @@ async function cancelSecurity() {
   securityIdentity.value = "";
   securityAction.value = "";
   newIdentity.value = false;
-  newPassword.value = "";
-  confirmPassword.value = "";
   if (handle)
     await client
       .request("/auth/transactions/" + handle + "/cancel", {})
@@ -413,6 +412,10 @@ async function verified(value: { handle: string }) {
     newIdentity.value = true;
   else if (securityAction.value === "UNLINK_METHOD") await finishSecurity();
 }
+async function refreshSecurityAccount() {
+  await refreshAccount();
+  await refreshLoginMethods();
+}
 async function finishSecurity(identityHandle?: string) {
   const operation = securityAction.value;
   if (identityHandle) {
@@ -420,23 +423,14 @@ async function finishSecurity(identityHandle?: string) {
     newIdentity.value = false;
   }
   const path =
-    operation === "CHANGE_PASSWORD"
-      ? "/password/change"
-      : operation === "BIND_METHOD"
-        ? "/login-methods/bind"
-        : "/login-methods/" +
-          binding.value!.bindingId +
-          "/" +
-          "unlink";
+    operation === "BIND_METHOD" ? "/login-methods/bind"
+      : "/login-methods/" + binding.value!.bindingId + "/unlink";
   await mutate(
     path,
     {
       reauthHandle: reauth.value,
       expectedVersion: account.value!.user!.version,
       ...(securityIdentity.value ? { identityHandle: securityIdentity.value } : {}),
-      ...(operation === "CHANGE_PASSWORD"
-        ? { newPassword: newPassword.value }
-        : {}),
     },
     {
       action: "security",
@@ -445,14 +439,9 @@ async function finishSecurity(identityHandle?: string) {
       committed: () => {
         reauth.value = "";
         securityIdentity.value = "";
-        newPassword.value = "";
-        confirmPassword.value = "";
         securityAction.value = "";
       },
-      after: async () => {
-        await refreshAccount();
-        await refreshLoginMethods();
-      },
+      after: refreshSecurityAccount,
     },
   );
 }
@@ -490,7 +479,7 @@ function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
   applications.value = []; selectedApplication.value = undefined; methods.value = [];
   newApplicationName.value = ''; appName.value = ''; appStatus.value = 'ACTIVE';
   securityAction.value = ''; binding.value = undefined; reauth.value = '';
-  newIdentity.value = false; securityIdentity.value = ''; newPassword.value = ''; confirmPassword.value = '';
+  newIdentity.value = false; securityIdentity.value = '';
   authorizationPopup.value?.close();
   authorizationPopup.value = null;
 }
@@ -562,45 +551,15 @@ onBeforeUnmount(() => {
     </component>
     <AuthEntry v-else :key="accountScope" :client="client" :busy="busy" :language="language" :prefetched-capabilities="prefetchedCapabilities" @authenticating="authenticating = $event" @complete="loggedIn" />
   </AuthEntryShell>
-  <ConsoleShell v-else>
-    <aside class="workspace-sidebar">
-      <header class="sidebar-brand-row">
-        <a href="/" class="v2-brand"><img :src="logo" class="brand-logo" alt="" /><strong class="wordmark">Molis AI</strong></a>
-        <span class="sidebar-current-user">{{ account.user?.displayName }}</span>
-      </header>
-      <p class="nav-caption">工作台</p>
-      <nav class="console-tabs" aria-label="账号管理">
-        <button
-          v-for="[id, label] in [
-            ['account', '个人资料'],
-            ['security', '账号安全'],
-            ['tenants', '团队'],
-            ['subscriptions', '订阅与账单'],
-          ]"
-          :key="id"
-          :aria-current="page === id ? 'page' : undefined"
-          :disabled="busy"
-          @click="navigate(id)"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path :d="id === 'tenants' ? 'M4 10h16M10 10v10' : id === 'security' ? 'M9 11V9a3 3 0 0 1 6 0v2M9 11h6v5H9z' : id === 'subscriptions' ? 'M8 9h8M8 13h8M8 17h5' : 'M8 17c0-5 8-5 8 0M12 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4'"/></svg>{{ label }}</button
-        ><button
-          v-if="can('USER_READ')"
-          :aria-current="page === 'users' ? 'page' : undefined"
-          :disabled="busy"
-          @click="navigate('users')"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5"/></svg>用户与权限</button
-        ><button
-          v-if="can('APPLICATION_READ')"
-          :aria-current="page === 'applications' ? 'page' : undefined"
-          :disabled="busy"
-          @click="navigate('applications')"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>应用管理
-        </button>
-      </nav>
-      <div class="sidebar-bottom">      <button type="button" class="account-menu-trigger" popovertarget="account-menu" aria-label="账号菜单"><span class="account-avatar"><img v-if="account.user?.avatarUrl" :src="account.user.avatarUrl" alt=""><template v-else>{{ account.user?.displayName?.slice(0,1) || 'M' }}</template></span><span class="account-menu-identity"><span class="account-menu-name" :title="account.user?.displayName">{{ account.user?.displayName }}</span><span v-if="account.user?.email" class="account-menu-email" :title="account.user.email">{{ account.user.email }}</span></span><svg class="account-menu-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg></button><div id="account-menu" popover class="account-menu"><button :disabled="busy" @click="logout()">切换账号</button><button :disabled="busy" @click="logout()">退出登录</button></div></div>
-    </aside>
+  <ConsoleShell
+    v-else
+    :user="account.user"
+    :capabilities="account.capabilities ?? []"
+    :busy="busy"
+    :current-page="page"
+    @navigate="navigate"
+    @logout="logout()"
+  >
     <div class="workspace-body">
     <main>
       <template v-for="[action, issue] in refreshIssues" :key="action">
@@ -654,10 +613,6 @@ onBeforeUnmount(() => {
                 </span>
               </div>
             </div>
-            <div class="security-rail-note">
-              <strong>安全保护提示</strong>
-              修改密码、解绑敏感登录方式前会触发身份验证，确保账号操作安全。
-            </div>
           </aside>
           <div class="collection-detail">
             <div class="security-detail-inner">
@@ -669,18 +624,27 @@ onBeforeUnmount(() => {
                   </div>
                   <button ref="logoutTrigger" type="button" class="security-danger-btn" :disabled="busy" @click="logoutDialog?.showModal()">退出所有产品和设备</button>
                 </header>
-                <section class="session-actions security-panel-card">
-                  <div class="security-card-head">
-                    <div>
-                      <h3>当前浏览器会话</h3>
-                      <p>采用同源 HttpOnly Cookie 保护，浏览器端不持久化明文凭证。</p>
-                    </div>
-                    <span class="security-method-status is-bound"><span class="security-status-dot" aria-hidden="true"></span>当前会话</span>
-                  </div>
-                  <p class="security-session-hint">点击右上角“退出所有产品和设备”将立即撤销你在 Molis 全线产品与其它设备上的有效登录态。</p>
-                </section>
+                <AccountSessions :client="client" @expired="expireWithToast" />
               </template>
-              <dialog ref="logoutDialog" class="logout-confirm" aria-labelledby="logout-confirm-title" @close="logoutTrigger?.focus()"><h2 id="logout-confirm-title">退出所有产品和设备？</h2><p>包括当前设备，之后需要重新登录。</p><div class="console-actions"><button autofocus @click="logoutDialog?.close()">取消</button><button :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出</button></div></dialog>
+              <dialog
+                ref="logoutDialog"
+                class="logout-confirm"
+                aria-labelledby="logout-confirm-title"
+                aria-describedby="logout-confirm-description"
+                @close="logoutTrigger?.focus()"
+              >
+                <header class="logout-confirm-head">
+                  <h2 id="logout-confirm-title">退出所有产品和设备？</h2>
+                  <button type="button" class="logout-confirm-close" aria-label="关闭" @click="logoutDialog?.close()">×</button>
+                </header>
+                <p id="logout-confirm-description" class="logout-confirm-body">
+                  将立即退出你在 Molis Auth、Molis Work 和 Molis Club 等产品上的所有会话，包括当前设备。
+                </p>
+                <footer class="logout-confirm-actions">
+                  <button type="button" autofocus @click="logoutDialog?.close()">取消</button>
+                  <button type="button" class="logout-confirm-submit" :disabled="busy" @click="logoutDialog?.close(); logout(true)">确认退出全部</button>
+                </footer>
+              </dialog>
 
               <template v-if="securityTab === 'password'">
                 <header class="security-page-head">
@@ -689,16 +653,15 @@ onBeforeUnmount(() => {
                     <p>定期更新高强度密码可提升账号安全性</p>
                   </div>
                 </header>
-                <section class="security-panel-card">
-                  <div class="security-card-head">
-                    <div>
-                      <h3>修改密码</h3>
-                      <p>设置或修改用于账号登录的密码，建议使用大小写字母、数字与符号组合。</p>
-                    </div>
-                    <button v-if="securityAction !== 'CHANGE_PASSWORD'" type="button" class="security-primary-btn" :disabled="busy" @click="verify('CHANGE_PASSWORD')">设置或修改密码</button>
-                  </div>
-                  <AccountSecurityEditor v-if="securityAction === 'CHANGE_PASSWORD' && securityTab === 'password'" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
-                </section>
+                <AccountPassword
+                  v-if="account.user"
+                  :client="client"
+                  :account-version="account.user.version"
+                  :submit-write="submitBusyWrite"
+                  :discard="discardPasswordWrite"
+                  :on-saved="refreshSecurityAccount"
+                  @expired="expireWithToast"
+                />
               </template>
 
               <section v-if="securityTab === 'methods'">
@@ -735,7 +698,7 @@ onBeforeUnmount(() => {
                       </div>
                     </template>
                   </div>
-                  <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" v-model:new-password="newPassword" v-model:confirm-password="confirmPassword" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
+                  <AccountSecurityEditor v-if="securityAction && binding?.type === type" :key="securityAction + (binding?.bindingId ?? '') + (binding?.type ?? '')" :client="client" :authorization-popup="authorizationPopup" :security-action="securityAction" :reauth="reauth" :new-identity="newIdentity" :binding="binding" :target="target()" :busy="busy" @verified="verified" @cancel="cancelSecurity" @finish="finishSecurity" />
                 </div>
               </section>
             </div>
@@ -750,13 +713,22 @@ onBeforeUnmount(() => {
         :billing-enabled="!endingSession"
         :busy="busy"
         :mutate="mutate"
-        :submit-write="submitMemberWrite"
+        :submit-write="submitBusyWrite"
         :discard="action => submissions.discard(action)"
         :refresh-pending="action => refreshIssues.has(action)"
         @expired="handleTenantError"
-        @dispose="disposeTenantPage"
+        @dispose="disposePageIssues('tenants')"
         @clear-toast="clearToast"
         @open-billing="openTeamBilling"
+      />
+      <PendingPage
+        v-if="page === 'pending' && account.user"
+        :key="accountScope"
+        :client="client"
+        :busy="busy"
+        :mutate="mutate"
+        @expired="handleTenantError"
+        @dispose="disposePageIssues('pending')"
       />
       <BillingCenterPage
         v-if="page === 'subscriptions' && account.user && !endingSession"
