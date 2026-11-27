@@ -318,6 +318,25 @@ impl WebSession<'_> {
 fn csrf(key: &str, id: &str) -> String {
     hash(&format!("web-csrf:{key}:{id}"))
 }
+// Anonymous reads issue an origin-bound CSRF proof instead of reserving a row.
+const BOOTSTRAP_CSRF_WINDOW_MS: i64 = 86_400_000;
+fn bootstrap_csrf(a: &Auth, key: &str, window: i64) -> String {
+    let scope = browser_cookie_hash(a, &format!("bootstrap:{}:{window}", a.origin));
+    format!("bootstrap.{}", csrf(key, &scope))
+}
+
+fn anonymous_response(a: &Auth, key: &str) -> Result<Response> {
+    let mut response = json_response(
+        json!({"data":{"state":"ANONYMOUS"},"requestId":a.request_id}),
+        200,
+    )?;
+    response.headers_mut().set(
+        "X-CSRF-Token",
+        &bootstrap_csrf(a, key, now() / BOOTSTRAP_CSRF_WINDOW_MS),
+    )?;
+    Ok(response)
+}
+
 pub(crate) fn matches(path: &str) -> bool {
     path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback"
 }
@@ -398,6 +417,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let mut id = browser_cookie_hash(a, &cookie);
     let mut create = !token(&cookie);
     let session_read = path == "/api/account/session" && method == Method::Get;
+    if create && session_read {
+        return anonymous_response(a, &key);
+    }
     let mut observed_revision = None;
     let mut rejected_read = None;
     let can_read_without_lease = method == Method::Get
@@ -410,6 +432,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             vec![id.clone().into(), loaded_at.into()],
         ).await?;
         create = row.is_null();
+        if create && session_read {
+            return anonymous_response(a, &key);
+        }
         if !create {
             let revision = number(&row, "revision");
             observed_revision = Some(revision);
@@ -449,10 +474,43 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     }
-    ensure(!create || session_read, 401, "LOGIN_REQUIRED")?;
+    let incoming_csrf = a.header("X-CSRF-Token");
+    let initial_write = method == Method::Post
+        && matches!(
+            path,
+            "/api/account/auth/transactions"
+                | "/api/account/auth/login/password"
+                | "/api/account/auth/verification-codes"
+        );
+    if !create && initial_write && incoming_csrf.starts_with("bootstrap.") {
+        // A tab that obtained a bootstrap proof before another tab logged in
+        // cannot replace the current cookie's live session.
+        ensure(!session_exists(a, &id).await?, 409, "VERSION_CONFLICT")?;
+        create = true;
+    }
+    ensure(!create || initial_write, 401, "LOGIN_REQUIRED")?;
+    let expected_csrf = if create {
+        let window = now() / BOOTSTRAP_CSRF_WINDOW_MS;
+        ensure(
+            incoming_csrf == bootstrap_csrf(a, &key, window)
+                || incoming_csrf == bootstrap_csrf(a, &key, window - 1),
+            403,
+            "FORBIDDEN",
+        )?;
+        incoming_csrf
+    } else {
+        csrf(&key, &id)
+    };
     let logout = path == "/api/account/logout" && method == Method::Post;
-    let body = write_input(a, &key, &id, method.clone(), logout, upstream.is_some()).await;
-    if body.is_err() {
+    let body = write_input(
+        a,
+        &expected_csrf,
+        method.clone(),
+        logout,
+        upstream.is_some(),
+    )
+    .await;
+    if !create && body.is_err() {
         // Retain the missing-session response for invalid writes without
         // checking existence on the normal, single-statement claim.
         ensure(session_exists(a, &id).await?, 401, "LOGIN_REQUIRED")?;
@@ -555,6 +613,22 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         Ok(result)
     }
     .await;
+    let completed = if create {
+        match completed {
+            Ok(Ok(payload)) => Ok(Ok(payload)),
+            Err(failure) | Ok(Err(failure)) => {
+                // No response published this new cookie, so no browser can hold the row.
+                a.s.run(
+                    "DELETE FROM auth_web_session WHERE id_hash=?",
+                    vec![id.into()],
+                )
+                .await?;
+                return Err(failure);
+            }
+        }
+    } else {
+        completed
+    };
     if completed.is_err() {
         let released = a.s.one(
             "UPDATE auth_web_session SET status='READY',busy_until=0 WHERE id_hash=? AND revision=? AND status='BUSY' RETURNING revision",
@@ -588,8 +662,7 @@ async fn call_upstream(
 
 async fn write_input(
     a: &mut Auth,
-    key: &str,
-    id: &str,
+    expected_csrf: &str,
     method: Method,
     logout: bool,
     upstream: bool,
@@ -598,7 +671,7 @@ async fn write_input(
         return Ok(if upstream { Value::Null } else { json!({}) });
     }
     ensure(
-        a.header("Origin") == a.origin && a.header("X-CSRF-Token") == csrf(key, id),
+        a.header("Origin") == a.origin && a.header("X-CSRF-Token") == expected_csrf,
         403,
         "FORBIDDEN",
     )?;

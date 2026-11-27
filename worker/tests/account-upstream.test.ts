@@ -233,11 +233,13 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   async function login(label: string) {
     const browser = { cookie: '', csrf: '' }
     assert.equal((await call(browser, '/session')).data.state, 'ANONYMOUS')
-    const anonymousCookie = browser.cookie
+    assert.equal(browser.cookie, '')
     const sent = await call(browser, '/auth/verification-codes', {
       body: { purpose: 'LOGIN', channel: 'EMAIL', address: label + '@billing.example' },
     })
     assert.equal(sent.status, 200)
+    const anonymousCookie = browser.cookie
+    assert.match(anonymousCookie, /^__Host-molis-auth-web=/)
     const code = await db
       .prepare(
         'SELECT m.credential FROM auth_mock_delivery m JOIN auth_verification_challenge c ON c.delivery_id=m.delivery_id WHERE c.id=?',

@@ -10,9 +10,20 @@ test('BFF re-seals a 192,000-byte session and observes a changed encryption bind
   const origin = 'http://127.0.0.1:8787'
   const original = secret(),
     rotated = secret()
-  const p = await getRustProxy({ AUTH_ORIGIN: origin, AUTH_WEB_SESSION_KEY: original })
+  const p = await getRustProxy({
+    AUTH_ORIGIN: origin,
+    AUTH_WEB_SESSION_KEY: original,
+    AUTH_WEB_CLIENT_ID: 'molis-auth-web-local',
+    UNIFIED_ACCOUNT_CONFIG: JSON.stringify({
+      environmentId: 'unified-local',
+      kind: 'LOCAL',
+      authOrigin: origin,
+      deliveryMode: 'MOCK',
+      providerMode: 'MOCK',
+    }),
+  })
   t.after(() => p.dispose())
-  await initializeLocalRuntime(p, false)
+  await initializeLocalRuntime(p)
   let db = p.env.DB
   const cookie = `molis-auth-web=${secret()}`
   const id = hash(cookie.split('=')[1])
@@ -44,7 +55,20 @@ test('BFF re-seals a 192,000-byte session and observes a changed encryption bind
   assert.equal((await rejected.json()).error.code, 'AUTH_UNAVAILABLE')
   const newSession = await session()
   assert.equal(newSession.status, 200)
-  const newCookie = newSession.headers.get('Set-Cookie')!.split(';')[0]
+  assert.equal(newSession.headers.get('Set-Cookie'), null)
+  const started = await p.fetch(
+    new Request(origin + '/api/account/auth/transactions', {
+      method: 'POST',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newSession.headers.get('X-CSRF-Token')!,
+      },
+      body: JSON.stringify({ purpose: 'LOGIN', method: 'EMAIL_PASSWORD' }),
+    }),
+  )
+  assert.equal(started.status, 200, await started.clone().text())
+  const newCookie = started.headers.get('Set-Cookie')!.split(';')[0]
   const newId = hash(newCookie.split('=')[1])
   const newPayload = await db
     .prepare('SELECT payload FROM auth_web_session WHERE id_hash=?')
@@ -155,7 +179,8 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       403,
     )
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
-    assert.ok(cookie && csrf)
+    assert.equal(cookie, '')
+    assert.ok(csrf.startsWith('bootstrap.'))
     assert.equal((await call('/api/account/login-sessions')).status, 401)
     // LOGIN-P1-04: the BFF binds client identity; capabilities expose no proofs or secrets.
     const methods = ['ACCOUNT_PASSWORD', 'EMAIL_CODE', 'PHONE_OTP', 'GOOGLE', 'GITHUB']
@@ -179,8 +204,6 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     assert.equal(disabled.status, 403)
     assert.equal(disabled.error.code, 'POLICY_MISMATCH')
     await db.prepare("UPDATE auth_client SET status='ACTIVE' WHERE client_id='auth-web'").run()
-    const anonymousCookie = cookie
-    const anonymousCsrf = csrf
     assert.equal(
       (
         await call(
@@ -198,6 +221,9 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         address: '+8613800000888',
       }),
     )
+    const anonymousCookie = cookie
+    const anonymousCsrf = csrf
+    assert.ok(anonymousCookie && anonymousCsrf)
     assert.equal(typeof sent.verificationId, 'string')
     assert.equal(sent.challengeId, undefined)
     const code = await db
@@ -713,13 +739,16 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           )
           assert.equal(bootstrap.status, 200)
           assert.equal((await bootstrap.json()).data.state, 'ANONYMOUS')
-          const cookie = bootstrap.headers.get('Set-Cookie')?.split(';')[0]
-          const csrf = bootstrap.headers.get('X-CSRF-Token')
-          assert.ok(cookie && csrf)
+          assert.equal(bootstrap.headers.get('Set-Cookie'), null)
+          let cookie = ''
+          let csrf = bootstrap.headers.get('X-CSRF-Token')!
+          assert.ok(csrf.startsWith('bootstrap.'))
           return {
-            cookie,
-            post: (path: string, body: unknown) =>
-              p.fetch(
+            get cookie() {
+              return cookie
+            },
+            post: async (path: string, body: unknown) => {
+              const response = await p.fetch(
                 new Request(origin + path, {
                   method: 'POST',
                   headers: {
@@ -731,7 +760,11 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
                   },
                   body: JSON.stringify(body),
                 }),
-              ),
+              )
+              cookie = response.headers.get('Set-Cookie')?.split(';')[0] ?? cookie
+              csrf = response.headers.get('X-CSRF-Token') ?? csrf
+              return response
+            },
           }
         }
         function direct(ip: string, address: string) {
@@ -759,7 +792,6 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         const first = await browser(ipA),
           second = await browser(ipA),
           other = await browser(ipB)
-        assert.notEqual(first.cookie, second.cookie)
         const hourlyBucket = (ip: string) => hash(`delivery:ip-hour:${ip}`)
         const bucketHits = async (bucketHash: string) =>
           (
@@ -793,6 +825,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
 
         const accepted = await first.post(sendPath, sendBody('quota-first@example.test'))
         assert.equal(accepted.status, 200, await accepted.text())
+        assert.notEqual(first.cookie, second.cookie)
         await assertThrottled(() => second.post(sendPath, sendBody('quota-same-ip@example.test')))
         const otherIp = await other.post(sendPath, sendBody('quota-other-ip@example.test'))
         assert.equal(otherIp.status, 200, await otherIp.text())
@@ -1019,8 +1052,15 @@ test(
     async function browser(): Promise<Browser> {
       const response = await request()
       assert.equal((await data(response)).state, 'ANONYMOUS')
-      const cookie = response.headers.getSetCookie()[0]?.split(';')[0]
-      const csrf = response.headers.get('X-CSRF-Token')
+      assert.deepEqual(response.headers.getSetCookie(), [])
+      const bootstrap = response.headers.get('X-CSRF-Token')!
+      const started = await request(undefined, '/auth/transactions', {
+        body: { purpose: 'LOGIN', method: 'EMAIL_PASSWORD' },
+        headers: { 'X-CSRF-Token': bootstrap },
+      })
+      await data(started)
+      const cookie = started.headers.getSetCookie()[0]?.split(';')[0]
+      const csrf = started.headers.get('X-CSRF-Token')
       assert.ok(cookie && csrf)
       return { cookie, csrf, id: hash(cookie.slice('molis-auth-web='.length)) }
     }
@@ -1164,18 +1204,18 @@ test(
     }
 
     await t.test(
-      'capabilities use only one configuration read and leave session bootstrap to /session',
+      'capabilities read configuration once and anonymous sessions perform no D1 work',
       async () => {
         const [capabilities, created] = await Promise.all([
           traced({ read: 1, write: 0 }, undefined, '/auth/capabilities'),
-          traced({ read: 0, write: 2 }),
+          traced({ read: 0, write: 0 }),
         ])
         const methods = (await data(capabilities)).methods
         assert.ok(methods.includes('ACCOUNT_PASSWORD'))
         assert.deepEqual(capabilities.headers.getSetCookie(), [])
         assert.equal(capabilities.headers.get('X-CSRF-Token'), null)
         assert.equal((await data(created)).state, 'ANONYMOUS')
-        assert.equal(created.headers.getSetCookie().length, 1)
+        assert.equal(created.headers.getSetCookie().length, 0)
         assert.ok(created.headers.get('X-CSRF-Token'))
 
         const anonymous = await browser()
