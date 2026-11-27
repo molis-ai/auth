@@ -716,15 +716,6 @@ fn read_without_lease(path: &str) -> bool {
         "/api/account/tenants/{tenantId}/invitations",
         "/api/account/invitations",
         "/api/account/ownership-transfers",
-        "/api/account/catalog/plans",
-        "/api/account/catalog/features",
-        "/api/account/subscriptions",
-        "/api/account/tenants/{tenantId}/subscriptions",
-        "/api/account/tenants/{tenantId}/seat-pools",
-        "/api/account/tenants/{tenantId}/seat-assignments",
-        "/api/account/platform/subscriptions",
-        "/api/account/platform/subscriptions/{subscriptionId}",
-        "/api/account/platform/subscriptions/{subscriptionId}/seat-pools",
         "/api/account/tenants/{tenantId}/audit-events",
         "/api/account/platform/audit-events",
     ];
@@ -737,7 +728,6 @@ fn product_target(path: &str, query: Option<&str>) -> String {
     let suffix = path.strip_prefix("/api/account").expect("prefix");
     let mut target = match suffix {
         "/me" => "/api/v2/users/me".to_owned(),
-        path if path.starts_with("/subscriptions") => format!("/api/v2/users/me{path}"),
         path => format!("/api/v2{path}"),
     };
     if let Some(query) = query {
@@ -865,10 +855,6 @@ mod tests {
         for (request, target) in [
             ("/api/account/me", "/api/v2/users/me"),
             ("/api/account/me?", "/api/v2/users/me?"),
-            (
-                "/api/account/subscriptions",
-                "/api/v2/users/me/subscriptions",
-            ),
             (
                 "/api/account/tenants/%2F/members?x=%2F&x=+",
                 "/api/v2/tenants/%2F/members?x=%2F&x=+",

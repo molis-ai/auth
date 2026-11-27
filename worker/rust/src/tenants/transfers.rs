@@ -1,4 +1,4 @@
-//! Ownership transfer swaps roles atomically and never changes seat assignments.
+//! Ownership transfer swaps roles atomically.
 use crate::{
     auth::management_access::{self as protocol, ACTOR, Read},
     auth::management_access::{Action, Change, Context, Service, expected},

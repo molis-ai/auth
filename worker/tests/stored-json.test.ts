@@ -78,11 +78,7 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
         now,
       ),
       statement(
-        "INSERT INTO billing_plan_version VALUES ('fixture-plan',1,'Fixture','admin',?)",
-        now,
-      ),
-      statement(
-        "INSERT INTO auth_management_audit(id,actor_user_id,client_id,operation,target_type,target_id,outcome,request_id,occurred_at) VALUES ('fixture-audit','admin','molis-work-unified-local','fixture.operation','PLAN','fixture-plan','DENIED','fixture-request-id',?)",
+        "INSERT INTO auth_management_audit(id,actor_user_id,client_id,operation,target_type,target_id,outcome,request_id,occurred_at) VALUES ('fixture-audit','admin','molis-work-unified-local','fixture.operation','TENANT','fixture-tenant','DENIED','fixture-request-id',?)",
         now,
       ),
     ])
@@ -112,14 +108,6 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
       assert.equal(log.code, 'AUTH_UNAVAILABLE')
       assert.equal(log.status, 503)
     }
-
-    await t.test('catalog rejects a corrupt computed definition', async () => {
-      const path = '/api/v2/catalog/plans'
-      const baseline = await successful(path)
-      assert.equal(baseline.items[0].planId, 'fixture-plan')
-      await statement('INSERT INTO fixture_stored_json VALUES (?,?)', 'definition', '{').run()
-      await unavailable(path, path)
-    })
 
     await t.test('audit projection preserves a null summary and rejects corrupt JSON', async () => {
       const path = '/api/v2/platform/audit-events'

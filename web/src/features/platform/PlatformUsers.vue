@@ -42,9 +42,6 @@ const capabilityDescriptions: Record<string, string> = {
   TENANT_CREATE: "代表平台创建并分配新的团队空间",
   TENANT_READ: "查看平台内所有团队空间与成员概览",
   TENANT_STATUS: "停用或恢复团队空间的启用状态",
-  CATALOG_WRITE: "维护订阅产品目录与套餐价格配置",
-  SUBSCRIPTION_WRITE: "调整平台侧订阅状态与配额变更",
-  SUBSCRIPTION_READ: "查看平台侧订阅与账务审计状态",
   AUDIT_READ: "查看平台审计日志与安全变更记录",
 };
 const capabilities = __AUTH_PLATFORM_CAPABILITIES__;

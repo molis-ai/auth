@@ -144,7 +144,6 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         (await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()).n,
         mode === undefined || mode === 'SELF_SERVICE' ? 3 : 1,
       )
-      assert.equal((await db.prepare('SELECT count(*) n FROM billing_subscription').first()).n, 0)
       const platformBody = {
         name: 'Assigned tenant',
         ownerUserId: 'other',

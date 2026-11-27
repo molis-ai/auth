@@ -22,7 +22,7 @@ export interface AuditEvent {
   requestId?: string;
 }
 
-export type AuditCategory = "all" | "account" | "tenant" | "app" | "billing";
+export type AuditCategory = "all" | "account" | "tenant" | "app";
 export type ResolvedAuditCategory = Exclude<AuditCategory, "all">;
 
 export function platformAuditPath(options: {
@@ -75,14 +75,6 @@ const OPERATION_META: Record<string, AuditOperationMeta> = {
   "client.update": { label: "更新客户端配置", category: "app" },
   "client.secret-rotate": { label: "轮换客户端密钥", category: "app" },
   "client.revoke": { label: "吊销客户端", category: "app" },
-  "catalog.feature-create": { label: "新增目录功能项", category: "billing" },
-  "catalog.plan-create": { label: "新增订阅套餐", category: "billing" },
-  "subscription.create": { label: "创建订阅", category: "billing" },
-  "subscription.update": { label: "调整订阅与席位", category: "billing" },
-  "subscription.renew": { label: "续期订阅", category: "billing" },
-  "seat.assign": { label: "分配团队席位", category: "billing" },
-  "seat.release": { label: "释放团队席位", category: "billing" },
-  "seat.reassign": { label: "改派团队席位", category: "billing" },
 };
 
 export function auditOperationMeta(operation: string): AuditOperationMeta {
@@ -93,9 +85,6 @@ export function auditOperationMeta(operation: string): AuditOperationMeta {
   }
   if (/^(application|client)\./.test(operation)) {
     return { label: operation, category: "app" };
-  }
-  if (/^(catalog|subscription|seat)\./.test(operation)) {
-    return { label: operation, category: "billing" };
   }
   return { label: operation, category: "account" };
 }

@@ -84,13 +84,6 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
             "account" => &["user.*", "permission.*"][..],
             "tenant" => &["tenant.*", "member.*", "invitation.*", "transfer.*"],
             "app" => &["application.*", "client.*"],
-            "billing" => &[
-                "catalog.*",
-                "subscription.*",
-                "pool.*",
-                "seat.*",
-                "billing.*",
-            ],
             _ => return Err(Failure::invalid_request()),
         };
         let predicate = vec!["a.operation GLOB ?"; prefixes.len()].join(" OR ");

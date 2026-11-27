@@ -66,8 +66,19 @@ test('0021–0023 add the same indexes to a new database and a populated 0020 da
     upgraded.exec(
       readFileSync(new URL('0023_platform_query_indexes.sql', migrationDirectory), 'utf8'),
     )
+    upgraded.exec(
+      readFileSync(new URL('0024_drop_legacy_billing_tables.sql', migrationDirectory), 'utf8'),
+    )
     assert.deepEqual(rows(), before)
     assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), [])
+    for (const db of [fresh, upgraded]) {
+      assert.deepEqual(
+        db
+          .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name GLOB 'billing_*'")
+          .all(),
+        [],
+      )
+    }
     const indexes = {
       ix_ownership_transfer_from: ['from_membership_id', 'id'],
       ix_ownership_transfer_to: ['to_membership_id', 'id'],

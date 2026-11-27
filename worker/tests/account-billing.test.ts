@@ -440,7 +440,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     (await call(browser, '/session', { upstream: unavailable })).data.state,
     'AUTHENTICATED',
   )
-  assert.equal((await call(browser, '/catalog/plans', { upstream: unavailable })).status, 200)
+  assert.equal((await call(browser, '/tenants', { upstream: unavailable })).status, 200)
 
   await run('UPDATE auth_login_session SET revoked_at=? WHERE id=?', at, other.login)
   await expectError(call(other.browser, balance), 401, 'SESSION_EXPIRED')

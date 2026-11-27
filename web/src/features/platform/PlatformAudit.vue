@@ -66,7 +66,6 @@ const categories: ReadonlyArray<{ id: AuditCategory; label: string }> = [
   { id: "account", label: "账号与权限" },
   { id: "tenant", label: "团队与成员" },
   { id: "app", label: "应用与客户端" },
-  { id: "billing", label: "订阅与目录" },
 ];
 
 watch(

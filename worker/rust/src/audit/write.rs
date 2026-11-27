@@ -45,14 +45,3 @@ pub(crate) fn success(
         ],
     )
 }
-
-/// Build the audit rows from the same still-assigned set that the seat
-/// transition will update inside the transaction.
-pub(crate) fn member_seat_releases(
-    service: &Service<'_>,
-    m: &Value,
-    reason: &str,
-    n: i64,
-) -> Result<D1PreparedStatement> {
-    service.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) SELECT lower(hex(randomblob(16))),?,?,tenant_id,'seat.member-release','ASSIGNMENT',id,'SUCCESS',?,json_object('membershipId',membership_id,'subscriptionId',subscription_id,'seatTypeId',seat_type_id,'userId',user_id,'changes',json_array(json_object('field','status','before','ASSIGNED','after','ENDED'),json_object('field','endReason','before',NULL,'after',?))),?,? FROM billing_seat_assignment WHERE tenant_id=? AND membership_id=? AND status='ASSIGNED'",vec![service.user(),service.s["client_id"].clone(),reason.into(),reason.into(),service.a.request_id.clone().into(),n.into(),m["tenant_id"].clone(),m["id"].clone()])
-}
