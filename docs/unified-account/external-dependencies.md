@@ -16,11 +16,11 @@
 
 记录进度时分别填资源状态（待申请、已提交、已获批）、适配状态（mock、LIVE 已实现）和联调证据（待验、实际送达或官方回调已验）。每次提交补控制台工单或应用引用、账号归属、环境、负责人和日期。真实密钥值由管理员放入目标环境的秘密存储。
 
-现行 v2 投递与验证见 [delivery.rs](../../worker/rust/src/delivery.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](../history/mail-delivery.md)
+现行 v2 投递与验证见 [delivery/mod.rs](../../worker/rust/src/delivery/mod.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](../history/mail-delivery.md)
 
 GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [management.rs](../../worker/rust/src/account/management.rs) · [unified_policy.rs](../../worker/rust/src/core/contracts/unified_policy.rs)
 
-租户定向邀请使用同样的投递渠道，但走独立的通知路径。若随本批启用真实邀请，补相应通知模板及验收，单独跟踪。[邀请投递](../../worker/rust/src/delivery.rs)
+租户定向邀请使用同样的投递渠道，但走独立的通知路径。若随本批启用真实邀请，补相应通知模板及验收，单独跟踪。[邀请投递](../../worker/rust/src/delivery/mod.rs)
 
 ## 短信横评
 

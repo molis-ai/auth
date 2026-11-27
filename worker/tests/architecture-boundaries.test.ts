@@ -16,7 +16,6 @@ const domains = [
   'tenants',
   'web',
 ]
-const rootFiles = ['core', 'lib', ...domains].map((name) => name + '.rs')
 const directUse = new RegExp(`\\b(?:crate|super)\\s*::\\s*(?:${domains.join('|')})\\b`, 'm')
 
 function sourceFiles(directory: string): string[] {
@@ -44,18 +43,15 @@ function refersToDomain(content: string): boolean {
   return false
 }
 
-test('Rust source root contains entry files and domain directories', () => {
+test('Rust source root contains only the Worker entry and router files', () => {
   const files = readdirSync(source, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
-  assert.deepEqual(
-    files.filter((file) => !rootFiles.includes(file)),
-    [],
-  )
+  assert.deepEqual(files.sort(), ['app.rs', 'lib.rs'])
 })
 
 test('Rust core does not reference the application or business domains', () => {
-  const violations = [join(source, 'core.rs'), ...sourceFiles(join(source, 'core'))]
+  const violations = sourceFiles(join(source, 'core'))
     .filter((file) => extname(file) === '.rs' && refersToDomain(readFileSync(file, 'utf8')))
     .map((file) => relative(source, file))
   assert.deepEqual(violations, [])
