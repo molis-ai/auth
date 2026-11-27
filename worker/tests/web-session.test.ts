@@ -1307,36 +1307,38 @@ test(
       ])
     })
 
-    await t.test('cursor issuance rechecks the initial READY revision', async () => {
-      const { b, userId } = await authenticated()
-      await db
-        .prepare(
-          "INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at) VALUES (?,'USER_READ','ACTIVE',?,?)",
-        )
-        .bind(userId, userId, Date.now())
-        .run()
-      const path = '/platform/users?limit=1'
-      const before = await row(b)
-      const first = await data(await traced({ read: 2, write: 1 }, b, path))
-      assert.ok(first.nextCursor)
-      await data(await request(b, path + '&cursor=' + first.nextCursor))
-      assert.deepEqual(await row(b), before)
+    await t.test(
+      'read-only cursors use the initial READY revision in the page snapshot',
+      async () => {
+        const { b, userId } = await authenticated()
+        await db
+          .prepare(
+            "INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at) VALUES (?,'USER_READ','ACTIVE',?,?)",
+          )
+          .bind(userId, userId, Date.now())
+          .run()
+        const path = '/platform/users?limit=1'
+        const before = await row(b)
+        const first = await data(await traced({ read: 2, write: 0 }, b, path))
+        assert.ok(first.nextCursor)
+        await data(await request(b, path + '&cursor=' + first.nextCursor))
+        assert.deepEqual(await row(b), before)
 
-      const cursorCount = () =>
-        db.prepare("SELECT count(*) n FROM auth_one_use WHERE purpose='V2_TENANT_CURSOR'").first()
-      const count = await cursorCount()
-      const stale = await pause(b, 'cursor-write', path)
-      await data(await request(b, '/activity', activity))
-      await conflict(await stale())
-      assert.deepEqual(await cursorCount(), count)
-      assertReady(await row(b), Number(before.revision) + 1)
+        const cursorCount = () => db.prepare('SELECT count(*) n FROM auth_one_use').first()
+        const count = await cursorCount()
+        const stale = await pause(b, 'managed-list-before', path)
+        await data(await request(b, '/activity', activity))
+        await conflict(await stale())
+        assert.deepEqual(await cursorCount(), count)
+        assertReady(await row(b), Number(before.revision) + 1)
 
-      const pending = await pause(b, 'cursor-write', path)
-      await data(await request(b, '/logout', logout))
-      await conflict(await pending())
-      assert.deepEqual(await cursorCount(), count)
-      assertReady(await row(b), Number(before.revision) + 2)
-    })
+        const pending = await pause(b, 'managed-list-before', path)
+        await data(await request(b, '/logout', logout))
+        await conflict(await pending())
+        assert.deepEqual(await cursorCount(), count)
+        assertReady(await row(b), Number(before.revision) + 2)
+      },
+    )
 
     await t.test('a rejected read only clears its original revision', async () => {
       const { b, loginId } = await authenticated()

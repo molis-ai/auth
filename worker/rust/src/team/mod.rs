@@ -578,7 +578,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Some(Lookup {
                 sql: format!("{TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::Detail(|ctx| {
                 let mut t = ctx.record.clone();
@@ -593,7 +593,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Some(Lookup {
                 sql: format!("{PLATFORM_TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::Detail(|ctx| Ok(platform_view(&ctx.record))),
         ),
@@ -614,7 +614,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             (op == "member.platform-list").then(|| Lookup {
                 sql: "SELECT id FROM auth_tenant WHERE id=?".into(),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::page(
                 "SELECT m.*,u.display_name,(SELECT e.canonical_email FROM auth_user_email e

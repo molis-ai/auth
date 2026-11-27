@@ -1130,21 +1130,16 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           400,
         )
         const fresh = ok(await call('/platform/tenants?limit=1', undefined, platform))
-        await db
-          .prepare('UPDATE auth_one_use SET expires_at=0 WHERE token_hash=?')
-          .bind(hash(fresh.nextCursor))
-          .run()
+        const [payload, signature] = fresh.nextCursor.split('.')
+        const tampered = `${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
         assert.equal(
-          (await call('/platform/tenants?limit=1&cursor=' + fresh.nextCursor, undefined, platform))
-            .status,
+          (await call('/platform/tenants?limit=1&cursor=' + tampered, undefined, platform)).status,
           400,
         )
       },
     )
     async function cursorCount() {
-      const result = await db
-        .prepare("SELECT count(*) n FROM auth_one_use WHERE purpose='V2_TENANT_CURSOR'")
-        .first()
+      const result = await db.prepare('SELECT count(*) n FROM auth_one_use').first()
       return result.n
     }
     async function atListSnapshot(
@@ -1183,7 +1178,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       const path = '/platform/tenants?limit=' + limit
       const firstResponse = await calls(path, platform)
       const paged = ok(firstResponse)
-      assert.deepEqual(firstResponse.d1Calls, { read: 1, write: 1 })
+      assert.deepEqual(firstResponse.d1Calls, oneRead)
       assert.ok(paged.nextCursor)
       await permission(platform, 'APPLICATION_READ')
       await db
@@ -1207,10 +1202,10 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         }
         const finalResponse = await calls(path + '&cursor=' + paged.nextCursor, platform)
         const finalPage = ok(finalResponse)
-        assert.deepEqual(finalResponse.d1Calls, { read: 2, write: 0 })
+        assert.deepEqual(finalResponse.d1Calls, oneRead)
         assert.equal(finalPage.nextCursor, null)
         assert.deepEqual(finalPage.items, all.items.slice(limit))
-        assert.equal(await cursorCount(), n + 1)
+        assert.equal(await cursorCount(), n)
       } finally {
         await db.prepare('DROP TRIGGER fixture_block_read_writes').run()
       }
@@ -1300,7 +1295,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
     )
 
     await suite.test(
-      'UAS-26 validates current authorization in the list snapshot and again before a cursor write',
+      'UAS-26 issues cursors from one authorized snapshot and rechecks scope on the next request',
       async () => {
         const path = '/platform/tenants'
         const terminal = path + '?limit=100'
@@ -1324,8 +1319,12 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const permissionDrift = await atListSnapshot(paginated, reader, 'after', () =>
           permission(reader, 'TENANT_READ'),
         )
-        assert.equal(permissionDrift.status, 409)
-        assert.equal(permissionDrift.error.code, 'VERSION_CONFLICT')
+        const permissionCursor = ok(permissionDrift).nextCursor
+        assert.ok(permissionCursor)
+        assert.equal(
+          (await call(paginated + '&cursor=' + permissionCursor, undefined, reader)).status,
+          400,
+        )
         assert.equal(await cursorCount(), n)
 
         const members = '/tenants/' + alpha.tenantId + '/members?limit=1'
@@ -1337,8 +1336,12 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(alpha.tenantId, other.userId)
             .run(),
         )
-        assert.equal(membershipDrift.status, 409)
-        assert.equal(membershipDrift.error.code, 'VERSION_CONFLICT')
+        const membershipCursor = ok(membershipDrift).nextCursor
+        assert.ok(membershipCursor)
+        assert.equal(
+          (await call(members + '&cursor=' + membershipCursor, undefined, other)).status,
+          400,
+        )
         assert.equal(await cursorCount(), n)
 
         const first = all.items[0]
@@ -1352,7 +1355,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         )
         assert.deepEqual(rowDrift.items, [first])
         assert.ok(rowDrift.nextCursor)
-        assert.equal(await cursorCount(), n + 1)
+        assert.equal(await cursorCount(), n)
 
         const revoked = await atListSnapshot(paginated, reader, 'after', () =>
           db
@@ -1360,9 +1363,8 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(Date.now(), reader.session.loginSessionId)
             .run(),
         )
-        assert.equal(revoked.status, 409)
-        assert.equal(revoked.error.code, 'VERSION_CONFLICT')
-        assert.equal(await cursorCount(), n + 1)
+        assert.ok(ok(revoked).nextCursor)
+        assert.equal(await cursorCount(), n)
         const denied = await call(terminal, undefined, reader)
         assert.equal(denied.status, 401)
         assert.equal(denied.error.code, 'SESSION_EXPIRED')

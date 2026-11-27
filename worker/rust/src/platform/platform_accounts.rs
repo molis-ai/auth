@@ -115,7 +115,6 @@ pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
     let user = || Lookup {
         sql: format!("{USERS} WHERE u.id=?"),
         id: action.id.clone(),
-        guard: Some(user_guard),
     };
     let (lookup, plan) = match action.op {
         "user.get" => (Some(user()), Read::Detail(|ctx| Ok(user_view(&ctx.record)))),

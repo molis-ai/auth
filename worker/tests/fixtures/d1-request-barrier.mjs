@@ -14,7 +14,6 @@ const points = {
   'session-read-after': ['first', 'SELECT revision,status,busy_until,payload', 'after'],
   'account-read-after': ['batch', 'credential_session', 'after'],
   'activity-credential-after': ['first', 'credential_session', 'after'],
-  'cursor-write': ['batch', "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR'"],
   'managed-list-before': ['batch', 'WITH actor AS (SELECT'],
   'managed-list-after': ['batch', 'WITH actor AS (SELECT', 'after'],
   'first-phone-binding': ['first', 'FROM auth_user_phone p JOIN auth_user u', 'after'],

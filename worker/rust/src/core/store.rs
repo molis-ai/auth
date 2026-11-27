@@ -5,7 +5,7 @@ use worker::{D1Database, D1PreparedStatement, D1Result};
 
 pub(crate) enum WebSessionAccess {
     Lease(String, i64),
-    ReadSnapshot(String, i64),
+    ReadOnly(String, i64),
 }
 
 pub struct Store {
@@ -101,19 +101,18 @@ impl Store {
         statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
-        self.write_batch(statements, conflict, false)
-            .await
-            .map(|_| ())
+        self.write_batch(statements, conflict).await.map(|_| ())
     }
-    pub(crate) async fn batch_page_cursor(
-        &self,
-        statements: Vec<D1PreparedStatement>,
-    ) -> Result<()> {
-        // A page read may issue a scoped cursor without changing its browser session.
-        self.write_batch(statements, "VERSION_CONFLICT", true)
-            .await
-            .map(|_| ())
+    pub(crate) fn read_browser_session(&self) -> Result<Option<D1PreparedStatement>> {
+        match &self.web_session_access {
+            Some(WebSessionAccess::ReadOnly(id, revision)) => self.statement(
+                "SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='READY' AND expires_at>?",
+                vec![id.as_str().into(), (*revision).into(), now().into()],
+            ).map(Some),
+            _ => Ok(None),
+        }
     }
+
     pub(crate) async fn batch_returning(
         &self,
         mut statements: Vec<D1PreparedStatement>,
@@ -123,7 +122,7 @@ impl Store {
         let index = statements.len() + usize::from(self.web_session_access.is_some());
         statements.push(returning);
         let started = now();
-        let results = self.write_batch(statements, conflict, false).await?;
+        let results = self.write_batch(statements, conflict).await?;
         let result = results.get(index).ok_or_else(Failure::unavailable)?;
         self.result_rows(result, "d1.batch", started)?
             .into_iter()
@@ -170,15 +169,11 @@ impl Store {
         &self,
         mut statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
-        page_cursor: bool,
     ) -> Result<Vec<D1Result>> {
         if let Some(access) = &self.web_session_access {
             let (id, revision, status) = match access {
                 WebSessionAccess::Lease(id, revision) => (id, revision, "BUSY"),
-                WebSessionAccess::ReadSnapshot(id, revision) if page_cursor => {
-                    (id, revision, "READY")
-                }
-                WebSessionAccess::ReadSnapshot(..) => return Err(Failure::unavailable()),
+                WebSessionAccess::ReadOnly(..) => return Err(Failure::unavailable()),
             };
             statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status=? AND expires_at>?)", vec![id.clone().into(),(*revision).into(),status.into(),now().into()])?);
         }

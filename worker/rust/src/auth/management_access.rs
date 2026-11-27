@@ -1,12 +1,10 @@
 //! Management request protocol: current authorization, scoped pagination and atomic retry receipts.
 use crate::core::management_protocol::{PageOrder, PageQuery, PageRequest};
-use crate::{
-    auth::login_sessions,
-    core::http::*,
-    core::identity::Auth,
-    core::security::{hash, secret},
-};
+use crate::{auth::login_sessions, core::http::*, core::identity::Auth, core::security::hash};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
+use sha2::Sha256;
 use worker::D1PreparedStatement;
 
 pub(crate) struct Service<'a> {
@@ -182,7 +180,6 @@ pub enum Access {
 pub struct Lookup {
     pub sql: String,
     pub id: String,
-    pub guard: Option<fn(&Service<'_>, &Value) -> Result<D1PreparedStatement>>,
 }
 
 pub enum Read {
@@ -223,47 +220,82 @@ impl From<PageQuery> for Read {
     }
 }
 
-const CURSOR_ROW: &str = "SELECT binding_hash,payload FROM auth_one_use
-    WHERE token_hash=? AND purpose='V2_TENANT_CURSOR' AND expires_at>?";
+const CURSOR_TTL_MS: i64 = 15 * 60_000;
+const CURSOR_DOMAIN: &[u8] = b"molis-auth/management-cursor/v1\0";
+
+fn invalid_cursor() -> Failure {
+    Failure {
+        status: 400,
+        code: "INVALID_REQUEST",
+    }
+}
+
+fn cursor_mac(a: &Auth, payload: &str) -> Result<Hmac<Sha256>> {
+    let key = a.env.secret("AUTH_WEB_SESSION_KEY")?.to_string();
+    let key = URL_SAFE_NO_PAD
+        .decode(key)
+        .map_err(|_| Failure::unavailable())?;
+    ensure(key.len() == 32, 503, "AUTH_UNAVAILABLE")?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(&key).map_err(|_| Failure::unavailable())?;
+    mac.update(CURSOR_DOMAIN);
+    mac.update(payload.as_bytes());
+    Ok(mac)
+}
+
+fn open_cursor(a: &Auth, cursor: &str, request_scope: &str) -> Result<Value> {
+    let (payload, signature) = cursor.split_once('.').ok_or_else(invalid_cursor)?;
+    let signature = URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_err(|_| invalid_cursor())?;
+    cursor_mac(a, payload)?
+        .verify_slice(&signature)
+        .map_err(|_| invalid_cursor())?;
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| invalid_cursor())?;
+    let value: Value = serde_json::from_slice(&payload).map_err(|_| invalid_cursor())?;
+    ensure(
+        value["requestScope"] == request_scope && number(&value, "exp") > now(),
+        400,
+        "INVALID_REQUEST",
+    )?;
+    Ok(value)
+}
+
+fn sign_cursor(a: &Auth, scope: &str, authority: &Value, anchor: Value) -> Result<Value> {
+    let payload = URL_SAFE_NO_PAD.encode(
+        json!({
+            "requestScope":scope,
+            "scopeHash":hash(&authority.to_string()),
+            "authority":authority,
+            "anchor":anchor,
+            "exp":now()+CURSOR_TTL_MS,
+        })
+        .to_string(),
+    );
+    let signature = URL_SAFE_NO_PAD.encode(cursor_mac(a, &payload)?.finalize().into_bytes());
+    Ok(format!("{payload}.{signature}").into())
+}
 
 struct Snapshot<'a> {
     service: Service<'a>,
     ctx: Context,
 }
 impl Snapshot<'_> {
-    fn scope(
-        &self,
-        action: &Action,
-        page: &PageRequest,
-        filters: &Value,
-        order: PageOrder,
-    ) -> String {
+    fn authority(&self) -> Value {
         let Snapshot { service, ctx } = self;
-        let mut binding = json!({"user":service.s["user_id"],"client":service.s["client_id"],"environment":service.c["environment_id"],"path":action.path,"limit":page.limit,"membership":ctx.member,"permission":ctx.permission,"tenantVersion":ctx.tenant["version"],"filters":filters});
-        if let Some(column) = order.time_column() {
-            binding["order"] = json!(column);
-        }
-        hash(&binding.to_string())
+        json!({
+            "user":service.s["user_id"],
+            "client":service.s["client_id"],
+            "environment":service.c["environment_id"],
+            "membership":ctx.member["id"],
+            "memberVersion":ctx.member["version"],
+            "permissionVersion":ctx.permission["version"],
+            "tenantVersion":ctx.tenant["version"],
+        })
     }
 }
 
-fn validate_cursor(row: &Value, scope: &str) -> Result<Value> {
-    ensure(row["binding_hash"] == scope, 400, "INVALID_REQUEST")?;
-    parsed(row, "payload")
-}
-
-struct Cursor<'a> {
-    page: &'a PageRequest,
-    filters: &'a Value,
-    hash: &'a str,
-    order: PageOrder,
-}
-struct CursorSnapshot<'a> {
-    snapshot: Snapshot<'a>,
-    binding: String,
-    payload: Value,
-    after: Value,
-}
 struct ReadQuery<'a> {
     a: &'a Auth,
     action: &'a Action,
@@ -339,15 +371,12 @@ impl<'a> ReadQuery<'a> {
         Ok(Snapshot { service, ctx })
     }
 
-    fn actor(&self, expected: Option<&Snapshot<'_>>) -> (String, Vec<Value>) {
+    fn actor(&self, expected: Option<&Value>) -> (String, Vec<Value>) {
         let mut values = self.principal_args.clone();
         let mut required = Vec::new();
-        if let Some(snapshot) = expected {
+        if let Some(authority) = expected {
             required.push("principal.user_id=? AND principal.client_id=?".to_owned());
-            values.extend([
-                snapshot.service.user(),
-                snapshot.service.s["client_id"].clone(),
-            ]);
+            values.extend([authority["user"].clone(), authority["client"].clone()]);
         }
         match self.access {
             Access::Session => {}
@@ -356,9 +385,9 @@ impl<'a> ReadQuery<'a> {
                 let mut sql = format!(
                     "EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=principal.user_id AND {ACTIVE_PERMISSION}"
                 );
-                if let Some(snapshot) = expected {
+                if let Some(authority) = expected {
                     sql.push_str(" AND version=?");
-                    values.push(snapshot.ctx.permission["version"].clone());
+                    values.push(authority["permissionVersion"].clone());
                 }
                 required.push(sql + ")");
             }
@@ -369,20 +398,20 @@ impl<'a> ReadQuery<'a> {
                      WHERE user_id=principal.user_id AND {ACTIVE_MEMBER}
                      AND role IN (SELECT value FROM json_each(?))"
                 );
-                if let Some(snapshot) = expected {
+                if let Some(authority) = expected {
                     sql.push_str(" AND id=? AND version=?");
                     values.extend([
-                        snapshot.ctx.member["id"].clone(),
-                        snapshot.ctx.member["version"].clone(),
+                        authority["membership"].clone(),
+                        authority["memberVersion"].clone(),
                     ]);
                 }
                 sql.push_str(
                     " AND EXISTS(SELECT 1 FROM auth_tenant
                     WHERE id=tenant_id AND status='ACTIVE'",
                 );
-                if let Some(snapshot) = expected {
+                if let Some(authority) = expected {
                     sql.push_str(" AND version=?");
-                    values.push(snapshot.ctx.tenant["version"].clone());
+                    values.push(authority["tenantVersion"].clone());
                 }
                 required.push(sql + "))");
             }
@@ -418,45 +447,35 @@ impl<'a> ReadQuery<'a> {
         sql: &str,
         args: &[Value],
         order: PageOrder,
-        cursor: Option<(&Cursor<'_>, &CursorSnapshot<'_>, i64)>,
+        cursor: Option<&Value>,
     ) -> Result<D1PreparedStatement> {
-        let (actor, mut values) = self.actor(cursor.map(|(_, saved, _)| &saved.snapshot));
+        let (actor, mut values) = self.actor(cursor.map(|saved| &saved["authority"]));
         values.extend_from_slice(args);
         let (anchor, sort) = if let Some(column) = order.time_column() {
             let sort = format!("{column} DESC, id DESC");
-            let anchor = if let Some((_, saved, _)) = cursor {
+            let anchor = if let Some(saved) = cursor {
                 ensure(
-                    saved.after["time"].is_i64() && saved.after["id"].is_string(),
+                    saved["anchor"]["time"].is_i64() && saved["anchor"]["id"].is_string(),
                     400,
                     "INVALID_REQUEST",
                 )?;
-                values.extend([saved.after["time"].clone(), saved.after["id"].clone()]);
+                values.extend([
+                    saved["anchor"]["time"].clone(),
+                    saved["anchor"]["id"].clone(),
+                ]);
                 format!(" WHERE ({column},id)<(?,?)")
             } else {
                 String::new()
             };
             (anchor, sort)
         } else {
-            values.push(
-                cursor.map_or_else(|| json!(""), |(_, saved, _)| saved.after["after"].clone()),
-            );
+            values.push(cursor.map_or_else(|| json!(""), |saved| saved["anchor"]["after"].clone()));
             (" WHERE id>?".into(), "id".into())
         };
         let mut gate = "EXISTS(SELECT 1 FROM actor)".to_owned();
         if let Some(target) = self.lookup {
             gate.push_str(&format!(" AND EXISTS(SELECT 1 FROM ({}))", target.sql));
             values.push(target.id.clone().into());
-        }
-        if let Some((cursor, saved, time)) = cursor {
-            gate.push_str(&format!(
-                " AND EXISTS(SELECT 1 FROM ({CURSOR_ROW}) WHERE binding_hash=? AND payload=?)"
-            ));
-            values.extend([
-                cursor.hash.into(),
-                time.into(),
-                saved.binding.clone().into(),
-                saved.payload.clone(),
-            ]);
         }
         values.push(size.into());
         // SQLite evaluates LIMIT first. A zero limit skips the protected
@@ -473,49 +492,6 @@ impl<'a> ReadQuery<'a> {
             login_sessions::bearer(&self.a.header("Authorization")),
         )
         .map(|(_, statement)| statement)
-    }
-
-    async fn probe(&self, cursor: Option<&Cursor<'_>>) -> Result<Option<CursorSnapshot<'a>>> {
-        let mut statements = self.prerequisites(self.credential()?)?;
-        statements.extend(self.lookup_statement()?);
-        if let Some(cursor) = cursor {
-            statements.push(
-                self.a
-                    .s
-                    .statement(CURSOR_ROW, vec![cursor.hash.into(), now().into()])?,
-            );
-        }
-        let mut rows = match self.a.s.batch_read(statements).await {
-            Ok(rows) => rows.into_iter(),
-            Err(error) => {
-                // A broken data source can fail at SQL compilation before
-                // SQLite evaluates LIMIT. Check authorization without it.
-                login_sessions::active(self.a).await?;
-                let mut rows = self
-                    .a
-                    .s
-                    .batch_read(self.prerequisites(self.credential()?)?)
-                    .await?
-                    .into_iter();
-                self.context(&mut rows, false)?;
-                return Err(error);
-            }
-        };
-        let snapshot = self.context(&mut rows, true)?;
-        cursor
-            .map(|cursor| {
-                let row = first(&mut rows)?;
-                let binding =
-                    snapshot.scope(self.action, cursor.page, cursor.filters, cursor.order);
-                let after = validate_cursor(&row, &binding)?;
-                Ok(CursorSnapshot {
-                    snapshot,
-                    binding,
-                    payload: row["payload"].clone(),
-                    after,
-                })
-            })
-            .transpose()
     }
 }
 
@@ -538,113 +514,72 @@ pub async fn read(
         principal_sql,
         principal_args,
     };
-    let page = match &plan {
-        Ok(Read::Page { filters, .. }) => Some(PageRequest::parse(a, filters)),
+    let parsed_page = match &plan {
+        Ok(Read::Page { filters, order, .. }) => Some((|| -> Result<_> {
+            let page = PageRequest::parse(a, filters)?;
+            let scope = hash(&json!({
+                "path":action.path,"limit":page.limit,"filters":filters,"order":order.time_column()
+            }).to_string());
+            let cursor = page
+                .cursor
+                .as_deref()
+                .map(|raw| open_cursor(a, raw, &scope))
+                .transpose()?;
+            Ok((page.limit, scope, cursor))
+        })()),
         _ => None,
     };
-    let cursor = match (&plan, &page) {
-        (Ok(Read::Page { filters, order, .. }), Some(Ok(page))) => {
-            page.cursor_hash.as_deref().map(|hash| Cursor {
-                page,
-                filters,
-                hash,
-                order: *order,
-            })
-        }
-        _ => None,
-    };
-    // The existing cursor binding is a hash of authorization and request
-    // context. Verify it before submitting the protected page, then fence
-    // that scope and cursor again inside the actual page snapshot.
-    let saved = if let Some(cursor) = &cursor {
-        query.probe(Some(cursor)).await?
-    } else {
-        None
-    };
-    let mut statements = query.prerequisites(credential)?;
+    let browser = a.s.read_browser_session()?;
+    let has_browser_guard = browser.is_some();
+    let mut statements = browser.into_iter().collect::<Vec<_>>();
+    statements.extend(query.prerequisites(credential)?);
     statements.extend(query.lookup_statement()?);
     if let (
         Ok(Read::Page {
             sql, args, order, ..
         }),
-        Some(Ok(page)),
-    ) = (&plan, &page)
+        Some(Ok((limit, _, cursor))),
+    ) = (&plan, &parsed_page)
     {
-        let time = now();
-        let bound = cursor.as_ref().zip(saved.as_ref());
-        if let Some((cursor, _)) = bound {
-            statements.push(a.s.statement(CURSOR_ROW, vec![cursor.hash.into(), time.into()])?);
-        }
-        statements.push(query.page(
-            page.limit + 1,
-            sql,
-            args,
-            *order,
-            bound.map(|(cursor, saved)| (cursor, saved, time)),
-        )?);
+        statements.push(query.page(limit + 1, sql, args, *order, cursor.as_ref())?);
     }
-    let mut results = match a.s.batch_read(statements).await {
-        Ok(results) => results.into_iter(),
+    let mut rows = match a.s.batch_read(statements).await {
+        Ok(rows) => rows.into_iter(),
         Err(error) => {
-            query.probe(cursor.as_ref()).await?;
+            // SQL compilation can fail before SQLite evaluates the authorization gate.
+            let principal = query.prerequisites(query.credential()?)?;
+            query.context(&mut a.s.batch_read(principal).await?.into_iter(), false)?;
             return Err(error);
         }
     };
-    let snapshot = query.context(&mut results, true)?;
-    let result = match plan? {
-        Read::Detail(view) => return view(&snapshot.ctx),
-        Read::Page {
-            view,
-            filters,
-            order,
-            ..
-        } => {
-            let page = page.ok_or_else(Failure::unavailable)??;
-            let scope = snapshot.scope(action, &page, &filters, order);
-            if let Some(saved) = saved {
-                let cursor = first(&mut results)?;
-                validate_cursor(&cursor, &scope)?;
-                ensure(cursor["payload"] == saved.payload, 400, "INVALID_REQUEST")?;
+    if has_browser_guard {
+        ensure(!first(&mut rows)?.is_null(), 409, "VERSION_CONFLICT")?;
+    }
+    let snapshot = query.context(&mut rows, true)?;
+    match plan? {
+        Read::Detail(view) => view(&snapshot.ctx),
+        Read::Page { view, order, .. } => {
+            let (limit, scope, cursor) = parsed_page.ok_or_else(Failure::unavailable)??;
+            let authority = snapshot.authority();
+            if let Some(cursor) = cursor {
+                ensure(
+                    cursor["scopeHash"] == hash(&authority.to_string()),
+                    400,
+                    "INVALID_REQUEST",
+                )?;
             }
-            let Snapshot { service, ctx } = snapshot;
-            let rows = results.next().ok_or_else(Failure::unavailable)?;
+            let rows = rows.next().ok_or_else(Failure::unavailable)?;
             let items = rows
                 .iter()
-                .take(page.limit)
+                .take(limit)
                 .map(view)
                 .collect::<Result<Vec<_>>>()?;
-            let next = if rows.len() > page.limit {
-                let mut writes = base(&service)?;
-                match access {
-                    Access::Session => {}
-                    Access::Permission(_) => {
-                        writes.push(service.permission_guard(&ctx.permission)?)
-                    }
-                    Access::Member(_) => writes.extend([
-                        service.tenant_guard(&ctx.tenant, true)?,
-                        service.member_guard(&ctx.member)?,
-                    ]),
-                }
-                if let Some(guard) = lookup.as_ref().and_then(|target| target.guard) {
-                    writes.push(guard(&service, &ctx.record)?);
-                }
-                let raw = secret();
-                writes.push(a.s.statement(
-                    "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR',?,?,?)",
-                    vec![
-                        hash(&raw).into(),
-                        scope.into(),
-                        order.anchor(&rows[page.limit - 1]).to_string().into(),
-                        (now() + 900000).into(),
-                    ],
-                )?);
-                a.s.batch_page_cursor(writes).await?;
-                Value::String(raw)
+            let next = if rows.len() > limit {
+                sign_cursor(a, &scope, &authority, order.anchor(&rows[limit - 1]))?
             } else {
                 Value::Null
             };
-            json!({"items":items,"nextCursor":next})
+            Ok(json!({"items":items,"nextCursor":next}))
         }
-    };
-    Ok(result)
+    }
 }

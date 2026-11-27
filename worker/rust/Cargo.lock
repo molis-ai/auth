@@ -447,6 +447,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hex",
+ "hmac",
  "js-sys",
  "pbkdf2",
  "png",

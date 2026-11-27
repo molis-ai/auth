@@ -240,7 +240,7 @@ impl WebSession<'_> {
             h.set("Idempotency-Key", key)?;
         }
         let access = if self.read_only {
-            WebSessionAccess::ReadSnapshot(self.id.clone(), self.revision)
+            WebSessionAccess::ReadOnly(self.id.clone(), self.revision)
         } else {
             WebSessionAccess::Lease(self.id.clone(), self.revision)
         };

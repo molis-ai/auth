@@ -321,7 +321,6 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     let application = || Lookup {
         sql: format!("{APPLICATIONS} WHERE id=?"),
         id: action.id.clone(),
-        guard: Some(application_guard),
     };
     let (permission, lookup, plan) = match action.op {
         "application.list" => (
@@ -339,7 +338,6 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Some(Lookup {
                 sql: format!("{CLIENTS} WHERE c.client_id=?"),
                 id: action.id.clone(),
-                guard: None,
             }),
             Read::Detail(|ctx| client_view(&ctx.record)),
         ),

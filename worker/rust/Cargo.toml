@@ -24,6 +24,7 @@ pbkdf2 = "=0.12.2"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 hex = "0.4"
+hmac = "0.12"
 unicode-normalization = "0.1"
 regex = { version = "1", default-features = false, features = ["std", "perf"] }
 futures-util = "0.3"

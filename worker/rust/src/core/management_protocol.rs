@@ -1,5 +1,5 @@
 //! Shared query parsing and keyset pagination for management lists.
-use crate::core::{http::*, identity::Auth, security::hash};
+use crate::core::{http::*, identity::Auth};
 use serde_json::{Value, json};
 
 #[derive(Clone, Copy)]
@@ -122,7 +122,7 @@ impl PageFilters {
 // filters and authorization. Keep the scope and payload compatible with issued cursors.
 pub(crate) struct PageRequest {
     pub(crate) limit: usize,
-    pub(crate) cursor_hash: Option<String>,
+    pub(crate) cursor: Option<String>,
 }
 impl PageRequest {
     pub(crate) fn parse(a: &Auth, filters: &Value) -> Result<Self> {
@@ -149,12 +149,12 @@ impl PageRequest {
         };
         ensure((1..=100).contains(&limit), 400, "INVALID_REQUEST")?;
         let raw = text(&q, "cursor");
-        let cursor_hash = if raw.is_empty() {
+        let cursor = if raw.is_empty() {
             None
         } else {
-            ensure(token(&raw), 400, "INVALID_REQUEST")?;
-            Some(hash(&raw))
+            ensure(raw.len() <= 2048, 400, "INVALID_REQUEST")?;
+            Some(raw)
         };
-        Ok(Self { limit, cursor_hash })
+        Ok(Self { limit, cursor })
     }
 }
