@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { AccountClient, AuthError, type AccountView } from '../../shared/api/account-client.ts';
@@ -6,12 +7,12 @@ import { accountErrorMessage } from '../../shared/api/errors.ts';
 import './profile.css';
 
 const AvatarCropper = lazyComponent(() => import('./AvatarCropper.vue'));
+const { client } = useAccountContext();
 const props = defineProps<{
   user: NonNullable<AccountView['user']>;
   githubAccount?: string;
   phoneAccount?: string;
   boundMethodCount?: number;
-  client: AccountClient;
   onSaved: () => Promise<void>;
 }>();
 const emit = defineEmits<{ expired: [error: AuthError]; navigate: [page: string] }>();
@@ -39,7 +40,7 @@ async function saveName() {
   if (value === props.user.displayName) { cancelName(); return; }
   nameSaving.value = true; nameError.value = '';
   try {
-    await props.client.request('/profile', {displayName:value,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
+    await client.request('/profile', {displayName:value,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
     if (!active) return;
     await props.onSaved();
     if (active) editingName.value = false;
@@ -62,7 +63,7 @@ function chooseFromProfile(event: Event) {
 }
 async function applyCrop(image:string) {
   try {
-    await props.client.request('/profile',{displayName:props.user.displayName,avatarDataUrl:image,expectedVersion:props.user.version},'PATCH',crypto.randomUUID());
+    await client.request('/profile',{displayName:props.user.displayName,avatarDataUrl:image,expectedVersion:props.user.version},'PATCH',crypto.randomUUID());
     if(active)await props.onSaved();
   } catch(cause) {
     if(active && cause instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(cause.code))emit('expired',cause);

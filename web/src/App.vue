@@ -6,6 +6,7 @@ import AuthEntryShell from "./features/auth-entry/AuthEntryShell.vue";
 import { entryText } from "./features/auth-entry/entry-copy.ts";
 import { entryLanguage } from "./features/auth-entry/entry-preferences.ts";
 import { useAccountSession } from "./app/use-account-session.ts";
+import { provideAccountContext } from "./shared/api/account-context.ts";
 const ConsoleShell = lazyComponent(() => import("./shared/components/ConsoleShell.vue"));
 const AccountProfile = lazyComponent(() => import("./features/account/AccountProfile.vue"));
 const AccountSecurityPage = lazyComponent(() => import("./features/account/AccountSecurityPage.vue"));
@@ -52,6 +53,10 @@ const {
   mutate, onLoginEntry, prefetchedCapabilities, refreshAccount, refreshIssues, refreshLoginMethods,
   retryRefresh, run, starting, startup, submitBusyWrite, submitWrite,
 } = useAccountSession(page, { clearToast, showToast, resetConsole });
+
+provideAccountContext({
+  client, mutate, submitWrite, submitBusyWrite, discard, run, expireAccount, expireWithToast,
+});
 
 watch(() => account.value?.user?.userId, (id, previous) => {
   if (id && id !== previous && page.value === "security") void run(refreshLoginMethods);
@@ -147,7 +152,6 @@ function openPlatformTenant(tenantId: string) {
         :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel"
         :phone-account="methods.find(item => item.type === 'PHONE')?.maskedLabel"
         :bound-method-count="boundMethodCount"
-        :client="client"
         :on-saved="refreshAccount"
         @expired="expireWithToast"
         @navigate="navigate"
@@ -156,30 +160,20 @@ function openPlatformTenant(tenantId: string) {
         v-if="page === 'security'"
         :key="accountScope"
         ref="securityPage"
-        :client="client"
         :user="account.user"
         :methods="methods"
         :bound-method-count="boundMethodCount"
         :busy="busy"
-        :run="run"
-        :mutate="mutate"
-        :submit-busy-write="submitBusyWrite"
-        :discard="discard"
         :refresh-account="refreshAccount"
         :refresh-login-methods="refreshLoginMethods"
-        :expire-with-toast="expireWithToast"
         :logout="logout"
       />
       <TenantPage
         v-if="page === 'tenants' && account.user"
         :key="accountScope"
-        :client="client"
         :viewer-id="account.user.userId"
         :billing-enabled="!endingSession"
         :busy="busy"
-        :mutate="mutate"
-        :submit-write="submitBusyWrite"
-        :discard="discard"
         :refresh-pending="action => refreshIssues.has(action)"
         @expired="expireWithToast"
         @dispose="disposePageIssues('tenants')"
@@ -189,9 +183,8 @@ function openPlatformTenant(tenantId: string) {
       <PendingPage
         v-if="page === 'pending' && account.user"
         :key="accountScope"
-        :client="client"
         :busy="busy"
-        :mutate="mutate"
+
         @expired="expireWithToast"
         @dispose="disposePageIssues('pending')"
         @navigate="navigate"
@@ -199,7 +192,6 @@ function openPlatformTenant(tenantId: string) {
       <BillingCenterPage
         v-if="page === 'subscriptions' && account.user && !endingSession"
         :key="accountScope + ':' + billingSubjectId"
-        :client="client"
         :viewer-id="account.user.userId"
         :viewer-name="account.user.displayName"
         :viewer-email="account.user.email"
@@ -208,17 +200,14 @@ function openPlatformTenant(tenantId: string) {
       />
       <PlatformUsers
         v-if="page === 'users'"
-        :client="client"
         :capabilities="account.capabilities ?? []"
-        :submit-write="submitWrite"
+
         @expired="expireWithToast"
       />
       <PlatformTenants
         v-if="page === 'platform-tenants'"
         :key="accountScope"
-        :client="client"
         :capabilities="account.capabilities ?? []"
-        :submit-write="submitWrite"
         :initial-tenant-id="platformTenantFocus"
         @expired="expireWithToast"
         @notify="showToast"
@@ -227,7 +216,6 @@ function openPlatformTenant(tenantId: string) {
       <PlatformAudit
         v-if="page === 'audit'"
         :key="accountScope"
-        :client="client"
         :capabilities="account.capabilities ?? []"
         :initial-tenant-scope="auditTenantScope"
         @expired="expireWithToast"
@@ -237,16 +225,9 @@ function openPlatformTenant(tenantId: string) {
         <PlatformApplicationsPage
           v-if="page === 'applications'"
           :key="accountScope"
-          :client="client"
           :capabilities="account.capabilities ?? []"
           :busy="busy"
-          :run="run"
-          :submit-write="submitWrite"
-          :submit-busy-write="submitBusyWrite"
-          :mutate="mutate"
-          :discard="discard"
-          :expire-account="expireAccount"
-          :expire-with-toast="expireWithToast"
+
         />
     </main>
     </div>

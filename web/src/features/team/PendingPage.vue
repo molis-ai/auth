@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
 interface Invitation {
   invitationId: string;
@@ -25,18 +25,17 @@ interface Transfer {
   version: number;
 }
 
+const { client, mutate } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   busy: boolean;
-  mutate: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 }>();
 const emit = defineEmits<{ expired: [error: unknown]; dispose: []; navigate: [page: string] }>();
 
 type Category = "all" | "invitations" | "transfers";
 type Section = "invitations" | "transfers";
 
-const received = cursorCollection<Invitation>(props.client);
-const ownership = cursorCollection<Transfer>(props.client);
+const received = cursorCollection<Invitation>(client);
+const ownership = cursorCollection<Transfer>(client);
 const invitations = computed(() => received.items.value.filter(item => item.status === "PENDING"));
 const transfers = computed(() => ownership.items.value.filter(item => item.status === "PENDING"));
 const { loading: invitationsLoading, nextCursor: moreInvitations } = received;
@@ -203,7 +202,7 @@ function updateTransfer(transfer: Transfer) {
   const operation = transferOperation(transfer);
   if (!operation) return;
   const label = transfer.tenantName;
-  return props.mutate(
+  return mutate(
     "/ownership-transfers/" + encodeURIComponent(transfer.transferId) + "/" + operation,
     { expectedVersion: transfer.version },
     {
@@ -224,7 +223,7 @@ function updateTransfer(transfer: Transfer) {
 }
 
 function updateInvitation(invitation: Invitation, operation: "accept" | "decline") {
-  return props.mutate(
+  return mutate(
     "/invitations/" + encodeURIComponent(invitation.invitationId) + "/" + operation,
     { expectedVersion: invitation.version },
     {

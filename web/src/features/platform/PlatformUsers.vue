@@ -1,15 +1,14 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
 declare const __AUTH_PLATFORM_CAPABILITIES__: readonly string[];
+const { client, submitWrite } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   capabilities: string[];
-  submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 }>();
 const emit = defineEmits<{ expired: [error: unknown] }>();
 
@@ -49,7 +48,7 @@ const capabilities = __AUTH_PLATFORM_CAPABILITIES__;
 const canSetStatus = computed(() => props.capabilities.includes("USER_STATUS"));
 const canEditEmail = computed(() => props.capabilities.includes("USER_EMAIL_WRITE"));
 const canManagePermissions = computed(() => props.capabilities.includes("PLATFORM_PERMISSION_WRITE"));
-const directory = cursorCollection<User>(props.client);
+const directory = cursorCollection<User>(client);
 const { items: users, loading: usersLoading, nextCursor } = directory;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let selectionVersion = 0;
@@ -100,7 +99,7 @@ async function list<T>(path: string) {
   let cursor: string | null = null;
   const seen = new Set<string>();
   do {
-    const result: { items: T[]; nextCursor: string | null } = await props.client.request(
+    const result: { items: T[]; nextCursor: string | null } = await client.request(
       path + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
     );
     values.push(...result.items);
@@ -187,7 +186,7 @@ async function submitAudit() {
 
   if (action.kind === "permission") {
     const enabled = action.grant?.status !== "ACTIVE";
-    await props.submitWrite<Grant>(path + "/permissions/" + encodeURIComponent(action.capability), {
+    await submitWrite<Grant>(path + "/permissions/" + encodeURIComponent(action.capability), {
       enabled,
       expectedVersion: action.grant?.version ?? null,
       reason: auditReason,
@@ -206,7 +205,7 @@ async function submitAudit() {
   const change = action.kind === "email"
     ? { email: action.email }
     : { status: action.disabling ? "DISABLED" : "ACTIVE" };
-  await props.submitWrite<User>(path + "/" + action.kind, {
+  await submitWrite<User>(path + "/" + action.kind, {
     ...change,
     expectedVersion: action.user.version,
     reason: auditReason,

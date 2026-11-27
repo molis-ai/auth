@@ -1,27 +1,22 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AccountClient, AccountView } from "../../shared/api/account-client.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import type { LoginMethod } from "./login-method.ts";
 
 const AccountSecurityEditor = lazyComponent(() => import("./AccountSecurityEditor.vue"));
 const AccountPassword = lazyComponent(() => import("./AccountPassword.vue"));
 const AccountSessions = lazyComponent(() => import("./AccountSessions.vue"));
 
+const { client, run, mutate, submitBusyWrite, discard, expireWithToast } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   user?: AccountView["user"];
   methods: LoginMethod[];
   boundMethodCount: number;
   busy: boolean;
-  run: (task: () => Promise<void>) => Promise<void>;
-  mutate: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  submitBusyWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  discard: (action: string) => void;
   refreshAccount: () => Promise<void>;
   refreshLoginMethods: () => Promise<void>;
-  expireWithToast: (error: unknown) => void;
   logout: (all: boolean) => Promise<void>;
 }>();
 const securityTab = ref("methods");
@@ -30,13 +25,13 @@ const logoutTrigger = ref<HTMLButtonElement>();
 let disposed = false;
 
 async function selectSecurityTab(value: string) {
-  await props.run(async () => {
+  await run(async () => {
     await cancelSecurity();
     securityTab.value = value;
   });
 }
 function discardPasswordWrite() {
-  props.discard("change-password");
+  discard("change-password");
 }
 
 const securityAction = ref(""),
@@ -48,7 +43,7 @@ let securityEdits = 0;
 watch([securityAction, () => binding.value?.bindingId, reauth, securityIdentity,
   () => props.user?.version], () => {
   securityEdits++;
-  props.discard("security");
+  discard("security");
 }, { flush: "sync" });
 
 const authorizationPopup = shallowRef<Window | null>(null);
@@ -85,7 +80,7 @@ function resetSecurity() {
 async function cancelSecurity() {
   const handle = resetSecurity();
   if (handle)
-    await props.client
+    await client
       .request("/auth/transactions/" + handle + "/cancel", {})
       .catch(() => undefined);
 }
@@ -108,7 +103,7 @@ async function finishSecurity(identityHandle?: string) {
   const path =
     operation === "BIND_METHOD" ? "/login-methods/bind"
       : "/login-methods/" + binding.value!.bindingId + "/unlink";
-  await props.mutate(
+  await mutate(
     path,
     {
       reauthHandle: reauth.value,

@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import {
   auditActorLabel,
   auditOperationMeta,
@@ -20,10 +20,9 @@ import { useDebouncedSearch } from "../../shared/composables/use-debounced-searc
 const PlatformTenantDialogs = lazyComponent(() => import("./PlatformTenantDialogs.vue"));
 import PlatformTenantMembers from "./PlatformTenantMembers.vue";
 
+const { client, submitWrite } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   capabilities: readonly string[];
-  submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
   initialTenantId?: string;
 }>();
 
@@ -38,12 +37,12 @@ const canSetStatus = computed(() => props.capabilities.includes("TENANT_STATUS")
 const hasUserRead = computed(() => props.capabilities.includes("USER_READ"));
 const hasAuditRead = computed(() => props.capabilities.includes("AUDIT_READ"));
 
-const tenantCollection = cursorCollection<PlatformTenant>(props.client);
+const tenantCollection = cursorCollection<PlatformTenant>(client);
 const tenants = tenantCollection.items;
 const nextCursor = tenantCollection.nextCursor;
 const loadingMore = computed(() => tenantCollection.loading.value && tenants.value.length > 0);
 
-const memberCollection = cursorCollection<PlatformTenantMember>(props.client);
+const memberCollection = cursorCollection<PlatformTenantMember>(client);
 const members = memberCollection.items;
 const membersLoading = memberCollection.loading;
 const memberCursor = memberCollection.nextCursor;
@@ -77,7 +76,7 @@ const relatedAudits = auditEvents;
 const latestRelatedAudit = computed(() => relatedAudits.value[0] ?? null);
 async function loadDetail(tenantId: string) {
   const generation = ++detailGeneration;
-  const team = await props.client.request<PlatformTenant>(teamPath(tenantId));
+  const team = await client.request<PlatformTenant>(teamPath(tenantId));
   if (active && generation === detailGeneration && selectedTenantId.value === tenantId) detail.value = team;
 }
 
@@ -123,7 +122,7 @@ async function loadScope(tenantId: string | undefined, keepMembers = false) {
   scopeRead = request;
   const requests: Promise<unknown>[] = [memberCollection.first(`${teamPath(tenantId)}/members`)];
   if (hasAuditRead.value) {
-    requests.push(props.client.request<{ items: AuditEvent[] }>(
+    requests.push(client.request<{ items: AuditEvent[] }>(
       platformAuditPath({ tenantId, limit: 10 }), undefined, "GET", undefined, request.signal,
     ).then(page => {
       if (!request.signal.aborted) auditEvents.value = page.items;

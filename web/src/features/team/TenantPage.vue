@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
@@ -26,15 +27,11 @@ type Member = {
   status: string;
   version: number;
 };
-type Write = <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
+const { client, mutate, submitBusyWrite: submitWrite, discard } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   viewerId: string;
   billingEnabled: boolean;
   busy: boolean;
-  mutate: Write;
-  submitWrite: Write;
-  discard: (action: string) => void;
   refreshPending: (action: string) => boolean;
 }>();
 const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: []; openBilling: [tenantId: string] }>();
@@ -43,8 +40,8 @@ const canInviteByPhone = document.querySelector<HTMLMetaElement>(
 )?.content.split(" ").includes("PHONE") ?? false;
 const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 
-const directory = cursorCollection<Tenant>(props.client);
-const memberDirectory = cursorCollection<Member>(props.client);
+const directory = cursorCollection<Tenant>(client);
+const memberDirectory = cursorCollection<Member>(client);
 const { loading: tenantsLoading, nextCursor: moreTenants } = directory;
 const { loading: membersLoading } = memberDirectory;
 let directoryRead = 0;
@@ -146,7 +143,7 @@ async function lookupTenant(id: string) {
   const loaded = directory.items.value.find(tenant => tenant.tenantId === id);
   if (loaded) return loaded;
   try {
-    return await props.client.request<Tenant>(tenantPath(id));
+    return await client.request<Tenant>(tenantPath(id));
   } catch (error) {
     if (error instanceof AuthError && error.status === 404) return undefined;
     throw error;
@@ -160,7 +157,7 @@ function left(id: string) {
   }
   directory.remove(tenant => tenant.tenantId === id);
 }
-watch(() => tenantName.value.trim(), () => props.discard("create-tenant"), { flush: "sync" });
+watch(() => tenantName.value.trim(), () => discard("create-tenant"), { flush: "sync" });
 function openTenantCreate() {
   tenantName.value = "";
   emit("clearToast");
@@ -175,7 +172,7 @@ function closeTenantCreate() {
 function createTenant() {
   const name = tenantName.value.trim();
   if (!name) return;
-  return props.mutate<Tenant>("/tenants", { name }, {
+  return mutate<Tenant>("/tenants", { name }, {
     action: "create-tenant",
     success: "团队已创建",
     refreshMessage: "团队已创建，但团队列表或成员暂未刷新。",
@@ -199,7 +196,7 @@ function createTenant() {
 
 onMounted(() => {
   void read("policy", async () => {
-    creationMode.value = (await props.client.request<{ mode: string }>("/tenant-creation-policy")).mode;
+    creationMode.value = (await client.request<{ mode: string }>("/tenant-creation-policy")).mode;
   });
   void read("directory", async () => {
     await refreshDirectory();
@@ -212,7 +209,7 @@ onBeforeUnmount(() => {
   disposed = true;
   directory.clear();
   memberDirectory.clear();
-  props.discard("create-tenant");
+  discard("create-tenant");
   emit("dispose");
 });
 </script>

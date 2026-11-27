@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import {
@@ -18,8 +19,8 @@ import { useDebouncedSearch } from "../../shared/composables/use-debounced-searc
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 const AuditEventDrawer = lazyComponent(() => import("./AuditEventDrawer.vue"));
 
+const { client } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   capabilities: readonly string[];
   initialTenantScope?: string | null;
 }>();
@@ -32,7 +33,7 @@ const emit = defineEmits<{
 
 const hasTenantRead = computed(() => props.capabilities.includes("TENANT_READ"));
 
-const auditCollection = cursorCollection<AuditEvent>(props.client);
+const auditCollection = cursorCollection<AuditEvent>(client);
 const allEvents = auditCollection.items;
 const nextCursor = auditCollection.nextCursor;
 const loadingMore = computed(() => auditCollection.loading.value && allEvents.value.length > 0);
@@ -87,7 +88,7 @@ async function loadScopedName(id: string) {
   const request = new AbortController();
   nameRequest = request;
   try {
-    const team = await props.client.request<PlatformTenant>(
+    const team = await client.request<PlatformTenant>(
       platformTenantPath(id), undefined, "GET", undefined, request.signal,
     );
     if (!request.signal.aborted) scopedNames.value.set(id, team.name);

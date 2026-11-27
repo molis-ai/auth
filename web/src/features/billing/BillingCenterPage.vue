@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import BillingPanel from "./BillingPanel.vue";
@@ -19,8 +20,8 @@ interface LedgerSummary {
   available: number | null;
 }
 
+const { client } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   viewerId: string;
   viewerName: string;
   viewerEmail?: string | null;
@@ -31,7 +32,7 @@ const emit = defineEmits<{ expired: [error: AuthError] }>();
 const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 const credits = new Intl.NumberFormat("zh-CN");
 const selectedKey = ref<string>(props.initialSubjectId || "personal");
-const tenantDirectory = cursorCollection<TenantLedger>(props.client);
+const tenantDirectory = cursorCollection<TenantLedger>(client);
 const { items: tenants, loading: tenantsLoading, nextCursor: moreTenants } = tenantDirectory;
 const tenantsError = ref("");
 const summaries = reactive<Record<string, LedgerSummary>>({});
@@ -67,7 +68,7 @@ async function loadTenants(append = false) {
     const key = selectedKey.value;
     if (key !== "personal" && !tenants.value.some(t => t.tenantId === key)) {
       try {
-        const tenant = await props.client.request<TenantLedger>(
+        const tenant = await client.request<TenantLedger>(
           "/tenants/" + encodeURIComponent(key), undefined, "GET", undefined, lifetime.signal,
         );
         if (!lifetime.signal.aborted && selectedKey.value === key) focusedTenant.value = tenant;

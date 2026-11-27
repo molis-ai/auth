@@ -278,6 +278,15 @@ try {
   console.log("PASS browser self-service tenant");
   assert.ok([...scripts].some(path => path.includes("/TenantPage-")));
   assert.ok([...scripts].every(path => !/Platform(?:Users|Clients)-/.test(path)));
+  assert.equal(await page.evaluate("new URL(location.href).searchParams.get('page')"), "tenants");
+  await page.evaluate("history.back()");
+  await page.wait("new URL(location.href).searchParams.get('page') !== 'tenants' && !document.querySelector('.tenant-page')");
+  await page.evaluate("history.forward()");
+  await page.wait("Boolean(document.querySelector('.tenant-page'))");
+  await page.command("Page.reload");
+  await page.wait("Boolean(document.querySelector('.tenant-page'))");
+  assert.equal(await page.evaluate("new URL(location.href).searchParams.get('page')"), "tenants");
+  console.log("PASS console back, forward and reload restore the selected page");
   const testTenant = await db.prepare("SELECT id FROM auth_tenant").first();
   const membersCte = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<12)";
   await db.batch([

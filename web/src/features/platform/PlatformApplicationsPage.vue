@@ -1,22 +1,15 @@
 <script setup lang="ts">
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
 const PlatformClients = lazyComponent(() => import("./PlatformClients.vue"));
+const { client, run, submitWrite, submitBusyWrite, mutate, discard, expireAccount, expireWithToast } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   capabilities: string[];
   busy: boolean;
-  run: (task: () => Promise<void>) => Promise<void>;
-  submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  submitBusyWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  mutate: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  discard: (action: string) => void;
-  expireAccount: (error: unknown) => boolean;
-  expireWithToast: (error: unknown) => void;
 }>();
 const applicationSearch = ref("");
 
@@ -41,9 +34,9 @@ const newApplicationName = ref(""),
   appName = ref(""),
   appStatus = ref("ACTIVE");
 
-watch(newApplicationName, () => props.discard("create-application"), { flush: "sync" });
+watch(newApplicationName, () => discard("create-application"), { flush: "sync" });
 watch([appName, appStatus, () => selectedApplication.value?.applicationId, () => selectedApplication.value?.version],
-  () => props.discard("edit-application"), { flush: "sync" });
+  () => discard("edit-application"), { flush: "sync" });
 
 function can(capability: string) {
   return props.capabilities.includes(capability);
@@ -51,7 +44,7 @@ function can(capability: string) {
 
 onMounted(() => {
   selectedApplication.value = undefined;
-  void props.run(async () => {
+  void run(async () => {
     applicationClientCounts.value.clear();
     applications.value = await list("/platform/applications");
     if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
@@ -69,7 +62,7 @@ async function list<T>(path: string): Promise<T[]> {
   const seen = new Set<string>();
   do {
     const page: { items: T[]; nextCursor: string | null } =
-      await props.client.request<{ items: T[]; nextCursor: string | null }>(
+      await client.request<{ items: T[]; nextCursor: string | null }>(
         path +
           "?limit=100" +
           (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
@@ -101,7 +94,7 @@ async function createApplication() {
   if (props.busy || !name) return;
   createApplicationError.value = "";
   try {
-    await props.submitBusyWrite<Application>("/platform/applications", { name }, {
+    await submitBusyWrite<Application>("/platform/applications", { name }, {
       action: "create-application",
       success: "应用已创建",
       refreshMessage: "应用已创建，但应用列表暂未刷新。",
@@ -116,13 +109,13 @@ async function createApplication() {
     });
   } catch (error) {
     if (error instanceof AuthError && error.code === "CANCELLED") return;
-    if (!props.expireAccount(error)) createApplicationError.value = accountErrorMessage(error);
+    if (!expireAccount(error)) createApplicationError.value = accountErrorMessage(error);
   }
 }
 function editApplication() {
   const application = selectedApplication.value;
   if (!application) return;
-  return props.mutate<Application>("/platform/applications/" + application.applicationId, {
+  return mutate<Application>("/platform/applications/" + application.applicationId, {
     name: appName.value, status: appStatus.value, expectedVersion: application.version,
   }, {
     method: "PATCH",

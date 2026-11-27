@@ -27,11 +27,6 @@ button, a, input, select, textarea { transition: background-color 160ms, border-
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 input[type=checkbox] { accent-color: var(--accent); }
 button:disabled { opacity: .6; }
-.el-button { min-height: 40px; border-radius: 8px; font-weight: 500; }
-.el-button + .el-button { margin-left: 0; }
-.el-input__wrapper { box-shadow: 0 0 0 1px #d5d5db inset; }
-.el-input__wrapper.is-focus { box-shadow: 0 0 0 2px var(--accent) inset; }
-.el-checkbox { --el-checkbox-checked-bg-color: var(--accent); --el-checkbox-checked-input-border-color: var(--accent); --el-checkbox-checked-text-color: var(--ink); }
 .wordmark { color: var(--ink); font-size: 22px; letter-spacing: -.6px; }
 .brand-logo { display: block; width: 32px; height: 32px; flex: 0 0 32px; object-fit: contain; border-radius: 8px; }
 .mark { background: var(--primary); border-radius: 8px; font-family: inherit; font-style: normal; font-weight: 650; }
@@ -50,9 +45,7 @@ button:disabled { opacity: .6; }
 .panel-heading h2 { color: var(--ink); font-size: 26px; font-weight: 600; margin: 8px 0; }
 .panel-heading p, .field-hint, .empty-message, .provider-divider { color: var(--muted); font-size: 13px; }
 .field { color: var(--ink); font-size: 14px; margin-bottom: 24px; }
-.el-checkbox__label { font-size: 13px; color: var(--muted); }
 .text-button { color: var(--accent); font-size: 13px; min-height: 40px; }
-.primary.el-button { height: 44px; font-size: 14px; }
 .switch-mode { border-color: var(--line); }
 .confirmation-account { background: var(--sidebar); border: 1px solid var(--line); border-radius: 10px; }
 .confirmation-account small { color: var(--muted); font-size: 12px; }
@@ -151,7 +144,7 @@ footer span { letter-spacing: .5px; }
 .status-tag[data-tone=success] { color: #256443; background: #eef7f1; }
 .status-tag[data-tone=error] { color: #942f35; background: #fdf0f1; }
 .status-tag[data-tone=warning] { color: #765418; background: #fff8e8; }
-.console-card button:not(.el-button) { min-height: 40px; padding: 8px 12px; border: 1px solid #d5d5db; background: var(--surface); border-radius: 8px; color: var(--ink); cursor: pointer; }
+.console-card button { min-height: 40px; padding: 8px 12px; border: 1px solid #d5d5db; background: var(--surface); border-radius: 8px; color: var(--ink); cursor: pointer; }
 .console-modal { max-height: 90svh; overflow: auto; }
 .console-modal::backdrop, .workspace-drawer::backdrop { background: rgb(25 25 27 / 35%); }
 .console-modal .console-card { box-shadow: 0 16px 48px rgb(25 25 27 / 16%); border-radius: 12px; }
@@ -173,7 +166,7 @@ footer span { letter-spacing: .5px; }
   .console-card { padding: 16px; } .console-inline { flex-direction: column; align-items: stretch; }
   .workspace-shortcuts { grid-template-columns: 1fr; } .workspace-shortcuts button { padding: 16px; }
   .account-summary { align-items: flex-start; } .console-grid { grid-template-columns: 1fr; }
-  button, .el-button, .language, .text-button, .console-card button:not(.el-button) { min-height: 44px; }
+  button, .language, .text-button, .console-card button { min-height: 44px; }
   .console-card input:not([type=checkbox]), .console-card select { min-height: 44px; }
   .shell { padding: 16px; } .panel { padding: 24px; } .wordmark-detail { margin-left: 0; }
   .console-modal { padding: 16px; width: calc(100% - 24px); }
