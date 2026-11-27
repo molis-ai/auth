@@ -6,7 +6,7 @@ use crate::{
     core::security::challenge,
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Completion {
@@ -23,7 +23,7 @@ impl Completion {
     }
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
     ensure(
         a.header("Content-Type").split(';').next() == Some("application/json"),
@@ -31,11 +31,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         "INVALID_REQUEST",
     )?;
     let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-    let result = execute(a, path, &b, Completion::Code).await?;
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    execute(a, path, &b, Completion::Code).await
 }
 
 pub(crate) async fn execute(

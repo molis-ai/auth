@@ -15,13 +15,13 @@ pub(crate) struct Message<'a> {
     pub credential: &'a str,
     pub expires: i64,
 }
-pub(crate) trait Sender {
-    fn enqueue(a: &Auth, c: &Value, m: &Message) -> Result<D1PreparedStatement>;
-}
-pub(crate) struct SmsSender;
-pub(crate) struct MailSender;
 #[cfg(feature = "mock-delivery")]
-fn mock(a: &Auth, c: &Value, m: &Message, channel: &str) -> Result<D1PreparedStatement> {
+pub(crate) fn enqueue_mock(
+    a: &Auth,
+    c: &Value,
+    m: &Message,
+    channel: &str,
+) -> Result<D1PreparedStatement> {
     ensure(
         supports_mock_delivery(&c["kind"], &c["delivery_mode"]),
         503,
@@ -42,23 +42,17 @@ fn mock(a: &Auth, c: &Value, m: &Message, channel: &str) -> Result<D1PreparedSta
     )
 }
 #[cfg(not(feature = "mock-delivery"))]
-fn mock(_: &Auth, _: &Value, _: &Message, _: &str) -> Result<D1PreparedStatement> {
+pub(crate) fn enqueue_mock(
+    _: &Auth,
+    _: &Value,
+    _: &Message,
+    _: &str,
+) -> Result<D1PreparedStatement> {
     Err(Failure {
         status: 503,
         code: "UPSTREAM_UNAVAILABLE",
     })
 }
-impl Sender for SmsSender {
-    fn enqueue(a: &Auth, c: &Value, m: &Message) -> Result<D1PreparedStatement> {
-        mock(a, c, m, "SMS")
-    }
-}
-impl Sender for MailSender {
-    fn enqueue(a: &Auth, c: &Value, m: &Message) -> Result<D1PreparedStatement> {
-        mock(a, c, m, "EMAIL")
-    }
-}
-
 pub(crate) fn supports_mock_delivery(kind: &Value, mode: &Value) -> bool {
     cfg!(feature = "mock-delivery") && mode == "MOCK" && (kind == "LOCAL" || kind == "TEST")
 }

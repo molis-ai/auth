@@ -6,7 +6,7 @@ use crate::{
     core::identity::Auth,
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 fn audit_view(r: &Value) -> Result<Value> {
     let changes = if r["change_summary"].is_null() {
@@ -144,7 +144,7 @@ pub fn matches(path: &str) -> bool {
         || (path.starts_with("/api/v1/tenants/") && path.ends_with("/audit-events"))
 }
 
-pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Value> {
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     let (op, tenant_id, access) = match (parts.as_slice(), method) {
         (["api", "v1", "platform", "audit-events"], Method::Get) => {
@@ -168,9 +168,5 @@ pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
         id: String::new(),
         schema: None,
     };
-    let result = management_access::read(a, &action, access, None, audit_page(a, &action)).await?;
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    management_access::read(a, &action, access, None, audit_page(a, &action)).await
 }

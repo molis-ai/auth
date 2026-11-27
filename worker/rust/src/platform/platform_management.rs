@@ -1,4 +1,4 @@
-//! V2 application/client administration. Every commit rechecks the session and explicit permission.
+//! Application and client administration. Every commit rechecks the session and explicit permission.
 use crate::{
     auth::login_sessions,
     auth::management_access::{self as protocol, Access, Lookup, Read},
@@ -8,7 +8,7 @@ use crate::{
     core::security::uuid,
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 pub fn matches(path: &str) -> bool {
     [
@@ -355,7 +355,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     protocol::read(a, action, Access::Permission(permission), lookup, Ok(plan)).await
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let action = action(path, method)?;
     let body = if let Some(schema) = action.schema {
         ensure(
@@ -380,11 +380,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         },
     )?;
     if action.schema.is_none() {
-        let result = read(a, &action).await?;
-        return Ok(json_response(
-            json!({"data":result,"requestId":a.request_id}),
-            200,
-        )?);
+        return read(a, &action).await;
     }
     let key = protocol::key(a)?;
     let mut output = None;
@@ -427,8 +423,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             Err(e) => last = e,
         }
     }
-    Ok(json_response(
-        json!({"data":output.ok_or(last)?,"requestId":a.request_id}),
-        200,
-    )?)
+    output.ok_or(last)
 }

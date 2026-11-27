@@ -42,8 +42,8 @@ pub(crate) fn log_route(path: &str) -> &'static str {
     }
 }
 
-pub(crate) fn retry_after(external: bool, status: u16, retry_after_at: Option<i64>) -> Option<u64> {
-    (external && status == 429).then(|| {
+pub(crate) fn retry_after(status: u16, retry_after_at: Option<i64>) -> Option<u64> {
+    (status == 429).then(|| {
         retry_after_at
             .map(|expires_at| retry_after_seconds(expires_at, now()))
             .unwrap_or(DEFAULT_RETRY_AFTER)
@@ -75,7 +75,6 @@ pub(crate) fn finalize_response(
     mut response: Response,
     a: &Auth,
     id: &str,
-    external: bool,
     status: u16,
     retry_after: Option<u64>,
 ) -> worker::Result<Response> {
@@ -88,7 +87,7 @@ pub(crate) fn finalize_response(
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
-    } else if external && status == 409 && a.retry_browser_read {
+    } else if status == 409 && a.retry_browser_read {
         response.headers_mut().set("Retry-After", "0")?;
     }
     with_security_headers(response, id, a.origin.starts_with("https:"))

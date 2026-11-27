@@ -12,7 +12,7 @@ use crate::auth::management_access::{
 };
 use crate::{auth::login_sessions, core::http::*, core::identity::Auth, core::security::uuid};
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 pub(crate) fn member_view(m: &Value) -> Value {
     json!({"membershipId":m["id"],"tenantId":m["tenant_id"],"userId":m["user_id"],"role":m["role"],"status":m["status"],"version":m["version"]})
 }
@@ -648,7 +648,7 @@ pub(crate) fn matches(path: &str) -> bool {
     })
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let action = match action(path, method) {
         Ok(action) => action,
         Err(error) => {
@@ -657,11 +657,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         }
     };
     let Some(schema) = action.schema else {
-        let result = read(a, &action).await?;
-        return Ok(json_response(
-            json!({"data":result,"requestId":a.request_id}),
-            200,
-        )?);
+        return read(a, &action).await;
     };
     let (s, c) = login_sessions::active(a).await?;
     let b = {
@@ -768,8 +764,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         }
         output.ok_or(last)?
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }

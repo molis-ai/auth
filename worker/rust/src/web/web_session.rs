@@ -247,45 +247,70 @@ impl WebSession<'_> {
         if let Some(key) = key {
             h.set("Idempotency-Key", key)?;
         }
-        let access = if self.read_only {
+        let url = request.url()?;
+        let path = url.path();
+        let method = request.method();
+        let log = self.command_log(path, &method);
+        let mut command = self.command(request, &log)?;
+        let method = command.request.method();
+        let result = super::v1::execute(&mut command, path, method).await;
+        self.command_result(&command, &log, result)
+    }
+
+    fn command_log<'a>(&'a self, path: &str, method: &'a Method) -> RequestLog<'a> {
+        RequestLog {
+            started: now(),
+            env: log_env(&self.a.env),
+            id: &self.a.request_id,
+            route: super::http::log_route(path),
+            method: method.as_ref(),
+        }
+    }
+
+    fn command(&self, request: Request, log: &RequestLog<'_>) -> Result<Auth> {
+        let mut command = Auth::new(request, &self.a.env, log, Some(self.a.client_ip.clone()))
+            .map_err(|failure| {
+                log_failure(
+                    log.env,
+                    log.id,
+                    log.route,
+                    "initialize",
+                    &failure,
+                    log.started,
+                );
+                central_failure(failure.status, failure.code)
+            })?;
+        command.s.web_session_access = Some(if self.read_only {
             WebSessionAccess::ReadOnly(self.id.clone(), self.revision)
         } else {
             WebSessionAccess::Lease(self.id.clone(), self.revision)
-        };
-        let (mut response, retry_after_at) = crate::app::handle_internal(
-            request,
-            self.a.env.clone(),
-            access,
-            self.a.client_ip.clone(),
-            self.a.request_id.clone(),
-        )
-        .await?;
-        let value: Value = response.json().await?;
-        let status = response.status_code();
-        if status == 429 {
-            self.a.retry_after_at.set(retry_after_at);
-        }
-        if status >= 400 {
-            return Err(central_failure(status, &text(&value["error"], "code")));
-        }
-        Ok(value["data"].clone())
+        });
+        Ok(command)
     }
+
+    fn command_result<T>(
+        &self,
+        command: &Auth,
+        log: &RequestLog<'_>,
+        result: Result<T>,
+    ) -> Result<T> {
+        result.map_err(|failure| {
+            command.s.log_failure("internal", &failure, log.started);
+            if failure.status == 429 {
+                self.a.retry_after_at.set(command.retry_after_at.get());
+            }
+            central_failure(failure.status, failure.code)
+        })
+    }
+
     pub(crate) async fn login(&self, path: &str, body: &Value, proof: &str) -> Result<Value> {
         ensure(!self.read_only, 503, "AUTH_UNAVAILABLE")?;
         let mut request = Request::new(&format!("{}{}", self.a.origin, path), Method::Post)?;
         request
             .headers_mut()?
             .set("X-Auth-Initiator-Proof", proof)?;
-        let log = RequestLog {
-            started: now(),
-            env: log_env(&self.a.env),
-            id: &self.a.request_id,
-            route: super::http::log_route(path),
-            method: "POST",
-        };
-        let mut command = Auth::new(request, &self.a.env, &log, Some(self.a.client_ip.clone()))?;
-        command.s.web_session_access =
-            Some(WebSessionAccess::Lease(self.id.clone(), self.revision));
+        let log = self.command_log(path, &Method::Post);
+        let command = self.command(request, &log)?;
         let result = crate::auth::login_commands::execute(
             &command,
             path,
@@ -293,13 +318,7 @@ impl WebSession<'_> {
             crate::auth::login_commands::Completion::Session,
         )
         .await;
-        if let Err(failure) = &result {
-            command.s.log_failure("internal", failure, log.started);
-            if failure.status == 429 {
-                self.a.retry_after_at.set(command.retry_after_at.get());
-            }
-        }
-        result.map_err(|failure| central_failure(failure.status, failure.code))
+        self.command_result(&command, &log, result)
     }
 
     fn access_is_fresh(&self) -> bool {
@@ -427,8 +446,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let registration = login_sessions::registered_client(a, &client_id)
             .await
             .map_err(|failure| central_failure(failure.status, failure.code))?;
-        return login_capabilities::response(a, &registration)
-            .map_err(|failure| central_failure(failure.status, failure.code));
+        let result = login_capabilities::describe(a, &registration)
+            .map_err(|failure| central_failure(failure.status, failure.code))?;
+        return Ok(json_response(
+            json!({"data":result,"requestId":a.request_id}),
+            200,
+        )?);
     }
     // Only the browser-bound callback completes provider authorization; status polling is read-only.
     if path == "/account/callback" {

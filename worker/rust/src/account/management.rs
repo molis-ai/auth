@@ -5,7 +5,7 @@ use crate::{
     core::security::*,
 };
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 type Writes = Vec<D1PreparedStatement>;
 async fn security(a: &Auth, user: &str) -> Result<Value> {
     a.s.one(
@@ -197,7 +197,7 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
 }
 pub(crate) async fn web_account_view(a: &Auth, access_token: &str) -> Result<Value> {
     // Browser origin checks run at the BFF boundary; its previous in-process
-    // V2 request carried only the browser session's access token.
+    // The central request carries only the browser session's access token.
     account_view(a, access_token, "", false).await
 }
 pub(crate) async fn verify_web_password(
@@ -593,7 +593,7 @@ async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     a.s.batch(w, "VERSION_CONFLICT").await?;
     Ok(json!({"passwordChanged":true,"nextStep":"LOGIN_REQUIRED"}))
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let b = if method == Method::Post || method == Method::Patch {
         ensure(
             a.header("Content-Type").split(';').next() == Some("application/json"),
@@ -675,8 +675,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }

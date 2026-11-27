@@ -1,4 +1,4 @@
-//! V2 user availability and explicit platform grants.
+//! User availability and explicit platform grants.
 use crate::core::management_protocol::{PageFilters, PageOrder};
 use crate::{
     auth::management_access::{Action, Change, Context, Service},

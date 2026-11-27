@@ -13,16 +13,15 @@ pub(crate) mod sync_read_proof;
 pub(crate) mod test_admission;
 
 use crate::core::{http::Result, identity::Auth};
-use worker::{Method, Response};
+use serde_json::Value;
+use worker::Method;
 
-pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if path.starts_with("/api/v1/auth/external/") {
-        return external_login::browser(a, path, method).await;
-    }
-    #[cfg(feature = "mock-provider")]
-    if path.starts_with("/api/v1/auth/mock/") {
-        return external_login::browser(a, path, method).await;
-    }
+pub(crate) fn external_route(path: &str) -> bool {
+    path.starts_with("/api/v1/auth/external/")
+        || (cfg!(feature = "mock-provider") && path.starts_with("/api/v1/auth/mock/"))
+}
+
+pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     if path == "/api/v1/auth/capabilities" {
         return login_capabilities::route(a, method).await;
     }

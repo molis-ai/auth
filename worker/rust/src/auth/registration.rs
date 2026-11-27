@@ -5,10 +5,10 @@ use crate::{
     core::http::*,
     core::identity::Auth,
     core::security::*,
-    delivery::{MailSender, Message, Sender, SmsSender},
+    delivery::{self, Message},
 };
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 const TX: i64 = 600000;
 const CODE: i64 = 300000;
 pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
@@ -246,11 +246,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         return Ok(receipt);
     }
     if deliver {
-        writes.push(if channel == "EMAIL" {
-            MailSender::enqueue(a, c, &m)?
-        } else {
-            SmsSender::enqueue(a, c, &m)?
-        });
+        writes.push(delivery::enqueue_mock(a, c, &m, &channel)?);
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(receipt)
@@ -629,7 +625,7 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
         json!({"kind":"LOGIN_CODE","code":value,"state":t["product_state"],"expiresAt":iso(&json!(expires))})
     })
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let parts: Vec<_> = path.trim_matches('/').split('/').collect();
     let b = if method == Method::Post {
         ensure(
@@ -726,8 +722,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }

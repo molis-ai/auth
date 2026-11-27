@@ -4,7 +4,7 @@
 
 产品 Host/BFF → Workers JS/WASM 加载器 → `worker/rust/src/lib.rs` → `app.rs` → 领域模块 → `core/store.rs` → D1。
 
-Auth 自身的 Vue 页面 → 同源 `/api/account` BFF → 当前 `/api/v1` 处理器。页面使用 HttpOnly Cookie 与 CSRF，不导入服务端实现、不接触 D1、中央 Token 或服务端证明。Work 的安装身份与 Home 管理共用 Host 内的 V2 会话；业务内容仍归 Work 的原 owner。
+Auth 自身的 Vue 页面通过同源 `/api/account` BFF 调用 Auth 操作。BFF 与公开 `/api/v1` 共用操作分发。页面使用 HttpOnly Cookie 与 CSRF，不导入服务端实现、不接触 D1、中央 Token 或服务端证明。Work 的安装身份与 Home 管理共用 Host 内的 V2 会话；业务内容仍归 Work 的原 owner。
 
 Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由 worker-build 生成并加载同目录 WASM。Cloudflare 不运行原生 Rust 二进制。
 
@@ -34,7 +34,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `web/http.rs` | HTTP 请求日志标签、错误响应和响应后置处理 |
 | `runtime/*.js` | WASM 调用的运行时适配层。模块路径同时供 wasm_bindgen 和 Worker 测试引用 |
 
-`core/` 不引用入口或业务域。 浏览器会话用 `app::handle_internal` 在同一 Worker 调用中央 v1 API，并传递会话访问约束和原请求 ID。业务域的通用请求体和响应头处理使用 `core/http.rs`。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
+`core/` 不引用入口或业务域。公开 v1 入口和浏览器会话共用 `web/v1.rs` 的操作分发。领域返回业务值和结构化失败，由公开入口封装 HTTP 响应。浏览器会话传递原请求 ID、客户端 IP 和会话访问约束。通用请求体和响应头处理使用 `core/http.rs`。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
 
 中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因团队 OWNER 身份自动获得。付费权益不代替资源访问授权。旧版根会话、OAuth2 用户授权、团队 API 与权限矩阵已退役。
 

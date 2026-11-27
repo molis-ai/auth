@@ -5,7 +5,7 @@ use crate::{
     core::security::{challenge, hash, secret, uuid},
 };
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 const IDLE: i64 = 2592000000;
 const ABSOLUTE: i64 = 7776000000;
 const ACCESS: i64 = 900000;
@@ -589,7 +589,7 @@ async fn activity(a: &Auth, b: &Value) -> Result<Value> {
     s["last_active_at"] = row["last_active_at"].clone();
     Ok(view(&s))
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let implemented = matches!(
         (path, method.clone()),
         ("/api/v1/auth/token", Method::Post)
@@ -619,10 +619,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let (s, _) = active(a).await?;
         view(&s)
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }
 
 #[cfg(test)]
