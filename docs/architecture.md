@@ -10,7 +10,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 
 ## Worker 模块职责
 
-`worker/rust/src/` 根目录保留 `lib.rs`、`app.rs` 和模块入口。采用 `domain.rs` 配合 `domain/` 子目录的 Rust 模块结构。`app.rs` 分发请求并维护请求生命周期，业务处理归对应域，通用基础设施放在 `core/`。
+`worker/rust/src/` 根目录保留 `lib.rs` 和 `app.rs`。带子模块的目录使用各自的 `mod.rs` 作为入口，由 `clippy::self_named_module_files` 检查。`app.rs` 分发请求并维护请求生命周期，业务处理归对应域，通用基础设施放在 `core/`。
 
 | 路径 | 职责 |
 | --- | --- |
@@ -29,7 +29,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `web/` | 同源 Cookie/CSRF、浏览器会话、网页认证事务、账号与账单 BFF |
 | `runtime/*.js` | WASM 调用的运行时适配层。模块路径同时供 wasm_bindgen 和 Worker 测试引用 |
 
-`core/` 不引用入口或业务域。跨域调用使用明确的领域入口，如 `audit.rs` 导出的审计读写接口及 `auth.rs` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
+`core/` 不引用入口或业务域。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
 
 中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因租户 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、独立 Team 与权限矩阵实现已删除。
 

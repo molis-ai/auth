@@ -1,4 +1,5 @@
 //! Cloudflare Workers backend. Business logic lives in Rust; bindings remain at the edge.
+#![deny(clippy::self_named_module_files)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 mod account;
