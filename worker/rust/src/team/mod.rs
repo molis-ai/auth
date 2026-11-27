@@ -140,7 +140,7 @@ const PLATFORM_TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,t.entitlem
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
      ORDER BY e.created_at,e.id LIMIT 1) owner_email
     FROM auth_tenant t
-    JOIN auth_tenant_membership m ON m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER'
+    CROSS JOIN auth_tenant_membership m ON m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER'
     JOIN auth_user u ON u.id=m.user_id";
 const ACTIVE_OWNER_PROFILE: &str = "SELECT u.id,u.display_name,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=u.id AND e.verified_at IS NOT NULL
