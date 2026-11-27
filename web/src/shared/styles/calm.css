@@ -7,14 +7,6 @@
   --auth-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px; color: var(--ink); background: var(--workspace-bg);
-  --el-font-family: inherit; --el-font-size-base: 14px;
-  --el-color-primary: #202023; --el-color-primary-light-3: #46464c;
-  --el-color-primary-light-5: #85858d; --el-color-primary-light-7: #c2c2c8;
-  --el-color-primary-light-8: #dedee2; --el-color-primary-light-9: #f1f1f3;
-  --el-color-primary-dark-2: #101012; --el-border-radius-base: 8px;
-  --el-border-color: #d5d5db; --el-text-color-primary: #19191b;
-  --el-text-color-regular: #44444d; --el-text-color-placeholder: #767680;
-  --el-fill-color-blank: #fff; --el-disabled-bg-color: #f1f1f3;
 }
 body { min-width: 320px; line-height: 1.6; }
 .auth-entry .layout, .auth-console .workspace-body {

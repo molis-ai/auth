@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto'
 import { getRustProxy, initializeLocalRuntime } from './local-runtime.mjs'
 
-// Actual V2 verified signup in a disposable database; never writes the developer's Home/DB.
+// Verified signup in a disposable database; never writes the developer's Home/DB.
 export async function localCredential(email, password) {
   email = email.trim().toLowerCase()
   const origin = 'http://127.0.0.1:8787'

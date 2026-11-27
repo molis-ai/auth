@@ -1,4 +1,4 @@
-/** V2 product client. Central credentials and proofs belong to the same-origin Host/BFF. */
+/** Same-origin account client. Central credentials and proofs belong to the same-origin Host/BFF. */
 export interface AccountView {
   state: "ANONYMOUS" | "AUTHENTICATED" | "OFFLINE_CACHED" | "EXPIRED";
   user?: {
@@ -274,6 +274,7 @@ export class AccountClient {
       if (controller.signal.aborted) throw new AuthError("CANCELLED");
       return run(generation, controller.signal);
     });
+    void work.catch(() => undefined);
     try {
       const result = await Promise.race([work, cancellation]);
       this.checkGeneration(generation);

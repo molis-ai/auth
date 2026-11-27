@@ -1,4 +1,4 @@
-/* Calm Workspace v2 Team / Tenant Management layout matching Billing & Security rails. */
+/* Team management layout. */
 .auth-console .workspace-body main:has(.tenant-page) { padding: 0; }
 .auth-console .tenant-page { margin: 0; font-size: 13px; font-weight: 400; }
 .auth-console .tenant-page .collection-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100svh; }

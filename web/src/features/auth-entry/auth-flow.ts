@@ -71,3 +71,7 @@ export class AuthFlow {
   }
 }
 export class FlowCancelled extends Error {}
+
+export function mayChooseAuthMethod(current: string, next: string, providerPending: boolean) {
+  return !providerPending && (current !== next || next === "GOOGLE" || next === "GITHUB");
+}

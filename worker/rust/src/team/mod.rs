@@ -133,8 +133,8 @@ fn audit(
         json!({"changes": diff(&before, &after, fields)}),
     )
 }
-pub(crate) const TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_tenant t";
-const PLATFORM_TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,t.entitlement_revision,
+pub(crate) const TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_tenant t";
+const PLATFORM_TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,
     t.managed_at,t.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
     (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.id AND active.status='ACTIVE') member_count,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
@@ -229,8 +229,8 @@ impl Service<'_> {
                         .await?;
                     ensure(!ctx.tenant.is_null(), 404, "NOT_FOUND")?;
                     ctx.guards.push(self.a.s.guard(
-                        "EXISTS(SELECT 1 FROM auth_tenant WHERE id=? AND version=? AND entitlement_revision=?)",
-                        vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone(), ctx.tenant["entitlement_revision"].clone()],
+                        "EXISTS(SELECT 1 FROM auth_tenant WHERE id=? AND version=?)",
+                        vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone()],
                     )?);
                 }
             }
@@ -349,8 +349,7 @@ impl Service<'_> {
                     .into();
                 }
                 let w = vec![self.a.s.statement(
-                    "UPDATE auth_tenant SET name=?,status=?,version=version+1,
-                     entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",
+                    "UPDATE auth_tenant SET name=?,status=?,version=version+1,updated_at=? WHERE id=?",
                     vec![
                         t["name"].clone(),
                         t["status"].clone(),
@@ -661,11 +660,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     };
     let (s, c) = login_sessions::active(a).await?;
     let b = {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            400,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
         let b = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
         shape(schema, &b)?;
         if b.get("reason").is_some() {

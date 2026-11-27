@@ -358,11 +358,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let action = action(path, method)?;
     let body = if let Some(schema) = action.schema {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            400,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
         let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
         shape(schema, &b)?;
         b

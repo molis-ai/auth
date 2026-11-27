@@ -120,14 +120,7 @@ impl<'a> Target<'a> {
         if body.is_empty() {
             return Ok(None);
         }
-        ensure(
-            a.header("Content-Type")
-                .split(';')
-                .next()
-                .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json")),
-            400,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
         // Keep the original JSON, including duplicate keys, for the upstream parser.
         serde_json::from_str::<Value>(&body)?;
         Ok(Some(body))

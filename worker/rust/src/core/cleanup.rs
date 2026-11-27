@@ -8,7 +8,7 @@ use worker::{D1Database, D1PreparedStatement, Env, Result};
 
 const ROWS_PER_TABLE: usize = 200;
 const MAX_ROUNDS: usize = 3;
-const BUDGET_MS: f64 = 2_000.0;
+const BUDGET_MS: f64 = 8_000.0;
 const RETENTION_GRACE_MS: f64 = 86_400_000.0;
 
 // Dependent rows are cleaned first. A parent is still protected if a child
@@ -20,7 +20,6 @@ const TABLES: [(&str, &str); 17] = [
     ("auth_login_refresh_token", "token_hash"),
     ("auth_verification_challenge", "id"),
     ("auth_identity_proof", "token_hash"),
-    ("auth_product_transaction", "id"),
     ("auth_logout_receipt", "request_key_hash"),
     ("auth_mock_delivery", "delivery_id"),
     ("auth_management_result", "rowid"),
@@ -28,10 +27,12 @@ const TABLES: [(&str, &str); 17] = [
     ("auth_web_session", "id_hash"),
     ("auth_management_handoff", "id"),
     ("auth_login_activity", "rowid"),
-    ("auth_login_session", "id"),
     ("auth_tenant_invitation", "id"),
     ("auth_ownership_transfer", "id"),
+    ("auth_product_transaction", "id"),
+    ("auth_login_session", "id"),
 ];
+const LAYERS: [(usize, usize); 3] = [(0, 15), (15, 16), (16, 17)];
 
 fn statement(db: &D1Database, table: &str, key: &str, now: f64) -> Result<D1PreparedStatement> {
     let (source, expiry, cutoff, retain) = match table {
@@ -102,63 +103,71 @@ pub(crate) async fn run(env: &Env) {
         }
         Ok(db) => loop {
             rounds += 1;
-            for (index, (table, key)) in TABLES.iter().copied().enumerate() {
-                if !pending[index] {
-                    continue;
-                }
-                let result = async {
-                    let result = statement(&db, table, key, cutoff)?.run().await?;
-                    result.meta()?.and_then(|meta| meta.changes).ok_or_else(|| {
-                        worker::Error::RustError(
-                            result
-                                .error()
-                                .unwrap_or_else(|| "D1 changes count unavailable".into()),
-                        )
-                    })
-                }
-                .await;
-                match result {
-                    Ok(changes) => {
-                        totals[index] = totals[index].map(|count| count + changes);
-                        // Parent rows may become eligible in a later round as children drain.
-                        let has_pending = |table| {
-                            TABLES
-                                .iter()
-                                .zip(pending)
-                                .any(|(&(name, _), open)| name == table && open)
-                        };
-                        pending[index] = changes >= ROWS_PER_TABLE
-                            || match table {
-                                "auth_product_transaction" => {
-                                    ["auth_verification_challenge", "auth_identity_proof"]
-                                        .into_iter()
-                                        .any(has_pending)
+            for (first, end) in LAYERS {
+                let results = futures_util::future::join_all(
+                    (first..end).filter(|&index| pending[index]).map(|index| {
+                        let (table, key) = TABLES[index];
+                        let db = &db;
+                        async move {
+                            let result =
+                                async {
+                                    let result = statement(db, table, key, cutoff)?.run().await?;
+                                    result.meta()?.and_then(|meta| meta.changes).ok_or_else(|| {
+                                        worker::Error::RustError(result.error().unwrap_or_else(
+                                            || "D1 changes count unavailable".into(),
+                                        ))
+                                    })
                                 }
-                                "auth_login_session" => [
-                                    "auth_login_access_token",
-                                    "auth_login_refresh_token",
-                                    "auth_identity_proof",
-                                    "auth_product_transaction",
-                                    "auth_logout_receipt",
-                                    "auth_management_handoff",
-                                    "auth_login_activity",
-                                ]
-                                .into_iter()
-                                .any(has_pending),
-                                _ => false,
+                                .await;
+                            (index, table, result)
+                        }
+                    }),
+                )
+                .await;
+                for (index, table, result) in results {
+                    match result {
+                        Ok(changes) => {
+                            totals[index] = totals[index].map(|count| count + changes);
+                            // Parent rows may become eligible in a later round as children drain.
+                            let has_pending = |table| {
+                                TABLES
+                                    .iter()
+                                    .zip(pending)
+                                    .any(|(&(name, _), open)| name == table && open)
                             };
-                    }
-                    Err(error) => {
-                        failed = true;
-                        totals[index] = None;
-                        pending[index] = false;
-                        log_event(
-                            "auth.cleanup.failure",
-                            environment,
-                            &request_id,
-                            [("table", json!(table)), ("error", json!(error.to_string()))],
-                            true,
-                        );
+                            pending[index] = changes >= ROWS_PER_TABLE
+                                || match table {
+                                    "auth_product_transaction" => {
+                                        ["auth_verification_challenge", "auth_identity_proof"]
+                                            .into_iter()
+                                            .any(has_pending)
+                                    }
+                                    "auth_login_session" => [
+                                        "auth_login_access_token",
+                                        "auth_login_refresh_token",
+                                        "auth_identity_proof",
+                                        "auth_product_transaction",
+                                        "auth_logout_receipt",
+                                        "auth_management_handoff",
+                                        "auth_login_activity",
+                                    ]
+                                    .into_iter()
+                                    .any(has_pending),
+                                    _ => false,
+                                };
+                        }
+                        Err(error) => {
+                            failed = true;
+                            totals[index] = None;
+                            pending[index] = false;
+                            log_event(
+                                "auth.cleanup.failure",
+                                environment,
+                                &request_id,
+                                [("table", json!(table)), ("error", json!(error.to_string()))],
+                                true,
+                            );
+                        }
                     }
                 }
             }

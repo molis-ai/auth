@@ -32,6 +32,13 @@ impl From<serde_json::Error> for Failure {
         Self::invalid_request()
     }
 }
+pub(crate) fn is_json_content_type(a: &super::identity::Auth) -> bool {
+    a.header("Content-Type")
+        .split(';')
+        .next()
+        .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json"))
+}
+
 pub(crate) fn matches_route_template(path: &str, template: &str) -> bool {
     let mut segments = path.split('/');
     template.split('/').all(|part| {

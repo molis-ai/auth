@@ -139,7 +139,10 @@ impl Service<'_> {
                 "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
                 vec![ctx.to["id"].clone()],
             )?);
-            w.push(self.a.s.statement("UPDATE auth_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",vec![n.into(),ctx.tenant["id"].clone()])?);
+            w.push(self.a.s.statement(
+                "UPDATE auth_tenant SET version=version+1,updated_at=? WHERE id=?",
+                vec![n.into(), ctx.tenant["id"].clone()],
+            )?);
             w.push(self.a.s.guard("(SELECT count(*) FROM auth_tenant_membership WHERE tenant_id=? AND status='ACTIVE' AND role='OWNER')=1",vec![ctx.tenant["id"].clone()])?);
             let mut from = ctx.from.clone();
             from["role"] = "MEMBER".into();
@@ -241,7 +244,7 @@ impl Service<'_> {
             vec![n.into(), n.into(), tenant.clone()],
         )?);
         writes.push(self.a.s.statement(
-            "UPDATE auth_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",
+            "UPDATE auth_tenant SET version=version+1,updated_at=? WHERE id=?",
             vec![n.into(), tenant.clone()],
         )?);
         let mut updated = ctx.tenant.clone();

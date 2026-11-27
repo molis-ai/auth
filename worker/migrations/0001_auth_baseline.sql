@@ -224,7 +224,6 @@ CREATE TABLE auth_tenant (
  created_at INTEGER NOT NULL,
  status TEXT NOT NULL CHECK(status IN ('ACTIVE','DISABLED')),
  version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0),
- entitlement_revision INTEGER NOT NULL DEFAULT 0 CHECK(entitlement_revision>=0),
  managed_by TEXT NOT NULL REFERENCES auth_user(id),
  managed_at INTEGER NOT NULL,
  updated_at INTEGER NOT NULL

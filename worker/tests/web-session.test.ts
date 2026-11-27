@@ -1664,6 +1664,23 @@ test(
       )
     })
 
+    await t.test('a transient refresh failure keeps the same persisted tokens', async () => {
+      const { b } = await authenticated({ accessTtlMs: 0 })
+      const before = JSON.parse(await authOpen(bffKey, (await row(b)).payload)).data.tokens
+      await db.prepare('ALTER TABLE auth_rate_bucket RENAME TO fixture_missing_rate_bucket').run()
+      try {
+        const result = await request(b, '/session')
+        assert.equal(result.status, 503)
+        assert.deepEqual(
+          JSON.parse(await authOpen(bffKey, (await row(b)).payload)).data.tokens,
+          before,
+        )
+      } finally {
+        await db.prepare('ALTER TABLE fixture_missing_rate_bucket RENAME TO auth_rate_bucket').run()
+      }
+      assert.equal((await data(await request(b, '/session'))).state, 'AUTHENTICATED')
+    })
+
     for (const [point, usedRefresh] of [
       ['refresh-used', true],
       ['refresh-race', false],
@@ -1677,9 +1694,18 @@ test(
             .all()
         const before = (await tokens()).results
         const old = await pause(b, point)
-        const burned = JSON.parse(await authOpen(bffKey, (await row(b)).payload))
-        assert.equal(burned.data.tokens, null, 'refresh burns recovery material before exchange')
-        await takeOver(b, old, 'ANONYMOUS')
+        const previous = await row(b)
+        const retained = JSON.parse(await authOpen(bffKey, previous.payload))
+        assert.ok(retained.data.tokens.refreshToken, 'pending exchange preserves recovery material')
+        await db
+          .prepare(
+            "UPDATE auth_web_session SET status='READY',busy_until=0,revision=revision+1 WHERE id_hash=?",
+          )
+          .bind(b.id)
+          .run()
+        const replacement = await row(b)
+        await conflict(await old())
+        assert.deepEqual(await row(b), replacement)
         assert.deepEqual((await tokens()).results, before)
         assert.deepEqual(
           await db

@@ -1962,11 +1962,11 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.equal(
           (
             await db
-              .prepare('SELECT entitlement_revision FROM auth_tenant WHERE id=?')
+              .prepare('SELECT version FROM auth_tenant WHERE id=?')
               .bind(team.tenantId)
               .first()
-          ).entitlement_revision,
-          4,
+          ).version,
+          recovered.version,
         )
 
         const stamped = Date.now() - 10_000

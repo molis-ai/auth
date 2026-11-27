@@ -26,7 +26,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v2u_09_creation_defaults_to_self_service_and_rejects_unknown_policy() {
+    fn auth_u_09_creation_defaults_to_self_service_and_rejects_unknown_policy() {
         assert_eq!(parse(None).unwrap(), "SELF_SERVICE");
         assert_eq!(parse(Some("SELF_SERVICE")).unwrap(), "SELF_SERVICE");
         assert_eq!(parse(Some("PLATFORM_ONLY")).unwrap(), "PLATFORM_ONLY");

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AuthFlow, FlowCancelled, type AuthCompletion } from "./auth-flow.ts";
+import { AuthFlow, FlowCancelled, mayChooseAuthMethod, type AuthCompletion } from "./auth-flow.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { entryText } from "./entry-copy.ts";
@@ -71,7 +71,7 @@ watch([retryAt, challenge], ([deadline, activeChallenge], _, onCleanup) => {
 watch(() => busy.value || providerPending.value, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
 async function chooseMethod(value: string) {
-  if (busy.value || props.blocked || providerPending.value || method.value === value) return;
+  if (busy.value || props.blocked || !mayChooseAuthMethod(method.value, value, providerPending.value)) return;
   const oauth = ["GOOGLE", "GITHUB"].includes(value);
   // Preserve the click gesture while the old server transaction is cancelled.
   const reserved = oauth ? flow.reserve(props.authorizationPopup) : null;

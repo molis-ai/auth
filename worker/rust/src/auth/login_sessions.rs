@@ -1,4 +1,4 @@
-//! Independent v2 sessions. External identity verification is supplied by AUTH-04/05.
+//! Independent login sessions. External identity verification is supplied by AUTH-04/05.
 use crate::{
     core::http::*,
     core::identity::Auth,
@@ -253,7 +253,7 @@ fn check_active(credential: Credential, n: i64) -> Result<(Value, Value)> {
     s["access_expires_at"] = t["expires_at"].clone();
     Ok((s, c))
 }
-/// A v2 access credential, including its expiry for the final commit guard.
+/// An access credential, including its expiry for the final commit guard.
 pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
     check_active(credential(a, &json!({})).await?, now())
 }
@@ -600,11 +600,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     );
     ensure(implemented, 501, "UNIFIED_ACCOUNT_NOT_IMPLEMENTED")?;
     let b = if method == Method::Post {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            415,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 415, "INVALID_REQUEST")?;
         serde_json::from_str(&bounded(&mut a.request, 16384).await?)?
     } else {
         json!({})

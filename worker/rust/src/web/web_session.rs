@@ -87,7 +87,7 @@ fn should_clear(result: &Result<BrowserPayload>) -> bool {
     };
     matches!(
         code,
-        Some("SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED")
+        Some("SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED" | "UNAUTHENTICATED")
     )
 }
 fn anonymous_data() -> Value {
@@ -151,6 +151,22 @@ impl WebSession<'_> {
         ensure(!self.read_only, 503, "AUTH_UNAVAILABLE")?;
         let payload = self.payload().await?;
         self.a.s.batch(vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')",vec![self.id.clone().into(),self.revision.into()])?,self.a.s.statement("UPDATE auth_web_session SET payload=? WHERE id_hash=?",vec![payload.into(),self.id.clone().into()])?],"VERSION_CONFLICT").await
+    }
+    async fn clear_rejected_tokens(&self) -> Result<()> {
+        let payload = seal(
+            &self.key,
+            &json!({"id":self.id,"data":anonymous_data()}).to_string(),
+        )
+        .await
+        .map_err(unavailable)?;
+        self.a
+            .s
+            .run(
+                "UPDATE auth_web_session SET payload=?,revision=revision+1
+             WHERE id_hash=? AND revision=? AND status='READY'",
+                vec![payload.into(), self.id.clone().into(), self.revision.into()],
+            )
+            .await
     }
     async fn finish(&self) -> Result<()> {
         let row = self.a.s.one(
@@ -332,8 +348,7 @@ impl WebSession<'_> {
         if self.access_is_fresh() {
             return Ok(());
         }
-        let old = self.data["tokens"].take();
-        self.save().await?; // Burn recovery material before rotating.
+        let old = &self.data["tokens"];
         let tokens=self.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"refresh_token","clientId":self.client()?,"refreshToken":old["refreshToken"]})),None,None).await.map_err(session_failure)?;
         shape("TokenSet", &tokens)?;
         ensure(
@@ -532,6 +547,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                             .map(BrowserPayload::Account)
                     };
                     if upstream_write || !should_clear(&result) {
+                        if upstream_write && should_clear(&result) {
+                            session.clear_rejected_tokens().await?;
+                        }
                         return browser_response(a, path, &key, &id, None, result);
                     }
                     rejected_read = Some(result);
@@ -656,7 +674,11 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     Some(target) if upstream_write => {
                         // A refresh may need the browser lease. Release it before forwarding a Billing write.
                         session.finish().await?;
-                        return Ok(call_upstream(target, &session, body.as_str()).await);
+                        let result = call_upstream(target, &session, body.as_str()).await;
+                        if should_clear(&result) {
+                            session.clear_rejected_tokens().await?;
+                        }
+                        return Ok(result);
                     }
                     Some(target) => call_upstream(target, &session, body.as_str()).await,
                     None => management(&session, path, method, body)
@@ -760,11 +782,7 @@ async fn write_input(
             .await?
             .map_or(Value::Null, Value::String));
     }
-    ensure(
-        a.header("Content-Type").split(';').next() == Some("application/json"),
-        400,
-        "INVALID_REQUEST",
-    )?;
+    ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
     let body = serde_json::from_str(&bounded(&mut a.request, 220000).await?)?;
     if logout {
         shape("ProductLogoutRequest", &body)?;

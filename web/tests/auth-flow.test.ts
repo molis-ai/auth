@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AuthFlow, FlowCancelled } from "../src/features/auth-entry/auth-flow.ts";
+import { AuthFlow, FlowCancelled, mayChooseAuthMethod } from "../src/features/auth-entry/auth-flow.ts";
 for (const outcome of ["resolve", "reject"] as const)
   test(`cancel fences a delayed ${outcome} and leaves the next operation usable`, async () => {
     const flow = new AuthFlow();
@@ -47,4 +47,22 @@ test("dispose closes the owned window, cancels its poll and refuses later delive
     flow.request(async () => 1),
     FlowCancelled,
   );
+});
+
+test("closing an authorization window allows starting the same provider again", () => {
+  for (const provider of ["GOOGLE", "GITHUB"]) {
+    const flow = new AuthFlow();
+    const first = { closed: false, opener: null, close() { this.closed = true; } };
+    assert.equal(flow.open(first as Window), true);
+    assert.equal(mayChooseAuthMethod(provider, provider, true), false);
+    first.close();
+    assert.equal(flow.closed, true);
+    flow.cancel();
+    assert.equal(mayChooseAuthMethod(provider, provider, false), true);
+    const second = { ...first, closed: false };
+    assert.equal(flow.open(second as Window), true);
+    assert.equal(flow.closed, false);
+    flow.dispose();
+  }
+  assert.equal(mayChooseAuthMethod("EMAIL_PASSWORD", "EMAIL_PASSWORD", false), false);
 });

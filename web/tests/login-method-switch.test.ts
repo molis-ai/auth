@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
+import {mayChooseAuthMethod} from '../src/features/auth-entry/auth-flow.ts';
 
 test('switching after a throttled challenge cancels the transaction before changing method', async()=>{
   const source=readFileSync(new URL('../src/features/auth-entry/AuthenticationPanel.vue',import.meta.url),'utf8');
@@ -12,7 +13,7 @@ test('switching after a throttled challenge cancels the transaction before chang
   const password=ref(''),confirm=ref(''),showPassword=ref(false);
   let release:()=>void=()=>{},cancelled=0;
   const cancel=()=>{cancelled++;return new Promise<void>(resolve=>{release=resolve})};
-  const choose= new Function('busy','props','providerPending','method','cancel','active','retryAt','address','rememberedEmail','failure','password','confirm','showPassword','nextTick','submit',js+';return chooseMethod;')(busy,{blocked:false},ref(false),method,cancel,true,retryAt,address,()=> 'saved@example.test',failure,password,confirm,showPassword,async()=>{},()=>{});
+  const choose= new Function('mayChooseAuthMethod','busy','props','providerPending','method','cancel','active','retryAt','address','rememberedEmail','failure','password','confirm','showPassword','nextTick','submit',js+';return chooseMethod;')(mayChooseAuthMethod,busy,{blocked:false},ref(false),method,cancel,true,retryAt,address,()=> 'saved@example.test',failure,password,confirm,showPassword,async()=>{},()=>{});
   const switching=choose('EMAIL_PASSWORD');
   assert.equal(cancelled,1);assert.equal(busy.value,true);assert.equal(method.value,'PHONE_OTP');
   await choose('GOOGLE');assert.equal(cancelled,1); // no competing switch during cancellation

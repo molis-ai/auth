@@ -628,11 +628,7 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let parts: Vec<_> = path.trim_matches('/').split('/').collect();
     let b = if method == Method::Post {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            415,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 415, "INVALID_REQUEST")?;
         serde_json::from_str(&bounded(&mut a.request, 16384).await?)?
     } else {
         json!({})

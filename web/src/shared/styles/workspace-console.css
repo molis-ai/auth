@@ -1,4 +1,24 @@
-/* V2 management, using the original Calm workspace composition. */
+/* Shared console layout and controls. */
+.console-shell.auth-console { display: block; min-height: 100svh; }
+.auth-console, .auth-console * { box-sizing: border-box; }
+.console-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.console-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.console-shell button {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; background: var(--surface);
+  color: var(--ink); cursor: pointer; min-height: 40px;
+}
+.console-shell button:enabled:hover { background: var(--accent-soft); }
+.console-shell button:disabled { cursor: wait; opacity: 0.55; }
+.console-tabs { flex-wrap: wrap; }
+.console-shell footer { margin-top: 30px; }
+ .console-card { overflow-wrap: anywhere; }
+.console-card h2 { margin-top: 0; }
+.console-muted { font-size: 12px; line-height: 1.8; }
+.console-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+.console-card label { display: block; line-height: 1.7; margin: 14px 0; }
+.console-card input:not([type=checkbox]), .console-card select, .console-card textarea { display: block; width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 12px; color: var(--ink); margin-top: 6px; font: inherit; }
+.console-card fieldset { border: 0; padding: 0; margin: 10px 0 0; min-width: 0; }
+
 .console-shell.auth-console { display:grid; grid-template-columns:212px minmax(0,1fr); max-width:none; padding:0; margin:0; background:var(--workspace-bg); }
 .auth-console .workspace-sidebar {
   gap:6px; padding:14px 12px; overflow-y:auto;

@@ -165,7 +165,10 @@ impl Service<'_> {
                 w.push(self.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE')",vec![row["tenant_id"].clone(),self.user()])?);
                 w.push(self.a.s.guard("(SELECT COALESCE(MAX(version)+1,0) FROM auth_tenant_membership WHERE tenant_id=? AND user_id=?)=?",vec![row["tenant_id"].clone(),self.user(),version.into()])?);
                 w.push(self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,version,joined_at) VALUES (?,?,?,'MEMBER','ACTIVE',?,?)",vec![id.into(),row["tenant_id"].clone(),self.user(),version.into(),n.into()])?);
-                w.push(self.a.s.statement("UPDATE auth_tenant SET entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",vec![n.into(),row["tenant_id"].clone()])?);
+                w.push(self.a.s.statement(
+                    "UPDATE auth_tenant SET version=version+1,updated_at=? WHERE id=?",
+                    vec![n.into(), row["tenant_id"].clone()],
+                )?);
             } else {
                 w.push(self.member_guard(&membership)?);
             }
