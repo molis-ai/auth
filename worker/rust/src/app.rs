@@ -1,7 +1,7 @@
 use crate::{
     account, audit, auth,
     core::{http::*, identity::Auth, store::WebSessionAccess},
-    platform, tenants, web,
+    platform, team, web,
 };
 use worker::{Env, Method, Request, Response, Url};
 
@@ -170,8 +170,8 @@ async fn dispatch_v2(a: &mut Auth, path: &str, method: Method) -> Result<Respons
         platform::route(a, path, method).await
     } else if audit::matches(path) {
         audit::route(a, path, method).await
-    } else if tenants::matches(path) {
-        tenants::route(a, path, method).await
+    } else if team::matches(path) {
+        team::route(a, path, method).await
     } else if account::matches(path) {
         account::route(a, path, method).await
     } else {

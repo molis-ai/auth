@@ -10,7 +10,7 @@ mod core;
 mod delivery;
 mod internal;
 mod platform;
-mod tenants;
+mod team;
 mod web;
 
 use worker::*;

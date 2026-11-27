@@ -13,7 +13,7 @@ const domains = [
   'internal',
   'delivery',
   'platform',
-  'tenants',
+  'team',
   'web',
 ]
 

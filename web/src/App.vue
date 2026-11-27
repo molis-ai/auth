@@ -12,8 +12,8 @@ const PlatformUsers = defineAsyncComponent(() => import("./features/platform/Pla
 const PlatformTenants = defineAsyncComponent(() => import("./features/platform/PlatformTenants.vue"));
 const PlatformAudit = defineAsyncComponent(() => import("./features/platform/PlatformAudit.vue"));
 const PlatformApplicationsPage = defineAsyncComponent(() => import("./features/platform/PlatformApplicationsPage.vue"));
-const PendingPage = defineAsyncComponent(() => import("./features/tenants/PendingPage.vue"));
-const TenantPage = defineAsyncComponent(() => import("./features/tenants/TenantPage.vue"));
+const PendingPage = defineAsyncComponent(() => import("./features/team/PendingPage.vue"));
+const TenantPage = defineAsyncComponent(() => import("./features/team/TenantPage.vue"));
 const BillingCenterPage = defineAsyncComponent(() => import("./features/billing/BillingCenterPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
