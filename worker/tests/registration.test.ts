@@ -455,7 +455,7 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
       changingMail = await send(changing, 'alice@example.test')
     await verify(changing, changingMail)
     await db
-      .prepare('UPDATE auth_user_security SET identity_version=identity_version+1 WHERE user_id=?')
+      .prepare('UPDATE auth_user SET identity_version=identity_version+1 WHERE id=?')
       .bind(u.id)
       .run()
     assert.equal((await call(changing.path + '/complete', {}, changing.proof)).status, 409)

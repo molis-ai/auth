@@ -127,7 +127,7 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
             "SELECT a.*, u.display_name actor_display_name, s.name tenant_name
          FROM auth_management_audit a
          LEFT JOIN auth_user u ON u.id=a.actor_user_id
-         LEFT JOIN auth_space s ON s.id=a.tenant_id",
+         LEFT JOIN auth_tenant s ON s.id=a.tenant_id",
             audit_view,
             PageOrder::TimeDesc("occurred_at"),
         )

@@ -149,7 +149,7 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
         // credential below must succeed before the other results are used.
         let snapshot = a.s.batch_read(vec![
             credential,
-            a.s.statement(&format!("{TENANTS} WHERE t.space_id=?"), vec![id.clone().into()])?,
+            a.s.statement(&format!("{TENANTS} WHERE t.id=?"), vec![id.clone().into()])?,
             a.s.statement(
                 &format!("SELECT role FROM auth_tenant_membership WHERE user_id={ACCESS_USER_ID} AND {ACTIVE_MEMBER}"),
                 vec![digest.clone().into(), id.clone().into()],

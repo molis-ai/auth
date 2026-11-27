@@ -36,8 +36,12 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     const statement = (sql: string, ...values: (string | number)[]) =>
       db.prepare(sql).bind(...values)
     await db.batch([
-      statement("INSERT INTO auth_user VALUES ('admin','Admin','ACTIVE',NULL,?,?)", n, n),
-      statement("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('admin',?)", n),
+      statement(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('admin','Admin','ACTIVE',NULL,?,?)",
+        n,
+        n,
+      ),
+
       statement(
         "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
         n,
@@ -249,12 +253,8 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await assert.rejects(() => bootstrapPlatform(db, 'admin'))
 
     await statement(
-      "INSERT INTO auth_user VALUES ('target','Target','ACTIVE',NULL,?,?)",
+      "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('target','Target','ACTIVE',NULL,?,?)",
       n,
-      n,
-    ).run()
-    await statement(
-      "INSERT INTO auth_user_security(user_id,updated_at) VALUES ('target',?)",
       n,
     ).run()
     ok(await call('/users'), 'PlatformUserPage')

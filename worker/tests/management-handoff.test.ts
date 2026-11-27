@@ -97,14 +97,14 @@ async function fixture(t: TestContext) {
     const authenticated = now - 8 * 86_400_000 - 321
     const verified = authenticated + 123_456
     await db
-      .prepare("INSERT OR IGNORE INTO auth_user VALUES (?,?,'ACTIVE',NULL,?,?)")
+      .prepare(
+        "INSERT OR IGNORE INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES (?,?,'ACTIVE',NULL,?,?)",
+      )
       .bind(account, 'Handoff User', authenticated, authenticated)
       .run()
     await db
-      .prepare(
-        'INSERT OR IGNORE INTO auth_user_security(user_id,session_epoch,updated_at) VALUES (?,3,?)',
-      )
-      .bind(account, now)
+      .prepare('UPDATE auth_user SET session_epoch=3,updated_at=? WHERE id=?')
+      .bind(now, account)
       .run()
     const sequence = await db
       .prepare(

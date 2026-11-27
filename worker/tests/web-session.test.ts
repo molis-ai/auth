@@ -297,9 +297,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
               "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Other account','ACTIVE',?,?)",
             )
             .bind(otherUser, timestamp, timestamp),
-          db
-            .prepare('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)')
-            .bind(otherUser, timestamp),
+
           fixture('qa-sessions-work', work, workActivity),
           fixture('qa-sessions-club', club, clubActivity),
           fixture('qa-sessions-expired', work, timestamp - 31 * 86_400_000),
@@ -336,7 +334,6 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         } finally {
           await db.batch([
             db.prepare("DELETE FROM auth_login_session WHERE id LIKE 'qa-sessions-%'"),
-            db.prepare('DELETE FROM auth_user_security WHERE user_id=?').bind(otherUser),
             db.prepare('DELETE FROM auth_user WHERE id=?').bind(otherUser),
           ])
         }
@@ -1069,13 +1066,12 @@ test(
       const now = Date.now()
       const expiry = now + 7_776_000_000
       await db
-        .prepare("INSERT INTO auth_user VALUES (?,'Lease Account','ACTIVE',NULL,?,?)")
+        .prepare(
+          "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES (?,'Lease Account','ACTIVE',NULL,?,?)",
+        )
         .bind(userId, now, now)
         .run()
-      await db
-        .prepare('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)')
-        .bind(userId, now)
-        .run()
+
       const seq = await db
         .prepare(
           "INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?) RETURNING seq",
@@ -1586,9 +1582,7 @@ test(
             .first()
         const receipt = () =>
           db
-            .prepare(
-              'SELECT received_at FROM auth_login_activity WHERE login_session_id=? AND event_id=?',
-            )
+            .prepare('SELECT kind FROM auth_login_activity WHERE login_session_id=? AND event_id=?')
             .bind(loginId, activity.body.eventId)
             .first()
         const initial = await stored()
@@ -1601,7 +1595,7 @@ test(
         const committed = await data(await traced({ read: 1, write: 3 }, b, '/activity', activity))
         assert.equal(committed.loginSessionId, loginId)
         assert.equal(Date.parse(committed.lastActiveAt), (await stored())?.last_active_at)
-        assert.equal(Date.parse(committed.lastActiveAt), (await receipt())?.received_at)
+        assert.equal((await receipt())?.kind, activity.body.kind)
         assertReady(await row(b), Number(before.revision) + 1)
       },
     )
@@ -1615,9 +1609,7 @@ test(
       await takeOver(b, old, 'AUTHENTICATED')
       assert.deepEqual(
         await db
-          .prepare(
-            'SELECT display_name,account_version FROM auth_user JOIN auth_user_security ON user_id=id WHERE id=?',
-          )
+          .prepare('SELECT display_name,account_version FROM auth_user WHERE id=?')
           .bind(userId)
           .first(),
         { display_name: 'Lease Account', account_version: 0 },

@@ -2,182 +2,64 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
-import { adoptBaseline } from '../scripts/adopt-d1-baseline.mjs'
 import { verifyDeploymentDatabase } from '../scripts/deployment-readiness.mjs'
 
-const busyLeaseMigration = '0019_web_session_busy_lease.sql'
 const migrationDirectory = new URL('../migrations/', import.meta.url)
+const baseline = '0001_auth_baseline.sql'
 
-const historyDirectory = new URL('../migration-history/through-0020/', import.meta.url)
-
-function database(through?: string) {
+function database() {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
-  const directory = through ? historyDirectory : migrationDirectory
-  for (const name of readdirSync(directory)
-    .filter((n) => n.endsWith('.sql') && (!through || n <= through))
-    .sort())
-    db.exec(readFileSync(new URL(name, directory), 'utf8'))
+  db.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
   return db
 }
 
-const baseline = '0020_auth_baseline.sql'
-
-test('the fresh Auth baseline reproduces the historical schema and empty contents', () => {
-  const fresh = new DatabaseSync(':memory:')
-  const legacy = database('0020_logout_receipt_proof_expiry.sql')
-  const objects =
-    "SELECT type, name, sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name"
+test('a single fresh Auth baseline creates the expected indexes and drops unused storage', () => {
+  assert.deepEqual(readdirSync(migrationDirectory), [baseline])
+  const db = database()
   try {
-    fresh.exec('PRAGMA foreign_keys=ON')
-    fresh.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
-    // Match complete definitions: columns, checks, keys, foreign keys and partial indexes.
-    assert.deepEqual(fresh.prepare(objects).all(), legacy.prepare(objects).all())
-    for (const { name } of fresh
-      .prepare("SELECT name FROM sqlite_schema WHERE type='table'")
-      .all()) {
-      const rows = 'SELECT * FROM "' + name + '"'
-      assert.deepEqual(fresh.prepare(rows).all(), legacy.prepare(rows).all(), String(name))
-    }
-    assert.deepEqual(fresh.prepare('PRAGMA foreign_key_check').all(), [])
-  } finally {
-    fresh.close()
-    legacy.close()
-  }
-})
-
-test('0021–0024 produce the same Auth schema on fresh and populated databases', () => {
-  const fresh = database()
-  const upgraded = new DatabaseSync(':memory:')
-  try {
-    upgraded.exec('PRAGMA foreign_keys=ON')
-    upgraded.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
-    upgraded.exec(`
-      INSERT INTO auth_application(id,name) VALUES ('existing','Existing application');
-      INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-        VALUES ('client','client','existing','WEB','[]','[]');
-    `)
-    const rows = () => upgraded.prepare('SELECT * FROM auth_client').all()
-    const before = rows()
-    upgraded.exec(readFileSync(new URL('0021_perf_indexes.sql', migrationDirectory), 'utf8'))
-    upgraded.exec(
-      readFileSync(new URL('0022_platform_audit_indexes.sql', migrationDirectory), 'utf8'),
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
+    assert.deepEqual(
+      db.prepare("SELECT name FROM sqlite_schema WHERE name GLOB 'billing_*'").all(),
+      [],
     )
-    upgraded.exec(
-      readFileSync(new URL('0023_platform_query_indexes.sql', migrationDirectory), 'utf8'),
-    )
-    upgraded.exec(
-      readFileSync(new URL('0024_drop_legacy_billing_tables.sql', migrationDirectory), 'utf8'),
-    )
-    assert.deepEqual(rows(), before)
-    const objects = 'SELECT type, name, sql FROM sqlite_schema ORDER BY type, name'
-    assert.deepEqual(fresh.prepare(objects).all(), upgraded.prepare(objects).all())
-    assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), [])
-    for (const db of [fresh, upgraded]) {
-      assert.deepEqual(
-        db
-          .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name GLOB 'billing_*'")
-          .all(),
-        [],
-      )
-    }
     const indexes = {
       ix_ownership_transfer_from: ['from_membership_id', 'id'],
       ix_ownership_transfer_to: ['to_membership_id', 'id'],
       ix_tenant_membership_tenant_status_id: ['tenant_id', 'status', 'id'],
       ix_client_application_id: ['application_id', 'id'],
-      ix_management_audit_tenant_id: ['tenant_id', 'id'],
       ix_management_audit_time: ['occurred_at', 'id'],
-      ix_managed_tenant_time: ['managed_at', 'space_id'],
+      ix_managed_tenant_time: ['managed_at', 'id'],
       ix_user_email_verified_order: ['user_id', 'created_at', 'id'],
-      ix_managed_tenant_status_time: ['status', 'managed_at', 'space_id'],
+      ix_managed_tenant_status_time: ['status', 'managed_at', 'id'],
       ix_management_audit_outcome_time: ['outcome', 'occurred_at', 'id'],
       ix_management_audit_operation_time: ['operation', 'occurred_at', 'id'],
+      ix_platform_permission_status_user: ['permission', 'status', 'user_id'],
+      ix_management_audit_target_time: ['target_id', 'occurred_at', 'id'],
+      ix_user_status_id: ['status', 'id'],
+      ix_tenant_membership_tenant_user_version: ['tenant_id', 'user_id', 'version'],
+      ix_tenant_invitation_tenant_id: ['tenant_id', 'id'],
     }
     for (const [index, columns] of Object.entries(indexes)) {
-      for (const db of [fresh, upgraded]) {
-        assert.deepEqual(
-          db
-            .prepare(`PRAGMA index_info(${index})`)
-            .all()
-            .map((row) => row.name),
-          columns,
-        )
-      }
+      assert.deepEqual(
+        db
+          .prepare(`PRAGMA index_info(${index})`)
+          .all()
+          .map((row) => row.name),
+        columns,
+      )
     }
-  } finally {
-    fresh.close()
-    upgraded.close()
-  }
-})
-
-test('cutover checks the historical ledger and exact DDL before registering once', () => {
-  const db = database('0020_logout_receipt_proof_expiry.sql')
-  const execute = (sql: string) => db.prepare(sql).all()
-  try {
-    db.exec('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY, name TEXT UNIQUE)')
-    const history = readdirSync(historyDirectory)
-      .filter((file) => file.endsWith('.sql'))
-      .sort()
-    const insert = db.prepare('INSERT INTO d1_migrations(name) VALUES(?)')
-    for (const file of history.slice(0, -1)) insert.run(file)
-    assert.throws(() => adoptBaseline(execute, true), /Unapplied historical migrations: 0020_/)
-    insert.run(history.at(-1)!)
-    db.exec("INSERT INTO auth_user VALUES('kept','Original','ACTIVE',NULL,0,0)")
-    db.exec(
-      "INSERT INTO auth_web_session(id_hash,payload,revision,status,expires_at,busy_until) VALUES('lease','sealed',4,'BUSY',999,111)",
-    )
-    db.exec('ALTER TABLE auth_user ADD COLUMN drift INTEGER')
-    assert.throws(() => adoptBaseline(execute, true), /different Auth schema object: auth_user/)
-    db.exec('ALTER TABLE auth_user DROP COLUMN drift')
-    assert.match(adoptBaseline(execute), /ready for registration/)
-    const before = execute('SELECT * FROM d1_migrations ORDER BY id')
-    assert.equal(before.length, history.length)
-    // An independent schema edit between the preview and the insert must cancel the write.
-    const concurrent = (sql: string) => {
-      if (sql.startsWith('INSERT')) db.exec('CREATE INDEX concurrent_edit ON auth_user(status)')
-      return execute(sql)
+    assert.deepEqual(db.prepare('PRAGMA index_info(ix_management_audit_tenant_id)').all(), [])
+    for (const [table, column] of [
+      ['auth_verification_challenge', 'next_send_at'],
+      ['auth_management_result', 'response_status'],
+      ['auth_logout_receipt', 'revoked_seq'],
+      ['auth_login_activity', 'received_at'],
+    ]) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all()
+      assert.ok(columns.length > 0)
+      assert.ok(columns.every((entry) => entry.name !== column))
     }
-    assert.throws(() => adoptBaseline(concurrent, true), /changed during registration/)
-    assert.deepEqual(execute('SELECT * FROM d1_migrations ORDER BY id'), before)
-    db.exec('DROP INDEX concurrent_edit')
-    assert.equal(adoptBaseline(execute, true), 'Baseline registered')
-    assert.equal(adoptBaseline(execute, true), 'Baseline already recorded')
-    const after = execute('SELECT * FROM d1_migrations ORDER BY id')
-    assert.deepEqual(after.slice(0, -1), before)
-    assert.equal(after.at(-1)?.name, baseline)
-    assert.equal(
-      execute("SELECT display_name FROM auth_user WHERE id='kept'")[0].display_name,
-      'Original',
-    )
-    assert.equal(
-      execute("SELECT busy_until FROM auth_web_session WHERE id_hash='lease'")[0].busy_until,
-      111,
-    )
-    db.exec('CREATE TABLE baseline_successor(id INTEGER PRIMARY KEY)')
-    insert.run('0021_future.sql')
-    assert.equal(adoptBaseline(execute, true), 'Baseline already recorded')
-  } finally {
-    db.close()
-  }
-})
-
-test('0019 preserves existing READY and BUSY sessions and enables the lease readiness probe', () => {
-  const db = database('0018_management_handoff.sql')
-  try {
-    db.exec(`INSERT INTO auth_web_session(id_hash,payload,revision,status,expires_at) VALUES
-      ('ready','sealed-ready',7,'READY',1795417800000),
-      ('busy','sealed-busy',11,'BUSY',1795417900000)`)
-    const rows = () => db.prepare('SELECT * FROM auth_web_session ORDER BY id_hash').all()
-    const before = rows()
-    const readiness = 'SELECT payload,revision,busy_until FROM auth_web_session LIMIT 0'
-    assert.throws(() => db.prepare(readiness), /no such column: busy_until/)
-    db.exec(readFileSync(new URL(busyLeaseMigration, historyDirectory), 'utf8'))
-    assert.deepEqual(db.prepare(readiness).all(), [])
-    assert.deepEqual(
-      rows().map((row) => ({ ...row })),
-      before.map((row) => ({ ...row, busy_until: 0 })),
-    )
   } finally {
     db.close()
   }
@@ -187,13 +69,10 @@ test('V2C-02 current tenant schema enforces ownership, membership, foreign keys 
   const db = database()
   try {
     db.exec(
-      "INSERT INTO auth_user VALUES ('u','User','ACTIVE',NULL,0,0),('v','Other','ACTIVE',NULL,0,0)",
+      "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('u','User','ACTIVE',NULL,0,0),('v','Other','ACTIVE',NULL,0,0)",
     )
     db.exec(
-      "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES ('s','Team','TEAM','ACTIVE',0,0)",
-    )
-    db.exec(
-      "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES ('s','ACTIVE','u',0,0)",
+      "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES ('s','Team',0,'ACTIVE','u',0,0)",
     )
     const member = (id: string, user: string) =>
       db
@@ -216,7 +95,9 @@ test('V2C-02 current tenant schema enforces ownership, membership, foreign keys 
     )
     db.exec('BEGIN')
     try {
-      db.exec("INSERT INTO auth_user VALUES ('rollback','Temporary','ACTIVE',NULL,0,0)")
+      db.exec(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('rollback','Temporary','ACTIVE',NULL,0,0)",
+      )
       db.exec("INSERT INTO auth_user_email VALUES ('g','rollback','test@example.com',NULL,0)")
       assert.fail('Expected duplicate email')
     } catch {

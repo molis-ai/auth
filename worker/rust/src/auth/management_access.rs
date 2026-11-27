@@ -88,7 +88,7 @@ impl Service<'_> {
         self.s["user_id"].clone()
     }
     pub fn tenant_guard(&self, t: &Value, active: bool) -> Result<D1PreparedStatement> {
-        self.a.s.guard("EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND (?=0 OR status='ACTIVE'))",vec![t["id"].clone(),t["version"].clone(),active.into()])
+        self.a.s.guard("EXISTS(SELECT 1 FROM auth_tenant WHERE id=? AND version=? AND (?=0 OR status='ACTIVE'))",vec![t["id"].clone(),t["version"].clone(),active.into()])
     }
     pub fn member_guard(&self, m: &Value) -> Result<D1PreparedStatement> {
         self.a.s.guard("EXISTS(SELECT 1 FROM auth_tenant_membership WHERE id=? AND tenant_id=? AND user_id=? AND status='ACTIVE' AND role=? AND version=?)",vec![m["id"].clone(),m["tenant_id"].clone(),m["user_id"].clone(),m["role"].clone(),m["version"].clone()])
@@ -168,7 +168,7 @@ pub fn receipt(
         n.into(),
     ];
     Ok(vec![s.a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",args)?,
-        s.a.s.statement("INSERT INTO auth_management_result VALUES (?,?,?,?,?,?,200,?,?,?)",vec![s.s["user_id"].clone(),s.s["client_id"].clone(),action.op.into(),action.path.clone().into(),key.into(),hash(&b.to_string()).into(),json!({"data":result}).to_string().into(),n.into(),(n+ttl("idempotencyTtlSeconds")).into()])?])
+        s.a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s.s["user_id"].clone(),s.s["client_id"].clone(),action.op.into(),action.path.clone().into(),key.into(),hash(&b.to_string()).into(),json!({"data":result}).to_string().into(),n.into(),(n+ttl("idempotencyTtlSeconds")).into()])?])
 }
 pub const ACTOR: &str = "(SELECT user_id FROM actor)";
 
@@ -295,7 +295,7 @@ impl<'a> ReadQuery<'a> {
             )?),
             Access::Member(_) => statements.extend([
                 self.a.s.statement(
-                    "SELECT space_id id,status,version FROM auth_managed_tenant WHERE space_id=?",
+                    "SELECT id,status,version FROM auth_tenant WHERE id=?",
                     vec![self.action.tenant_id.clone().into()],
                 )?,
                 self.a.s.statement(
@@ -377,8 +377,8 @@ impl<'a> ReadQuery<'a> {
                     ]);
                 }
                 sql.push_str(
-                    " AND EXISTS(SELECT 1 FROM auth_managed_tenant
-                    WHERE space_id=tenant_id AND status='ACTIVE'",
+                    " AND EXISTS(SELECT 1 FROM auth_tenant
+                    WHERE id=tenant_id AND status='ACTIVE'",
                 );
                 if let Some(snapshot) = expected {
                     sql.push_str(" AND version=?");

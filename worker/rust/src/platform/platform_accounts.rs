@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use worker::Method;
-const USERS: &str = "SELECT u.*,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,s.account_version version FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
+const USERS: &str = "SELECT u.id,u.display_name,u.status,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,u.account_version version FROM auth_user u";
 fn user_view(r: &Value) -> Value {
     json!({"userId":r["id"],"displayName":r["display_name"],"email":r["email"],"status":r["status"],"version":r["version"]})
 }
@@ -93,8 +93,8 @@ pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()>
 }
 fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatement> {
     s.a.s.guard(
-        "EXISTS(SELECT 1 FROM auth_user u JOIN auth_user_security us ON us.user_id=u.id
-         WHERE u.id=? AND u.status=? AND us.account_version=?)",
+        "EXISTS(SELECT 1 FROM auth_user u
+         WHERE u.id=? AND u.status=? AND uu.account_version=?)",
         vec![
             row["id"].clone(),
             row["status"].clone(),
@@ -191,7 +191,10 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
                 s.a, &a.id, None,
             )?);
         } else {
-            w.push(s.a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![n.into(),a.id.clone().into()])?);
+            w.push(s.a.s.statement(
+                "UPDATE auth_user SET account_version=account_version+1,updated_at=? WHERE id=?",
+                vec![n.into(), a.id.clone().into()],
+            )?);
         }
         w.push(s.a.s.statement(
             "UPDATE auth_user SET status=?,updated_at=? WHERE id=?",

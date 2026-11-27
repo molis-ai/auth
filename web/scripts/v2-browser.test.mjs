@@ -272,17 +272,17 @@ try {
   await page.click(`${pageSizeMenu} button[aria-pressed=true]`);
   await page.wait(`!document.querySelector('${pageSizeMenu}')`);
   assert.equal(
-    (await db.prepare("SELECT count(*) n FROM auth_managed_tenant").first()).n,
+    (await db.prepare("SELECT count(*) n FROM auth_tenant").first()).n,
     1,
   );
   console.log("PASS browser self-service tenant");
   assert.ok([...scripts].some(path => path.includes("/TenantPage-")));
   assert.ok([...scripts].every(path => !/Platform(?:Users|Clients)-/.test(path)));
-  const testTenant = await db.prepare("SELECT space_id FROM auth_managed_tenant").first();
+  const testTenant = await db.prepare("SELECT id FROM auth_tenant").first();
   const membersCte = "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<12)";
   await db.batch([
     db.prepare(membersCte + " INSERT INTO auth_user(id,display_name,status,created_at,updated_at) SELECT 'qa-page-user-'||n,'QA 成员 '||n,'ACTIVE',0,0 FROM numbers"),
-    db.prepare(membersCte + " INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT 'qa-page-member-'||n,?,'qa-page-user-'||n,'MEMBER','ACTIVE',0 FROM numbers").bind(testTenant.space_id),
+    db.prepare(membersCte + " INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) SELECT 'qa-page-member-'||n,?,'qa-page-user-'||n,'MEMBER','ACTIVE',0 FROM numbers").bind(testTenant.id),
   ]);
   await click("个人资料");
   memberReads.length = 0;
@@ -367,14 +367,14 @@ try {
   await page.evaluate("window.__authPerformance.gates['/invitations'](); window.__authPerformance.gates['/ownership-transfers']()");
   await page.wait("document.querySelector('.pending-empty-actions button:enabled')?.textContent.trim() === '刷新检查'");
   await click("个人资料");
-  const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.space_id).first();
+  const tenantOwner = await db.prepare("SELECT id,user_id FROM auth_tenant_membership WHERE tenant_id=? AND role='OWNER'").bind(testTenant.id).first();
   await page.wait("Boolean(document.querySelector('.profile-identity'))");
   assert.ok(await page.evaluate(`!document.querySelector('.profile-identity').textContent.includes(${JSON.stringify(tenantOwner.user_id)})`));
   const invite = db.prepare("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,'USER',?,?,'PENDING',?,?)");
   const invitedAt = Date.now();
   await db.batch([
-    invite.bind("qa-current-invitation", testTenant.space_id, tenantOwner.user_id, tenantOwner.id, invitedAt, invitedAt + 600_000),
-    invite.bind("qa-other-invitation", testTenant.space_id, "qa-page-user-2", tenantOwner.id, invitedAt, invitedAt + 600_000),
+    invite.bind("qa-current-invitation", testTenant.id, tenantOwner.user_id, tenantOwner.id, invitedAt, invitedAt + 600_000),
+    invite.bind("qa-other-invitation", testTenant.id, "qa-page-user-2", tenantOwner.id, invitedAt, invitedAt + 600_000),
   ]);
   await page.evaluate("document.querySelector('meta[name=molis-tenant-invite-channels]').content='USER'");
   await click("团队");
@@ -404,7 +404,7 @@ try {
   assert.deepEqual(await db.prepare("SELECT target_kind,target_user_id,status FROM auth_tenant_invitation WHERE target_email=?").bind("qa-web-invite@example.test").first(),
     { target_kind: "EMAIL", target_user_id: null, status: "PENDING" });
   assert.equal(await page.evaluate("document.querySelector('.tm-heading h2')?.textContent"), 'QA 自助团队');
-  await db.prepare("UPDATE auth_space SET name=? WHERE id=?").bind('QA 刷新后的团队', testTenant.space_id).run();
+  await db.prepare("UPDATE auth_tenant SET name=? WHERE id=?").bind('QA 刷新后的团队', testTenant.id).run();
   await click("待处理");
   await page.wait("document.querySelectorAll('.pending-item.is-info').length === 1");
   assert.equal(await page.evaluate("document.querySelector('.console-tabs [aria-current=page]')?.textContent"), "待处理");
@@ -413,7 +413,7 @@ try {
   await click("团队");
   await page.wait("document.querySelector('.tm-heading h2')?.textContent === 'QA 刷新后的团队' && document.querySelector('[aria-current=true] .tenant-choice-name')?.textContent === 'QA 刷新后的团队'");
   await page.wait("document.querySelector('.tm-table-wrap .tm-self')?.textContent === '（我）'");
-  const tenantDetailPath = '/tenants/' + testTenant.space_id;
+  const tenantDetailPath = '/tenants/' + testTenant.id;
   assert.deepEqual((await db.prepare("SELECT status,accepted_membership_id FROM auth_tenant_invitation WHERE id IN ('qa-current-invitation','qa-other-invitation') ORDER BY id").all()).results, [
     { status: 'ACCEPTED', accepted_membership_id: tenantOwner.id },
     { status: 'PENDING', accepted_membership_id: null },
@@ -440,7 +440,7 @@ try {
   await page.wait("[...document.querySelectorAll('.tm-table-wrap tbody tr')].some(row => row.querySelector('strong')?.textContent === 'QA 成员 1' && row.cells[2].textContent === '管理员')");
   const transferId = "qa-team-name-transfer";
   await db.prepare("INSERT INTO auth_ownership_transfer(id,tenant_id,from_membership_id,to_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,'PENDING',?,?)")
-    .bind(transferId, testTenant.space_id, tenantOwner.id, "qa-page-member-1", invitedAt, invitedAt + 600_000).run();
+    .bind(transferId, testTenant.id, tenantOwner.id, "qa-page-member-1", invitedAt, invitedAt + 600_000).run();
   await click("待处理");
   await page.wait("document.querySelector('.pending-item.is-warn .pending-item-text')?.textContent.trim() === '「QA 刷新后的团队」的所有权交接'");
   for (const width of [1440, 390]) {
@@ -621,14 +621,9 @@ try {
   await db.batch([
     db
       .prepare(
-        "INSERT INTO auth_user VALUES ('qa-v2-target','QA 目标用户','ACTIVE',NULL,?,?)",
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('qa-v2-target','QA 目标用户','ACTIVE',NULL,?,?)",
       )
       .bind(fixtureTime, fixtureTime),
-    db
-      .prepare(
-        "INSERT INTO auth_user_security(user_id,updated_at) VALUES ('qa-v2-target',?)",
-      )
-      .bind(fixtureTime),
   ]);
   await page.command("Page.reload");
   await page.wait(
@@ -929,7 +924,7 @@ try {
   assert.equal(hasDetailRead(transferReads), false, "transfer uses the returned team detail");
   assert.equal(transferReads.some(entry => entry.path === "/platform/tenants"), false);
   assert.match(await page.evaluate("document.querySelector('#pt-member-heading').textContent"), /2 人/);
-  const governedTeam = await db.prepare("SELECT id FROM auth_space WHERE name='QA 平台治理团队'").first();
+  const governedTeam = await db.prepare("SELECT id FROM auth_tenant WHERE name='QA 平台治理团队'").first();
   const governanceRoles = await db.prepare("SELECT user_id,role FROM auth_tenant_membership WHERE tenant_id=? ORDER BY role").bind(governedTeam.id).all();
   assert.deepEqual(governanceRoles.results, [
     { user_id: "qa-v2-target", role: "ADMIN" },

@@ -64,7 +64,7 @@ test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong passwo
       )
     }
     await db.prepare('UPDATE auth_user_email SET verified_at=0').run()
-    await db.prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('vector',0)").run()
+
     for (const [password, expected] of [
       ['migration-test-密码-e\u0301', 200],
       ['wrong-password', 401],

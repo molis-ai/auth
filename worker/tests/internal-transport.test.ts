@@ -174,8 +174,12 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   )
   await run('UPDATE auth_client_policy SET allowed_origins=?', JSON.stringify([origin]))
   await run('UPDATE auth_client SET redirects=?', JSON.stringify([origin + '/account/callback']))
-  await run("INSERT INTO auth_user VALUES ('user-1','Fixture','ACTIVE',NULL,?,?)", at, at)
-  await run("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('user-1',?)", at)
+  await run(
+    "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('user-1','Fixture','ACTIVE',NULL,?,?)",
+    at,
+    at,
+  )
+
   await run(
     "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
     at,
@@ -194,12 +198,8 @@ test('Auth bridge enforces the private channel and reads current Work billing id
     at + 900_000,
   )
   await run(
-    "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES ('team-1','Fixture','TEAM','ACTIVE',?,?)",
+    "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES ('team-1','Fixture',?,'ACTIVE','user-1',?,?)",
     at,
-    at,
-  )
-  await run(
-    "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES ('team-1','ACTIVE','user-1',?,?)",
     at,
     at,
   )
@@ -264,10 +264,10 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await run("UPDATE auth_tenant_membership SET status='LEFT',ended_at=?", at + 1)
   await expectError(await call(verify, team), 404, 'NOT_FOUND')
   await run("UPDATE auth_tenant_membership SET status='ACTIVE',ended_at=NULL")
-  await run("UPDATE auth_managed_tenant SET status='DISABLED'")
+  await run("UPDATE auth_tenant SET status='DISABLED'")
   await expectError(await call(verify, team), 403, 'TENANT_DISABLED')
   await expectData(await call(introspect, {}), { userId: 'user-1' })
-  await run("UPDATE auth_managed_tenant SET status='ACTIVE'")
+  await run("UPDATE auth_tenant SET status='ACTIVE'")
   await expectData(await call(verify, team), { ...team, userId: 'user-1', role: 'OWNER' })
 
   const legacyAudit = () =>
@@ -337,9 +337,9 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await run('UPDATE auth_login_session SET revoked_at=NULL,session_revision=1')
   await expectError(await call(introspect, {}), 401, 'SESSION_EXPIRED')
   await run('UPDATE auth_login_session SET session_revision=0')
-  await run('UPDATE auth_user_security SET session_epoch=1')
+  await run('UPDATE auth_user SET session_epoch=1')
   await expectError(await call(verify, self), 401, 'SESSION_EXPIRED')
-  await run('UPDATE auth_user_security SET session_epoch=0')
+  await run('UPDATE auth_user SET session_epoch=0')
   await run("UPDATE auth_user SET status='DISABLED'")
   await expectError(await call(introspect, {}), 401, 'SESSION_EXPIRED')
   await run("UPDATE auth_user SET status='ACTIVE'")

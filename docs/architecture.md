@@ -45,7 +45,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 - 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
 - 密码派生由私有 `PASSWORD_KDF` 绑定调用 `PasswordKdf` Durable Object，由 RustCrypto 执行 PBKDF2-HMAC-SHA256 600,000 次，使用 16 字节随机盐和 32 字节派生值。Durable Object 使用独立的 CPU 预算，且不持久化密码、盐或派生值。派生不可用时拒绝请求，无重试或本地回退。无旧密码编码读取或用户映射兼容。线上 Durable Object 的 CPU 耗时需单独观测。
 - 头像实际解码再编码；外部身份不按同邮箱自动合并。外部请求不跟随任意重定向，带超时与大小限制。
-- Auth D1 应用完整迁移链后只保留身份、会话、团队和平台管理等 Auth 数据。历史基线 0020 及后续迁移按[部署手册](cloudflare-deployment.md#d1-迁移基线)保留和应用。账务数据与接口归独立 Billing Worker，见[同源转发说明](account-billing-bff.md)。
+- Auth D1 应用完整迁移链后只保留身份、会话、团队和平台管理等 Auth 数据。新库通过 [D1 单基线](cloudflare-deployment.md#d1-迁移基线)创建。账务数据与接口归独立 Billing Worker，见[同源转发说明](account-billing-bff.md)。
 
 ## 构建与验证
 

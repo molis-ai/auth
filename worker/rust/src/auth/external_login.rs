@@ -238,7 +238,7 @@ async fn commit_identity(
             crate::auth::sensitive_transactions::verified(a, t, &verified_identity, now()).await?,
         );
     } else {
-        let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
+        let existing=a.s.one("SELECT x.user_id,u.status,u.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
         crate::auth::test_admission::Admission::load(a)?
             .external(a, identity, &existing["user_id"])
             .await?;
@@ -266,14 +266,11 @@ async fn commit_identity(
             epoch = number(&existing, "session_epoch");
             writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_external_identity WHERE issuer=? AND subject=? AND user_id=?)",vec![identity["issuer"].clone(),identity["subject"].clone(),user.clone().into()])?);
         }
-        writes.push(a.s.statement(
-            "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-            vec![user.clone().into(), n.into()],
-        )?);
+
         writes.extend(crate::auth::external_profile::save(a, identity, &user)?);
         if identity.get("profile").is_some() {
             writes.push(a.s.statement(
-                "UPDATE auth_user_security SET account_version=account_version+1 WHERE user_id=?",
+                "UPDATE auth_user SET account_version=account_version+1 WHERE id=?",
                 vec![user.clone().into()],
             )?);
         }

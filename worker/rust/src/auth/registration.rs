@@ -21,7 +21,7 @@ pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1Pr
     )
 }
 pub(crate) fn boundary(a: &Auth, t: &Value, user: &str, epoch: i64) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_user_security us JOIN auth_user u ON u.id=us.user_id WHERE us.user_id=? AND u.status='ACTIVE' AND us.session_epoch=? AND COALESCE(us.revoked_before_seq,0)<?)",vec![user.into(),epoch.into(),t["created_seq"].clone()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_user u WHERE u.id=? AND u.status='ACTIVE' AND u.session_epoch=? AND COALESCE(u.revoked_before_seq,0)<?)",vec![user.into(),epoch.into(),t["created_seq"].clone()])
 }
 pub(crate) async fn transaction(a: &Auth, id: &str) -> Result<(Value, Value)> {
     let t =
@@ -196,7 +196,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         credential: &credential,
         expires,
     };
-    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET invalidated_at=? WHERE transaction_id=? AND invalidated_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE transaction_id=? AND kind='VERIFICATION' AND consumed_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_verification_challenge(id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at) VALUES (?,?,?,?,?,?,'ACCEPTED',5,?,?,?)",vec![id.clone().into(),t["id"].clone(),channel.clone().into(),target.clone().into(),hash(&format!("{id}:{credential}")).into(),delivery.clone().into(),n.into(),expires.into(),(n+60000).into()])?];
+    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET invalidated_at=? WHERE transaction_id=? AND invalidated_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE transaction_id=? AND kind='VERIFICATION' AND consumed_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_verification_challenge(id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at) VALUES (?,?,?,?,?,?,'ACCEPTED',5,?,?)",vec![id.clone().into(),t["id"].clone(),channel.clone().into(),target.clone().into(),hash(&format!("{id}:{credential}")).into(),delivery.clone().into(),n.into(),expires.into()])?];
     // Unknown reset targets get the same accepted response, without delivery or account creation.
     let password_reset = t["purpose"] == "PASSWORD_RESET";
     let deliver = if password_reset {
@@ -318,13 +318,10 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         );
     }
     if t["purpose"] == "PASSWORD_RESET" {
-        let user=a.s.one("SELECT e.id binding_id,e.user_id,us.session_epoch,us.identity_version FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id LEFT JOIN auth_user_security us ON us.user_id=e.user_id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL AND u.status='ACTIVE'",vec![target.into()]).await?;
+        let user=a.s.one("SELECT e.id binding_id,e.user_id,u.session_epoch,u.identity_version FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL AND u.status='ACTIVE'",vec![target.into()]).await?;
         ensure(!user.is_null(), 401, "INVALID_CREDENTIALS")?;
         let epoch = number(&user, "session_epoch");
-        writes.push(a.s.statement(
-            "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-            vec![user["user_id"].clone(), n.into()],
-        )?);
+
         writes.push(boundary(a, t, &text(&user, "user_id"), epoch)?);
         writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email WHERE id=? AND user_id=? AND verified_at IS NOT NULL)",vec![user["binding_id"].clone(),user["user_id"].clone()])?);
         writes.push(a.s.statement("UPDATE auth_product_transaction SET user_id=?,user_epoch=?,binding_id=?,target=?,status='VERIFIED' WHERE id=?",vec![user["user_id"].clone(),epoch.into(),user["binding_id"].clone(),json!({"identityVersion":number(&user,"identity_version")}).to_string().into(),t["id"].clone()])?);
@@ -337,9 +334,9 @@ pub(crate) fn new_user(a: &Auth, id: &str, n: i64) -> Result<Vec<D1PreparedState
 }
 async fn code_identity(a: &Auth, is_email: bool, target: &str) -> Result<Value> {
     a.s.one(if is_email {
-        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_email p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_email=?"
+        "SELECT p.user_id,u.session_epoch,u.status FROM auth_user_email p JOIN auth_user u ON u.id=p.user_id WHERE p.canonical_email=?"
     } else {
-        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_phone=?"
+        "SELECT p.user_id,u.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id WHERE p.canonical_phone=?"
     }, vec![target.into()]).await
 }
 
@@ -406,9 +403,9 @@ async fn identify_once(
         ])
         .await?;
         let query = if is_phone {
-            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
+            "SELECT u.id,u.status,u.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
         } else {
-            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL"
+            "SELECT u.id,u.status,u.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL"
         };
         let candidate = a.s.one(query, vec![address.clone().into()]).await?;
         let encoded = candidate["password_hash"]
@@ -530,10 +527,7 @@ async fn identify_once(
             }
         }
     }
-    writes.push(a.s.statement(
-        "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-        vec![user.clone().into(), n.into()],
-    )?);
+
     writes.push(boundary(a, t, &user, epoch)?);
     writes.push(a.s.statement(
         "UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=? WHERE id=?",
@@ -602,7 +596,7 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
         boundary(a, t, &user, number(t, "user_epoch"))?,
     ];
     if reset {
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email e JOIN auth_user_security us ON us.user_id=e.user_id WHERE e.id=? AND e.user_id=? AND e.verified_at IS NOT NULL AND us.identity_version=?)",vec![t["binding_id"].clone(),user.clone().into(),identity_version.clone()])?);
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id WHERE e.id=? AND e.user_id=? AND e.verified_at IS NOT NULL AND u.identity_version=?)",vec![t["binding_id"].clone(),user.clone().into(),identity_version.clone()])?);
     }
     writes.push(a.s.statement(
         "UPDATE auth_product_transaction SET status='CONSUMED',completed_at=? WHERE id=?",

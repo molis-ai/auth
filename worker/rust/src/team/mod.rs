@@ -133,14 +133,14 @@ fn audit(
         json!({"changes": diff(&before, &after, fields)}),
     )
 }
-pub(crate) const TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id";
-const PLATFORM_TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,
-    t.managed_at,s.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
-    (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.space_id AND active.status='ACTIVE') member_count,
+pub(crate) const TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_tenant t";
+const PLATFORM_TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,t.entitlement_revision,
+    t.managed_at,t.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
+    (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.id AND active.status='ACTIVE') member_count,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
      ORDER BY e.created_at,e.id LIMIT 1) owner_email
-    FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
-    JOIN auth_tenant_membership m ON m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER'
+    FROM auth_tenant t
+    JOIN auth_tenant_membership m ON m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER'
     JOIN auth_user u ON u.id=m.user_id";
 const ACTIVE_OWNER_PROFILE: &str = "SELECT u.id,u.display_name,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=u.id AND e.verified_at IS NOT NULL
@@ -152,7 +152,7 @@ impl Service<'_> {
         let t = self
             .a
             .s
-            .one(&format!("{TENANTS} WHERE t.space_id=?"), vec![id.into()])
+            .one(&format!("{TENANTS} WHERE t.id=?"), vec![id.into()])
             .await?;
         ensure(!t.is_null(), 404, "NOT_FOUND")?;
         Ok(t)
@@ -223,13 +223,13 @@ impl Service<'_> {
                         .a
                         .s
                         .one(
-                            &format!("{PLATFORM_TENANTS} WHERE t.space_id=?"),
+                            &format!("{PLATFORM_TENANTS} WHERE t.id=?"),
                             vec![action.tenant_id.clone().into()],
                         )
                         .await?;
                     ensure(!ctx.tenant.is_null(), 404, "NOT_FOUND")?;
                     ctx.guards.push(self.a.s.guard(
-                        "EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND entitlement_revision=?)",
+                        "EXISTS(SELECT 1 FROM auth_tenant WHERE id=? AND version=? AND entitlement_revision=?)",
                         vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone(), ctx.tenant["entitlement_revision"].clone()],
                     )?);
                 }
@@ -307,7 +307,7 @@ impl Service<'_> {
                     code: "INVALID_REQUEST",
                 })?;
                 let mut result = json!({"id":id,"name":name,"status":"ACTIVE","version":0,"owner_user_id":owner["id"]});
-                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",vec![id.clone().into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.clone().into(),id.into(),owner["id"].clone(),n.into()])?];
+                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES (?,?,?,'ACTIVE',?,?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.clone().into(),id.into(),owner["id"].clone(),n.into()])?];
                 result = if action.op == "tenant.self-create" {
                     result["role"] = "OWNER".into();
                     result["membership_id"] = member.into();
@@ -332,7 +332,6 @@ impl Service<'_> {
                 t["version"] = (number(&t, "version") + 1).into();
                 let n = now();
                 t["updated_at"] = n.into();
-                let mut w = vec![];
                 if action.op == "tenant.update" {
                     t["name"] = name(&b["name"])
                         .map_err(|_| Failure {
@@ -340,10 +339,6 @@ impl Service<'_> {
                             code: "INVALID_REQUEST",
                         })?
                         .into();
-                    w.push(self.a.s.statement(
-                        "UPDATE auth_space SET name=?,updated_at=? WHERE id=?",
-                        vec![t["name"].clone(), n.into(), t["id"].clone()],
-                    )?);
                 } else {
                     t["status"] = if action.op == "tenant.disable" {
                         "DISABLED"
@@ -352,7 +347,16 @@ impl Service<'_> {
                     }
                     .into();
                 }
-                w.push(self.a.s.statement("UPDATE auth_managed_tenant SET status=?,version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",vec![t["status"].clone(),n.into(),t["id"].clone()])?);
+                let w = vec![self.a.s.statement(
+                    "UPDATE auth_tenant SET name=?,status=?,version=version+1,
+                     entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",
+                    vec![
+                        t["name"].clone(),
+                        t["status"].clone(),
+                        n.into(),
+                        t["id"].clone(),
+                    ],
+                )?];
                 t["role"] = ctx.member["role"].clone();
                 t["membership_id"] = ctx.member["id"].clone();
                 Ok(Change::new(
@@ -534,7 +538,7 @@ fn platform_tenant_page(a: &Auth) -> Result<Read> {
     if let Some(q) = filters.keyword()? {
         let args = vec![json!(q); 5];
         filters.bind(
-            "(instr(lower(s.name),lower(?))>0 OR instr(lower(t.space_id),lower(?))>0
+            "(instr(lower(t.name),lower(?))>0 OR instr(lower(t.id),lower(?))>0
               OR instr(lower(m.user_id),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0
               OR EXISTS(SELECT 1 FROM auth_user_email e
                         WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
@@ -570,7 +574,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "tenant.get" => (
             Access::Member(ALL_ROLES),
             Some(Lookup {
-                sql: format!("{TENANTS} WHERE t.space_id=?"),
+                sql: format!("{TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
                 guard: None,
             }),
@@ -584,7 +588,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "tenant.platform-get" => (
             Access::Permission("TENANT_READ"),
             Some(Lookup {
-                sql: format!("{PLATFORM_TENANTS} WHERE t.space_id=?"),
+                sql: format!("{PLATFORM_TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
                 guard: None,
             }),
@@ -594,9 +598,9 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Access::Session,
             None,
             Read::page(
-                format!("SELECT t.space_id id,s.name,t.status,t.version,m.id membership_id,m.role
-                         FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
-                         JOIN auth_tenant_membership m ON m.tenant_id=t.space_id
+                format!("SELECT t.id,t.name,t.status,t.version,m.id membership_id,m.role
+                         FROM auth_tenant t
+                         JOIN auth_tenant_membership m ON m.tenant_id=t.id
                          WHERE m.user_id={ACTOR} AND m.status='ACTIVE'"),
                 vec![],
                 |row| Ok(tenant_view(row)),
@@ -605,7 +609,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         op @ ("member.list" | "member.platform-list") => (
             if op == "member.platform-list" { Access::Permission("TENANT_READ") } else { Access::Member(ALL_ROLES) },
             (op == "member.platform-list").then(|| Lookup {
-                sql: "SELECT space_id id FROM auth_managed_tenant WHERE space_id=?".into(),
+                sql: "SELECT id FROM auth_tenant WHERE id=?".into(),
                 id: action.tenant_id.clone(),
                 guard: None,
             }),

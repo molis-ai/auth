@@ -9,16 +9,16 @@ use worker::{D1PreparedStatement, Method, Response};
 type Writes = Vec<D1PreparedStatement>;
 async fn security(a: &Auth, user: &str) -> Result<Value> {
     a.s.one(
-        "SELECT * FROM auth_user_security WHERE user_id=?",
+        "SELECT account_version,identity_version,session_epoch FROM auth_user WHERE id=?",
         vec![user.into()],
     )
     .await
 }
-const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,s.account_version,
+const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,u.account_version,
     COALESCE(
         (SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),
         (SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)
-    ) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=";
+    ) AS email FROM auth_user u WHERE u.id=";
 const PASSWORD: &str = "SELECT user_id FROM auth_local_credential WHERE user_id=";
 fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
     json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]})
@@ -121,7 +121,7 @@ async fn login_methods_view(a: &Auth) -> Result<Value> {
             prepared(&methods_query(subject))?,
             prepared(&format!("{PASSWORD}{subject}"))?,
             prepared(&format!(
-                "SELECT account_version FROM auth_user_security WHERE user_id={subject}"
+                "SELECT account_version FROM auth_user WHERE id={subject}"
             ))?,
         ])
         .await?
@@ -253,7 +253,7 @@ pub(crate) async fn verify_web_password(
     )
 }
 fn version_guard(a: &Auth, user: &str, us: &Value) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
 }
 async fn proof(a: &Auth, s: &Value, us: &Value, raw: &str, kind: &str) -> Result<Value> {
     ensure(token(raw), 401, "INVALID_CREDENTIALS")?;
@@ -290,8 +290,8 @@ fn operation(a: &Auth, p: &Value, op: &str, target: &Value) -> Result<D1Prepared
 // change must not log back in through a binding that has just been removed.
 pub(crate) fn identity_changed(a: &Auth, user: &str) -> Result<Writes> {
     Ok(vec![
-        a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) SELECT 'REVOCATION',? WHERE EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=?)",vec![now().into(),user.into()])?,
-        a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,identity_version=identity_version+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?
+        a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) SELECT 'REVOCATION',? WHERE EXISTS(SELECT 1 FROM auth_user WHERE id=?)",vec![now().into(),user.into()])?,
+        a.s.statement("UPDATE auth_user SET account_version=account_version+1,identity_version=identity_version+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE id=?",vec![now().into(),user.into()])?
     ])
 }
 pub(crate) fn revoke_password(a: &Auth, user: &str, keep: Option<&Value>) -> Result<Writes> {
@@ -299,11 +299,11 @@ pub(crate) fn revoke_password(a: &Auth, user: &str, keep: Option<&Value>) -> Res
     let kept = keep.map(|s| s["id"].clone()).unwrap_or(Value::Null);
     let mut w=vec![
         a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('REVOCATION',?)",vec![n.into()])?,
-        a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,identity_version=identity_version+1,session_epoch=session_epoch+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE user_id=?",vec![n.into(),user.into()])?,
+        a.s.statement("UPDATE auth_user SET account_version=account_version+1,identity_version=identity_version+1,session_epoch=session_epoch+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE id=?",vec![n.into(),user.into()])?,
         a.s.statement("UPDATE auth_login_session SET revoked_at=?,session_revision=session_revision+1 WHERE user_id=? AND revoked_at IS NULL AND (? IS NULL OR id<>?)",vec![n.into(),user.into(),kept.clone(),kept.clone()])?,
     ];
     if keep.is_some() {
-        w.push(a.s.statement("UPDATE auth_login_session SET user_epoch=(SELECT session_epoch FROM auth_user_security WHERE user_id=?),session_revision=session_revision+1 WHERE id=?",vec![user.into(),kept.clone()])?);
+        w.push(a.s.statement("UPDATE auth_login_session SET user_epoch=(SELECT session_epoch FROM auth_user WHERE id=?),session_revision=session_revision+1 WHERE id=?",vec![user.into(),kept.clone()])?);
         for table in ["auth_login_access_token", "auth_login_refresh_token"] {
             w.push(a.s.statement(&format!("UPDATE {table} SET user_epoch=(SELECT user_epoch FROM auth_login_session WHERE id=?),session_revision=(SELECT session_revision FROM auth_login_session WHERE id=?) WHERE login_session_id=?"),vec![kept.clone(),kept.clone(),kept.clone()])?);
         }
@@ -355,8 +355,13 @@ async fn mutation(
             })?;
         }
         view["version"] = version.into();
-        let mut w=vec![a.s.statement("UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=? WHERE id=?",vec![view["displayName"].clone(),view["avatarUrl"].clone(),now().into(),user.clone().into()])?,a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?];
-        w.push(a.s.statement("INSERT INTO auth_profile_customization(user_id,name_customized,avatar_customized) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET name_customized=MAX(name_customized,excluded.name_customized),avatar_customized=MAX(avatar_customized,excluded.avatar_customized)",vec![s["user_id"].clone(),json!(i64::from(b.get("displayName").is_some())),json!(i64::from(b.get("avatarDataUrl").is_some()))])?);
+        let w = vec![a.s.statement(
+            "UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=?,account_version=account_version+1,
+             name_customized=MAX(name_customized,?),avatar_customized=MAX(avatar_customized,?) WHERE id=?",
+            vec![view["displayName"].clone(), view["avatarUrl"].clone(), now().into(),
+                i64::from(b.get("displayName").is_some()).into(),
+                i64::from(b.get("avatarDataUrl").is_some()).into(), user.into()],
+        )?];
         return Ok((view, w));
     }
     let p = proof(a, s, us, &text(b, "operationProof"), "OPERATION").await?;
@@ -530,7 +535,7 @@ async fn manage(
         writes.insert(0,sessions::active_guard(a,s)?);
         writes.push(a.s.audit(&format!("account.v2.{op}"),s["user_id"].clone(),&a.request_id,Value::Null,Value::Null,Value::Null,false)?);
         writes.push(a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),now().into()])?);
-        writes.push(a.s.statement("INSERT INTO auth_management_result VALUES (?,?,?,?,?,?,200,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?);
+        writes.push(a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?);
         a.s.batch(writes,"VERSION_CONFLICT").await?;Ok(result)
     }.await;
     match attempt {

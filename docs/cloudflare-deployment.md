@@ -8,19 +8,9 @@
 
 ## D1 迁移基线
 
-当前基线是 `worker/migrations/0020_auth_baseline.sql`，包含截至 0020 的全部表、约束与索引。此后的迁移从 `0021` 开始。`0024` 移除旧计费表，完整迁移链应用后 Auth D1 不含 `billing_*` 表。种子登记仍单独执行。
+`worker/migrations/0001_auth_baseline.sql` 用于新建空库。使用目标环境的 Wrangler 配置运行 `d1 migrations apply`，再登记环境、应用和客户端。部署前核对配置指向已完成登记的新库。
 
-- **新建空库**：用目标环境的 Wrangler 配置执行正常的 `d1 migrations apply`；Wrangler 依次应用并记录基线与后续迁移。
-- **已有 Auth 库**：先运行下列只读检查。它核对旧账本中的 19 个文件名，并逐项比对实际表、索引及约束定义。核对通过后，用同一命令加 `--apply` 登记；写入时再次比对刚才读到的结构与账本。该步骤只在 `d1_migrations` 增加一条记录，保留旧记录和业务数据。再次运行时，工具发现基线已登记就直接返回。登记后即可走正常增量迁移与发布预检。
-- **未到 0020 的旧库**：用指向原数据库的 Wrangler 配置，将其 D1 绑定的 `migrations_dir` 指向 `worker/migration-history/through-0020/` 的绝对路径，按历史顺序补完待执行文件，再做登记。若结构有差异、账本不明或已缺失，先核查来源和差异。直接对已建表的库执行建库基线会失败。
-
-从仓库根目录执行；`dev` 使用本地 D1，`test` 和 `prod` 分别使用目标登记中的远端数据库。已有 test、prod 分别登记，先验收 test。
-
-```sh
-npm --prefix worker run db:baseline -- --env test
-# 确认目标和只读检查结果后，显式登记同一库
-npm --prefix worker run db:baseline -- --env test --apply
-```
+旧版 Auth 库保留各自的迁移记录。切换环境时先核对新库的资源 ID 和登记，避免对旧库运行建库基线。
 
 ## 本地启动与发布
 

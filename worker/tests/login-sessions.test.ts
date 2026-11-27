@@ -58,13 +58,12 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       await db.prepare(sql).run()
     const n = Date.now()
     await db
-      .prepare("INSERT INTO auth_user VALUES ('user','User','ACTIVE',NULL,?,?)")
+      .prepare(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('user','User','ACTIVE',NULL,?,?)",
+      )
       .bind(n, n)
       .run()
-    await db
-      .prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('user',?)")
-      .bind(n)
-      .run()
+
     const call = async (
       path: string,
       body?: unknown,
@@ -107,9 +106,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
         .run()
       const seq = (await db.prepare('SELECT max(seq) n FROM auth_security_sequence').first()).n
       const epoch = (
-        await db
-          .prepare("SELECT session_epoch FROM auth_user_security WHERE user_id='user'")
-          .first()
+        await db.prepare("SELECT session_epoch FROM auth_user WHERE id='user'").first()
       ).session_epoch
       const redirect =
         client === work
@@ -301,7 +298,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           assert.deepEqual(duplicate.d1Calls, { read: 1, write: 1 })
           const receipts = await db
             .prepare(
-              'SELECT event_id,received_at FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',
+              'SELECT event_id,kind FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',
             )
             .bind(b.session.loginSessionId)
             .all()
@@ -309,7 +306,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
             receipts.results.map((r) => r.event_id),
             ['event-one', 'event-two'],
           )
-          assert.equal(receipts.results[0].received_at, Date.parse(active.data.lastActiveAt))
+          assert.equal(receipts.results[0].kind, 'OPEN')
         } finally {
           resumeActivity.resolve()
           await pending
@@ -374,7 +371,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     // Even if future verification stamps a fresh epoch, an old anonymous transaction is blocked by sequence.
     await db
       .prepare(
-        "UPDATE auth_identity_proof SET user_epoch=(SELECT session_epoch FROM auth_user_security WHERE user_id='user') WHERE token_hash=?",
+        "UPDATE auth_identity_proof SET user_epoch=(SELECT session_epoch FROM auth_user WHERE id='user') WHERE token_hash=?",
       )
       .bind(hash(pending.code))
       .run()
@@ -418,7 +415,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           .run()
         await db
           .prepare(
-            "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<501) INSERT INTO auth_one_use SELECT 'cleanup-'||n,'fixture','fixture','{}',0 FROM numbers",
+            "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<651) INSERT INTO auth_one_use SELECT 'cleanup-'||n,'fixture','fixture','{}',0 FROM numbers",
           )
           .run()
         const old = await code()
@@ -449,7 +446,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           .run()
         await db
           .prepare(
-            "INSERT INTO auth_verification_challenge (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at) VALUES ('cleanup',?,'EMAIL','fixture','fixture','cleanup','ACCEPTED',5,0,?,0)",
+            "INSERT INTO auth_verification_challenge (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at) VALUES ('cleanup',?,'EMAIL','fixture','fixture','cleanup','ACCEPTED',5,0,?)",
           )
           .bind(oldId, Date.now() + 60_000)
           .run()

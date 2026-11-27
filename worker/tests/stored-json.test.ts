@@ -50,8 +50,12 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
       .prepare('CREATE TABLE fixture_stored_json(field TEXT PRIMARY KEY, raw TEXT NOT NULL)')
       .run()
     await db.batch([
-      statement("INSERT INTO auth_user VALUES ('admin','Admin','ACTIVE',NULL,?,?)", now, now),
-      statement("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('admin',?)", now),
+      statement(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('admin','Admin','ACTIVE',NULL,?,?)",
+        now,
+        now,
+      ),
+
       statement(
         "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
         now,

@@ -267,7 +267,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         ])
         alpha = ok(both[0], 'PlatformTenantView')
         assert.deepEqual(ok(both[1]), alpha)
-        assert.equal((await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()).n, 1)
+        assert.equal((await db.prepare('SELECT count(*) n FROM auth_tenant').first()).n, 1)
         assert.equal(
           (
             await db
@@ -1345,7 +1345,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const rowDrift = ok(
           await atListSnapshot(paginated, reader, 'after', () =>
             db
-              .prepare('UPDATE auth_managed_tenant SET version=version+1 WHERE space_id=?')
+              .prepare('UPDATE auth_tenant SET version=version+1 WHERE id=?')
               .bind(first.tenantId)
               .run(),
           ),
@@ -1436,9 +1436,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         await permission(platform, 'CLIENT_READ')
         await permission(platform, 'AUDIT_READ')
         await db.batch([
-          db
-            .prepare("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?")
-            .bind(disabled.tenantId),
+          db.prepare("UPDATE auth_tenant SET status='DISABLED' WHERE id=?").bind(disabled.tenantId),
           db
             .prepare(
               `INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at,ended_at)
@@ -1471,16 +1469,14 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const series =
           'WITH RECURSIVE fixture(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM fixture WHERE n<2048)'
         await db.batch([
-          db.prepare(`${series} INSERT INTO auth_user
+          db.prepare(`${series} INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at)
           SELECT 'fixture-user-'||n,'Fixture User','ACTIVE',NULL,0,0 FROM fixture WHERE n<=512`),
           db.prepare(`${series} INSERT INTO auth_user_email
           SELECT 'fixture-email-'||n,'fixture-user-'||n,'fixture-'||n||'@example.test',1,0 FROM fixture WHERE n<=512`),
           db.prepare(`${series} INSERT INTO auth_user_phone
           SELECT 'fixture-phone-'||n,'fixture-user-'||n,printf('+86139%08d',n),1,0 FROM fixture WHERE n<=512`),
-          db.prepare(`${series} INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at)
-          SELECT 'fixture-space-'||n,'Fixture Space','TEAM','ACTIVE',0,0 FROM fixture WHERE n<=256`),
-          db.prepare(`${series} INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at)
-          SELECT 'fixture-space-'||n,'ACTIVE','fixture-user-'||n,0,0 FROM fixture WHERE n<=256`),
+          db.prepare(`${series} INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at)
+          SELECT 'fixture-space-'||n,'Fixture Space',0,'ACTIVE','fixture-user-'||n,0,0 FROM fixture WHERE n<=256`),
           db.prepare(`${series} INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at)
           SELECT 'fixture-membership-'||n,'fixture-space-'||(1+(n-1)%256),'fixture-user-'||n,
                  CASE WHEN n<=256 THEN 'OWNER' ELSE 'MEMBER' END,'ACTIVE',0
@@ -1968,7 +1964,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.equal(
           (
             await db
-              .prepare('SELECT entitlement_revision FROM auth_managed_tenant WHERE space_id=?')
+              .prepare('SELECT entitlement_revision FROM auth_tenant WHERE id=?')
               .bind(team.tenantId)
               .first()
           ).entitlement_revision,

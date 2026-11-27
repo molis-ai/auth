@@ -49,12 +49,7 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
         assert.equal((await response.json()).error.code, 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED')
       }
     }
-    for (const table of [
-      'auth_user',
-      'auth_product_transaction',
-      'auth_space',
-      'auth_managed_tenant',
-    ]) {
+    for (const table of ['auth_user', 'auth_product_transaction', 'auth_tenant']) {
       assert.equal((await proxy.env.DB.prepare(`SELECT count(*) n FROM ${table}`).first()).n, 0)
     }
   } finally {

@@ -15,12 +15,12 @@ pub fn list() -> Read {
         format!(
             "SELECT x.* FROM auth_tenant_membership f
                  JOIN auth_ownership_transfer x ON x.from_membership_id=f.id
-                 JOIN auth_managed_tenant t ON t.space_id=x.tenant_id
+                 JOIN auth_tenant t ON t.id=x.tenant_id
                  WHERE t.status='ACTIVE' AND f.user_id={ACTOR} AND f.status='ACTIVE'
              UNION
              SELECT x.* FROM auth_tenant_membership m
                  JOIN auth_ownership_transfer x ON x.to_membership_id=m.id
-                 JOIN auth_managed_tenant t ON t.space_id=x.tenant_id
+                 JOIN auth_tenant t ON t.id=x.tenant_id
                  WHERE t.status='ACTIVE' AND m.user_id={ACTOR} AND m.status='ACTIVE'"
         ),
         vec![],
@@ -134,7 +134,7 @@ impl Service<'_> {
                 "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
                 vec![ctx.to["id"].clone()],
             )?);
-            w.push(self.a.s.statement("UPDATE auth_managed_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",vec![n.into(),ctx.tenant["id"].clone()])?);
+            w.push(self.a.s.statement("UPDATE auth_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",vec![n.into(),ctx.tenant["id"].clone()])?);
             w.push(self.a.s.guard("(SELECT count(*) FROM auth_tenant_membership WHERE tenant_id=? AND status='ACTIVE' AND role='OWNER')=1",vec![ctx.tenant["id"].clone()])?);
             let mut from = ctx.from.clone();
             from["role"] = "MEMBER".into();
@@ -236,7 +236,7 @@ impl Service<'_> {
             vec![n.into(), n.into(), tenant.clone()],
         )?);
         writes.push(self.a.s.statement(
-            "UPDATE auth_managed_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",
+            "UPDATE auth_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE id=?",
             vec![n.into(), tenant.clone()],
         )?);
         let mut updated = ctx.tenant.clone();

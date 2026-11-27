@@ -235,7 +235,7 @@ try {
     await page.fill("#tenant-create-name", name);
     await click("创建", ".tenant-create-dialog button");
     await waitText(".tm-heading", name);
-    return (await first(authDb, "SELECT id FROM auth_space WHERE name=?", name)).id;
+    return (await first(authDb, "SELECT id FROM auth_tenant WHERE name=?", name)).id;
   };
 
   const buyer = await login(phones[0]);
@@ -429,12 +429,12 @@ try {
   await waitText(".billing-credit", "500 Credit");
   await waitReady();
   assert.deepEqual(trace.slice(retryTraceStart).map(item => item.path), ["/credits/balance"]);
-  await run(authDb, "UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?", managerTeam);
+  await run(authDb, "UPDATE auth_tenant SET status='DISABLED' WHERE id=?", managerTeam);
   await click("刷新账单");
   await waitText(".billing-panel > [role=alert]", "团队已停用");
   await assertAbsent(".billing-credit");
   assert.ok(trace.some(item => item.code === "TENANT_DISABLED" && item.status === 403));
-  await run(authDb, "UPDATE auth_managed_tenant SET status='ACTIVE' WHERE space_id=?", managerTeam);
+  await run(authDb, "UPDATE auth_tenant SET status='ACTIVE' WHERE id=?", managerTeam);
   await click("重试账单");
   await waitText(".billing-credit", "500 Credit");
   await waitText(".billing-subscription", "已付至");

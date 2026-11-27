@@ -1027,7 +1027,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         const user = (await me(a)).user.userId
         await db
           .prepare(
-            "INSERT INTO auth_management_result VALUES (?,?,'expired-fixture','fixture',?,?,200,'{}',0,1)",
+            "INSERT INTO auth_management_result VALUES (?,?,'expired-fixture','fixture',?,?,'{}',0,1)",
           )
           .bind(user, a.session.clientId, hash(secret()), hash(secret()))
           .run()

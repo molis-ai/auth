@@ -47,7 +47,6 @@ try {
       now,
     ),
     s.statement('INSERT INTO auth_local_credential VALUES (?,?,?)', id, credential.encoded, now),
-    s.statement('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)', id, now),
   ])
   await bootstrapPlatform(proxy.env.DB, id)
   console.log('Local administrator created:', address)

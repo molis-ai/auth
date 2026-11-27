@@ -188,7 +188,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         assert.equal(await count('auth_external_identity'), 2)
         assert.equal(await count('auth_user_email'), 0)
         assert.equal(
-          await count('auth_space'),
+          await count('auth_tenant'),
           0,
           'a V2 identity does not create a separate V1 personal space',
         )

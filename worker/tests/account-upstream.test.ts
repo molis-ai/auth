@@ -271,15 +271,10 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   const at = Date.now()
   for (const team of ['team-one', 'team-two']) {
     await run(
-      "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",
+      "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES (?,?,?,'ACTIVE',?,?,?)",
       team,
       team,
       at,
-      at,
-    )
-    await run(
-      "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",
-      team,
       user,
       at,
       at,
@@ -457,7 +452,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   )
   await expectError(call(browser, balance + teamOne), 404, 'NOT_FOUND')
   assert.equal((await call(browser, balance + teamTwo)).status, 200)
-  await run("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id='team-two'")
+  await run("UPDATE auth_tenant SET status='DISABLED' WHERE id='team-two'")
   await expectError(call(browser, balance + teamTwo), 403, 'TENANT_DISABLED')
   assert.equal((await call(browser, balance)).status, 200)
 

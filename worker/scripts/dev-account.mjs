@@ -31,7 +31,6 @@ async function ensureDevAccount(db, { email, password }) {
       db
         .prepare('INSERT INTO auth_local_credential VALUES (?,?,?)')
         .bind(id, credential.encoded, now),
-      db.prepare('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)').bind(id, now),
     ])
     console.log('Created local-only test account:', email)
   }
