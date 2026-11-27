@@ -34,7 +34,7 @@ for (const entry of assetFiles) {
     `Expected a content-hashed file under ${assetPrefix}: ${entry.name}`,
   )
 }
-const index = readFileSync(join(assets.directory, 'index.html'), 'utf8')
+const index = readFileSync(join(assets.directory, 'account/index.html'), 'utf8')
 const references = [...index.matchAll(/\b(?:src|href)="(\/[^"]+)"/gu)].map((match) => match[1])
 assert(
   references.some((url) => url.endsWith('.js')),

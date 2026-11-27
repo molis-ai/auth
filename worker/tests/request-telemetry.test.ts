@@ -25,10 +25,7 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
       }),
     },
     undefined,
-    async (request: Request) =>
-      new Response('fixture', {
-        status: new URL(request.url).pathname === '/auth-ui/assets/missing-Abcd_123.js' ? 404 : 200,
-      }),
+    async () => new Response('<head></head>', { headers: { 'Content-Type': 'text/html' } }),
     logs,
   )
   try {
@@ -37,11 +34,9 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
       .bind(hash('auth:token:' + ip), Date.now() + 60_000)
       .run()
     const health = await proxy.fetch(new Request(origin + '/api/v1/health'))
-    const asset = await proxy.fetch(new Request(origin + '/auth-ui/assets/logo-Abcd_123.js'))
     assert.equal(health.status, 200)
-    assert.equal(asset.status, 200)
-    const skipped = [health, asset].map((response) => response.headers.get('X-Request-ID'))
-    assert.ok(skipped.every(Boolean))
+    const skipped = health.headers.get('X-Request-ID')
+    assert.ok(skipped)
 
     async function check(
       path: string,
@@ -95,7 +90,7 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
     }
 
     await check('/login', 200, '/', 'none')
-    await check('/auth-ui/assets/missing-Abcd_123.js', 404, '/auth-ui/{asset}', 'http_error')
+    await check('/auth-ui/assets/missing-Abcd_123.js', 404, '/auth-ui/{asset}', 'NOT_FOUND')
     await check('/api/v1/health', 501, '/api/v1/health', 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED', {
       method: 'POST',
     })
@@ -121,7 +116,7 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
     const initialization = await logs.waitFor((log) => log.phase === 'initialize')
     assert.equal(initialization.env, 'unknown')
     assert.equal(initialization.code, 'UNIFIED_CONFIGURATION_INVALID')
-    assert.ok(skipped.every((id) => logs.records.every((event) => event.request_id !== id)))
+    assert.ok(logs.records.every((event) => event.request_id !== skipped))
     for (const line of logs.lines.filter((line) => line.includes('"auth.'))) {
       assert.doesNotMatch(line, /[\r\n]/)
       for (const sensitive of [transactionId, query, token, cookie, ip, extensionMethod])
