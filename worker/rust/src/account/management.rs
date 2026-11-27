@@ -387,25 +387,25 @@ async fn mutation(
         ));
     }
     let (mut list, password_enabled) = methods(a, &user, c).await?;
-    if op != "bind" {
+    let removed = if op != "bind" {
         let existing = sensitive::binding(a, &user, id).await?;
         ensure(existing["type"] != "EMAIL", 403, "FORBIDDEN")?;
         list.retain(|m| m["bindingId"] != id);
-    }
-    if op != "bind" {
-        for table in [
-            "auth_user_email",
-            "auth_user_phone",
-            "auth_external_identity",
-        ] {
-            writes.push(a.s.statement(
-                &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
-                vec![id.into(), user.clone().into()],
-            )?);
-        }
-    }
+        let table = if existing["type"] == "PHONE" {
+            "auth_user_phone"
+        } else {
+            "auth_external_identity"
+        };
+        Some(a.s.statement(
+            &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
+            vec![id.into(), user.clone().into()],
+        )?)
+    } else {
+        None
+    };
     if op == "unlink" {
         writes.push(operation(a, &p, "UNLINK_METHOD", &json!({"bindingId":id}))?);
+        writes.extend(removed);
     } else {
         let new = proof(a, s, us, &text(b, "newIdentityProof"), "NEW_IDENTITY").await?;
         ensure(
@@ -430,6 +430,7 @@ async fn mutation(
                 json!({"bindingId":id})
             },
         )?);
+        writes.extend(removed);
         let binding_id = uuid();
         let n = now();
         match text(&identity, "type").as_str() {

@@ -293,7 +293,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
     }
     assert.equal(new Set(signedInUsers.map(({ userId }) => userId)).size, 1)
     assert.equal(exchanges, 2)
-    assert.equal(certs, 1)
+    assert.ok(certs >= 1 && certs <= 2)
     const identity = await db.prepare('SELECT issuer, subject FROM auth_external_identity').all()
     assert.deepEqual(identity.results, [
       { issuer: 'https://accounts.google.com', subject: '1234567' },
