@@ -94,7 +94,7 @@ pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()>
 fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatement> {
     s.a.s.guard(
         "EXISTS(SELECT 1 FROM auth_user u
-         WHERE u.id=? AND u.status=? AND uu.account_version=?)",
+         WHERE u.id=? AND u.status=? AND u.account_version=?)",
         vec![
             row["id"].clone(),
             row["status"].clone(),

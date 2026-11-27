@@ -306,7 +306,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
             receipts.results.map((r) => r.event_id),
             ['event-one', 'event-two'],
           )
-          assert.equal(receipts.results[0].kind, 'OPEN')
+          assert.equal(receipts.results[0].kind, event.kind)
         } finally {
           resumeActivity.resolve()
           await pending
