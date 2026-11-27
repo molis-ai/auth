@@ -47,25 +47,29 @@ fn check_registered_client(c: &Value, config: &Value) -> Result<()> {
         "POLICY_MISMATCH",
     )
 }
-fn check_origin(c: &Value, origin: &str) -> Result<()> {
+pub(crate) fn check_origin(c: &Value, origin: &str) -> Result<()> {
     ensure(
         origin.is_empty() || contains(&parsed(c, "allowed_origins")?, &json!(origin)),
         403,
         "FORBIDDEN",
     )
 }
+pub(crate) fn registered_client_statement(a: &Auth, id: &str) -> Result<D1PreparedStatement> {
+    a.s.statement(
+        &format!(
+            "SELECT {CLIENT_COLUMNS} FROM auth_client c {CLIENT_POLICY_JOINS}
+                  WHERE c.client_id=? AND c.status='ACTIVE'"
+        ),
+        vec![id.into()],
+    )
+}
+pub(crate) fn validate_registered_client(a: &Auth, c: &Value) -> Result<()> {
+    check_registered_client(c, client_config(a)?)
+}
 pub(crate) async fn registered_client(a: &Auth, id: &str) -> Result<Value> {
-    let config = client_config(a)?;
-    let c =
-        a.s.one(
-            &format!(
-                "SELECT {CLIENT_COLUMNS} FROM auth_client c {CLIENT_POLICY_JOINS}
-             WHERE c.client_id=? AND c.status='ACTIVE'"
-            ),
-            vec![id.into()],
-        )
-        .await?;
-    check_registered_client(&c, config)?;
+    client_config(a)?;
+    let c = a.s.first(registered_client_statement(a, id)?).await?;
+    validate_registered_client(a, &c)?;
     Ok(c)
 }
 pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
@@ -479,7 +483,7 @@ pub(crate) async fn issue_browser_login(
     Ok(result)
 }
 
-fn create_login(
+pub(crate) fn create_login(
     a: &Auth,
     client: &Value,
     verified: &Value,
@@ -490,7 +494,7 @@ fn create_login(
     let (result, tokens) = tokens(a, &session, n, 0)?;
     writes.push(a.s.statement(
         "INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at)
-         VALUES (?,?,?,?,?,?,?,?,?)",
+         VALUES (?,?,?,?,?,?,?,COALESCE(?,(SELECT MAX(seq) FROM auth_security_sequence)),?)",
         vec![session["id"].clone(),session["user_id"].clone(),session["client_id"].clone(),n.into(),n.into(),(n+ABSOLUTE).into(),session["user_epoch"].clone(),verified["created_seq"].clone(),n.into()],
     )?);
     writes.extend(tokens);

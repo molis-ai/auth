@@ -497,6 +497,44 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         );
     ensure(has_cookie || initial_write, 401, "LOGIN_REQUIRED")?;
     let mut id = browser_cookie_hash(a, &cookie);
+    if path == "/api/account/auth/login/code" && method == Method::Post {
+        let body = write_input(a, &csrf(&key, &id), method, false, false).await?;
+        shape("LoginCodeRequest", &body)?;
+        let handle = text(&body, "verificationId");
+        let row = a.s.one(
+            "SELECT t.payload,t.revision,
+             EXISTS(SELECT 1 FROM auth_web_session w WHERE w.id_hash=t.browser_hash AND w.expires_at>?) signed_in
+             FROM auth_browser_transaction t WHERE t.browser_hash=? AND t.handle=? AND t.expires_at>?",
+            vec![now().into(), id.clone().into(), handle.clone().into(), now().into()],
+        ).await?;
+        ensure(!row.is_null(), 403, "FORBIDDEN")?;
+        ensure(number(&row, "signed_in") == 0, 409, "VERSION_CONFLICT")?;
+        let proof = decode(&key, &format!("{id}:{handle}"), &text(&row, "payload")).await?;
+        let authenticated_cookie = secret();
+        let browser_id = browser_cookie_hash(a, &authenticated_cookie);
+        let result = crate::auth::login_commands::browser_code(
+            a, &setting(a,"AUTH_WEB_CLIENT_ID")?, &body, &text(&proof,"proof"), async |tokens| {
+                let mut writes = new_browser_session(a, &key, &browser_id, Some(&id), tokens).await?;
+                writes.push(a.s.guard(
+                    "EXISTS(SELECT 1 FROM auth_browser_transaction WHERE browser_hash=? AND handle=? AND revision=? AND expires_at>?)",
+                    vec![id.clone().into(), handle.clone().into(), row["revision"].clone(), now().into()],
+                )?);
+                writes.push(a.s.statement("DELETE FROM auth_browser_transaction WHERE browser_hash=? AND handle=?",
+                    vec![id.clone().into(),handle.clone().into()])?);
+                Ok(writes)
+            },
+        ).await.map_err(|failure| {
+            if failure.code == "ALREADY_EXISTS" { version_conflict() } else { central_failure(failure.status, failure.code) }
+        });
+        return browser_response(
+            a,
+            path,
+            &key,
+            &browser_id,
+            Some(&authenticated_cookie),
+            result.map(BrowserPayload::Account),
+        );
+    }
     let row = if has_cookie {
         load_session(a, &id).await?
     } else {
@@ -543,6 +581,42 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         key: key.clone(),
         data: json!({"tokens":tokens,"transactions":{}}),
     };
+    if path == "/api/account/auth/login/password" && method == Method::Post {
+        ensure(revision.is_none(), 409, "VERSION_CONFLICT")?;
+        let authenticated_cookie = secret();
+        let browser_id = browser_cookie_hash(a, &authenticated_cookie);
+        let result = crate::auth::login_commands::browser_password(
+            a,
+            &session.client()?,
+            &body,
+            async |tokens| {
+                new_browser_session(
+                    a,
+                    &key,
+                    &browser_id,
+                    has_cookie.then_some(id.as_str()),
+                    tokens,
+                )
+                .await
+            },
+        )
+        .await
+        .map_err(|failure| {
+            if failure.code == "ALREADY_EXISTS" {
+                version_conflict()
+            } else {
+                central_failure(failure.status, failure.code)
+            }
+        });
+        return browser_response(
+            a,
+            path,
+            &key,
+            &browser_id,
+            Some(&authenticated_cookie),
+            result.map(BrowserPayload::Account),
+        );
+    }
     let mut browser_id = id.clone();
     let mut set_cookie = !has_cookie;
     let auth_operation = path == "/api/account/reauthentications"
@@ -575,21 +649,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             )
             .await?;
         if promote {
-            let payload = seal_tokens(&key, &browser_id, &session.data["tokens"]).await?;
-            let expiry = now() + SESSION_MAX_AGE_MS;
-            writes.push(a.s.statement(
-                "INSERT INTO auth_one_use(token_hash,purpose,binding_hash,payload,expires_at)
-                 VALUES (?,'BROWSER_PROMOTION',?,'{}',?)",
-                vec![
-                    hash(&format!("browser-promotion:{id}")).into(),
-                    id.clone().into(),
-                    expiry.into(),
-                ],
-            )?);
-            writes.push(a.s.statement(
-                "INSERT INTO auth_web_session(id_hash,payload,expires_at) VALUES (?,?,?)",
-                vec![browser_id.clone().into(), payload.into(), expiry.into()],
-            )?);
+            writes.extend(
+                new_browser_session(a, &key, &browser_id, Some(&id), &session.data["tokens"])
+                    .await?,
+            );
         } else if !writes.is_empty()
             && let Some(bindings) = session.fence_bindings()
         {
@@ -633,6 +696,34 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         set_cookie.then_some(cookie.as_str()),
         result,
     )
+}
+
+async fn new_browser_session(
+    a: &Auth,
+    key: &str,
+    browser_id: &str,
+    previous: Option<&str>,
+    tokens: &Value,
+) -> Result<Vec<worker::D1PreparedStatement>> {
+    let expires = now() + SESSION_MAX_AGE_MS;
+    let payload = seal_tokens(key, browser_id, tokens).await?;
+    let mut writes = Vec::new();
+    if let Some(old) = previous {
+        writes.push(a.s.statement(
+            "INSERT INTO auth_one_use(token_hash,purpose,binding_hash,payload,expires_at)
+             VALUES (?,'BROWSER_PROMOTION',?,'{}',?)",
+            vec![
+                hash(&format!("browser-promotion:{old}")).into(),
+                old.into(),
+                expires.into(),
+            ],
+        )?);
+    }
+    writes.push(a.s.statement(
+        "INSERT INTO auth_web_session(id_hash,payload,expires_at) VALUES (?,?,?)",
+        vec![browser_id.into(), payload.into(), expires.into()],
+    )?);
+    Ok(writes)
 }
 
 async fn call_upstream(

@@ -66,13 +66,8 @@ pub async fn route(
     method: Method,
     b: &mut Value,
 ) -> Result<Value> {
-    if matches!(
-        path,
-        "/api/account/auth/login/password"
-            | "/api/account/auth/login/code"
-            | "/api/account/auth/verification-codes"
-    ) {
-        return login_command(s, path, method, b).await;
+    if matches!(path, "/api/account/auth/verification-codes") {
+        return login_command(s, method, b).await;
     }
     if path == "/account/callback" {
         ensure(method == Method::Get, 400, "INVALID_REQUEST")?;
@@ -399,37 +394,10 @@ async fn accept_tokens(s: &mut WebSession<'_>, tokens: Value) -> Result<Value> {
     Ok(json!({"account":s.view().await?}))
 }
 
-async fn login_command(
-    s: &mut WebSession<'_>,
-    path: &str,
-    method: Method,
-    b: &Value,
-) -> Result<Value> {
+async fn login_command(s: &mut WebSession<'_>, method: Method, b: &Value) -> Result<Value> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
     ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
-    if path.ends_with("/login/code") {
-        shape("LoginCodeRequest", b)?;
-        let t = s.data["transactions"][text(b, "verificationId")].clone();
-        ensure(
-            t.is_object() && t["verificationId"] == b["verificationId"],
-            403,
-            "FORBIDDEN",
-        )?;
-        let tokens = s
-            .login("/api/v1/auth/login/code", b, &text(&t, "proof"))
-            .await?;
-        s.data["transactions"][text(b, "verificationId")] = Value::Null;
-        return accept_tokens(s, tokens).await;
-    }
-    let sending = path.ends_with("/verification-codes");
-    shape(
-        if sending {
-            "ProductSendVerificationRequest"
-        } else {
-            "ProductLoginPasswordRequest"
-        },
-        b,
-    )?;
+    shape("ProductSendVerificationRequest", b)?;
     let mut t = json!({"proof":secret(),"verifier":secret(),"state":secret()});
     let mut input = b.clone();
     input["clientId"] = s.client()?.into();
@@ -440,22 +408,14 @@ async fn login_command(
     input["initiatorChallenge"] = challenge(&text(&t, "proof")).into();
     let result = s
         .login(
-            if sending {
-                "/api/v1/auth/verification-codes"
-            } else {
-                "/api/v1/auth/login/password"
-            },
+            "/api/v1/auth/verification-codes",
             &input,
             &text(&t, "proof"),
         )
         .await?;
-    if sending {
-        t["verificationId"] = result["verificationId"].clone();
-        t["expiresAt"] = result["expiresAt"].clone();
-        let handle = text(&t, "verificationId");
-        s.data["transactions"][handle] = t;
-        Ok(result)
-    } else {
-        accept_tokens(s, result).await
-    }
+    t["verificationId"] = result["verificationId"].clone();
+    t["expiresAt"] = result["expiresAt"].clone();
+    let handle = text(&t, "verificationId");
+    s.data["transactions"][handle] = t;
+    Ok(result)
 }

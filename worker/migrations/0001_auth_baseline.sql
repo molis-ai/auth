@@ -104,7 +104,7 @@ CREATE TABLE auth_platform_permission (
 
 CREATE TABLE auth_security_sequence (
  seq INTEGER PRIMARY KEY AUTOINCREMENT,
- kind TEXT NOT NULL CHECK(kind IN ('TRANSACTION','REVOCATION')),
+ kind TEXT NOT NULL CHECK(kind IN ('TRANSACTION','REVOCATION','LOGIN')),
  created_at INTEGER NOT NULL
 );
 

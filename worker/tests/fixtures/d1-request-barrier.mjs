@@ -95,7 +95,14 @@ export default {
     const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
     const count = (statements, moment) => {
       if (!trace || moment !== 'before') return
-      const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql.trimStart()))
+      const isRead = statements.every((sql) => {
+        const query = sql.trimStart()
+        return (
+          /^SELECT\b/i.test(query) ||
+          (/^WITH\b/i.test(query) &&
+            !/\b(?:INSERT\s+INTO|UPDATE\s+auth_|DELETE\s+FROM)\b/i.test(query))
+        )
+      })
       counts[isRead ? 'read' : 'write']++
       protectedQueries += statements.filter(isProtected).length
     }

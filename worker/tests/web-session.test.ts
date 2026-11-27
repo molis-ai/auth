@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
+import { localCredential } from '../scripts/local-credential.mjs'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 test('BFF observes key rotation without changing credential rows on reads', async (t) => {
@@ -1192,6 +1193,85 @@ test(
       assert.deepEqual(JSON.parse(response.headers.get('X-Fixture-D1-Calls')!), counts)
       return response
     }
+
+    await t.test('cold and previous-cookie password login use at most four D1 calls', async () => {
+      const address = 'direct-password@example.test'
+      const password = secret() + 'aA!5'
+      const credential = await localCredential(address, password)
+      const id = crypto.randomUUID()
+      const at = Date.now()
+      await db.batch([
+        db
+          .prepare(
+            "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Direct','ACTIVE',?,?)",
+          )
+          .bind(id, at, at),
+        db
+          .prepare('INSERT INTO auth_user_email VALUES (?,?,?,?,?)')
+          .bind(crypto.randomUUID(), id, address, at, at),
+        db
+          .prepare('INSERT INTO auth_local_credential VALUES (?,?,?)')
+          .bind(id, credential.encoded, at),
+      ])
+      const started = await request()
+      const anonymousCookie = await browser()
+      const query = { body: { identifier: address, password } }
+      const count = async () =>
+        db.prepare('SELECT count(*) FROM auth_product_transaction').first('count(*)')
+      const before = await count()
+      const cold = await traced({ read: 1, write: 2 }, undefined, '/auth/login/password', {
+        ...query,
+        headers: { 'X-CSRF-Token': started.headers.get('X-CSRF-Token')! },
+      })
+      assert.equal((await data(cold)).account.user.userId, id)
+      const existing = await traced(
+        { read: 2, write: 2 },
+        anonymousCookie,
+        '/auth/login/password',
+        query,
+      )
+      assert.equal((await data(existing)).account.user.userId, id)
+      assert.equal(await count(), before)
+      assert.ok(cold.headers.getSetCookie()[0])
+    })
+
+    await t.test(
+      'one-step phone verification uses five calls and stores no proof token',
+      async () => {
+        const b = await browser()
+        const sent = await data(
+          await request(b, '/auth/verification-codes', {
+            body: { purpose: 'LOGIN', channel: 'SMS', address: '+8613800000777' },
+          }),
+        )
+        const delivered = await db
+          .prepare(
+            'SELECT q.transaction_id,d.credential FROM auth_verification_challenge q JOIN auth_mock_delivery d ON d.delivery_id=q.delivery_id WHERE q.id=?',
+          )
+          .bind(sent.verificationId)
+          .first()
+        assert.ok(delivered)
+        const done = await traced({ read: 2, write: 3 }, b, '/auth/login/code', {
+          body: { verificationId: sent.verificationId, code: delivered.credential },
+        })
+        assert.equal((await data(done)).account.state, 'AUTHENTICATED')
+        assert.equal(
+          await db
+            .prepare('SELECT count(*) n FROM auth_identity_proof WHERE transaction_id=?')
+            .bind(delivered.transaction_id)
+            .first('n'),
+          0,
+        )
+        assert.equal(
+          await db
+            .prepare('SELECT status FROM auth_product_transaction WHERE id=?')
+            .bind(delivered.transaction_id)
+            .first('status'),
+          'CONSUMED',
+        )
+        assert.ok(done.headers.getSetCookie()[0])
+      },
+    )
 
     await t.test('anonymous capability and session lookups are read-only', async () => {
       const capability = await traced({ read: 1, write: 0 }, undefined, '/auth/capabilities')

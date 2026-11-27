@@ -251,27 +251,26 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(receipt)
 }
-pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
-    shape("VerifyChallengeRequest", b)?;
-    a.rate_ip("auth:verify", 120).await?;
+pub(crate) async fn authenticate_challenge(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    q: &Value,
+    id: &str,
+    credential: &str,
+) -> Result<()> {
     let n = now();
-    let q =
-        a.s.one(
-            "SELECT * FROM auth_verification_challenge WHERE id=? AND transaction_id=?",
-            vec![id.into(), t["id"].clone()],
-        )
-        .await?;
     ensure(
         !q.is_null()
             && q["delivery_status"] == "ACCEPTED"
             && q["consumed_at"].is_null()
             && q["invalidated_at"].is_null()
-            && number(&q, "expires_at") > n
-            && number(&q, "attempts") < 5,
+            && number(q, "expires_at") > n
+            && number(q, "attempts") < 5,
         401,
         "INVALID_CREDENTIALS",
     )?;
-    crate::auth::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
+    crate::auth::test_admission::Admission::load(a)?.target(&text(q, "canonical_target"))?;
     let remote = q["verifier"] == "ALIYUN";
     let supported = if remote {
         c["delivery_mode"] == "LIVE"
@@ -294,17 +293,24 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?,
     ], "VERSION_CONFLICT").await?;
     let matched = if remote {
-        crate::delivery::sms_auth::verify(
-            a,
-            id,
-            &text(&q, "canonical_target"),
-            &text(b, "credential"),
-        )
-        .await?
+        crate::delivery::sms_auth::verify(a, id, &text(q, "canonical_target"), credential).await?
     } else {
-        q["credential_hash"] == hash(&format!("{id}:{}", text(b, "credential")))
+        q["credential_hash"] == hash(&format!("{id}:{}", credential))
     };
     ensure(matched, 401, "INVALID_CREDENTIALS")?;
+    Ok(())
+}
+
+pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
+    shape("VerifyChallengeRequest", b)?;
+    a.rate_ip("auth:verify", 120).await?;
+    let q =
+        a.s.one(
+            "SELECT * FROM auth_verification_challenge WHERE id=? AND transaction_id=?",
+            vec![id.into(), t["id"].clone()],
+        )
+        .await?;
+    authenticate_challenge(a, t, c, &q, id, &text(b, "credential")).await?;
     let n = now();
     let proof = secret();
     let expires = (n + CODE).min(number(t, "expires_at"));
@@ -354,6 +360,79 @@ async fn code_identity(a: &Auth, is_email: bool, target: &str) -> Result<Value> 
     }, vec![target.into()]).await
 }
 
+pub(crate) struct PasswordIdentity {
+    pub address: String,
+    is_phone: bool,
+}
+
+impl PasswordIdentity {
+    pub(crate) fn new(a: &Auth, identifier: &Value, accepts_phone: bool) -> Result<Self> {
+        let raw = identifier.as_str().ok_or_else(Failure::invalid_request)?;
+        let is_phone = raw.starts_with("+86");
+        ensure(!is_phone || accepts_phone, 400, "INVALID_REQUEST")?;
+        let address = if is_phone {
+            raw.to_owned()
+        } else {
+            email(identifier)?
+        };
+        crate::auth::test_admission::Admission::load(a)?.target(&address)?;
+        Ok(Self { address, is_phone })
+    }
+
+    pub(crate) fn subject(&self, binding: &str) -> String {
+        let (table, column) = if self.is_phone {
+            ("auth_user_phone", "canonical_phone")
+        } else {
+            ("auth_user_email", "canonical_email")
+        };
+        format!(
+            "(SELECT user_id FROM {table} WHERE {column}={binding} AND verified_at IS NOT NULL)"
+        )
+    }
+
+    pub(crate) fn lookup(&self, a: &Auth) -> Result<D1PreparedStatement> {
+        a.s.statement(
+            &format!(
+                "SELECT u.id,u.status,u.session_epoch,l.password_hash
+                FROM auth_user u JOIN auth_local_credential l ON l.user_id=u.id WHERE u.id={}",
+                self.subject("?1")
+            ),
+            vec![self.address.clone().into()],
+        )
+    }
+
+    pub(crate) async fn verify(
+        &self,
+        a: &Auth,
+        candidate: &Value,
+        password: &str,
+    ) -> Result<D1PreparedStatement> {
+        let encoded = candidate["password_hash"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{VERSION}{}", "00".repeat(48)));
+        ensure(
+            matches(password, &encoded, a).await? && candidate["status"] == "ACTIVE",
+            401,
+            "INVALID_CREDENTIALS",
+        )?;
+        a.s.guard(
+            &format!(
+                "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user u ON u.id=l.user_id
+                WHERE l.user_id={} AND l.user_id=? AND l.password_hash=?
+                  AND u.status='ACTIVE' AND u.session_epoch=?)",
+                self.subject("?")
+            ),
+            vec![
+                self.address.clone().into(),
+                candidate["id"].clone(),
+                encoded.into(),
+                candidate["session_epoch"].clone(),
+            ],
+        )
+    }
+}
+
 pub(crate) async fn identify(
     a: &Auth,
     t: &mut Value,
@@ -401,45 +480,16 @@ async fn identify_once(
             "INVALID_REQUEST",
         )?;
         let identifier = b.get("identifier").unwrap_or(&b["email"]);
-        let raw_identifier = identifier.as_str().ok_or_else(Failure::invalid_request)?;
-        let is_phone = raw_identifier.starts_with("+86");
-        ensure(
-            !is_phone || t["method"] == "ACCOUNT_PASSWORD",
-            400,
-            "INVALID_REQUEST",
-        )?;
-        let address = if is_phone {
-            raw_identifier.to_owned()
-        } else {
-            email(identifier)?
-        };
-        crate::auth::test_admission::Admission::load(a)?.target(&address)?;
+        let identity = PasswordIdentity::new(a, identifier, t["method"] == "ACCOUNT_PASSWORD")?;
         a.rate_batch(&[
             ("auth:password", &a.client_ip, 30, 60_000),
-            ("auth:password-target", &address, 10, 300_000),
+            ("auth:password-target", &identity.address, 10, 300_000),
         ])
         .await?;
-        let query = if is_phone {
-            "SELECT u.id,u.status,u.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
-        } else {
-            "SELECT u.id,u.status,u.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL"
-        };
-        let candidate = a.s.one(query, vec![address.clone().into()]).await?;
-        let encoded = candidate["password_hash"]
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
-        ensure(
-            matches(&text(b, "password"), &encoded, a).await? && candidate["status"] == "ACTIVE",
-            401,
-            "INVALID_CREDENTIALS",
-        )?;
+        let candidate = a.s.first(identity.lookup(a)?).await?;
+        writes.push(identity.verify(a, &candidate, &text(b, "password")).await?);
         user = text(&candidate, "id");
         epoch = number(&candidate, "session_epoch");
-        writes.push(a.s.guard(
-            if is_phone { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_phone e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_phone=? AND e.verified_at IS NOT NULL)" } else { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_email=? AND e.verified_at IS NOT NULL)" },
-            vec![user.clone().into(), encoded.into(),address.into()],
-        )?);
     } else {
         shape(
             if op == "code" {

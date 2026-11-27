@@ -14,13 +14,13 @@ async fn security(a: &Auth, user: &str) -> Result<Value> {
     )
     .await
 }
-const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,u.account_version,
+pub(crate) const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,u.account_version,
     COALESCE(
         (SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),
         (SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)
     ) AS email FROM auth_user u WHERE u.id=";
 const PASSWORD: &str = "SELECT user_id FROM auth_local_credential WHERE user_id=";
-fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
+pub(crate) fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
     json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]})
 }
 async fn user_view(a: &Auth, user: &str) -> Result<Value> {
@@ -171,17 +171,7 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
     let credential = next_set()?.into_iter().next().unwrap_or(Value::Null);
     let (s, c) = sessions::active_result(a, credential, digest, origin)?;
     let user = next_set()?.into_iter().next().unwrap_or(Value::Null);
-    let capabilities: Vec<_> = next_set()?
-        .into_iter()
-        .map(|mut p| p["permission"].take())
-        .filter(|permission| {
-            crate::core::contracts::unified_contracts::validate_named(
-                "PlatformCapability",
-                permission,
-            )
-            .is_ok()
-        })
-        .collect();
+    let capabilities = platform_capabilities(next_set()?);
     let mut view = json!({
         "user":user_view_value(a, &text(&s,"user_id"), &user),
         "session":sessions::view(&s),
@@ -194,6 +184,18 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
         view["passwordEnabled"] = password.into();
     }
     Ok(view)
+}
+pub(crate) fn platform_capabilities(rows: Vec<Value>) -> Vec<Value> {
+    rows.into_iter()
+        .map(|mut p| p["permission"].take())
+        .filter(|permission| {
+            crate::core::contracts::unified_contracts::validate_named(
+                "PlatformCapability",
+                permission,
+            )
+            .is_ok()
+        })
+        .collect()
 }
 pub(crate) async fn web_account_view(a: &Auth, access_token: &str) -> Result<Value> {
     // Browser origin checks run at the BFF boundary; its previous in-process
