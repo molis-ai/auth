@@ -5,6 +5,9 @@ use worker::{Env, Method, Request, Response, Url};
 
 pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Result<Response> {
     let path = url.path();
+    // Reject unmatched API and retired OAuth2/well-known paths before the GET/HEAD check
+    // below so non-GET calls (e.g. POST /api/v1/...) return 404 instead of 405, and never
+    // fall through to SPA HTML.
     ensure(
         !path.starts_with("/api/")
             && !path.starts_with("/oauth2/")
@@ -18,6 +21,8 @@ pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Resu
         405,
         "METHOD_NOT_ALLOWED",
     )?;
+    // Allow only explicit console entry routes and Vite asset paths instead of serving
+    // `index.html` for arbitrary unknown URLs.
     let pages = ["/", "/login", "/console"];
     let page = pages.contains(&path);
     ensure(page || path.starts_with("/auth-ui/"), 404, "NOT_FOUND")?;

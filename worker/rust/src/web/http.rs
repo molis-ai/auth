@@ -16,6 +16,8 @@ pub(crate) fn request_id(request: &Request) -> String {
     }
 }
 
+// Normalize concrete URLs (containing IDs or asset hashes) into bounded route templates
+// for structured request logs and metrics without pulling in a full web router framework.
 pub(crate) fn log_route(path: &str) -> &'static str {
     static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
     match path {

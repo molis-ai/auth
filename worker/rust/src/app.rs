@@ -88,6 +88,9 @@ async fn handle_response(
     let id = log.id;
     let path = url.path();
     let https = url.scheme() == "https";
+    // `/internal/v1/*` belongs to the private Billing service binding (`AuthInternal` in
+    // `runtime/entrypoint.js`), not the public fetch entrypoint. Reject it with 404 before
+    // initializing `Auth` or touching D1 so public callers can never reach bridge routes.
     if path == "/internal/v1" || path.starts_with("/internal/v1/") {
         let failure = Failure {
             status: 404,
