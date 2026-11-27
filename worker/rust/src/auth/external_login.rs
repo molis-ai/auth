@@ -299,6 +299,7 @@ async fn commit_identity(
 }
 
 async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
+    a.rate_ip("federation:callback", 120).await?;
     let mut b = q(a)?;
     let state = text(&b, "state");
     ensure(token(&state), 400, "INVALID_REQUEST")?;

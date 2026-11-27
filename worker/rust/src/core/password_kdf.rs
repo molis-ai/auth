@@ -73,17 +73,27 @@ pub async fn remote_derive(password: &str, salt: &[u8], env: &Env) -> Result<Vec
     init.with_method(Method::Post).with_body(Some(body.into()));
     let request = Request::new_with_init("https://password-kdf.internal/derive", &init)?;
     // No retry or local fallback: an unavailable KDF must fail closed.
-    let mut response = stub.fetch_with_request(request).await?;
-    if response.status_code() != 200 {
-        return Err(Error::RustError("AUTH_PASSWORD_KDF_UNAVAILABLE".into()));
+    let derive = async {
+        let mut response = stub.fetch_with_request(request).await?;
+        if response.status_code() != 200 {
+            return Err(Error::RustError("AUTH_PASSWORD_KDF_UNAVAILABLE".into()));
+        }
+        let bytes = response.bytes().await?;
+        if bytes.len() != KEY_BYTES {
+            return Err(Error::RustError(
+                "AUTH_PASSWORD_KDF_INVALID_RESPONSE".into(),
+            ));
+        }
+        Ok(bytes)
+    };
+    let timeout = Delay::from(std::time::Duration::from_secs(10));
+    futures_util::pin_mut!(derive, timeout);
+    match futures_util::future::select(derive, timeout).await {
+        futures_util::future::Either::Left((result, _)) => result,
+        futures_util::future::Either::Right(_) => {
+            Err(Error::RustError("AUTH_PASSWORD_KDF_TIMEOUT".into()))
+        }
     }
-    let bytes = response.bytes().await?;
-    if bytes.len() != KEY_BYTES {
-        return Err(Error::RustError(
-            "AUTH_PASSWORD_KDF_INVALID_RESPONSE".into(),
-        ));
-    }
-    Ok(bytes)
 }
 
 #[cfg(test)]

@@ -160,29 +160,30 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let channel = text(b, "channel");
     let subject = format!("{channel}:{target}");
     let window = delivery_limit("sendQuotaWindowSeconds") * 1000;
-    a.rate_batch(&[
-        ("delivery:ip", &a.client_ip, 60, 60_000),
-        (
-            "delivery:ip-hour",
-            &a.client_ip,
-            delivery_limit("sendQuotaPerIp"),
-            window,
-        ),
-        (
-            "delivery:target",
-            &subject,
-            delivery_limit("sendQuotaPerTarget"),
-            window,
-        ),
-        (
-            "delivery:client",
-            &text(c, "client_id"),
-            delivery_limit("sendQuotaPerClient"),
-            window,
-        ),
-        ("delivery:resend", &subject, 1, 60_000),
-    ])
-    .await?;
+    let reserved_at = a
+        .rate_batch(&[
+            ("delivery:ip", &a.client_ip, 60, 60_000),
+            (
+                "delivery:ip-hour",
+                &a.client_ip,
+                delivery_limit("sendQuotaPerIp"),
+                window,
+            ),
+            (
+                "delivery:target",
+                &subject,
+                delivery_limit("sendQuotaPerTarget"),
+                window,
+            ),
+            (
+                "delivery:client",
+                &text(c, "client_id"),
+                delivery_limit("sendQuotaPerClient"),
+                window,
+            ),
+            ("delivery:resend", &subject, 1, 60_000),
+        ])
+        .await?;
     let n = now();
     let id = uuid();
     let delivery = uuid();
@@ -225,6 +226,19 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
                 // Keep the challenge pending so even a late delivery cannot authorize a reset.
                 return Ok(receipt);
             }
+            // Release only this failed resend reservation. Other quotas still account for the attempt.
+            if let Err(release) =
+                a.s.run(
+                    "DELETE FROM auth_rate_bucket WHERE bucket_hash=? AND expires_at=?",
+                    vec![
+                        hash(&format!("delivery:resend:{subject}")).into(),
+                        (reserved_at + 60_000).into(),
+                    ],
+                )
+                .await
+            {
+                a.s.log_failure("delivery.resend_release", &release, delivery_started);
+            }
             return Err(error);
         }
         let completed = now();
@@ -262,10 +276,28 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         "INVALID_CREDENTIALS",
     )?;
     crate::auth::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
-    let matched = if q["verifier"] == "ALIYUN" {
-        ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
-        // Reserve an attempt before network I/O, including failed/uncertain requests.
-        a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",vec![id.into(),now().into()])?,a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?],"VERSION_CONFLICT").await?;
+    let remote = q["verifier"] == "ALIYUN";
+    let supported = if remote {
+        c["delivery_mode"] == "LIVE"
+    } else {
+        crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
+            || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL")
+    };
+    ensure(supported, 503, "UPSTREAM_UNAVAILABLE")?;
+    // Claim one attempt before comparing any credential. The transaction guard
+    // and conditional update serialize competing checks on the same challenge.
+    let started = now();
+    a.s.batch(vec![
+        client_guard(a,c)?,
+        tx_guard(a,t,started,"PENDING")?,
+        a.s.guard(
+            "EXISTS(SELECT 1 FROM auth_verification_challenge
+             WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",
+            vec![id.into(),started.into()],
+        )?,
+        a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?,
+    ], "VERSION_CONFLICT").await?;
+    let matched = if remote {
         crate::delivery::sms_auth::verify(
             a,
             id,
@@ -274,23 +306,9 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         )
         .await?
     } else {
-        ensure(
-            crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
-                || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL"),
-            503,
-            "UPSTREAM_UNAVAILABLE",
-        )?;
         q["credential_hash"] == hash(&format!("{id}:{}", text(b, "credential")))
     };
-    if !matched {
-        if q["verifier"] != "ALIYUN" {
-            a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET attempts=MIN(attempts+1,max_attempts) WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL",vec![id.into()])?],"VERSION_CONFLICT").await?;
-        }
-        return Err(Failure {
-            status: 401,
-            code: "INVALID_CREDENTIALS",
-        });
-    }
+    ensure(matched, 401, "INVALID_CREDENTIALS")?;
     let n = now();
     let proof = secret();
     let expires = (n + CODE).min(number(t, "expires_at"));
@@ -305,7 +323,7 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
             .await?;
         ensure(existing.is_null(), 409, "IDENTITY_IN_USE")?;
     }
-    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND (attempts<max_attempts OR (verifier='ALIYUN' AND attempts=max_attempts)) AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
+    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
     if crate::auth::sensitive_transactions::protected(t) {
         writes.extend(
             crate::auth::sensitive_transactions::verified(
@@ -375,6 +393,9 @@ async fn identify_once(
     let mut creating_code_identity = false;
     let user: String;
     let epoch: i64;
+    if op == "email-signup" {
+        a.rate_ip("auth:email-signup", 60).await?;
+    }
     if op == "password" {
         shape("PasswordLoginRequest", b)?;
         ensure(

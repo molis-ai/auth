@@ -247,22 +247,23 @@ pub async fn route(
     if path == "/api/account/password/reset" {
         shape("ProductPasswordResetRequest", b)?;
         let id = text(b, "resetHandle");
-        let mut t = s.data["transactions"][&id].take();
+        let t = &s.data["transactions"][&id];
         ensure(
             t["purpose"] == "PASSWORD_RESET" && !t["resetProof"].is_null(),
             403,
             "FORBIDDEN",
         )?;
-        let proof = t["resetProof"].take();
-        return s
+        let result = s
             .call(
                 "/api/v1/auth/password-reset/complete",
                 Method::Post,
-                Some(json!({"transactionId":id,"resetProof":proof,"newPassword":b["newPassword"]})),
-                Some(&text(&t, "proof")),
+                Some(json!({"transactionId":id,"resetProof":t["resetProof"],"newPassword":b["newPassword"]})),
+                Some(&text(t, "proof")),
                 None,
             )
-            .await;
+            .await?;
+        s.data["transactions"][&id].take();
+        return Ok(result);
     }
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     ensure(

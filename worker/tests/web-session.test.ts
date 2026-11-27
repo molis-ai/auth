@@ -1586,7 +1586,7 @@ test(
         assert.equal(await receipt(), null)
 
         const before = await row(b)
-        const committed = await data(await traced({ read: 1, write: 3 }, b, '/activity', activity))
+        const committed = await data(await traced({ read: 1, write: 4 }, b, '/activity', activity))
         assert.equal(committed.loginSessionId, loginId)
         assert.equal(Date.parse(committed.lastActiveAt), (await stored())?.last_active_at)
         assert.equal((await receipt())?.kind, activity.body.kind)

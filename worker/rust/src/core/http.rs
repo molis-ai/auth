@@ -235,17 +235,12 @@ pub fn now() -> i64 {
     js_sys::Date::now() as i64
 }
 pub fn iso(v: &Value) -> Value {
-    if v.is_null() {
-        Value::Null
-    } else {
-        js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
-            v.as_f64().unwrap_or_default(),
-        ))
-        .to_iso_string()
-        .as_string()
-        .unwrap_or_default()
-        .into()
-    }
+    v.as_i64()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map_or(Value::Null, |time| {
+            time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                .into()
+        })
 }
 pub fn name(v: &Value) -> Result<String> {
     let s = string(v, 240)?.trim();
@@ -327,8 +322,12 @@ pub(crate) fn with_security_headers(
 }
 
 pub(crate) async fn bounded(request: &mut worker::Request, max: usize) -> Result<String> {
+    ensure(request.inner().body().is_some(), 400, "INVALID_REQUEST")?;
+    bounded_stream(request.stream()?, max).await
+}
+
+pub(crate) async fn bounded_stream(mut stream: worker::ByteStream, max: usize) -> Result<String> {
     use futures_util::StreamExt;
-    let mut stream = request.stream()?;
     let mut bytes = Vec::new();
     while let Some(part) = stream.next().await {
         let part = part?;

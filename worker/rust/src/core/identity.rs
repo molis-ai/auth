@@ -86,7 +86,7 @@ impl Auth {
             code: "RATE_LIMITED",
         }
     }
-    pub(crate) async fn rate_batch(&self, rules: &[(&str, &str, i64, i64)]) -> Result<()> {
+    pub(crate) async fn rate_batch(&self, rules: &[(&str, &str, i64, i64)]) -> Result<i64> {
         let n = now();
         let mut bindings = vec![n.into()];
         let mut limits = Vec::new();
@@ -131,7 +131,8 @@ impl Auth {
                 return Err(self.rate_limited(row));
             }
         }
-        ensure(rows.len() == rules.len(), 503, "AUTH_UNAVAILABLE")
+        ensure(rows.len() == rules.len(), 503, "AUTH_UNAVAILABLE")?;
+        Ok(n)
     }
     pub async fn rate_ip(&self, kind: &str, limit: i64) -> Result<()> {
         self.rate(kind, &self.client_ip, limit, 60_000).await

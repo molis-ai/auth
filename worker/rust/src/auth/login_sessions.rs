@@ -323,11 +323,14 @@ pub(crate) fn tokens(
         writes,
     ))
 }
-async fn revoke_replayed_refresh(a: &Auth, session: &Value, n: i64) -> Result<()> {
+async fn revoke_replayed_refresh(a: &Auth, session: &Value, digest: &str, n: i64) -> Result<()> {
     a.s.batch(
         vec![a.s.statement(
-            "UPDATE auth_login_session SET revoked_at=COALESCE(revoked_at,?),session_revision=session_revision+1 WHERE id=? AND revoked_at IS NULL",
-            vec![n.into(), session["id"].clone()],
+            "UPDATE auth_login_session SET revoked_at=COALESCE(revoked_at,?),session_revision=session_revision+1
+             WHERE id=? AND revoked_at IS NULL AND EXISTS(
+               SELECT 1 FROM auth_login_refresh_token r WHERE r.token_hash=? AND r.login_session_id=auth_login_session.id AND r.used_at IS NOT NULL
+             )",
+            vec![n.into(), session["id"].clone(), digest.into()],
         )?],
         "VERSION_CONFLICT",
     )
@@ -356,7 +359,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
             "INVALID_GRANT",
         )?;
         if !s["token_used_at"].is_null() {
-            revoke_replayed_refresh(a, &s, n).await?;
+            revoke_replayed_refresh(a, &s, &digest, n).await?;
             return Err(Failure {
                 status: 401,
                 code: "INVALID_GRANT",
@@ -371,7 +374,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
             "SESSION_EXPIRED",
         )?;
         let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
-        let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?];
+        let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.as_str().into()])?];
         writes.extend(new_tokens);
         writes.push(a.s.audit(
             "account.v2.token",
@@ -384,7 +387,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         )?);
         if let Err(e) = a.s.batch(writes, "VERSION_CONFLICT").await {
             if e.status == 409 {
-                revoke_replayed_refresh(a, &s, n).await?;
+                revoke_replayed_refresh(a, &s, &digest, n).await?;
             }
             return Err(e);
         }
@@ -514,6 +517,8 @@ async fn activity(a: &Auth, b: &Value) -> Result<Value> {
     let credential = credential(a, &json!({})).await?;
     let n = now();
     let (mut s, c) = check_active(credential, n)?;
+    a.rate("account:activity", &text(&s, "user_id"), 120, 60_000)
+        .await?;
     let session_id = s["id"].clone();
     let event_id = b["eventId"].clone();
     let writes = vec![

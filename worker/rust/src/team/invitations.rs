@@ -135,12 +135,12 @@ impl Service<'_> {
                 )?);
             }
             w.push(self.a.s.statement("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_email,target_phone,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?,'PENDING',?,?)",vec![id.clone().into(),ctx.tenant["id"].clone(),row["target_kind"].clone(),row["target_email"].clone(),row["target_phone"].clone(),row["target_user_id"].clone(),ctx.member["id"].clone(),n.into(),expires.into()])?);
-            let mock_email = kind == "EMAIL"
+            let mock_notification = matches!(kind.as_str(), "EMAIL" | "PHONE")
                 && crate::delivery::supports_invitation_notifications(
                     &self.c["kind"],
                     &self.c["delivery_mode"],
                 );
-            if kind == "PHONE" || mock_email {
+            if mock_notification {
                 w.push(crate::delivery::invitation_notification(self.a,&self.c,if kind=="EMAIL"{"EMAIL"}else{"SMS"},&value,&json!({"invitationId":id,"tenantName":ctx.tenant["name"],"expiresAt":iso(&json!(expires))}),expires)?);
             }
             return Ok(Change::new(view(&row), w));

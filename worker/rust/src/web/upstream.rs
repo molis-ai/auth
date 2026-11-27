@@ -159,7 +159,11 @@ impl<'a> Target<'a> {
                 .map_err(|_| unavailable())?,
         );
         let status = response.status_code();
-        let mut data: Value = response.json().await.map_err(|_| unavailable())?;
+        let stream = response.stream().map_err(|_| unavailable())?;
+        let raw = bounded_stream(stream, 256 * 1024)
+            .await
+            .map_err(|_| unavailable())?;
+        let mut data: Value = serde_json::from_str(&raw).map_err(|_| unavailable())?;
         let shared = a
             .env
             .secret("MOLIS_INTERNAL_SECRET")

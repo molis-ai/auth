@@ -444,6 +444,7 @@ name = "molis-auth-worker"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
  "futures-util",
  "hex",
  "js-sys",

@@ -3,7 +3,7 @@ const encode = (s) =>
   encodeURIComponent(s).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
 
 function rpcResult(action, response, raw) {
-  if (response.status === 429) return { outcome: 'rate_limited' }
+  if (response.status === 429) return { outcome: 'rate_limited', reply: 'rate_limited' }
   if (response.status >= 500) return { outcome: 'upstream_error' }
   if (!response.ok && response.status !== 400) return { outcome: 'http_error' }
 
@@ -73,6 +73,24 @@ async function readBody(response) {
   return new TextDecoder().decode(all)
 }
 
+const signingKeys = new Map()
+const MAX_SIGNING_KEYS = 4
+
+async function signingKey(secret) {
+  const cached = signingKeys.get(secret)
+  if (cached) return cached
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret + '&'),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign'],
+  )
+  if (signingKeys.size >= MAX_SIGNING_KEYS) signingKeys.delete(signingKeys.keys().next().value)
+  signingKeys.set(secret, key)
+  return key
+}
+
 export async function aliyunRpc(keyId, keySecret, action, input, requestId, environment) {
   if (!['SendSmsVerifyCode', 'CheckSmsVerifyCode', 'SingleSendMail'].includes(action))
     throw Error('upstream')
@@ -92,13 +110,7 @@ export async function aliyunRpc(keyId, keySecret, action, input, requestId, envi
     .map((k) => encode(k) + '=' + encode(String(params[k])))
     .join('&')
   const bytes = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    bytes.encode(keySecret + '&'),
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign'],
-  )
+  const key = await signingKey(keySecret)
   const signature = btoa(
     String.fromCharCode(
       ...new Uint8Array(
@@ -121,7 +133,12 @@ export async function aliyunRpc(keyId, keySecret, action, input, requestId, envi
       redirect: 'manual',
       signal,
     })
-    result = rpcResult(action, response, await readBody(response))
+    if (response.status === 429) {
+      void response.body?.cancel().catch(() => {})
+      result = rpcResult(action, response, '')
+    } else {
+      result = rpcResult(action, response, await readBody(response))
+    }
   } catch {
     result = {
       outcome: signal.aborted ? 'timeout' : response ? 'invalid_response' : 'network_error',

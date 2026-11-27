@@ -99,7 +99,7 @@ async fn handle_response(
         let response = with_security_headers(error_response(failure, id)?, id, https)?;
         return Ok((response, None, Some("NOT_FOUND")));
     }
-    if req.method() == Method::Get && path == "/api/v1/health" {
+    if req.inner().method() == "GET" && path == "/api/v1/health" {
         let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
         return Ok((response, None, None));
     }
@@ -146,6 +146,18 @@ async fn handle_response(
 async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     let path = url.path();
     let method = a.request.method();
+    if method == Method::Get
+        && a.request.inner().method() != "GET"
+        && (path == "/api/v1"
+            || path.starts_with("/api/v1/")
+            || auth::sync_read_proof::matches(path)
+            || auth::management_handoff::matches(path))
+    {
+        return Err(Failure {
+            status: 405,
+            code: "METHOD_NOT_ALLOWED",
+        });
+    }
 
     if auth::sync_read_proof::matches(path) {
         return auth::sync_read_proof::route(a, path, method).await;

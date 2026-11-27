@@ -182,6 +182,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(signed.status, 200)
     const jwksReply = await p.fetch(new Request(origin + '/.well-known/molis-sync-jwks.json'))
     assert.equal(jwksReply.status, 200)
+    assert.equal(jwksReply.headers.get('Cache-Control'), 'public, max-age=60')
     const { keys } = (await jwksReply.json()) as { keys: JWK[] }
     assert.equal(keys[0].kid, 'synthetic-sync')
     assert.equal(keys[0].d, undefined)
@@ -268,11 +269,11 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       async () => {
         const active = await activity(event)
         assert.equal(active.status, 200)
-        assert.deepEqual(active.d1Calls, { read: 1, write: 1 })
+        assert.deepEqual(active.d1Calls, { read: 1, write: 2 })
         const replay = await activity(event)
         assert.equal(replay.status, 200)
         assert.equal(replay.data.lastActiveAt, active.data.lastActiveAt)
-        assert.deepEqual(replay.d1Calls, { read: 1, write: 1 })
+        assert.deepEqual(replay.d1Calls, { read: 1, write: 2 })
 
         const pending = activity(event, activityBarrier)
         try {
@@ -290,12 +291,12 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           const committed = await activity({ ...event, eventId: 'event-two' })
           assert.equal(committed.status, 200)
           assert.equal(committed.data.lastActiveAt, new Date(later).toISOString())
-          assert.deepEqual(committed.d1Calls, { read: 1, write: 1 })
+          assert.deepEqual(committed.d1Calls, { read: 1, write: 2 })
           resumeActivity.resolve()
           const duplicate = await pending
           assert.equal(duplicate.status, 200)
           assert.deepEqual(duplicate.data, committed.data)
-          assert.deepEqual(duplicate.d1Calls, { read: 1, write: 1 })
+          assert.deepEqual(duplicate.d1Calls, { read: 1, write: 2 })
           const receipts = await db
             .prepare(
               'SELECT event_id,kind FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',

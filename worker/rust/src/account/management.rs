@@ -339,6 +339,7 @@ async fn mutation(
         "VERSION_CONFLICT",
     )?;
     if op == "profile" {
+        a.rate("account:profile", &user, 60, 60_000).await?;
         let mut view = user_view(a, &user).await?;
         if b.get("displayName").is_some() {
             view["displayName"] = name(&b["displayName"])
@@ -390,6 +391,18 @@ async fn mutation(
         let existing = sensitive::binding(a, &user, id).await?;
         ensure(existing["type"] != "EMAIL", 403, "FORBIDDEN")?;
         list.retain(|m| m["bindingId"] != id);
+    }
+    if op != "bind" {
+        for table in [
+            "auth_user_email",
+            "auth_user_phone",
+            "auth_external_identity",
+        ] {
+            writes.push(a.s.statement(
+                &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
+                vec![id.into(), user.clone().into()],
+            )?);
+        }
     }
     if op == "unlink" {
         writes.push(operation(a, &p, "UNLINK_METHOD", &json!({"bindingId":id}))?);
@@ -471,18 +484,6 @@ async fn mutation(
         409,
         "LAST_LOGIN_METHOD",
     )?;
-    if op != "bind" {
-        for table in [
-            "auth_user_email",
-            "auth_user_phone",
-            "auth_external_identity",
-        ] {
-            writes.push(a.s.statement(
-                &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
-                vec![id.into(), user.clone().into()],
-            )?);
-        }
-    }
     writes.extend(consume(a, &p)?);
     writes.extend(identity_changed(a, &user)?);
     Ok((json!({"loginMethods":list,"version":version}), writes))
@@ -558,6 +559,7 @@ async fn manage(
 }
 async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     shape("PasswordResetRequest", b)?;
+    a.rate_ip("auth:password-reset", 60).await?;
     let (t, c) = registration::transaction(a, &text(b, "transactionId")).await?;
     ensure(
         t["purpose"] == "PASSWORD_RESET" && t["status"] == "CONSUMED",

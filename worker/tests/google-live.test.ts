@@ -572,25 +572,34 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         mutation = {}
       }
     })
-    await suite.test('refreshes once for rotation and removes retired keys', async () => {
-      const before = certs
-      keys = [rotatedJwk]
-      signingKid = rotatedJwk.kid
-      try {
-        const flows = [await start('work'), await start('club')]
-        await Promise.all(flows.map(verify))
-        assert.equal(certs, before + 1)
-        for (const kid of [jwk.kid, 'unknown-one', 'unknown-two']) {
-          signingKid = kid
-          const response = await sendCallback(await start('work'))
-          assert.equal(response.status, 401)
+    await suite.test(
+      'refreshes rotated keys with request-local fetches and caches individual misses',
+      async () => {
+        try {
+          signingKid = 'missing-before-rotation'
+          assert.equal((await sendCallback(await start('work'))).status, 401)
+          const before = certs
+          keys = [rotatedJwk]
+          signingKid = rotatedJwk.kid
+          const flows = [await start('work'), await start('club')]
+          await Promise.all(flows.map(verify))
+          assert.ok(certs >= before + 1 && certs <= before + 2)
+          for (const kid of [jwk.kid, 'unknown-one', 'unknown-two']) {
+            signingKid = kid
+            const beforeMiss = certs
+            for (let repeat = 0; repeat < 2; repeat++) {
+              const response = await sendCallback(await start('work'))
+              assert.equal(response.status, 401)
+            }
+            assert.equal(certs, beforeMiss + 1)
+          }
+        } finally {
+          keys = [jwk]
+          signingKid = jwk.kid
+          certsHeaders = { 'Cache-Control': 'max-age=600' }
         }
-        assert.equal(certs, before + 1)
-      } finally {
-        keys = [jwk]
-        signingKid = jwk.kid
-      }
-    })
+      },
+    )
     await suite.test(
       'does not reuse expired or uncacheable responses and surfaces outages',
       async () => {
