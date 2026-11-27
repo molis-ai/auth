@@ -25,7 +25,7 @@ export async function bootstrapPlatform(db, userId) {
       ),
     ),
     statement(
-      "INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,request_id,occurred_at,change_summary) VALUES (?,'platform.bootstrap','SUCCESS',?,?,?,?,?)",
+      "INSERT INTO auth_management_audit(id,operation,outcome,actor_user_id,target_type,target_id,request_id,occurred_at,change_summary) VALUES (?,'platform.bootstrap','SUCCESS',?,'LOCAL_BOOTSTRAP',?,?,?,?)",
       crypto.randomUUID(),
       userId,
       userId,

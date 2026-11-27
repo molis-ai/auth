@@ -326,7 +326,7 @@ CREATE INDEX ix_logout_receipt_expiry ON auth_logout_receipt(expires_at);
 CREATE TABLE auth_management_audit (
  id TEXT PRIMARY KEY NOT NULL,
  actor_user_id TEXT NOT NULL REFERENCES auth_user(id),
- client_id TEXT NOT NULL REFERENCES auth_client(client_id),
+ client_id TEXT REFERENCES auth_client(client_id),
  tenant_id TEXT REFERENCES auth_tenant(id),
  operation TEXT NOT NULL,
  target_type TEXT NOT NULL,
@@ -335,7 +335,8 @@ CREATE TABLE auth_management_audit (
  reason TEXT,
  change_summary TEXT CHECK(change_summary IS NULL OR (json_valid(change_summary) AND json_type(change_summary)='object')),
  request_id TEXT NOT NULL,
- occurred_at INTEGER NOT NULL
+ occurred_at INTEGER NOT NULL,
+ CHECK(client_id IS NOT NULL OR target_type='LOCAL_BOOTSTRAP')
 );
 
 CREATE INDEX ix_management_audit_tenant ON auth_management_audit(tenant_id,occurred_at,id);
