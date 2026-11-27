@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{LazyLock, OnceLock};
 
-const DOCUMENT: &str = include_str!("../../../contracts/unified-account/schemas.json");
+const DOCUMENT: &str = include_str!("../../../../../contracts/unified-account/schemas.json");
 const SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 fn definition<'a>(document: &'a Value, name: &str) -> Result<&'a Value, String> {
@@ -287,16 +287,17 @@ pub fn validate_named(name: &str, value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract_structure::compile_document;
+    use crate::core::contracts::contract_structure::compile_document;
     use serde_json::json;
     use std::sync::atomic::Ordering;
 
-    const PROFILE: &str = include_str!("../../../contracts/unified-account/validator-profile.json");
+    const PROFILE: &str =
+        include_str!("../../../../../contracts/unified-account/validator-profile.json");
 
     #[test]
     fn unified_contract_shared_positive_and_negative_fixtures() {
         let fixtures: Value = serde_json::from_str(include_str!(
-            "../../../contracts/unified-account/fixtures.json"
+            "../../../../../contracts/unified-account/fixtures.json"
         ))
         .unwrap();
         for fixture in fixtures["fixtures"].as_array().unwrap() {
@@ -332,7 +333,7 @@ mod tests {
     #[test]
     fn repeated_named_validation_reuses_all_six_patterns() {
         let fixtures: Value = serde_json::from_str(include_str!(
-            "../../../contracts/unified-account/fixtures.json"
+            "../../../../../contracts/unified-account/fixtures.json"
         ))
         .unwrap();
         let fixture = fixtures["fixtures"]

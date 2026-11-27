@@ -1,4 +1,4 @@
-use crate::{http::*, identity::Auth, security::challenge};
+use crate::{core::http::*, core::identity::Auth, core::security::challenge};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use worker::Url;

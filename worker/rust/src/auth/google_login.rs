@@ -1,5 +1,5 @@
 //! Google OIDC adapter. Provider identity is issuer + sub, never email.
-use crate::{http::*, identity::Auth, security::challenge};
+use crate::{core::http::*, core::identity::Auth, core::security::challenge};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
@@ -120,7 +120,7 @@ impl Google {
             .filter(|v| !v.is_empty() && !v.chars().any(char::is_control))
             .map(|v| v.chars().take(80).collect::<String>());
         let email = if claims["email_verified"] == true {
-            crate::http::email(&claims["email"]).ok()
+            crate::core::http::email(&claims["email"]).ok()
         } else {
             None
         };

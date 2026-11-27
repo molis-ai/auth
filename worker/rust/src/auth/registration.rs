@@ -1,19 +1,19 @@
 //! Product-local email/password and phone transactions; verification never accepts a claimed actor.
 use crate::{
     auth::login_sessions::{client, client_guard},
+    core::contracts::unified_policy::default_integer as delivery_limit,
+    core::http::*,
+    core::identity::Auth,
+    core::security::*,
     delivery::{MailSender, Message, Sender, SmsSender},
-    http::*,
-    identity::Auth,
-    security::*,
-    unified_policy::default_integer as delivery_limit,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 const TX: i64 = 600000;
 const CODE: i64 = 300000;
 pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
-    if crate::sensitive_transactions::protected(t) {
-        return crate::sensitive_transactions::guard(a, t, n, status);
+    if crate::auth::sensitive_transactions::protected(t) {
+        return crate::auth::sensitive_transactions::guard(a, t, n, status);
     }
     a.s.guard(
         "EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND status=? AND expires_at>?)",
@@ -47,7 +47,7 @@ async fn check_transaction(a: &Auth, mut t: Value) -> Result<(Value, Value)> {
         "INVALID_CREDENTIALS",
     )?;
     let c = client(a, &text(&t, "client_id")).await?;
-    if crate::sensitive_transactions::protected(&t) {
+    if crate::auth::sensitive_transactions::protected(&t) {
         let (s, _) = crate::auth::login_sessions::active(a).await?;
         t["_access_hash"] = s["access_hash"].clone();
         ensure(
@@ -66,8 +66,8 @@ async fn check_transaction(a: &Auth, mut t: Value) -> Result<(Value, Value)> {
 }
 pub(crate) async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     shape("CreateTransactionRequest", b)?;
-    if crate::sensitive_transactions::protected(b) {
-        return crate::sensitive_transactions::begin(a, b).await;
+    if crate::auth::sensitive_transactions::protected(b) {
+        return crate::auth::sensitive_transactions::begin(a, b).await;
     }
     let (t, _) = begin_unprotected(a, b).await?;
     Ok(json!({
@@ -138,7 +138,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     } else {
         text(b, "address")
     };
-    crate::test_admission::Admission::load(a)?.target(&target)?;
+    crate::auth::test_admission::Admission::load(a)?.target(&target)?;
     ensure(
         c["delivery_mode"] == "LIVE"
             || crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"]),
@@ -261,7 +261,7 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         401,
         "INVALID_CREDENTIALS",
     )?;
-    crate::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
+    crate::auth::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
     let matched = if q["verifier"] == "ALIYUN" {
         ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
         // Reserve an attempt before network I/O, including failed/uncertain requests.
@@ -306,9 +306,9 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         ensure(existing.is_null(), 409, "IDENTITY_IN_USE")?;
     }
     let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND (attempts<max_attempts OR (verifier='ALIYUN' AND attempts=max_attempts)) AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
-    if crate::sensitive_transactions::protected(t) {
+    if crate::auth::sensitive_transactions::protected(t) {
         writes.extend(
-            crate::sensitive_transactions::verified(
+            crate::auth::sensitive_transactions::verified(
                 a,
                 t,
                 &json!({"type":if q["channel"]=="EMAIL"{"EMAIL"}else{"PHONE"},"target":target}),
@@ -350,8 +350,8 @@ pub(crate) async fn identify(
     op: &str,
     b: &Value,
 ) -> Result<Value> {
-    if crate::sensitive_transactions::protected(t) {
-        return crate::sensitive_transactions::identify(a, t, c, op, b).await;
+    if crate::auth::sensitive_transactions::protected(t) {
+        return crate::auth::sensitive_transactions::identify(a, t, c, op, b).await;
     }
     if !identify_once(a, t, c, op, b, true).await? {
         // The failed batch left this transaction's proof unused. Retry only against
@@ -399,7 +399,7 @@ async fn identify_once(
         } else {
             email(identifier)?
         };
-        crate::test_admission::Admission::load(a)?.target(&address)?;
+        crate::auth::test_admission::Admission::load(a)?.target(&address)?;
         a.rate_batch(&[
             ("v2-password", &a.client_ip, 30, 60_000),
             ("v2-password-target", &address, 10, 300_000),
@@ -452,7 +452,7 @@ async fn identify_once(
         ensure(!p.is_null(), 401, "INVALID_CREDENTIALS")?;
         let identity = parsed(&p, "verified_identity")?;
         let target = text(&identity, "target");
-        crate::test_admission::Admission::load(a)?.target(&target)?;
+        crate::auth::test_admission::Admission::load(a)?.target(&target)?;
         writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_identity_proof WHERE token_hash=? AND consumed_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?);
         writes.push(a.s.statement(
             "UPDATE auth_identity_proof SET consumed_at=? WHERE token_hash=?",
@@ -568,8 +568,8 @@ async fn identify_once(
     }
 }
 pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
-    if crate::sensitive_transactions::protected(t) {
-        return crate::sensitive_transactions::complete(a, t, c).await;
+    if crate::auth::sensitive_transactions::protected(t) {
+        return crate::auth::sensitive_transactions::complete(a, t, c).await;
     }
     let n = now();
     ensure(t["status"] == "VERIFIED", 409, "VERSION_CONFLICT")?;

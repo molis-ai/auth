@@ -1,5 +1,5 @@
 //! Verification mail delivery; code verification remains in Auth's shared challenge service.
-use crate::{delivery::Message, http::*, identity::Auth};
+use crate::{core::http::*, core::identity::Auth, delivery::Message};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen(module = "/src/runtime/aliyun.js")]

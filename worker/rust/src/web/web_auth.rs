@@ -1,7 +1,7 @@
 //! Product authentication orchestration. Central proofs remain in the encrypted BFF session.
 use crate::{
-    http::*,
-    security::{challenge, secret},
+    core::http::*,
+    core::security::{challenge, secret},
     web::web_session::WebSession,
 };
 use serde_json::{Value, json};
@@ -146,7 +146,7 @@ pub async fn route(
                 "INVALID_REQUEST",
             )?;
             shape("LoginPassword", &password)?;
-            crate::account_management::verify_web_password(
+            crate::account::management::verify_web_password(
                 s.a,
                 s.data["tokens"]["accessToken"].as_str().unwrap_or(""),
                 password.as_str().ok_or_else(Failure::invalid_request)?,
@@ -357,7 +357,7 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
     ensure((16..=128).contains(&key.len()), 400, "INVALID_REQUEST")?;
     let handle = text(b, "reauthHandle");
     let t = s.data["transactions"][&handle].clone();
-    let fingerprint = crate::security::hash(&json!({"path":path,"body":b}).to_string());
+    let fingerprint = crate::core::security::hash(&json!({"path":path,"body":b}).to_string());
     if !t["receipt"].is_null() {
         ensure(
             t["receipt"]["key"] == key && t["receipt"]["hash"] == fingerprint,

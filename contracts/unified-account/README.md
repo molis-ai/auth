@@ -16,7 +16,7 @@
 | `validator-profile.json` | Rust/TS 共用的支持关键词、格式及精确正则清单；扩展前须补两端测试 |
 | `validate.ts` | 无 Node 文件系统依赖的 TypeScript `validateNamed(name,value): boolean`（静态导入 JSON，可由产品构建器打包）；不是浏览器凭据 SDK |
 | `validate.test.ts` | 合同、生成一致性、OpenAPI 引用、用途组合及禁止状态回转的定向测试 |
-| `worker/rust/src/unified_contracts.rs`（仓库根下） | `validate_named(name,&Value)->Result<(),String>`；生产配置校验及同一组夹具的 Rust 单元测试 |
+| `worker/rust/src/core/contracts/unified_contracts.rs`（仓库根下） | `validate_named(name,&Value)->Result<(),String>`；生产配置校验及同一组夹具的 Rust 单元测试 |
 
 修改 `generate.ts` 后运行 `node contracts/unified-account/generate.ts` 并一同提交四份生成 JSON。`node contracts/unified-account/generate.ts --check` 只检查生成结果，不写文件。`validator-profile.json` 手工维护，由两端读取同一文件。两产品后续使用本目录固定版本，避免另抄一套业务枚举；Work 对外插件合同仍由 Work 自己的 contracts 边界决定。
 
@@ -70,7 +70,7 @@ TTL、重发/尝试次数、分页和限流初始值集中于 `policy.defaults`�
 
 Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`（`MeView`）。`user` 提供本人昵称、头像、邮箱及账号版本；`loginMethods` 提供服务端生成的展示标签；`passwordEnabled` 提供密码状态。产品侧只投影所需字段，不推导身份、不重新脱敏。登录方式操作的 `expectedVersion` 使用同一快照的 `user.version`（账号版本，不是内部 identity_version）。
 
-展示规则由 `worker/rust/src/account_management.rs` 的 `user_view` / `method_view` 维护：本人资料邮箱按 `user.email` 返回；EMAIL 登录方式标签隐藏邮箱本地部分，PHONE 标签遮中间四位；Google 返回邮箱、GitHub 返回用户名。消费者原样展示各自语义字段，不把隐藏后的标签作为登录或绑定输入。原始手机号和第三方 subject 不通过个人资料视图返回。会话令牌不属于个人资料，不能随此视图下发。
+展示规则由 `worker/rust/src/account/management.rs` 的 `user_view` / `method_view` 维护：本人资料邮箱按 `user.email` 返回；EMAIL 登录方式标签隐藏邮箱本地部分，PHONE 标签遮中间四位；Google 返回邮箱、GitHub 返回用户名。消费者原样展示各自语义字段，不把隐藏后的标签作为登录或绑定输入。原始手机号和第三方 subject 不通过个人资料视图返回。会话令牌不属于个人资料，不能随此视图下发。
 
 ### 账号管理免登录衔接
 

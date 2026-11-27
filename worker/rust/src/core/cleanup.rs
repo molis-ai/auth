@@ -1,6 +1,6 @@
 use crate::{
-    http::{log_env, log_event},
-    security::uuid,
+    core::http::{log_env, log_event},
+    core::security::uuid,
 };
 use serde_json::json;
 use wasm_bindgen::JsValue;

@@ -1,5 +1,5 @@
 //! Display metadata from verified provider assertions; never a login/email binding.
-use crate::{http::*, identity::Auth};
+use crate::{core::http::*, core::identity::Auth};
 use serde_json::Value;
 use worker::D1PreparedStatement;
 

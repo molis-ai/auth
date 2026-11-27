@@ -1,4 +1,4 @@
-use crate::{auth::login_sessions, http::*, identity::Auth};
+use crate::{auth::login_sessions, core::http::*, core::identity::Auth};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use worker::{Method, Response};

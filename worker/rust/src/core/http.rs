@@ -41,28 +41,6 @@ pub(crate) fn matches_route_template(path: &str, template: &str) -> bool {
     }) && segments.next().is_none()
 }
 
-pub(crate) fn failure_route(path: &str) -> &'static str {
-    static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
-    match path {
-        "/api/v2/health" => "/api/v2/health",
-        "/api/v2/readiness" => "/api/v2/readiness",
-        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
-        "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
-        "/account/handoff/start" => "/account/handoff/start",
-        "/account/handoff/finish" => "/account/handoff/finish",
-        "/api/account/login-sessions" => "/api/account/login-sessions",
-        "/account/callback" => "/account/callback",
-        _ if crate::web::billing::matches(path) => "/api/account/billing/*",
-        "/" | "/login" | "/console" => "/",
-        _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
-        _ => ROUTES
-            .iter()
-            .copied()
-            .find(|template| matches_route_template(path, template))
-            .unwrap_or("unmatched"),
-    }
-}
-
 pub(crate) fn log_env(env: &worker::Env) -> &'static str {
     env.var("MOLIS_ENVIRONMENT")
         .ok()
@@ -170,7 +148,7 @@ pub fn ensure(condition: bool, status: u16, code: &'static str) -> Result<()> {
 }
 pub(crate) fn shape(name: &str, value: &Value) -> Result<()> {
     ensure(
-        crate::unified_contracts::validate_named(name, value).is_ok(),
+        crate::core::contracts::unified_contracts::validate_named(name, value).is_ok(),
         400,
         "INVALID_REQUEST",
     )
@@ -230,7 +208,7 @@ pub(crate) fn billing_request_id(request: &worker::Request) -> String {
         .ok()
         .flatten()
         .filter(|id| valid_id(id))
-        .unwrap_or_else(crate::security::uuid)
+        .unwrap_or_else(crate::core::security::uuid)
 }
 pub fn email(v: &Value) -> Result<String> {
     #[allow(

@@ -2,9 +2,9 @@
 use crate::{
     auth::login_sessions,
     auth::registration::{boundary, tx_guard},
-    http::*,
-    identity::Auth,
-    security::*,
+    core::http::*,
+    core::identity::Auth,
+    core::security::*,
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;

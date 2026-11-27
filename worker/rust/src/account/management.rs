@@ -1,7 +1,8 @@
 //! AUTH-06 account views and atomic, proof-bound mutations.
 use crate::{
-    auth::login_sessions as sessions, auth::registration, http::*, identity::Auth, security::*,
-    sensitive_transactions as sensitive,
+    auth::login_sessions as sessions, auth::registration,
+    auth::sensitive_transactions as sensitive, core::http::*, core::identity::Auth,
+    core::security::*,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
@@ -174,7 +175,11 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
         .into_iter()
         .map(|mut p| p["permission"].take())
         .filter(|permission| {
-            crate::unified_contracts::validate_named("PlatformCapability", permission).is_ok()
+            crate::core::contracts::unified_contracts::validate_named(
+                "PlatformCapability",
+                permission,
+            )
+            .is_ok()
         })
         .collect();
     let mut view = json!({

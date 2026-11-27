@@ -1,4 +1,4 @@
-use crate::{http::*, security::*, store::Store};
+use crate::{core::http::*, core::security::*, core::store::Store};
 use serde_json::Value;
 use std::cell::Cell;
 use std::sync::Arc;
@@ -31,7 +31,8 @@ impl Auth {
         client_ip: Option<String>,
     ) -> Result<Self> {
         let origin = env.var("AUTH_ORIGIN")?.to_string();
-        let unified_config = crate::unified_policy::environment_configuration(env, &origin)?;
+        let unified_config =
+            crate::core::contracts::unified_policy::environment_configuration(env, &origin)?;
         // In-process calls provide the IP captured from the edge request.
         let client_ip = client_ip.unwrap_or_else(|| {
             request

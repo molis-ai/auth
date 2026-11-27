@@ -1,8 +1,8 @@
 //! AUTH-10 membership transitions compose with the billing release plan in one batch.
 use crate::{
-    http::*,
-    management_protocol as protocol,
-    management_protocol::{Action, Context, Service, expected},
+    auth::management_access as protocol,
+    auth::management_access::{Action, Context, Service, expected},
+    core::http::*,
     tenants::member_view,
 };
 use serde_json::Value;

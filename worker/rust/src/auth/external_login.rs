@@ -4,9 +4,9 @@ use crate::{
     auth::google_login::Google,
     auth::login_sessions::{client_guard, registered_client},
     auth::registration::{boundary, new_user, tx_guard},
-    http::*,
-    identity::Auth,
-    security::*,
+    core::http::*,
+    core::identity::Auth,
+    core::security::*,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
@@ -122,7 +122,7 @@ fn target(t: &Value, result: &str) -> Result<String> {
 pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
     let method = provider(p)?;
     ensure(
-        (t["purpose"] == "LOGIN" || crate::sensitive_transactions::protected(t))
+        (t["purpose"] == "LOGIN" || crate::auth::sensitive_transactions::protected(t))
             && t["method"] == method,
         400,
         "INVALID_REQUEST",
@@ -145,7 +145,7 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
 async fn checked(a: &Auth, t: &Value, p: &str) -> Result<(Value, Value)> {
     ensure(
         !t.is_null()
-            && (t["purpose"] == "LOGIN" || crate::sensitive_transactions::protected(t))
+            && (t["purpose"] == "LOGIN" || crate::auth::sensitive_transactions::protected(t))
             && (t["method"] == "GOOGLE" || t["method"] == "GITHUB")
             && t["status"] == "PENDING"
             && number(t, "expires_at") > now(),
@@ -231,15 +231,15 @@ async fn commit_identity(
     #[cfg(feature = "mock-provider")] mock_code: Option<&(String, String)>,
 ) -> Result<()> {
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, now(), "PENDING")?];
-    if crate::sensitive_transactions::protected(t) {
+    if crate::auth::sensitive_transactions::protected(t) {
         let mut verified_identity = identity.clone();
         verified_identity["type"] = t["method"].clone();
         writes.extend(
-            crate::sensitive_transactions::verified(a, t, &verified_identity, now()).await?,
+            crate::auth::sensitive_transactions::verified(a, t, &verified_identity, now()).await?,
         );
     } else {
         let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
-        crate::test_admission::Admission::load(a)?
+        crate::auth::test_admission::Admission::load(a)?
             .external(a, identity, &existing["user_id"])
             .await?;
         let n = now();
@@ -339,7 +339,7 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
         }
     }
     ensure(
-        crate::unified_contracts::validate_named("ProviderCallback", &b).is_ok(),
+        crate::core::contracts::unified_contracts::validate_named("ProviderCallback", &b).is_ok(),
         400,
         "INVALID_REQUEST",
     )?;

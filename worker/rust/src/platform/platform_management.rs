@@ -1,11 +1,11 @@
 //! V2 application/client administration. Every commit rechecks the session and explicit permission.
 use crate::{
     auth::login_sessions,
-    http::*,
-    identity::Auth,
-    management_protocol::{self as protocol, Access, Lookup, Read},
-    management_protocol::{Action, Change, Context, Service},
-    security::uuid,
+    auth::management_access::{self as protocol, Access, Lookup, Read},
+    auth::management_access::{Action, Change, Context, Service},
+    core::http::*,
+    core::identity::Auth,
+    core::security::uuid,
 };
 use serde_json::{Value, json};
 use worker::{Method, Response};
@@ -223,7 +223,7 @@ fn audit(
     body: &Value,
     after: &Value,
 ) -> Result<worker::D1PreparedStatement> {
-    use crate::management_audit::{diff, success};
+    use crate::audit::{diff, success};
     let (kind, key, before, fields): (_, _, _, &[_]) = match action.op {
         "application.create" | "application.update" => (
             "APPLICATION",

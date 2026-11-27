@@ -1,8 +1,8 @@
 //! Independent v2 sessions. External identity verification is supplied by AUTH-04/05.
 use crate::{
-    http::*,
-    identity::Auth,
-    security::{challenge, hash, secret, uuid},
+    core::http::*,
+    core::identity::Auth,
+    core::security::{challenge, hash, secret, uuid},
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
@@ -27,7 +27,7 @@ const CLIENT_POLICY_JOINS: &str =
 fn client_config(a: &Auth) -> Result<&Value> {
     a.unified_config
         .as_deref()
-        .ok_or_else(crate::unified_policy::invalid_configuration)
+        .ok_or_else(crate::core::contracts::unified_policy::invalid_configuration)
 }
 const CLIENT_CONFIG_FIELDS: [(&str, &str, &str); 5] = [
     ("id", "environment_id", "environmentId"),

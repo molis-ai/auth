@@ -1,8 +1,8 @@
 //! Password derivation runs in a private Durable Object with a separate CPU budget.
 //! The existing 600k-iteration credential format and policy are unchanged.
 use crate::{
-    http::{Failure, Result, now},
-    identity::Auth,
+    core::http::{Failure, Result, now},
+    core::identity::Auth,
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -32,7 +32,7 @@ pub fn normalized(raw: &str) -> Option<String> {
 }
 async fn bits(raw: &str, salt: &[u8], auth: &Auth) -> Result<Vec<u8>> {
     let started = now();
-    crate::password_kdf::remote_derive(raw, salt, &auth.env)
+    crate::core::password_kdf::remote_derive(raw, salt, &auth.env)
         .await
         .map_err(|error| {
             let failure = Failure::from(error);
@@ -127,7 +127,7 @@ pub async fn encode(raw: &str, auth: &Auth) -> Result<String> {
 }
 
 pub fn avatar(value: &serde_json::Value) -> Result<serde_json::Value> {
-    use crate::http::{ensure, string};
+    use crate::core::http::{ensure, string};
     if value.is_null() {
         return Ok(serde_json::Value::Null);
     }
