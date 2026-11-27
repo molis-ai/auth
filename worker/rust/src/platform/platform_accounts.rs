@@ -1,4 +1,4 @@
-//! V2 user availability and explicit platform grants.
+//! User availability and explicit platform grants.
 use crate::core::management_protocol::{PageFilters, PageOrder};
 use crate::{
     auth::management_access::{Action, Change, Context, Service},
@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use worker::Method;
-const USERS: &str = "SELECT u.*,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,s.account_version version FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id";
+const USERS: &str = "SELECT u.id,u.display_name,u.status,(SELECT canonical_email FROM auth_user_email WHERE user_id=u.id ORDER BY id LIMIT 1) email,u.account_version version FROM auth_user u";
 fn user_view(r: &Value) -> Value {
     json!({"userId":r["id"],"displayName":r["display_name"],"email":r["email"],"status":r["status"],"version":r["version"]})
 }
@@ -19,7 +19,7 @@ fn permission_view(r: &Value) -> Value {
 pub fn action(path: &str, method: Method) -> Result<Action> {
     let p: Vec<_> = path.trim_start_matches('/').split('/').collect();
     let mut id = String::new();
-    let mut target = String::new();
+    let mut capability = None;
     let (op, schema) = match (&p[2..], method) {
         (["platform", "users"], Method::Get) => ("user.list", None),
         (["platform", "users", u], Method::Get) => {
@@ -40,7 +40,7 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         }
         (["platform", "users", u, "permissions", cap], Method::Patch) => {
             id = (*u).into();
-            target = (*cap).into();
+            capability = Some((*cap).to_owned());
             crate::core::http::shape("PlatformCapability", &json!(cap))?;
             ("permission.set", Some("PlatformPermissionRequest"))
         }
@@ -58,7 +58,8 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         op,
         schema,
         path: path.into(),
-        tenant_id: target,
+        tenant_id: String::new(),
+        capability,
         id,
     })
 }
@@ -80,11 +81,17 @@ pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()>
         ensure(!c.record.is_null(), 404, "NOT_FOUND")?;
         c.guards.push(user_guard(s, &c.record)?);
         if a.op == "permission.set" {
-            c.from =
+            c.target_permission =
                 s.a.s
                     .one(
                         "SELECT * FROM auth_platform_permission WHERE user_id=? AND permission=?",
-                        vec![a.id.clone().into(), a.tenant_id.clone().into()],
+                        vec![
+                            a.id.clone().into(),
+                            a.capability
+                                .as_deref()
+                                .ok_or_else(Failure::invalid_request)?
+                                .into(),
+                        ],
                     )
                     .await?;
         }
@@ -93,8 +100,8 @@ pub async fn context(s: &Service<'_>, a: &Action, c: &mut Context) -> Result<()>
 }
 fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatement> {
     s.a.s.guard(
-        "EXISTS(SELECT 1 FROM auth_user u JOIN auth_user_security us ON us.user_id=u.id
-         WHERE u.id=? AND u.status=? AND us.account_version=?)",
+        "EXISTS(SELECT 1 FROM auth_user u
+         WHERE u.id=? AND u.status=? AND u.account_version=?)",
         vec![
             row["id"].clone(),
             row["status"].clone(),
@@ -115,7 +122,6 @@ pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
     let user = || Lookup {
         sql: format!("{USERS} WHERE u.id=?"),
         id: action.id.clone(),
-        guard: Some(user_guard),
     };
     let (lookup, plan) = match action.op {
         "user.get" => (Some(user()), Read::Detail(|ctx| Ok(user_view(&ctx.record)))),
@@ -186,12 +192,15 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
         )?;
         ensure(a.id != text(&s.s, "user_id"), 403, "FORBIDDEN")?;
         if b["status"] == "DISABLED" {
-            w.push(s.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission='PLATFORM_PERMISSION_WRITE' AND status='ACTIVE') OR EXISTS(SELECT 1 FROM auth_platform_permission p JOIN auth_user u ON u.id=p.user_id WHERE p.user_id<>? AND p.permission='PLATFORM_PERMISSION_WRITE' AND p.status='ACTIVE' AND u.status='ACTIVE')",vec![a.id.clone().into(),a.id.clone().into()])?);
+            w.push(s.a.s.authorization_guard("NOT EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission='PLATFORM_PERMISSION_WRITE' AND status='ACTIVE') OR EXISTS(SELECT 1 FROM auth_platform_permission p JOIN auth_user u ON u.id=p.user_id WHERE p.user_id<>? AND p.permission='PLATFORM_PERMISSION_WRITE' AND p.status='ACTIVE' AND u.status='ACTIVE')",vec![a.id.clone().into(),a.id.clone().into()])?);
             w.extend(crate::account::management::revoke_password(
                 s.a, &a.id, None,
             )?);
         } else {
-            w.push(s.a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![n.into(),a.id.clone().into()])?);
+            w.push(s.a.s.statement(
+                "UPDATE auth_user SET account_version=account_version+1,updated_at=? WHERE id=?",
+                vec![n.into(), a.id.clone().into()],
+            )?);
         }
         w.push(s.a.s.statement(
             "UPDATE auth_user SET status=?,updated_at=? WHERE id=?",
@@ -202,35 +211,39 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
         return Ok(Change::new(user_view(&row), w));
     }
     if a.op == "permission.set" {
+        let capability = a
+            .capability
+            .as_deref()
+            .ok_or_else(Failure::invalid_request)?;
         ensure(
-            b["expectedVersion"] == c.from["version"],
+            b["expectedVersion"] == c.target_permission["version"],
             409,
             "VERSION_CONFLICT",
         )?;
-        if c.from.is_null() {
-            w.push(s.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission=?)",vec![a.id.clone().into(),a.tenant_id.clone().into()])?);
+        if c.target_permission.is_null() {
+            w.push(s.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission=?)",vec![a.id.clone().into(),capability.into()])?);
         } else {
-            w.push(s.a.s.guard("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission=? AND version=?)",vec![a.id.clone().into(),a.tenant_id.clone().into(),c.from["version"].clone()])?);
+            w.push(s.a.s.guard("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission=? AND version=?)",vec![a.id.clone().into(),capability.into(),c.target_permission["version"].clone()])?);
         }
         if b["enabled"] == true {
             ensure(row["status"] == "ACTIVE", 403, "FORBIDDEN")?;
         }
-        if a.tenant_id == "PLATFORM_PERMISSION_WRITE" && b["enabled"] == false {
-            w.push(s.a.s.guard("EXISTS(SELECT 1 FROM auth_platform_permission p JOIN auth_user u ON u.id=p.user_id WHERE p.user_id<>? AND p.permission='PLATFORM_PERMISSION_WRITE' AND p.status='ACTIVE' AND u.status='ACTIVE')",vec![a.id.clone().into()])?);
+        if capability == "PLATFORM_PERMISSION_WRITE" && b["enabled"] == false {
+            w.push(s.a.s.authorization_guard("EXISTS(SELECT 1 FROM auth_platform_permission p JOIN auth_user u ON u.id=p.user_id WHERE p.user_id<>? AND p.permission='PLATFORM_PERMISSION_WRITE' AND p.status='ACTIVE' AND u.status='ACTIVE')",vec![a.id.clone().into()])?);
         }
         let status = if b["enabled"] == true {
             "ACTIVE"
         } else {
             "REVOKED"
         };
-        let version = if c.from.is_null() {
+        let version = if c.target_permission.is_null() {
             0
         } else {
-            number(&c.from, "version") + 1
+            number(&c.target_permission, "version") + 1
         };
-        w.push(s.a.s.statement("INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at,revoked_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,permission) DO UPDATE SET status=excluded.status,granted_by=CASE WHEN excluded.status='ACTIVE' THEN excluded.granted_by ELSE auth_platform_permission.granted_by END,granted_at=CASE WHEN excluded.status='ACTIVE' THEN excluded.granted_at ELSE auth_platform_permission.granted_at END,revoked_at=excluded.revoked_at,version=auth_platform_permission.version+1",vec![a.id.clone().into(),a.tenant_id.clone().into(),status.into(),s.user(),n.into(),if status=="REVOKED"{n.into()}else{Value::Null}])?);
+        w.push(s.a.s.statement("INSERT INTO auth_platform_permission(user_id,permission,status,granted_by,granted_at,revoked_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,permission) DO UPDATE SET status=excluded.status,granted_by=CASE WHEN excluded.status='ACTIVE' THEN excluded.granted_by ELSE auth_platform_permission.granted_by END,granted_at=CASE WHEN excluded.status='ACTIVE' THEN excluded.granted_at ELSE auth_platform_permission.granted_at END,revoked_at=excluded.revoked_at,version=auth_platform_permission.version+1",vec![a.id.clone().into(),capability.into(),status.into(),s.user(),n.into(),if status=="REVOKED"{n.into()}else{Value::Null}])?);
         return Ok(Change::new(
-            json!({"userId":a.id,"capability":a.tenant_id,"status":status,"version":version}),
+            json!({"userId":a.id,"capability":capability,"status":status,"version":version}),
             w,
         ));
     }

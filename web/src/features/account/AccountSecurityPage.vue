@@ -1,26 +1,22 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { useAccountContext } from "../../shared/api/account-context.ts";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AccountClient, AccountView } from "../../shared/api/account-client.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import type { LoginMethod } from "./login-method.ts";
 
-const AccountSecurityEditor = defineAsyncComponent(() => import("./AccountSecurityEditor.vue"));
-const AccountPassword = defineAsyncComponent(() => import("./AccountPassword.vue"));
-const AccountSessions = defineAsyncComponent(() => import("./AccountSessions.vue"));
+const AccountSecurityEditor = lazyComponent(() => import("./AccountSecurityEditor.vue"));
+const AccountPassword = lazyComponent(() => import("./AccountPassword.vue"));
+const AccountSessions = lazyComponent(() => import("./AccountSessions.vue"));
 
+const { client, run, mutate, submitBusyWrite, discard, expireWithToast } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   user?: AccountView["user"];
   methods: LoginMethod[];
   boundMethodCount: number;
   busy: boolean;
-  run: (task: () => Promise<void>) => Promise<void>;
-  mutate: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  submitBusyWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  discard: (action: string) => void;
   refreshAccount: () => Promise<void>;
   refreshLoginMethods: () => Promise<void>;
-  expireWithToast: (error: unknown) => void;
   logout: (all: boolean) => Promise<void>;
 }>();
 const securityTab = ref("methods");
@@ -29,13 +25,13 @@ const logoutTrigger = ref<HTMLButtonElement>();
 let disposed = false;
 
 async function selectSecurityTab(value: string) {
-  await props.run(async () => {
+  await run(async () => {
     await cancelSecurity();
     securityTab.value = value;
   });
 }
 function discardPasswordWrite() {
-  props.discard("change-password");
+  discard("change-password");
 }
 
 const securityAction = ref(""),
@@ -47,7 +43,7 @@ let securityEdits = 0;
 watch([securityAction, () => binding.value?.bindingId, reauth, securityIdentity,
   () => props.user?.version], () => {
   securityEdits++;
-  props.discard("security");
+  discard("security");
 }, { flush: "sync" });
 
 const authorizationPopup = shallowRef<Window | null>(null);
@@ -84,7 +80,7 @@ function resetSecurity() {
 async function cancelSecurity() {
   const handle = resetSecurity();
   if (handle)
-    await props.client
+    await client
       .request("/auth/transactions/" + handle + "/cancel", {})
       .catch(() => undefined);
 }
@@ -107,7 +103,7 @@ async function finishSecurity(identityHandle?: string) {
   const path =
     operation === "BIND_METHOD" ? "/login-methods/bind"
       : "/login-methods/" + binding.value!.bindingId + "/unlink";
-  await props.mutate(
+  await mutate(
     path,
     {
       reauthHandle: reauth.value,
@@ -138,7 +134,7 @@ defineExpose({ cancelSecurity, resetPage });
 </script>
 
 <template>
-  <section class="console-card security-page">
+  <section class="console-card security-page" data-console-layout="rail" data-console-flush>
     <div class="collection-layout security-layout">
       <aside class="collection-list security-nav" aria-label="账号安全分类">
         <h1>账号安全</h1>
@@ -162,7 +158,7 @@ defineExpose({ cancelSecurity, resetPage });
             <span class="security-rail-body">
               <button
                 type="button"
-                class="security-rail-btn"
+                class="security-rail-btn" data-local-hover
                 :aria-current="securityTab === id ? 'page' : undefined"
                 :disabled="busy"
                 @click.stop="selectSecurityTab(id)"
@@ -186,7 +182,7 @@ defineExpose({ cancelSecurity, resetPage });
           </template>
           <dialog
             ref="logoutDialog"
-            class="logout-confirm"
+            class="logout-confirm" data-local-hover
             aria-labelledby="logout-confirm-title"
             aria-describedby="logout-confirm-description"
             @close="logoutTrigger?.focus()"

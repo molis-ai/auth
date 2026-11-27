@@ -50,7 +50,7 @@ pub(crate) fn prepare_exit(
             vec![n.into(), m["tenant_id"].clone(), m["id"].clone(), m["id"].clone()],
         )?,
         s.a.s.statement(
-            "UPDATE auth_managed_tenant SET entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",
+            "UPDATE auth_tenant SET version=version+1,updated_at=? WHERE id=?",
             vec![n.into(), m["tenant_id"].clone()],
         )?,
     ];

@@ -72,5 +72,6 @@ pub(crate) async fn send(a: &Auth, m: &Message<'_>) -> Result<()> {
     )
     .await
     .map_err(|_| unavailable())?;
+    ensure(reply != "rate_limited", 429, "RATE_LIMITED")?;
     ensure(reply == "accepted", 503, "UPSTREAM_UNAVAILABLE")
 }

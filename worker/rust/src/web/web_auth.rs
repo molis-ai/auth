@@ -1,4 +1,4 @@
-//! Product authentication orchestration. Central proofs remain in the encrypted BFF session.
+//! Browser authentication transactions and encrypted proof handling.
 use crate::{
     core::http::*,
     core::security::{challenge, secret},
@@ -33,7 +33,7 @@ async fn call(
         .unwrap_or(0.0);
     ensure(expiry > now() as f64, 409, "TRANSACTION_EXPIRED")?;
     s.call(
-        &format!("/api/v2/auth/transactions/{}{suffix}", text(t, "id")),
+        &format!("/api/v1/auth/transactions/{}{suffix}", text(t, "id")),
         method,
         body,
         Some(&text(t, "proof")),
@@ -66,17 +66,12 @@ pub async fn route(
     method: Method,
     b: &mut Value,
 ) -> Result<Value> {
-    if matches!(
-        path,
-        "/api/account/auth/login/password"
-            | "/api/account/auth/login/code"
-            | "/api/account/auth/verification-codes"
-    ) {
-        return login_command(s, path, method, b).await;
+    if matches!(path, "/api/account/auth/verification-codes") {
+        return login_command(s, method, b).await;
     }
     if path == "/account/callback" {
         ensure(method == Method::Get, 400, "INVALID_REQUEST")?;
-        let url = s.a.request.url()?;
+        let url = s.a.http()?.url()?;
         let query = form(url.query().unwrap_or_default())?;
         shape("ProductCallbackQuery", &query)?;
         let id = text(&query, "transactionId");
@@ -137,7 +132,6 @@ pub async fn route(
             s.fresh().await?;
         } else {
             ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
-            s.data["transactions"] = json!({});
         }
         if let Some(password) = current_password {
             ensure(
@@ -194,40 +188,12 @@ pub async fn route(
             }
             t["parent"] = b["reauthHandle"].clone();
         }
-        let expired: Vec<String> = s.data["transactions"]
-            .as_object()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter(|(_, t)| {
-                        matches!(t["status"].as_str(), Some("CANCELLED" | "EXPIRED"))
-                            || t["expiresAt"]
-                                .as_str()
-                                .map(js_sys::Date::parse)
-                                .unwrap_or(0.0)
-                                <= now() as f64
-                    })
-                    .map(|(id, _)| id.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        for id in expired {
-            s.data["transactions"]
-                .as_object_mut()
-                .expect("transactions")
-                .remove(&id);
-        }
-        ensure(
-            s.data["transactions"].as_object().map_or(0, |v| v.len()) < 32,
-            409,
-            "VERSION_CONFLICT",
-        )?;
         let reply = s
             .call(
                 if reauth {
-                    "/api/v2/users/me/reauthentications"
+                    "/api/v1/users/me/reauthentications"
                 } else {
-                    "/api/v2/auth/transactions"
+                    "/api/v1/auth/transactions"
                 },
                 Method::Post,
                 Some(input),
@@ -247,22 +213,23 @@ pub async fn route(
     if path == "/api/account/password/reset" {
         shape("ProductPasswordResetRequest", b)?;
         let id = text(b, "resetHandle");
-        let mut t = s.data["transactions"][&id].take();
+        let t = &s.data["transactions"][&id];
         ensure(
             t["purpose"] == "PASSWORD_RESET" && !t["resetProof"].is_null(),
             403,
             "FORBIDDEN",
         )?;
-        let proof = t["resetProof"].take();
-        return s
+        let result = s
             .call(
-                "/api/v2/auth/password-reset/complete",
+                "/api/v1/auth/password-reset/complete",
                 Method::Post,
-                Some(json!({"transactionId":id,"resetProof":proof,"newPassword":b["newPassword"]})),
-                Some(&text(&t, "proof")),
+                Some(json!({"transactionId":id,"resetProof":t["resetProof"],"newPassword":b["newPassword"]})),
+                Some(&text(t, "proof")),
                 None,
             )
-            .await;
+            .await?;
+        s.data["transactions"][&id].take();
+        return Ok(result);
     }
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     ensure(
@@ -322,13 +289,13 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
         (
             "CHANGE_PASSWORD",
             "ProductPasswordChangeRequest",
-            "/api/v2/users/me/password/change".to_owned(),
+            "/api/v1/users/me/password/change".to_owned(),
         )
     } else if path == "/api/account/login-methods/bind" {
         (
             "BIND_METHOD",
             "ProductBindRequest",
-            "/api/v2/users/me/login-methods/bind".into(),
+            "/api/v1/users/me/login-methods/bind".into(),
         )
     } else {
         ensure(
@@ -348,7 +315,7 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
             } else {
                 "ProductUnlinkRequest"
             },
-            format!("/api/v2/users/me/login-methods/{}/{}", parts[3], parts[4]),
+            format!("/api/v1/users/me/login-methods/{}/{}", parts[3], parts[4]),
         )
     };
     shape(schema, b)?;
@@ -418,48 +385,19 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
 
 async fn accept_login(s: &mut WebSession<'_>, t: &Value, result: &Value) -> Result<Value> {
     ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
-    let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+    let tokens=s.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+    accept_tokens(s, tokens).await
+}
+async fn accept_tokens(s: &mut WebSession<'_>, tokens: Value) -> Result<Value> {
     shape("TokenSet", &tokens)?;
     s.data["tokens"] = tokens;
     Ok(json!({"account":s.view().await?}))
 }
-async fn login_command(
-    s: &mut WebSession<'_>,
-    path: &str,
-    method: Method,
-    b: &Value,
-) -> Result<Value> {
+
+async fn login_command(s: &mut WebSession<'_>, method: Method, b: &Value) -> Result<Value> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
     ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
-    if path.ends_with("/login/code") {
-        shape("LoginCodeRequest", b)?;
-        let t = s.data["loginVerification"].clone();
-        ensure(
-            t.is_object() && t["verificationId"] == b["verificationId"],
-            403,
-            "FORBIDDEN",
-        )?;
-        let result = s
-            .call(
-                "/api/v2/auth/login/code",
-                Method::Post,
-                Some(b.clone()),
-                Some(&text(&t, "proof")),
-                None,
-            )
-            .await?;
-        s.data["loginVerification"] = Value::Null;
-        return accept_login(s, &t, &result).await;
-    }
-    let sending = path.ends_with("/verification-codes");
-    shape(
-        if sending {
-            "ProductSendVerificationRequest"
-        } else {
-            "ProductLoginPasswordRequest"
-        },
-        b,
-    )?;
+    shape("ProductSendVerificationRequest", b)?;
     let mut t = json!({"proof":secret(),"verifier":secret(),"state":secret()});
     let mut input = b.clone();
     input["clientId"] = s.client()?.into();
@@ -469,25 +407,15 @@ async fn login_command(
     input["codeChallengeMethod"] = "S256".into();
     input["initiatorChallenge"] = challenge(&text(&t, "proof")).into();
     let result = s
-        .call(
-            if sending {
-                "/api/v2/auth/verification-codes"
-            } else {
-                "/api/v2/auth/login/password"
-            },
-            Method::Post,
-            Some(input),
-            Some(&text(&t, "proof")),
-            None,
+        .login(
+            "/api/v1/auth/verification-codes",
+            &input,
+            &text(&t, "proof"),
         )
         .await?;
-    s.data["transactions"] = json!({});
-    s.data["loginVerification"] = Value::Null;
-    if sending {
-        t["verificationId"] = result["verificationId"].clone();
-        s.data["loginVerification"] = t;
-        Ok(result)
-    } else {
-        accept_login(s, &t, &result).await
-    }
+    t["verificationId"] = result["verificationId"].clone();
+    t["expiresAt"] = result["expiresAt"].clone();
+    let handle = text(&t, "verificationId");
+    s.data["transactions"][handle] = t;
+    Ok(result)
 }

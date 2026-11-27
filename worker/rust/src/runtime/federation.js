@@ -52,8 +52,8 @@ const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs'
 const GOOGLE_CERTS_TIMEOUT_MS = 10_000
 const GOOGLE_REFRESH_COOLDOWN_MS = 60_000
 let googleSnapshot
-let googleRefresh
-let googleNextForcedRefresh = 0
+const googleMissingKids = new Map()
+const MAX_MISSING_KIDS = 64
 
 function googleCacheTtl(headers) {
   const directives = headers.get('Cache-Control')?.split(',') ?? []
@@ -101,53 +101,26 @@ async function fetchGoogleKeys() {
   return { keys: rsaKeys, expiresAt }
 }
 
-function startGoogleRefresh(now) {
-  const refresh = { deadline: now + GOOGLE_CERTS_TIMEOUT_MS }
-  googleRefresh = refresh
-  refresh.promise = fetchGoogleKeys()
-    .then((snapshot) => {
-      if (googleRefresh === refresh) {
-        googleSnapshot = snapshot.expiresAt > Date.now() ? snapshot : undefined
-      }
-      return snapshot
-    })
-    .finally(() => {
-      if (googleRefresh === refresh) googleRefresh = undefined
-    })
-  return refresh
-}
-
-async function waitForGoogleRefresh(refresh) {
-  // The request that started the fetch can end before its promise settles.
-  // Give every waiter a deadline in its own request context.
-  let timeout
-  try {
-    return await Promise.race([
-      refresh.promise,
-      new Promise((_, reject) => {
-        timeout = setTimeout(
-          () => reject(Error('google jwks timeout')),
-          Math.max(0, refresh.deadline - Date.now()),
-        )
-      }),
-    ])
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
 export async function googleVerify(kid, input, signature) {
   const now = Date.now()
   const snapshot = googleSnapshot?.expiresAt > now ? googleSnapshot : undefined
   let key = snapshot?.keys.get(kid)
   if (!key) {
-    let refresh = googleRefresh?.deadline > now ? googleRefresh : undefined
-    if (!refresh) {
-      if (snapshot && now < googleNextForcedRefresh) return false
-      if (snapshot) googleNextForcedRefresh = now + GOOGLE_REFRESH_COOLDOWN_MS
-      refresh = startGoogleRefresh(now)
+    if (snapshot && googleMissingKids.get(kid) > now) return false
+    // Only completed keys are shared. Fetch and import belong to this request.
+    const refreshed = await fetchGoogleKeys()
+    if (refreshed.expiresAt > Date.now()) {
+      googleSnapshot = refreshed
+      if (!refreshed.keys.has(kid)) {
+        if (googleMissingKids.size >= MAX_MISSING_KIDS)
+          googleMissingKids.delete(googleMissingKids.keys().next().value)
+        googleMissingKids.set(kid, Math.min(refreshed.expiresAt, now + GOOGLE_REFRESH_COOLDOWN_MS))
+      }
+    } else {
+      googleSnapshot = undefined
+      googleMissingKids.clear()
     }
-    key = (await waitForGoogleRefresh(refresh)).keys.get(kid)
+    key = refreshed.keys.get(kid)
   }
   if (!key) return false
   try {
@@ -174,7 +147,11 @@ export async function authFetchJson(url, form) {
 }
 
 async function boundedJson(r) {
-  if (!r.ok) throw Error('upstream')
+  if (!r.ok) {
+    void r.body?.cancel().catch(() => {})
+    throw Error('upstream')
+  }
+  if (!r.body) throw Error('upstream')
   const reader = r.body.getReader()
   let n = 0,
     chunks = []

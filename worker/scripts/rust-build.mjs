@@ -32,6 +32,7 @@ if (outDir !== undefined) {
 }
 args.push('.', '--locked')
 if (values.production) args.push('--no-default-features')
+else args.push('--features', 'mock-provider,mock-delivery')
 execFileSync(binary, args, {
   cwd,
   stdio: 'inherit',

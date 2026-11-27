@@ -54,7 +54,7 @@ impl Github {
         Ok(Self {
             id,
             secret,
-            redirect: format!("{}/api/v2/auth/external/github/callback", a.origin),
+            redirect: format!("{}/api/v1/auth/external/github/callback", a.origin),
         })
     }
 

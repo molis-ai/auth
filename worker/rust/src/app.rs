@@ -1,46 +1,12 @@
 use crate::{
-    account, audit, auth,
-    core::{http::*, identity::Auth, store::WebSessionAccess},
-    platform, team, web,
+    auth,
+    core::{http::*, identity::Auth},
+    web,
 };
 use worker::{Env, Method, Request, Response, Url};
 
-enum CallMode {
-    External,
-    Internal {
-        access: WebSessionAccess,
-        client_ip: String,
-    },
-}
-
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
     let id = web::http::request_id(&req);
-    let (response, _) = handle_inner(req, env, CallMode::External, id).await?;
-    Ok(response)
-}
-
-pub(crate) async fn handle_internal(
-    req: Request,
-    env: Env,
-    access: WebSessionAccess,
-    client_ip: String,
-    request_id: String,
-) -> worker::Result<(Response, Option<i64>)> {
-    Box::pin(handle_inner(
-        req,
-        env,
-        CallMode::Internal { access, client_ip },
-        request_id,
-    ))
-    .await
-}
-
-async fn handle_inner(
-    req: Request,
-    env: Env,
-    mode: CallMode,
-    id: String,
-) -> worker::Result<(Response, Option<i64>)> {
     let method = req.method();
     let log = RequestLog {
         started: now(),
@@ -54,37 +20,32 @@ async fn handle_inner(
             method.as_ref()
         },
     };
-    let external = matches!(mode, CallMode::External);
     let url = req.url();
     let https = url.as_ref().is_ok_and(|url| url.scheme() == "https");
     let result = match url {
-        Ok(url) => handle_response(req, &env, url, mode, &log).await,
+        Ok(url) => handle_response(req, &env, url, &log).await,
         Err(error) => Err(error),
     };
-    let (response, retry_after_at, error_code) = match result {
+    let (response, error_code) = match result {
         Ok(outcome) => outcome,
-        Err(error) if external => {
+        Err(error) => {
             let failure = Failure::from(error);
             log_failure(log.env, &id, log.route, "respond", &failure, log.started);
             let code = failure.code;
             let response = with_security_headers(error_response(failure, &id)?, &id, https)?;
-            (response, None, Some(code))
+            (response, Some(code))
         }
-        Err(error) => return Err(error),
     };
-    if external {
-        log.finish(response.status_code(), error_code);
-    }
-    Ok((response, retry_after_at))
+    log.finish(response.status_code(), error_code);
+    Ok(response)
 }
 
 async fn handle_response(
     req: Request,
     env: &Env,
     url: Url,
-    mode: CallMode,
     log: &RequestLog<'_>,
-) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
+) -> worker::Result<(Response, Option<&'static str>)> {
     let id = log.id;
     let path = url.path();
     let https = url.scheme() == "https";
@@ -97,55 +58,62 @@ async fn handle_response(
             code: "NOT_FOUND",
         };
         let response = with_security_headers(error_response(failure, id)?, id, https)?;
-        return Ok((response, None, Some("NOT_FOUND")));
+        return Ok((response, Some("NOT_FOUND")));
     }
-    if req.method() == Method::Get && path == "/api/v2/health" {
+    if req.inner().method() == "GET" && path == "/api/v1/health" {
         let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
-        return Ok((response, None, None));
+        return Ok((response, None));
     }
-    let (external, access, client_ip) = match mode {
-        CallMode::External => (true, None, None),
-        CallMode::Internal { access, client_ip } => (false, Some(access), Some(client_ip)),
-    };
     let upstream = web::upstream::mount(path);
-    let mut a = match Auth::new(req, env, log, client_ip) {
+    let mut a = match Auth::new(req, env, log, None) {
         Ok(a) => a,
         Err(e) => {
             log_failure(log.env, id, log.route, "initialize", &e, log.started);
             let code = e.code;
             let response = web::http::render_error(e, id, upstream, None)?;
             let response = with_security_headers(response, id, https)?;
-            return Ok((response, None, Some(code)));
+            return Ok((response, Some(code)));
         }
     };
-    a.s.web_session_access = access;
     let result = dispatch(&mut a, env, url).await;
-    // BFF requests pass the deadline through to the public response.
-    let retry_after_at = a.retry_after_at.get();
     let status = result
         .as_ref()
         .map_or_else(|e| e.status, Response::status_code);
-    let retry_after = web::http::retry_after(external, status, retry_after_at);
+    let retry_after = web::http::retry_after(status, a.retry_after_at.get());
     let (response, error_code) = match result {
         Ok(response) => (response, None),
         Err(e) => {
-            let phase = if external { "dispatch" } else { "internal" };
-            log_failure(log.env, id, log.route, phase, &e, log.started);
+            log_failure(log.env, id, log.route, "dispatch", &e, log.started);
             let code = e.code;
-            let rate_limit = retry_after.map(|seconds| (&a.request, seconds));
+            let request = a
+                .http()
+                .map_err(|_| worker::Error::RustError("HTTP request missing".into()))?;
+            let rate_limit = retry_after.map(|seconds| (request, seconds));
             (
                 web::http::render_error(e, id, upstream, rate_limit)?,
                 Some(code),
             )
         }
     };
-    let response = web::http::finalize_response(response, &a, id, external, status, retry_after)?;
-    Ok((response, retry_after_at, error_code))
+    let response = web::http::finalize_response(response, &a, id, retry_after)?;
+    Ok((response, error_code))
 }
 
 async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     let path = url.path();
-    let method = a.request.method();
+    let method = a.http()?.method();
+    if method == Method::Get
+        && a.http()?.inner().method() != "GET"
+        && (path == "/api/v1"
+            || path.starts_with("/api/v1/")
+            || auth::sync_read_proof::matches(path)
+            || auth::management_handoff::matches(path))
+    {
+        return Err(Failure {
+            status: 405,
+            code: "METHOD_NOT_ALLOWED",
+        });
+    }
 
     if auth::sync_read_proof::matches(path) {
         return auth::sync_read_proof::route(a, path, method).await;
@@ -156,25 +124,11 @@ async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     if web::web_session::matches(path) {
         return web::web_session::route(a, path, method).await;
     }
-    if path == "/api/v2/readiness" && method == Method::Get {
+    if path == "/api/v1/readiness" && method == Method::Get {
         return web::readiness::check(a, env).await;
     }
-    if path == "/api/v2" || path.starts_with("/api/v2/") {
-        return dispatch_v2(a, path, method).await;
+    if path == "/api/v1" || path.starts_with("/api/v1/") {
+        return web::v1::route(a, path, method).await;
     }
     web::assets::serve(a, env, url, method).await
-}
-
-async fn dispatch_v2(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if platform::matches(path) {
-        platform::route(a, path, method).await
-    } else if audit::matches(path) {
-        audit::route(a, path, method).await
-    } else if team::matches(path) {
-        team::route(a, path, method).await
-    } else if account::matches(path) {
-        account::route(a, path, method).await
-    } else {
-        auth::route(a, path, method).await
-    }
 }

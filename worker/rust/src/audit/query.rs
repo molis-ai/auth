@@ -6,7 +6,7 @@ use crate::{
     core::identity::Auth,
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 fn audit_view(r: &Value) -> Result<Value> {
     let changes = if r["change_summary"].is_null() {
@@ -23,7 +23,7 @@ fn audit_view(r: &Value) -> Result<Value> {
 fn audit_timestamp(value: &str) -> Result<i64> {
     use std::sync::LazyLock;
     static RFC3339: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"(?i)^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$")
+        regex::Regex::new(r"^([0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$")
             .expect("audit timestamp pattern")
     });
     let captures = RFC3339
@@ -100,6 +100,10 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
         };
         filters.bind("a.outcome=?", [json!(outcome)]);
     }
+    filters.bind(
+        "a.target_type NOT IN ('ACCOUNT_SECURITY','LOCAL_BOOTSTRAP')",
+        [],
+    );
     let date = |key| {
         filters.values[key]
             .as_str()
@@ -127,7 +131,7 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
             "SELECT a.*, u.display_name actor_display_name, s.name tenant_name
          FROM auth_management_audit a
          LEFT JOIN auth_user u ON u.id=a.actor_user_id
-         LEFT JOIN auth_space s ON s.id=a.tenant_id",
+         LEFT JOIN auth_tenant s ON s.id=a.tenant_id",
             audit_view,
             PageOrder::TimeDesc("occurred_at"),
         )
@@ -135,18 +139,18 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
 }
 
 pub fn matches(path: &str) -> bool {
-    path == "/api/v2/platform/audit-events"
-        || path.starts_with("/api/v2/platform/audit-events/")
-        || (path.starts_with("/api/v2/tenants/") && path.ends_with("/audit-events"))
+    path == "/api/v1/platform/audit-events"
+        || path.starts_with("/api/v1/platform/audit-events/")
+        || (path.starts_with("/api/v1/tenants/") && path.ends_with("/audit-events"))
 }
 
-pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Value> {
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     let (op, tenant_id, access) = match (parts.as_slice(), method) {
-        (["api", "v2", "platform", "audit-events"], Method::Get) => {
+        (["api", "v1", "platform", "audit-events"], Method::Get) => {
             ("audit.platform-list", "", Access::Permission("AUDIT_READ"))
         }
-        (["api", "v2", "tenants", tenant, "audit-events"], Method::Get) => {
+        (["api", "v1", "tenants", tenant, "audit-events"], Method::Get) => {
             ("audit.tenant-list", *tenant, Access::Member(MANAGER_ROLES))
         }
         _ => {
@@ -163,10 +167,7 @@ pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
         tenant_id: tenant_id.into(),
         id: String::new(),
         schema: None,
+        capability: None,
     };
-    let result = management_access::read(a, &action, access, None, audit_page(a, &action)).await?;
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    management_access::read(a, &action, access, None, audit_page(a, &action)).await
 }

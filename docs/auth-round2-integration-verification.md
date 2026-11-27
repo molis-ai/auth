@@ -39,10 +39,10 @@
 
 | 请求 | 本地 D1 实测 |
 | --- | --- |
-| `POST /api/v2/entitlements/check`，个人和租户 | 1 读，0 写 |
-| `GET /api/v2/users/me/login-methods` | 1 读，0 写 |
-| `GET /api/v2/sessions/current` | 1 读，0 写 |
-| `POST /api/v2/sessions/current/activity`，首次、重复和并发重放 | 1 读，1 写，重放不新增活动，返回事务内最新活动时间 |
+| `POST 历史中央入口 /entitlements/check`，个人和租户 | 1 读，0 写 |
+| `GET 历史中央入口 /users/me/login-methods` | 1 读，0 写 |
+| `GET 历史中央入口 /sessions/current` | 1 读，0 写 |
+| `POST 历史中央入口 /sessions/current/activity`，首次、重复和并发重放 | 1 读，1 写，重放不新增活动，返回事务内最新活动时间 |
 
 权益用例覆盖凭据或客户端策略错误优先、租户成员权限、撤销、过期、100/101 个特性、1,000/1,001 个来源与跨激活边界的 `409 VERSION_CONFLICT`。用 `python3 /private/tmp/auth-a1-round2.99QtlW/entitlements-cap.py` 从集成源码提取个人权益生产 SQL，在内存 SQLite 上得到 100,000 行、100,001 行溢出哨兵，撤销后为 0 行。浏览器用例和 Worker 租约回归共同覆盖账号切换与旧活动请求的中止。
 
@@ -80,7 +80,7 @@ C-2 在 `15f9b8c` 上复现了真实 Assets 路由对已有哈希 JS 的 POST �
 | 缺失哈希 JS | 404 | 404 | `no-store`，保留静态路径安全头 |
 | `/login` | 200 | 200 | `no-store`，GET 含环境和邀请渠道动态元数据 |
 | `/index.html` | 404 | 404 | `no-store`，直接请求由 Worker 拒绝 |
-| `/api/v2/health` | 200 | 501 | `no-store`，保留该 API 的既有方法语义和安全头 |
+| `历史中央入口 /health` | 200 | 501 | `no-store`，保留该 API 的既有方法语义和安全头 |
 | 别名 `/login?from=alias` | 302 | 302 | `no-store`，保留查询参数并跳转到规范域名 |
 
 已有 JS 和 CSS 的 POST、已有 JS 的 PUT/PATCH/DELETE/OPTIONS/REPORT/PROPFIND/MKCOL、缺失 JS 的 POST 均返回 405，JSON 中 `error.code` 为 `METHOD_NOT_ALLOWED`，`requestId` 等于 `X-Request-ID`，缓存为 `no-store`。
@@ -148,4 +148,4 @@ C-2 使用独立的 `/private/tmp/auth-round2-c2.vUjt9b/`。本轮先遇到默�
 
 **C 的本地性能复验。** 逐个核对前置基线副本的 250 个跟踪文件，均与 `2938120` 的 Git blob 匹配。相同工具链和回环探针记录，冷开 `/login` 的 HTTP 请求由 6 增至 7，API 均为 2 次，静态 Worker 调用由 3/3 增至 4/4。探针使用全新 Chrome profile，按 `X-Request-ID` 计 Worker 调用。首屏实际 CSS 实体从 59,639 B 降至 27,193 B（−54.4%），gzip-9 从 11,218 B 降至 6,109 B（−45.5%）。生产 WASM 原始体积从 3,198,239 B 降至 2,610,459 B（−18.4%），gzip-9 从 1,019,227 B 降至 913,975 B（−10.3%）。同源码的 `-Os` 前产物为 3,198,321 B，V-2 不同压缩阶段的实测也支持保留 `-Os`。按需分包、倒计时清理、原始配置和 origin 变更、AES 与 Ed25519 轮换及 192,000 字节载荷均通过回归。
 
-线上权益 Loki P95、边缘 Assets 命中和 Worker 调用、生产冷启动、KDF 排队尾延迟及 D1 副本状态、RTT 和 bookmark 一致性仍待实测。默认沙箱的回环探针返回 `EPERM`，改用获准的隔离回环后，六项门禁均在首次执行时通过。复验使用复制到新目录的离线依赖和合成绑定，部署操作止于 dry-run。V-2 原始日志位于 `/private/tmp/auth-round2-v2.39nGdJ/logs/`，命令退出码见 `gates.status`，隔离源码清单见 `tracked-source.sha256`。
+线上权益 Loki P95、边缘 Assets 命中和 Worker 调用、生产冷启动、KDF 排队尾延迟及 D1 副本状态、RTT 和 bookmark 一致性仍待实测。默认沙箱的回环探针返回 `EPERM`，改用获准的隔离回环后，六项门禁均在首次执行时通过。复验使用复制到新目录的离线依赖和合成绑定，部署操作止于 dry-run。V-2 原始日志位于 `/private/tmp/auth-round2-统一账号协议.39nGdJ/logs/`，命令退出码见 `gates.status`，隔离源码清单见 `tracked-source.sha256`。

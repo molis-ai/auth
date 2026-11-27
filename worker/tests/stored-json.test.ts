@@ -50,8 +50,12 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
       .prepare('CREATE TABLE fixture_stored_json(field TEXT PRIMARY KEY, raw TEXT NOT NULL)')
       .run()
     await db.batch([
-      statement("INSERT INTO auth_user VALUES ('admin','Admin','ACTIVE',NULL,?,?)", now, now),
-      statement("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('admin',?)", now),
+      statement(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('admin','Admin','ACTIVE',NULL,?,?)",
+        now,
+        now,
+      ),
+
       statement(
         "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
         now,
@@ -110,7 +114,7 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
     }
 
     await t.test('audit projection preserves a null summary and rejects corrupt JSON', async () => {
-      const path = '/api/v2/platform/audit-events'
+      const path = '/api/v1/platform/audit-events'
       const baseline = await successful(path)
       assert.equal(baseline.items[0].auditEventId, 'fixture-audit')
       assert.equal(baseline.items[0].changes, null)
@@ -125,8 +129,8 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
     await t.test(
       'client detail and page reject malformed redirects and invalid origins',
       async () => {
-        const path = '/api/v2/platform/clients/molis-club-unified-local'
-        const collection = '/api/v2/platform/applications/molis-club-unified-local-app/clients'
+        const path = '/api/v1/platform/clients/molis-club-unified-local'
+        const collection = '/api/v1/platform/applications/molis-club-unified-local-app/clients'
         const client = await successful(path)
         assert.equal(client.clientId, 'molis-club-unified-local')
         assert.deepEqual((await successful(collection)).items, [client])
@@ -135,19 +139,19 @@ test('AC-AUTH-05 stored JSON read failures keep the error response and request t
           '{',
           client.clientId,
         ).run()
-        await unavailable(path, '/api/v2/platform/clients/{clientId}')
-        await unavailable(collection, '/api/v2/platform/applications/{applicationId}/clients')
+        await unavailable(path, '/api/v1/platform/clients/{clientId}')
+        await unavailable(collection, '/api/v1/platform/applications/{applicationId}/clients')
         await statement(
           'UPDATE auth_client SET redirects=? WHERE client_id=?',
           JSON.stringify(client.redirectAllowlist),
           client.clientId,
         ).run()
         await statement(
-          'UPDATE auth_client_policy SET allowed_origins=? WHERE client_id=?',
+          'UPDATE auth_client SET allowed_origins=? WHERE client_id=?',
           '[42]',
           client.clientId,
         ).run()
-        await unavailable(path, '/api/v2/platform/clients/{clientId}')
+        await unavailable(path, '/api/v1/platform/clients/{clientId}')
       },
     )
   } finally {

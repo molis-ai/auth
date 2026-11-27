@@ -32,7 +32,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         await db.prepare(sql).run()
     async function api(path: string, body?: unknown, proof?: string, access?: string) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -111,7 +111,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
       extra = {},
     ) {
       return p.fetch(
-        new Request(origin + '/api/v2/auth/mock/' + f.provider + '/authorize', {
+        new Request(origin + '/api/v1/auth/mock/' + f.provider + '/authorize', {
           method: 'POST',
           headers: {
             Cookie: f.cookie,
@@ -188,9 +188,9 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         assert.equal(await count('auth_external_identity'), 2)
         assert.equal(await count('auth_user_email'), 0)
         assert.equal(
-          await count('auth_space'),
+          await count('auth_tenant'),
           0,
-          'a V2 identity does not create a separate V1 personal space',
+          'a central identity does not create a separate V1 personal space',
         )
       },
     )
@@ -275,7 +275,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         assert.equal((await authorize(f, 'SUCCESS', undefined, { subject: 'chosen' })).status, 400)
         assert.equal((await authorize({ ...f, csrf: secret() })).status, 403)
         const crossOrigin = await p.fetch(
-          new Request(origin + '/api/v2/auth/mock/google/authorize', {
+          new Request(origin + '/api/v1/auth/mock/google/authorize', {
             method: 'POST',
             headers: { Origin: 'https://evil.invalid', Cookie: f.cookie },
             body: '',
@@ -348,13 +348,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
               .run()
             await db
               .prepare(
-                "INSERT INTO auth_client SELECT 'another-client-id','another-client',application_id,client_type,status,version,scopes,redirects FROM auth_client WHERE client_id=?",
-              )
-              .bind(f.clientId)
-              .run()
-            await db
-              .prepare(
-                "INSERT INTO auth_client_policy SELECT 'another-client',policy_profile,'another-environment',allowed_origins,version,created_at,updated_at FROM auth_client_policy WHERE client_id=?",
+                "INSERT INTO auth_client(id,client_id,application_id,client_type,status,version,redirects,environment_id,allowed_origins,policy_version) SELECT 'another-client-id','another-client',application_id,client_type,status,version,redirects,'another-environment',allowed_origins,policy_version FROM auth_client WHERE client_id=?",
               )
               .bind(f.clientId)
               .run()
@@ -374,7 +368,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         }
         const version = await ready()
         await db
-          .prepare('UPDATE auth_client_policy SET version=version+1 WHERE client_id=?')
+          .prepare('UPDATE auth_client SET policy_version=policy_version+1 WHERE client_id=?')
           .bind(version.clientId)
           .run()
         assert.equal((await callback(version)).status, 403)
@@ -474,7 +468,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         await accepted(f)
         const tokens = await finish(f)
         const events = JSON.stringify(
-          (await db.prepare('SELECT * FROM auth_audit_event').all()).results,
+          (await db.prepare('SELECT * FROM auth_management_audit').all()).results,
         )
         for (const value of [
           encryptionKey,
@@ -519,7 +513,7 @@ test('UAS-40: matching LIVE configuration or missing mock key fails closed witho
         await p.env.DB.prepare(sql).run()
       await p.env.DB.prepare('UPDATE auth_environment SET provider_mode=?').bind(providerMode).run()
       const capabilities = await p.fetch(
-        new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+        new Request(origin + '/api/v1/auth/capabilities?clientId=molis-work-unified-local'),
       )
       assert.deepEqual(
         (await capabilities.json()).data.methods,
@@ -529,7 +523,7 @@ test('UAS-40: matching LIVE configuration or missing mock key fails closed witho
       const proof = secret()
       async function post(path: string, body: unknown) {
         return p.fetch(
-          new Request(origin + '/api/v2/auth/' + path, {
+          new Request(origin + '/api/v1/auth/' + path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Auth-Initiator-Proof': proof },
             body: JSON.stringify(body),

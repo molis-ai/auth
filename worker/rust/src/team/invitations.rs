@@ -29,18 +29,18 @@ pub fn list(action: &Action) -> Read {
         Read::page(
             format!(
                 "SELECT i.* FROM auth_tenant_invitation i
-                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     JOIN auth_tenant t ON t.id=i.tenant_id
                      WHERE i.target_kind='USER' AND i.target_user_id={ACTOR} AND {visible}
                      UNION
                      SELECT i.* FROM auth_user_email email
                      JOIN auth_tenant_invitation i ON i.target_email=email.canonical_email
-                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     JOIN auth_tenant t ON t.id=i.tenant_id
                      WHERE i.target_kind='EMAIL' AND email.user_id={ACTOR}
                        AND email.verified_at IS NOT NULL AND {visible}
                      UNION
                      SELECT i.* FROM auth_user_phone phone
                      JOIN auth_tenant_invitation i ON i.target_phone=phone.canonical_phone
-                     JOIN auth_managed_tenant t ON t.space_id=i.tenant_id
+                     JOIN auth_tenant t ON t.id=i.tenant_id
                      WHERE i.target_kind='PHONE' AND phone.user_id={ACTOR} AND {visible}"
             ),
             vec![cutoff.clone(), cutoff.clone(), cutoff],
@@ -103,7 +103,7 @@ impl Service<'_> {
     ) -> Result<Change> {
         let n = now();
         if action.op == "invitation.create" {
-            self.a.rate_ip("v2-tenant-invite", 60).await?;
+            self.a.rate_ip("tenant:invite", 60).await?;
             let target = &b["target"];
             let kind = text(target, "kind");
             let value = if kind == "EMAIL" {
@@ -135,12 +135,12 @@ impl Service<'_> {
                 )?);
             }
             w.push(self.a.s.statement("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_email,target_phone,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?,'PENDING',?,?)",vec![id.clone().into(),ctx.tenant["id"].clone(),row["target_kind"].clone(),row["target_email"].clone(),row["target_phone"].clone(),row["target_user_id"].clone(),ctx.member["id"].clone(),n.into(),expires.into()])?);
-            let mock_email = kind == "EMAIL"
+            let mock_notification = matches!(kind.as_str(), "EMAIL" | "PHONE")
                 && crate::delivery::supports_invitation_notifications(
                     &self.c["kind"],
                     &self.c["delivery_mode"],
                 );
-            if kind == "PHONE" || mock_email {
+            if mock_notification {
                 w.push(crate::delivery::invitation_notification(self.a,&self.c,if kind=="EMAIL"{"EMAIL"}else{"SMS"},&value,&json!({"invitationId":id,"tenantName":ctx.tenant["name"],"expiresAt":iso(&json!(expires))}),expires)?);
             }
             return Ok(Change::new(view(&row), w));
@@ -165,7 +165,10 @@ impl Service<'_> {
                 w.push(self.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE')",vec![row["tenant_id"].clone(),self.user()])?);
                 w.push(self.a.s.guard("(SELECT COALESCE(MAX(version)+1,0) FROM auth_tenant_membership WHERE tenant_id=? AND user_id=?)=?",vec![row["tenant_id"].clone(),self.user(),version.into()])?);
                 w.push(self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,version,joined_at) VALUES (?,?,?,'MEMBER','ACTIVE',?,?)",vec![id.into(),row["tenant_id"].clone(),self.user(),version.into(),n.into()])?);
-                w.push(self.a.s.statement("UPDATE auth_managed_tenant SET entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",vec![n.into(),row["tenant_id"].clone()])?);
+                w.push(self.a.s.statement(
+                    "UPDATE auth_tenant SET version=version+1,updated_at=? WHERE id=?",
+                    vec![n.into(), row["tenant_id"].clone()],
+                )?);
             } else {
                 w.push(self.member_guard(&membership)?);
             }

@@ -16,6 +16,7 @@ export async function getRustProxy(
     buildDirectory = fileURLToPath(new URL('../rust/build/', import.meta.url)),
   } = {},
 ) {
+  bindings = { AUTH_WEB_SESSION_KEY: 'Zml4dHVyZS1zaWduaW5nLWtleS1mb3ItY3Vyc29ycwA', ...bindings }
   const assetConfig = assetsDirectory ? webAssetConfig(assetsDirectory) : undefined
   const base = {
     modulesRoot: buildDirectory,

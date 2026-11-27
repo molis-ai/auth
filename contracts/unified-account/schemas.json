@@ -4166,6 +4166,9 @@
         "membershipId": {
           "$ref": "#/$defs/Id"
         },
+        "membershipVersion": {
+          "$ref": "#/$defs/Version"
+        },
         "version": {
           "$ref": "#/$defs/Version"
         }
@@ -4176,6 +4179,7 @@
         "status",
         "myRole",
         "membershipId",
+        "membershipVersion",
         "version"
       ],
       "additionalProperties": false
@@ -4547,20 +4551,6 @@
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true
-        },
-        "product": {
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "WORK",
-                "CLUB"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       },
       "required": [
@@ -4572,8 +4562,7 @@
         "environmentId",
         "policyVersion",
         "allowedOrigins",
-        "redirectAllowlist",
-        "product"
+        "redirectAllowlist"
       ],
       "additionalProperties": false
     },
@@ -4644,13 +4633,6 @@
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true
-        },
-        "product": {
-          "type": "string",
-          "enum": [
-            "WORK",
-            "CLUB"
-          ]
         }
       },
       "required": [
@@ -5479,36 +5461,6 @@
       ],
       "additionalProperties": false
     },
-    "OwnershipTransferPage": {
-      "type": "object",
-      "properties": {
-        "items": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/OwnershipTransfer"
-          },
-          "minItems": 0,
-          "maxItems": 100
-        },
-        "nextCursor": {
-          "oneOf": [
-            {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 2048
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "items",
-        "nextCursor"
-      ],
-      "additionalProperties": false
-    },
     "AuditEventPage": {
       "type": "object",
       "properties": {
@@ -5542,18 +5494,6 @@
     "MyTenantsPage": {
       "type": "object",
       "properties": {
-        "personalScope": {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "PERSONAL"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "additionalProperties": false
-        },
         "items": {
           "type": "array",
           "items": {
@@ -5576,7 +5516,86 @@
         }
       },
       "required": [
-        "personalScope",
+        "items",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "OwnershipTransferListItem": {
+      "type": "object",
+      "properties": {
+        "transferId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromMembershipId": {
+          "$ref": "#/$defs/Id"
+        },
+        "toMembershipId": {
+          "$ref": "#/$defs/Id"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "ACCEPTED",
+            "CANCELLED",
+            "EXPIRED"
+          ]
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "version": {
+          "$ref": "#/$defs/Version"
+        },
+        "tenantName": {
+          "$ref": "#/$defs/DisplayName"
+        },
+        "myMembershipId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "transferId",
+        "tenantId",
+        "fromMembershipId",
+        "toMembershipId",
+        "status",
+        "expiresAt",
+        "version",
+        "tenantName",
+        "myMembershipId"
+      ],
+      "additionalProperties": false
+    },
+    "OwnershipTransferPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OwnershipTransferListItem"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "nextCursor": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
         "items",
         "nextCursor"
       ],
@@ -7384,9 +7403,6 @@
             "clientId": {
               "$ref": "#/$defs/Id"
             },
-            "policyProfile": {
-              "const": "unified-account-v2"
-            },
             "redirectAllowlist": {
               "type": "array",
               "items": {
@@ -7423,7 +7439,6 @@
             "authOrigin",
             "productOrigin",
             "clientId",
-            "policyProfile",
             "redirectAllowlist",
             "environmentKind",
             "deliveryMode",
@@ -7452,9 +7467,6 @@
             "clientId": {
               "$ref": "#/$defs/Id"
             },
-            "policyProfile": {
-              "const": "unified-account-v2"
-            },
             "redirectAllowlist": {
               "type": "array",
               "items": {
@@ -7479,7 +7491,6 @@
             "authOrigin",
             "productOrigin",
             "clientId",
-            "policyProfile",
             "redirectAllowlist",
             "environmentKind",
             "deliveryMode",
@@ -7812,7 +7823,6 @@
                 "POLICY_MISMATCH",
                 "TENANT_DISABLED",
                 "REAUTH_REQUIRED",
-                "CLIENT_POLICY_REQUIRES_V2",
                 "TENANT_API_REQUIRED"
               ]
             },

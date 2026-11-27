@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { AccountView } from "../api/account-client.ts";
-import "../styles/console.css";
 import "../styles/workspace-console.css";
 import "../styles/collection-feedback.css";
 
@@ -33,9 +32,9 @@ const navigationGroups = computed(() => [
 </script>
 
 <template>
-  <div class="console-shell v2-console">
-    <aside class="workspace-sidebar">
-      <a href="/" class="v2-brand sidebar-brand">
+  <div class="console-shell auth-console">
+    <aside class="workspace-sidebar" data-local-hover>
+      <a href="/" class="console-brand sidebar-brand">
         <span class="sidebar-brand-mark">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="4.5" transform="rotate(45 12 12)" stroke="#1f2937" stroke-width="2.4" />
@@ -69,7 +68,7 @@ const navigationGroups = computed(() => [
                 </template>
                 <template v-else-if="id === 'tenants'">
                   <circle cx="9" cy="7" r="3.5" />
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a3.5 3.5 0 0 1 0 6.75" />
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v 2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a3.5 3.5 0 0 1 0 6.75" />
                 </template>
                 <template v-else-if="id === 'subscriptions'">
                   <rect x="3" y="5" width="18" height="14" rx="3" />
@@ -81,7 +80,7 @@ const navigationGroups = computed(() => [
                 </template>
                 <template v-else-if="id === 'users'">
                   <circle cx="9" cy="8" r="3" />
-                  <path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5" />
+                  <path d="M3 20v-2a6 6 0 0 1 12 0v 2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5" />
                 </template>
                 <template v-else-if="id === 'platform-tenants'">
                   <rect x="3" y="4" width="7" height="16" rx="1.5" />

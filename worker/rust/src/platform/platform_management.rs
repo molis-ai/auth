@@ -1,4 +1,4 @@
-//! V2 application/client administration. Every commit rechecks the session and explicit permission.
+//! Application and client administration. Every commit rechecks the session and explicit permission.
 use crate::{
     auth::login_sessions,
     auth::management_access::{self as protocol, Access, Lookup, Read},
@@ -8,19 +8,19 @@ use crate::{
     core::security::uuid,
 };
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 pub fn matches(path: &str) -> bool {
     [
-        "/api/v2/platform/applications",
-        "/api/v2/platform/clients",
-        "/api/v2/platform/users",
+        "/api/v1/platform/applications",
+        "/api/v1/platform/clients",
+        "/api/v1/platform/users",
     ]
     .iter()
     .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
 const APPLICATIONS: &str = "SELECT * FROM auth_application";
-const CLIENTS: &str = "SELECT c.*,p.environment_id,p.allowed_origins,p.version policy_version,cp.product FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id LEFT JOIN auth_client_product cp ON cp.client_id=c.client_id";
+const CLIENTS: &str = "SELECT c.* FROM auth_client c";
 fn application_view(v: &Value) -> Value {
     json!({"applicationId":v["id"],"name":v["name"],"status":v["status"],"version":v["version"]})
 }
@@ -28,7 +28,7 @@ fn client_view(v: &Value) -> Result<Value> {
     let origins: Vec<String> = stored_json(v, "allowed_origins")?;
     let redirects: Vec<String> = stored_json(v, "redirects")?;
     Ok(
-        json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":origins,"redirectAllowlist":redirects,"product":v["product"]}),
+        json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":origins,"redirectAllowlist":redirects}),
     )
 }
 fn action(path: &str, method: Method) -> Result<Action> {
@@ -74,6 +74,7 @@ fn action(path: &str, method: Method) -> Result<Action> {
         path: path.into(),
         tenant_id: String::new(),
         id,
+        capability: None,
     })
 }
 impl Service<'_> {
@@ -110,7 +111,7 @@ impl Service<'_> {
                 )
                 .await?;
             ensure(!ctx.record.is_null(), 404, "NOT_FOUND")?;
-            ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id WHERE c.client_id=? AND c.version=? AND p.version=?)",vec![ctx.record["client_id"].clone(),ctx.record["version"].clone(),ctx.record["policy_version"].clone()])?);
+            ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_client c WHERE c.client_id=? AND c.version=? AND c.policy_version=?)",vec![ctx.record["client_id"].clone(),ctx.record["version"].clone(),ctx.record["policy_version"].clone()])?);
         }
         Ok(ctx)
     }
@@ -123,7 +124,6 @@ impl Service<'_> {
         if !action.op.starts_with("application.") && !action.op.starts_with("client.") {
             return crate::platform::platform_accounts::change(self, action, ctx, b).await;
         }
-        let n = now();
         if action.op.starts_with("application.") {
             let title = name(&b["name"]).map_err(|_| Failure {
                 status: 400,
@@ -180,15 +180,13 @@ impl Service<'_> {
                 .await?;
             ensure(!env.is_null(), 400, "INVALID_REQUEST")?;
             writes.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_environment WHERE id=? AND version=? AND status='ACTIVE')",vec![env["id"].clone(),env["version"].clone()])?);
-            row = json!({"id":uuid(),"client_id":client,"application_id":action.id,"client_type":b["clientType"],"status":"ACTIVE","version":0,"environment_id":env["id"],"policy_version":0,"allowed_origins":b["allowedOrigins"].to_string(),"redirects":b["redirectAllowlist"].to_string(),"product":b["product"]});
-            writes.push(self.a.s.statement("INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects) VALUES (?,?,?,?, '[\"account\",\"profile\"]',?)",vec![row["id"].clone(),row["client_id"].clone(),row["application_id"].clone(),row["client_type"].clone(),row["redirects"].clone()])?);
-            writes.push(self.a.s.statement("INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at) VALUES (?,'unified-account-v2',?,?,?,?)",vec![row["client_id"].clone(),row["environment_id"].clone(),row["allowed_origins"].clone(),n.into(),n.into()])?);
-            if !row["product"].is_null() {
-                writes.push(self.a.s.statement(
-                    "INSERT INTO auth_client_product(client_id,product) VALUES (?,?)",
-                    vec![row["client_id"].clone(), row["product"].clone()],
-                )?);
-            }
+            row = json!({"id":uuid(),"client_id":client,"application_id":action.id,"client_type":b["clientType"],"status":"ACTIVE","version":0,"environment_id":env["id"],"policy_version":0,"allowed_origins":b["allowedOrigins"].to_string(),"redirects":b["redirectAllowlist"].to_string()});
+            writes.push(self.a.s.statement(
+                "INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+                 VALUES (?,?,?,?,?,?,?)",
+                ["id", "client_id", "application_id", "client_type", "redirects", "environment_id", "allowed_origins"]
+                    .map(|field| row[field].clone()).to_vec(),
+            )?);
         } else {
             ensure(
                 b["expectedVersion"] == row["version"]
@@ -204,14 +202,10 @@ impl Service<'_> {
             row["version"] = (number(&row, "version") + 1).into();
             row["policy_version"] = (number(&row, "policy_version") + 1).into();
             writes.push(self.a.s.statement(
-                "UPDATE auth_client SET status=?,redirects=?,version=version+1 WHERE client_id=?",
-                vec![
-                    row["status"].clone(),
-                    row["redirects"].clone(),
-                    row["client_id"].clone(),
-                ],
+                "UPDATE auth_client SET status=?,redirects=?,allowed_origins=?,version=version+1,
+                 policy_version=policy_version+1 WHERE client_id=?",
+                ["status", "redirects", "allowed_origins", "client_id"].map(|field| row[field].clone()).to_vec(),
             )?);
-            writes.push(self.a.s.statement("UPDATE auth_client_policy SET allowed_origins=?,version=version+1,updated_at=? WHERE client_id=?",vec![row["allowed_origins"].clone(),n.into(),row["client_id"].clone()])?);
         }
         Ok(Change::new(client_view(&row)?, writes))
     }
@@ -253,7 +247,7 @@ fn audit(
             )
         }
         "permission.set" => {
-            let before = json!({"capability":ctx.from["permission"],"status":ctx.from["status"]});
+            let before = json!({"capability":ctx.target_permission["permission"],"status":ctx.target_permission["status"]});
             ("USER", "userId", before, &["capability", "status"])
         }
         "user.status" => ("USER", "userId", ctx.record.clone(), &["status"]),
@@ -328,7 +322,6 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     let application = || Lookup {
         sql: format!("{APPLICATIONS} WHERE id=?"),
         id: action.id.clone(),
-        guard: Some(application_guard),
     };
     let (permission, lookup, plan) = match action.op {
         "application.list" => (
@@ -346,7 +339,6 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Some(Lookup {
                 sql: format!("{CLIENTS} WHERE c.client_id=?"),
                 id: action.id.clone(),
-                guard: None,
             }),
             Read::Detail(|ctx| client_view(&ctx.record)),
         ),
@@ -364,21 +356,12 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     protocol::read(a, action, Access::Permission(permission), lookup, Ok(plan)).await
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<Value> {
     let action = action(path, method)?;
-    let body = if let Some(schema) = action.schema {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            400,
-            "INVALID_REQUEST",
-        )?;
-        let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-        shape(schema, &b)?;
-        b
-    } else {
-        json!({})
-    };
-    let q = form(a.request.url()?.query().unwrap_or_default())?;
+    if let Some(schema) = action.schema {
+        shape(schema, &body)?;
+    }
+    let q = form(&a.query()?)?;
     fields(
         &q,
         &[],
@@ -389,69 +372,52 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         },
     )?;
     if action.schema.is_none() {
-        let result = read(a, &action).await?;
-        return Ok(json_response(
-            json!({"data":result,"requestId":a.request_id}),
-            200,
-        )?);
+        return read(a, &action).await;
     }
-    let key = protocol::key(a)?;
-    let mut output = None;
-    let mut last = Failure {
-        status: 409,
-        code: "VERSION_CONFLICT",
-    };
-    for attempt in 0..2 {
-        let (s, c) = login_sessions::active(a).await?;
-        let service = Service { a, s, c };
-        let ctx = service.administration_context(&action).await?;
-        if let Some(result) = protocol::replay(&service, &action, &body, &key).await? {
-            let mut w = protocol::base(&service)?;
-            w.extend(ctx.guards);
-            a.s.batch(w, "VERSION_CONFLICT").await?;
-            output = Some(result);
-            break;
-        }
-        if attempt > 0 {
-            break;
-        }
-        let change = service.administration_change(&action, &ctx, &body).await?;
-        let mut w = protocol::base(&service)?;
-        let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
-        w.extend(ctx.guards);
-        w.extend(change.writes);
-        let target = change.result["clientId"]
-            .as_str()
-            .or(change.result["applicationId"].as_str())
-            .or(change.result["userId"].as_str())
-            .unwrap_or_default();
-        w.push(a.s.audit(
-            action.op,
-            service.user(),
-            &a.request_id,
-            Value::Null,
-            Value::Null,
-            json!({"targetId":target,"reason":body["reason"]}),
-            false,
-        )?);
-        w.push(management_event);
-        w.extend(protocol::receipt(
-            &service,
-            &action,
-            &body,
-            &key,
-            &change.result,
-        )?);
-        match a.s.batch(w, "VERSION_CONFLICT").await {
-            Ok(()) => {
-                output = Some(change.result);
-                break;
-            }
-            Err(e) => last = e,
-        }
+    let runner = protocol::MutationRunner::new(a)?;
+    let (service, receipt, _) = runner.load(action.op, &action.path, false, vec![]).await?;
+    let ctx = service.administration_context(&action).await?;
+    if let Some(result) =
+        protocol::MutationRunner::replay_data(&receipt, &body)?.map(|mut data| data["data"].take())
+    {
+        let mut guards = protocol::base(&service)?;
+        guards.extend(ctx.guards);
+        a.s.batch(guards, "VERSION_CONFLICT").await?;
+        return Ok(result);
     }
-    Ok(json_response(
-        json!({"data":output.ok_or(last)?,"requestId":a.request_id}),
-        200,
-    )?)
+    runner
+        .run(
+            async {
+                let change = service.administration_change(&action, &ctx, &body).await?;
+                let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
+                let mut writes = protocol::base(&service)?;
+                writes.extend(ctx.guards);
+                writes.extend(change.writes);
+                let receipt =
+                    protocol::receipt(&service, &action, &body, &runner.key, &change.result)?;
+                Ok(protocol::PreparedMutation {
+                    result: change.result,
+                    writes,
+                    audit: management_event,
+                    receipt,
+                })
+            },
+            async || {
+                let (s, c) = login_sessions::active(a).await?;
+                let service = Service { a, s, c };
+                let ctx = service.administration_context(&action).await?;
+                if let Some(result) =
+                    protocol::replay(&service, &action, &body, &runner.key).await?
+                {
+                    let mut guards = protocol::base(&service)?;
+                    guards.extend(ctx.guards);
+                    a.s.batch(guards, "VERSION_CONFLICT").await?;
+                    Ok(Some(result))
+                } else {
+                    Ok(None)
+                }
+            },
+            "VERSION_CONFLICT",
+        )
+        .await
 }

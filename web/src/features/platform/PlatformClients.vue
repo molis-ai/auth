@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readPages } from "../../shared/api/read-pages.ts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
@@ -14,7 +15,6 @@ const emit = defineEmits<{ count: [applicationId: string, count: number]; expire
 interface LoginClient {
   clientId: string;
   clientType: string;
-  product?: string | null;
   status: string;
   version: number;
   policyVersion: number;
@@ -33,7 +33,7 @@ const dialog = ref<HTMLDialogElement>();
 const mode = ref<"create" | "edit">();
 const selected = ref<LoginClient>();
 const dialogError = ref("");
-const initialDraft = { clientId: "", kind: "WEB", environment: "", product: "", origin: "", callback: "" };
+const initialDraft = { clientId: "", kind: "WEB", environment: "", origin: "", callback: "" };
 const draft = reactive({ ...initialDraft });
 const editDraft = reactive({ status: "ACTIVE", origins: "", callbacks: "" });
 const listPath = "/platform/applications/" + encodeURIComponent(props.applicationId) + "/clients";
@@ -61,18 +61,7 @@ function replaceClients(items: LoginClient[]) {
 
 async function load() {
   if (!canRead.value || !active) return;
-  const items: LoginClient[] = [];
-  const seen = new Set<string>();
-  let cursor: string | null = null;
-  do {
-    const result: { items: LoginClient[]; nextCursor: string | null } = await props.client.request(
-      listPath + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-    );
-    items.push(...result.items);
-    cursor = result.nextCursor;
-    if (cursor && seen.has(cursor)) throw Error("分页状态已变化，请刷新");
-    if (cursor) seen.add(cursor);
-  } while (cursor && active);
+  const items = await readPages<LoginClient>(props.client, listPath, () => active);
   if (!active) return;
   replaceClients(items);
   loaded.value = true;
@@ -128,7 +117,6 @@ function createClient() {
     environmentId: draft.environment.trim(),
     allowedOrigins: [draft.origin.trim()],
     redirectAllowlist: [draft.callback.trim()],
-    ...(draft.product ? { product: draft.product } : {}),
   }, {
     committed: applyClient,
     after: load,
@@ -182,7 +170,6 @@ onBeforeUnmount(() => {
               <strong class="pc-mono">{{ client.clientId }}</strong>
               <span class="pc-pill is-accent">{{ client.clientType }}</span>
               <span class="pc-pill is-neutral">{{ client.environmentId }}</span>
-              <span v-if="client.product" class="pc-pill is-dark">{{ client.product }}</span>
               <span class="pc-pill" :class="client.status === 'ACTIVE' ? 'is-success' : 'is-danger'">{{ client.status }}</span>
             </div>
             <button v-if="canWrite" type="button" class="app-button is-small" :disabled="busy" @click="openEdit(client)">配置白名单</button>
@@ -207,7 +194,7 @@ onBeforeUnmount(() => {
       v-if="canWrite"
       ref="dialog"
       class="app-operation-dialog"
-      :class="mode === 'create' ? 'v2-client-create' : 'v2-client-edit'"
+      :class="mode === 'create' ? 'client-create-dialog' : 'client-edit-dialog'"
       aria-labelledby="pc-dialog-title"
       @cancel.prevent="cancel"
     >
@@ -239,12 +226,6 @@ onBeforeUnmount(() => {
             <label class="app-field">
               精确回调地址
               <input v-model="draft.callback" type="url" required :disabled="busy" placeholder="https://studio.molis.ai/callback" />
-            </label>
-            <label class="app-field">
-              产品
-              <select v-model="draft.product" :disabled="busy">
-                <option value="">账号管理</option><option>WORK</option><option>CLUB</option>
-              </select>
             </label>
           </template>
           <template v-else>

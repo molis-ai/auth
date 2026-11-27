@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { dateFormatter as sharedDateFormatter } from "../../shared/format/date.ts";
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { AuthError, type AccountClient } from '../../shared/api/account-client.ts';
 import { accountErrorMessage } from '../../shared/api/errors.ts';
@@ -21,7 +22,7 @@ const sessions = ref<SessionList>();
 const loading = ref(true);
 const error = ref('');
 const relative = new Intl.RelativeTimeFormat('zh-CN');
-const absolute = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
+const absolute = sharedDateFormatter('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
 const clientLabels = { WEB: '浏览器', MACOS: 'macOS · 桌面端', CLI: '命令行客户端' };
 const userAgent = navigator.userAgent;
 const os = userAgent.match(/iPhone|iPad|Android|Macintosh|Windows|Linux/)?.[0];

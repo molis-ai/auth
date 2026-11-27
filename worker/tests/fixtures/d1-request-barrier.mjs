@@ -3,18 +3,11 @@ import worker, { PasswordKdf } from './index.js'
 export { PasswordKdf }
 
 const points = {
-  claim: ['first', 'SET revision=revision+1,status='],
-  finish: ['first', "SET payload=?,status='READY',busy_until=0"],
-  cleanup: ['first', "SET status='READY',busy_until=0"],
-  save: ['batch', 'UPDATE auth_web_session SET payload=? WHERE id_hash=?'],
   business: ['batch', 'UPDATE auth_user SET display_name='],
   'refresh-used': ['first', 'FROM auth_login_refresh_token t JOIN auth_login_session s'],
   'refresh-race': ['batch', 'UPDATE auth_login_refresh_token SET used_at='],
-  promote: ['batch', 'INSERT INTO auth_web_session(id_hash,payload,status,expires_at)'],
-  'session-read-after': ['first', 'SELECT revision,status,busy_until,payload', 'after'],
   'account-read-after': ['batch', 'credential_session', 'after'],
   'activity-credential-after': ['first', 'credential_session', 'after'],
-  'cursor-write': ['batch', "INSERT INTO auth_one_use VALUES (?,'V2_TENANT_CURSOR'"],
   'managed-list-before': ['batch', 'WITH actor AS (SELECT'],
   'managed-list-after': ['batch', 'WITH actor AS (SELECT', 'after'],
   'first-phone-binding': ['first', 'FROM auth_user_phone p JOIN auth_user u', 'after'],
@@ -102,7 +95,14 @@ export default {
     const isProtected = (sql) => sql.startsWith('WITH actor AS (SELECT')
     const count = (statements, moment) => {
       if (!trace || moment !== 'before') return
-      const isRead = statements.every((sql) => /^(SELECT|WITH)\b/i.test(sql.trimStart()))
+      const isRead = statements.every((sql) => {
+        const query = sql.trimStart()
+        return (
+          /^SELECT\b/i.test(query) ||
+          (/^WITH\b/i.test(query) &&
+            !/\b(?:INSERT\s+INTO|UPDATE\s+auth_|DELETE\s+FROM)\b/i.test(query))
+        )
+      })
       counts[isRead ? 'read' : 'write']++
       protectedQueries += statements.filter(isProtected).length
     }

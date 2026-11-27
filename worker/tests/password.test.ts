@@ -23,7 +23,7 @@ test('local admin bootstrap uses current Rust policy and password encoding', asy
   await assert.rejects(localCredential('admin@example.com', 'password123'), /INVALID_REQUEST/)
 })
 
-test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong password', async () => {
+test('central authenticates a known PBKDF2 encoding vector and rejects a wrong password', async () => {
   const origin = 'http://127.0.0.1:8787'
   const proxy = await getRustProxy({
     AUTH_ORIGIN: origin,
@@ -64,13 +64,13 @@ test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong passwo
       )
     }
     await db.prepare('UPDATE auth_user_email SET verified_at=0').run()
-    await db.prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('vector',0)").run()
+
     for (const [password, expected] of [
       ['migration-test-密码-e\u0301', 200],
       ['wrong-password', 401],
     ] as const) {
       const proof = secret()
-      const response = await post('/api/v2/auth/transactions', {
+      const response = await post('/api/v1/auth/transactions', {
         clientId: 'molis-auth-web-local',
         redirectUri: origin + '/account/callback',
         codeChallenge: challenge(secret()),
@@ -82,7 +82,7 @@ test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong passwo
       })
       const { data } = await response.json()
       const login = await post(
-        '/api/v2/auth/transactions/' + data.transactionId + '/password',
+        '/api/v1/auth/transactions/' + data.transactionId + '/password',
         { email: 'vector@example.test', password },
         proof,
       )

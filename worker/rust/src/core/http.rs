@@ -32,6 +32,13 @@ impl From<serde_json::Error> for Failure {
         Self::invalid_request()
     }
 }
+pub(crate) fn is_json_content_type(a: &super::identity::Auth) -> bool {
+    a.header("Content-Type")
+        .split(';')
+        .next()
+        .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json"))
+}
+
 pub(crate) fn matches_route_template(path: &str, template: &str) -> bool {
     let mut segments = path.split('/');
     template.split('/').all(|part| {
@@ -117,7 +124,7 @@ pub(crate) struct RequestLog<'a> {
 
 impl RequestLog<'_> {
     pub fn finish(&self, status: u16, error_code: Option<&'static str>) {
-        if matches!(self.route, "/api/v2/health" | "/auth-ui/{asset}")
+        if matches!(self.route, "/api/v1/health" | "/auth-ui/{asset}")
             && (200..400).contains(&status)
         {
             return;
@@ -235,17 +242,12 @@ pub fn now() -> i64 {
     js_sys::Date::now() as i64
 }
 pub fn iso(v: &Value) -> Value {
-    if v.is_null() {
-        Value::Null
-    } else {
-        js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
-            v.as_f64().unwrap_or_default(),
-        ))
-        .to_iso_string()
-        .as_string()
-        .unwrap_or_default()
-        .into()
-    }
+    v.as_i64()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map_or(Value::Null, |time| {
+            time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                .into()
+        })
 }
 pub fn name(v: &Value) -> Result<String> {
     let s = string(v, 240)?.trim();
@@ -327,8 +329,12 @@ pub(crate) fn with_security_headers(
 }
 
 pub(crate) async fn bounded(request: &mut worker::Request, max: usize) -> Result<String> {
+    ensure(request.inner().body().is_some(), 400, "INVALID_REQUEST")?;
+    bounded_stream(request.stream()?, max).await
+}
+
+pub(crate) async fn bounded_stream(mut stream: worker::ByteStream, max: usize) -> Result<String> {
     use futures_util::StreamExt;
-    let mut stream = request.stream()?;
     let mut bytes = Vec::new();
     while let Some(part) = stream.next().await {
         let part = part?;

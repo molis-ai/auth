@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { defineAsyncComponent, nextTick, onBeforeUnmount, ref } from 'vue';
+import { dateFormatter as sharedDateFormatter } from "../../shared/format/date.ts";
+import { useAccountContext } from "../../shared/api/account-context.ts";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { AccountClient, AuthError, type AccountView } from '../../shared/api/account-client.ts';
 import { accountErrorMessage } from '../../shared/api/errors.ts';
 import './profile.css';
 
-const AvatarCropper = defineAsyncComponent(() => import('./AvatarCropper.vue'));
+const AvatarCropper = lazyComponent(() => import('./AvatarCropper.vue'));
+const { client } = useAccountContext();
 const props = defineProps<{
   user: NonNullable<AccountView['user']>;
   githubAccount?: string;
   phoneAccount?: string;
   boundMethodCount?: number;
-  client: AccountClient;
   onSaved: () => Promise<void>;
 }>();
 const emit = defineEmits<{ expired: [error: AuthError]; navigate: [page: string] }>();
@@ -19,7 +22,7 @@ const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(nu
 let active = true;
 const nameInput = ref<HTMLInputElement>();
 const editingName = ref(false), nameSaving = ref(false), inlineName = ref(''), nameError = ref('');
-const viewerTime = new Intl.DateTimeFormat('en-US', { timeZoneName: 'longOffset' });
+const viewerTime = sharedDateFormatter('en-US', { timeZoneName: 'longOffset' });
 const viewerZone = viewerTime.resolvedOptions().timeZone;
 const zoneOffset = viewerTime.formatToParts().find(part => part.type === 'timeZoneName')?.value;
 const utcOffset = zoneOffset === 'GMT' ? 'UTC+00:00' : zoneOffset?.replace('GMT', 'UTC');
@@ -38,7 +41,7 @@ async function saveName() {
   if (value === props.user.displayName) { cancelName(); return; }
   nameSaving.value = true; nameError.value = '';
   try {
-    await props.client.request('/profile', {displayName:value,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
+    await client.request('/profile', {displayName:value,expectedVersion:props.user.version}, 'PATCH', crypto.randomUUID());
     if (!active) return;
     await props.onSaved();
     if (active) editingName.value = false;
@@ -61,7 +64,7 @@ function chooseFromProfile(event: Event) {
 }
 async function applyCrop(image:string) {
   try {
-    await props.client.request('/profile',{displayName:props.user.displayName,avatarDataUrl:image,expectedVersion:props.user.version},'PATCH',crypto.randomUUID());
+    await client.request('/profile',{displayName:props.user.displayName,avatarDataUrl:image,expectedVersion:props.user.version},'PATCH',crypto.randomUUID());
     if(active)await props.onSaved();
   } catch(cause) {
     if(active && cause instanceof AuthError && ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(cause.code))emit('expired',cause);

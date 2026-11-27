@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { AuthFlow, FlowCancelled, type AuthCompletion } from "./auth-flow.ts";
+import { AuthFlow, FlowCancelled, mayChooseAuthMethod, watchProvider, type AuthCompletion } from "./auth-flow.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
+import { initialOperationMethod, operationMethods } from "./entry-methods.ts";
 import { entryText } from "./entry-copy.ts";
 import { rememberedEmail, rememberEmail } from "./entry-preferences.ts";
 import { AccountClient, type AccountView } from "../../shared/api/account-client.ts";
@@ -71,11 +72,18 @@ watch([retryAt, challenge], ([deadline, activeChallenge], _, onCleanup) => {
 watch(() => busy.value || providerPending.value, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
 async function chooseMethod(value: string) {
-  if (busy.value || props.blocked || providerPending.value || method.value === value) return;
+  if (busy.value || props.blocked || !mayChooseAuthMethod(method.value, value, providerPending.value)) return;
+  const oauth = ["GOOGLE", "GITHUB"].includes(value);
+  // Preserve the click gesture while the old server transaction is cancelled.
+  const reserved = oauth ? flow.reserve(props.authorizationPopup) : null;
+  if (oauth && !reserved) {
+    failure.value = "请允许打开授权窗口";
+    return;
+  }
   busy.value = true;
   try {
     await cancel();
-    if (!active) return;
+    if (!active) { reserved?.close(); return; }
     retryAt.value = 0;
     address.value = value === 'EMAIL_PASSWORD' ? rememberedEmail() : '';
     method.value = value; failure.value = ''; password.value = ''; confirm.value = ''; showPassword.value = false;
@@ -83,7 +91,8 @@ async function chooseMethod(value: string) {
     busy.value = false;
   }
   await nextTick();
-  if (active && ['GOOGLE', 'GITHUB'].includes(value)) void submit();
+  if (active && oauth) void submit(reserved);
+  else reserved?.close();
 }
 let active = true, finished = false;
 const flow = new AuthFlow();
@@ -138,7 +147,7 @@ async function progress(value: Transaction) {
     );
   else if (value.nextStep === "COMPLETE") await complete();
 }
-async function submit() {
+async function submit(reserved?: Window | null) {
   if (loginFlow && (capabilitiesState.value !== 'ready' || !available(method.value))) return;
   if (busy.value || props.blocked || providerPending.value) return;
   if (phoneBinding && !challenge.value && !/^1[3-9]\d{9}$/.test(address.value.trim())) {
@@ -148,7 +157,7 @@ async function submit() {
   }
   if (props.entry && method.value === 'EMAIL_PASSWORD') rememberEmail(remember.value ? address.value.trim() : '');
   if (["GOOGLE", "GITHUB"].includes(method.value) && !transaction.value) {
-    if (!flow.open(props.authorizationPopup)) {
+    if (!flow.open(reserved ?? props.authorizationPopup)) {
       failure.value = "请允许打开授权窗口";
       return;
     }
@@ -233,46 +242,26 @@ async function submit() {
       const result = await request<Transaction>(path, {
         step: "START_PROVIDER",
       });
-      if (!result.browserStartUrl) throw Error("授权地址不可用");
-      const url = new URL(result.browserStartUrl);
-      if (url.origin !== location.origin) throw Error("授权地址不匹配");
-      flow.navigate(url.href);
-      providerPending.value = true;
-      const poll = async () => {
-        if (!active || !transaction.value) return;
-        try {
-          const status = await request<Transaction>(
-            "/auth/transactions/" + t.handle,
-          );
-          if (status.status === "CONSUMED") {
-            const account = (props.purpose ?? "LOGIN") === "LOGIN"
-              ? await request<AccountView>("/session")
-              : undefined;
-            if (account && account.state !== "AUTHENTICATED") throw Error("登录状态已失效，请重新登录。");
-            providerPending.value = false;
-            clear();
-            flow.closeWindow();
-            finished = true;
-            emit("complete", { handle: t.handle, ...(account ? { account } : {}) });
-            return;
-          }
-          if (
-            status.status === "CANCELLED" ||
-            status.status === "EXPIRED" ||
-            flow.closed
-          ) {
-            await cancel();
-            failure.value = "第三方登录未完成，请重新发起。";
-            return;
-          }
-          flow.schedule(poll, 1000);
-        } catch (error) {
-          if (error instanceof FlowCancelled) return;
+      watchProvider(flow, result.browserStartUrl, {
+        start: () => { providerPending.value = true; },
+        active: () => active && Boolean(transaction.value),
+        read: () => request<Transaction>("/auth/transactions/" + t.handle),
+        complete: async () => {
+          const account = (props.purpose ?? "LOGIN") === "LOGIN"
+            ? await request<AccountView>("/session")
+            : undefined;
+          if (account && account.state !== "AUTHENTICATED") throw Error("登录状态已失效，请重新登录。");
+          providerPending.value = false;
+          clear();
+          flow.closeWindow();
+          finished = true;
+          emit("complete", { handle: t.handle, ...(account ? { account } : {}) });
+        },
+        failed: async error => {
           await cancel();
-          failure.value = accountErrorMessage(error);
-        }
-      };
-      flow.schedule(poll, 500);
+          failure.value = error ? accountErrorMessage(error) : "第三方登录未完成，请重新发起。";
+        },
+      });
     }
   } catch (error) {
     if (error instanceof FlowCancelled) return;
@@ -298,7 +287,7 @@ async function sendLoginVerification() {
   retryAt.value=Date.now()+result.retryAfterSeconds*1000;
 }
 async function resend() {
-  if (Date.now() < retryAt.value) return;
+  if (busy.value || props.blocked || Date.now() < retryAt.value) return;
   if (!props.operation && (props.purpose ?? 'LOGIN') === 'LOGIN' && challenge.value) {
     busy.value=true;
     try { await sendLoginVerification(); } catch(e) { failure.value=accountErrorMessage(e); } finally { busy.value=false; }
@@ -379,48 +368,11 @@ onMounted(() => {
   if (['BIND', 'REPLACE'].includes(props.purpose ?? '') && ['GOOGLE', 'GITHUB'].includes(method.value)) void submit();
   else void prepareOperation();
 });
-const purposeMethods = () =>
-  props.identityType
-    ? [
-        [
-          props.identityType === "EMAIL"
-            ? "EMAIL_CODE"
-            : props.identityType === "PHONE"
-              ? "PHONE_OTP"
-              : props.identityType,
-          props.identityType,
-        ],
-      ]
-    : props.purpose === "EMAIL_SIGNUP" || props.purpose === "PASSWORD_RESET"
-      ? [["EMAIL_CODE", "邮箱验证码"]]
-      : props.purpose === "BIND" || props.purpose === "REPLACE"
-        ? [
-            ["EMAIL_CODE", "邮箱验证码"],
-            ["PHONE_OTP", "手机验证码"],
-            ["GOOGLE", "Google"],
-            ["GITHUB", "GitHub"],
-          ]
-        : [
-            ["EMAIL_PASSWORD", "邮箱密码"],
-            ["PHONE_OTP", "手机验证码"],
-            ["GOOGLE", "Google"],
-            ["GITHUB", "GitHub"],
-          ];
-if (
-  props.purpose === "EMAIL_SIGNUP" ||
-  props.purpose === "PASSWORD_RESET" ||
-  props.purpose === "BIND" ||
-  props.purpose === "REPLACE"
-)
-  method.value =
-    props.identityType === "PHONE"
-      ? "PHONE_OTP"
-      : props.identityType && props.identityType !== "EMAIL"
-        ? props.identityType
-        : "EMAIL_CODE";
+const purposeMethods = () => operationMethods(props);
+method.value = initialOperationMethod(props) ?? method.value;
 </script>
 <template>
-  <form :class="entry ? 'entry-auth-form v2-form' : 'console-card v2-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit">
+  <form :class="entry ? 'entry-auth-form account-form' : 'console-card account-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit()">
     <template v-if="entry">
       <div class="login-welcome"><p v-if="purpose === 'LOGIN'">{{ t('欢迎回来') }}</p><div v-else class="panel-heading"><h2>{{ t(purpose === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码') }}</h2><p>{{ t(purpose === 'EMAIL_SIGNUP' ? '输入邮箱，验证后设置密码。' : '验证邮箱后，重新设置你的密码。') }}</p></div></div>
     </template>
@@ -454,7 +406,7 @@ if (
     </div>
     <div v-else :class="{ 'entry-content': entry, 'entry-login-content': entry && loginFlow }">
       <label v-if="!entry && !identityType">登录方式<select v-model="method" :disabled="busy || !!transaction"><option v-for="[value,label] in purposeMethods()" :key="value" :value="value">{{ label }}</option></select></label>
-      <div v-else-if="loginFlow && loginAccountMethods.length" class="account-methods" :aria-label="t('登录方式')">
+      <div v-else-if="loginFlow && loginAccountMethods.length" class="account-methods" data-local-hover :aria-label="t('登录方式')">
         <button v-for="[value,label] in loginAccountMethods" :key="value" type="button" class="text-button" :aria-pressed="method === value" :disabled="busy || blocked || providerPending" @click="chooseMethod(value)">{{ t(label) }}</button>
       </div>
       <template v-if="method && !['GOOGLE', 'GITHUB'].includes(method)">
@@ -484,8 +436,8 @@ if (
     <div v-if="entry && loginFlow && capabilitiesState === 'ready' && loginProviders.length" class="entry-social">
       <div class="entry-social-divider" aria-hidden="true"><span>{{ t('或使用以下方式') }}</span></div>
       <button v-for="[provider,label] in loginProviders" :key="provider" type="button" :disabled="busy || blocked || providerPending" @click="chooseMethod(provider)">
-        <svg v-if="provider === 'GOOGLE'" class="entry-provider-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z"/><path fill="#FBBC05" d="M5.84 14.09a7 7 0 0 1 0-4.18V7.07H2.18A11 11 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84Z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"/></svg>
-        <svg v-else-if="provider === 'GITHUB'" class="entry-provider-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.84c.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+        <svg v-if="provider === 'GOOGLE'" class="entry-provider-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v 2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v 2.84C3.99 20.53 7.7 23 12 23Z"/><path fill="#FBBC05" d="M5.84 14.09a7 7 0 0 1 0-4.18V7.07H2.18A11 11 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84Z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"/></svg>
+        <svg v-else-if="provider === 'GITHUB'" class="entry-provider-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.84c.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v 2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
         <span>{{ t(label) }}</span>
       </button>
     </div>

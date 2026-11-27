@@ -1,7 +1,7 @@
 use crate::{
     auth::management_access::{Action, Service},
-    core::http::*,
     core::security::uuid,
+    core::{http::*, identity::Auth},
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;
@@ -43,5 +43,26 @@ pub(crate) fn success(
             action.op.into(), kind.into(), target.clone(), reason.clone(),
             summary.to_string().into(), service.a.request_id.clone().into(), now().into(),
         ],
+    )
+}
+
+// Account security events share the audit transaction with management events.
+// Their contents are reserved for service diagnostics.
+pub(crate) fn account(
+    a: &Auth,
+    operation: &str,
+    user: Value,
+    client: &Value,
+    summary: Value,
+) -> Result<D1PreparedStatement> {
+    let summary = if summary.is_null() {
+        Value::Null
+    } else {
+        summary.to_string().into()
+    };
+    a.s.statement(
+        "INSERT INTO auth_management_audit(id,actor_user_id,client_id,operation,target_type,target_id,outcome,change_summary,request_id,occurred_at)
+         VALUES (?,?,?,?,'ACCOUNT_SECURITY',?,'SUCCESS',?,?,?)",
+        vec![uuid().into(), user.clone(), client.clone(), operation.into(), user, summary, a.request_id.clone().into(), now().into()],
     )
 }

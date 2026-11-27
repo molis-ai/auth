@@ -11,7 +11,7 @@ export async function bootstrapPlatform(db, userId) {
   // Check and writes belong to the same D1 batch; even revoked grants require an explicit recovery flow.
   await db.batch([
     statement(
-      "INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN NOT EXISTS(SELECT 1 FROM auth_platform_permission) AND EXISTS(SELECT 1 FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=? AND u.status='ACTIVE') THEN 1 ELSE 0 END)",
+      "INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN NOT EXISTS(SELECT 1 FROM auth_platform_permission) AND EXISTS(SELECT 1 FROM auth_user u WHERE u.id=? AND u.status='ACTIVE') THEN 1 ELSE 0 END)",
       request,
       userId,
     ),
@@ -25,7 +25,7 @@ export async function bootstrapPlatform(db, userId) {
       ),
     ),
     statement(
-      "INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,request_id,occurred_at,change_summary) VALUES (?,'platform.bootstrap','SUCCESS',?,?,?,?,?)",
+      "INSERT INTO auth_management_audit(id,operation,outcome,actor_user_id,target_type,target_id,request_id,occurred_at,change_summary) VALUES (?,'platform.bootstrap','SUCCESS',?,'LOCAL_BOOTSTRAP',?,?,?,?)",
       crypto.randomUUID(),
       userId,
       userId,

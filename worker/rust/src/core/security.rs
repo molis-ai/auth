@@ -135,7 +135,7 @@ pub fn avatar(value: &serde_json::Value) -> Result<serde_json::Value> {
         status: 400,
         code: "INVALID_AVATAR",
     };
-    let input = string(value, 180000).map_err(|_| error())?;
+    let input = string(value, 184320).map_err(|_| error())?;
     let data = input
         .strip_prefix("data:image/png;base64,")
         .ok_or_else(error)?;

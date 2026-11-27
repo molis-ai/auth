@@ -22,7 +22,7 @@ function database() {
 
 function seedUsers(db: DatabaseSync) {
   db.exec(
-    "INSERT INTO auth_user VALUES ('u','User','ACTIVE',NULL,0,0),('v','Other','ACTIVE',NULL,0,0),('w','Third','ACTIVE',NULL,0,0)",
+    "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('u','User','ACTIVE',NULL,0,0),('v','Other','ACTIVE',NULL,0,0),('w','Third','ACTIVE',NULL,0,0)",
   )
 }
 
@@ -54,11 +54,8 @@ function session(db: DatabaseSync, id: string, user = 'u', client = 'molis-work-
 
 function tenant(db: DatabaseSync, id: string, owner: string) {
   db.prepare(
-    "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',0,0)",
-  ).run(id, id)
-  db.prepare(
-    "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,0,0)",
-  ).run(id, owner)
+    "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES (?,?,0,'ACTIVE',?,0,0)",
+  ).run(id, id, owner)
   member(db, id + '-owner', id, owner, 'OWNER')
 }
 
@@ -75,11 +72,11 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
     db.exec(localSeed)
     assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_environment'), 1)
     assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_application'), 2)
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_client_policy'), 2)
+    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_client'), 2)
     const rows = db
       .prepare(
-        `SELECT c.client_id,c.application_id,c.client_type,c.redirects,p.allowed_origins
-      FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id ORDER BY c.client_id`,
+        `SELECT c.client_id,c.application_id,c.client_type,c.redirects,c.allowed_origins
+      FROM auth_client c ORDER BY c.client_id`,
       )
       .all()
     assert.equal(rows[0].client_type, 'WEB')
@@ -96,7 +93,7 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
       'auth_user',
       'auth_local_credential',
       'auth_platform_permission',
-      'auth_managed_tenant',
+      'auth_tenant',
     ]) {
       assert.equal(scalar(db, `SELECT count(*) AS value FROM ${table}`), 0)
     }
@@ -105,7 +102,7 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
       "UPDATE auth_client SET status='DISABLED',redirects='[\"http://127.0.0.1:3999/custom\"]' WHERE client_id='molis-club-unified-local'",
     )
     db.exec(
-      "UPDATE auth_client_policy SET allowed_origins='[\"http://127.0.0.1:3999\"]',version=4 WHERE client_id='molis-club-unified-local'",
+      "UPDATE auth_client SET allowed_origins='[\"http://127.0.0.1:3999\"]',policy_version=4 WHERE client_id='molis-club-unified-local'",
     )
     db.exec(localSeed)
     assert.equal(scalar(db, 'SELECT version AS value FROM auth_environment'), 9)
@@ -119,7 +116,7 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
     assert.equal(
       scalar(
         db,
-        "SELECT version AS value FROM auth_client_policy WHERE client_id='molis-club-unified-local'",
+        "SELECT policy_version AS value FROM auth_client WHERE client_id='molis-club-unified-local'",
       ),
       4,
     )
@@ -149,17 +146,10 @@ test('UAS-11/39/40: production cannot enable mock and registration validates env
       /CHECK constraint/,
     )
     db.exec(localSeed)
+    assert.throws(() => db.exec("UPDATE auth_client SET allowed_origins='{}'"), /CHECK constraint/)
+    assert.throws(() => db.exec("UPDATE auth_client SET allowed_origins='broken'"))
     assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET allowed_origins='{}'"),
-      /CHECK constraint/,
-    )
-    assert.throws(() => db.exec("UPDATE auth_client_policy SET allowed_origins='broken'"))
-    assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET policy_profile='user-chosen-profile'"),
-      /CHECK constraint/,
-    )
-    assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET environment_id='missing'"),
+      () => db.exec("UPDATE auth_client SET environment_id='missing'"),
       /FOREIGN KEY constraint/,
     )
   } finally {
@@ -239,13 +229,13 @@ test('UAS-09/10/26/38: independent login and refresh families store bounded cloc
       () => db.exec("UPDATE auth_login_session SET last_active_at=0 WHERE id='club'"),
       /CHECK constraint/,
     )
-    db.exec("INSERT INTO auth_login_activity VALUES ('club','event','OPEN',2000)")
+    db.exec("INSERT INTO auth_login_activity VALUES ('club','event','OPEN')")
     assert.throws(
-      () => db.exec("INSERT INTO auth_login_activity VALUES ('club','event','INTERACT',2001)"),
+      () => db.exec("INSERT INTO auth_login_activity VALUES ('club','event','INTERACT')"),
       /UNIQUE constraint/,
     )
     assert.throws(
-      () => db.exec("INSERT INTO auth_login_activity VALUES ('club','refresh','REFRESH',2002)"),
+      () => db.exec("INSERT INTO auth_login_activity VALUES ('club','refresh','REFRESH')"),
       /CHECK constraint/,
     )
     db.exec(
@@ -304,24 +294,17 @@ test('UAS-07/11/26/41: transactions and proofs bind purpose, environment, curren
       'sealed-provider-fixture',
     )
     const revoked = sequence(db, 'REVOCATION')
-    db.prepare(
-      'INSERT INTO auth_user_security(user_id,revoked_before_seq,updated_at) VALUES (?,?,?)',
-    ).run('u', revoked, 1500)
-    assert.equal(
-      scalar(db, "SELECT account_version AS value FROM auth_user_security WHERE user_id='u'"),
-      0,
+    db.prepare('UPDATE auth_user SET revoked_before_seq=?,updated_at=? WHERE id=?').run(
+      revoked,
+      1500,
+      'u',
     )
-    assert.equal(
-      scalar(db, "SELECT identity_version AS value FROM auth_user_security WHERE user_id='u'"),
-      0,
-    )
-    db.exec("UPDATE auth_user_security SET account_version=account_version+1 WHERE user_id='u'")
-    assert.equal(
-      scalar(db, "SELECT identity_version AS value FROM auth_user_security WHERE user_id='u'"),
-      0,
-    )
+    assert.equal(scalar(db, "SELECT account_version AS value FROM auth_user WHERE id='u'"), 0)
+    assert.equal(scalar(db, "SELECT identity_version AS value FROM auth_user WHERE id='u'"), 0)
+    db.exec("UPDATE auth_user SET account_version=account_version+1 WHERE id='u'")
+    assert.equal(scalar(db, "SELECT identity_version AS value FROM auth_user WHERE id='u'"), 0)
     assert.throws(
-      () => db.exec("UPDATE auth_user_security SET account_version=-1 WHERE user_id='u'"),
+      () => db.exec("UPDATE auth_user SET account_version=-1 WHERE id='u'"),
       /CHECK constraint/,
     )
     assert.ok(pending < revoked && revoked < sequence(db))
@@ -363,8 +346,8 @@ test('UAS-07/11/26/41: transactions and proofs bind purpose, environment, curren
       /FOREIGN KEY constraint/,
     )
     db.exec(`INSERT INTO auth_verification_challenge
-      (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at)
-      VALUES ('challenge','pending','SMS','+8613800000000','code-digest','delivery','UNKNOWN',5,1000,2000,1500)`)
+      (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at)
+      VALUES ('challenge','pending','SMS','+8613800000000','code-digest','delivery','ACCEPTED',5,1000,2000)`)
     assert.throws(
       () => db.exec('UPDATE auth_verification_challenge SET attempts=6'),
       /CHECK constraint/,
@@ -395,16 +378,6 @@ test('UAS-12/13/16/34/42: managed tenants retain membership incarnations and enf
         "SELECT count(*) AS value FROM auth_tenant_membership WHERE tenant_id='a' AND user_id='w'",
       ),
       2,
-    )
-    db.exec(
-      "INSERT INTO auth_space(id,name,space_type,status,personal_user_id,created_at,updated_at) VALUES ('personal','Personal','PERSONAL','ACTIVE','u',0,0)",
-    )
-    assert.throws(
-      () =>
-        db.exec(
-          "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES ('personal','ACTIVE','u',0,0)",
-        ),
-      /FOREIGN KEY constraint/,
     )
     db.exec(`INSERT INTO auth_tenant_invitation
       (id,tenant_id,target_kind,target_email,inviter_membership_id,status,created_at,expires_at)

@@ -13,7 +13,7 @@ pub fn protected(t: &Value) -> bool {
     matches!(text(t, "purpose").as_str(), "REAUTH" | "BIND" | "REPLACE")
 }
 pub fn guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction t JOIN auth_login_session s ON s.id=t.login_session_id JOIN auth_user_security us ON us.user_id=t.user_id JOIN auth_user u ON u.id=t.user_id WHERE t.id=? AND t.status=? AND t.expires_at>? AND s.user_id=t.user_id AND s.client_id=t.client_id AND s.revoked_at IS NULL AND s.user_epoch=t.user_epoch AND us.session_epoch=t.user_epoch AND s.session_revision=t.session_revision AND us.identity_version=t.identity_version AND s.last_active_at+2592000000>? AND s.absolute_expires_at>? AND u.status='ACTIVE' AND COALESCE(us.revoked_before_seq,0)<t.created_seq AND (? IS NULL OR EXISTS(SELECT 1 FROM auth_login_access_token a WHERE a.token_hash=? AND a.login_session_id=s.id AND a.expires_at>? AND a.user_epoch=s.user_epoch AND a.session_revision=s.session_revision)))",vec![t["id"].clone(),status.into(),n.into(),n.into(),n.into(),t["_access_hash"].clone(),t["_access_hash"].clone(),n.into()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction t JOIN auth_login_session s ON s.id=t.login_session_id JOIN auth_user u ON u.id=t.user_id WHERE t.id=? AND t.status=? AND t.expires_at>? AND s.user_id=t.user_id AND s.client_id=t.client_id AND s.revoked_at IS NULL AND s.user_epoch=t.user_epoch AND u.session_epoch=t.user_epoch AND s.session_revision=t.session_revision AND u.identity_version=t.identity_version AND s.last_active_at+2592000000>? AND s.absolute_expires_at>? AND u.status='ACTIVE' AND COALESCE(u.revoked_before_seq,0)<t.created_seq AND (? IS NULL OR EXISTS(SELECT 1 FROM auth_login_access_token a WHERE a.token_hash=? AND a.login_session_id=s.id AND a.expires_at>? AND a.user_epoch=s.user_epoch AND a.session_revision=s.session_revision)))",vec![t["id"].clone(),status.into(),n.into(),n.into(),n.into(),t["_access_hash"].clone(),t["_access_hash"].clone(),n.into()])
 }
 pub async fn binding(a: &Auth, user: &str, id: &str) -> Result<Value> {
     let rows=a.s.all("SELECT id,'EMAIL' type,canonical_email target,verified_at FROM auth_user_email WHERE user_id=? AND id=? UNION ALL SELECT id,'PHONE',canonical_phone,verified_at FROM auth_user_phone WHERE user_id=? AND id=? UNION ALL SELECT id,provider,subject,created_at FROM auth_external_identity WHERE user_id=? AND id=? AND provider IN ('GOOGLE','GITHUB')",vec![user.into(),id.into(),user.into(),id.into(),user.into(),id.into()]).await?;
@@ -65,10 +65,10 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
             "FORBIDDEN",
         )?;
     }
-    a.rate_ip("v2-sensitive-start", 60).await?;
+    a.rate_ip("auth:sensitive-start", 60).await?;
     let us =
         a.s.one(
-            "SELECT * FROM auth_user_security WHERE user_id=?",
+            "SELECT identity_version FROM auth_user WHERE id=?",
             vec![s["user_id"].clone()],
         )
         .await?;
@@ -76,7 +76,7 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
     let n = now();
     let use_session = b["purpose"] == "REAUTH" && b["useSession"] == true;
     a.s.batch(vec![login_sessions::client_guard(a,&c)?,login_sessions::active_guard(a,&s)?,
-        a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
+        a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
         a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?,
         a.s.statement("INSERT INTO auth_product_transaction(id,client_id,environment_id,purpose,method,initiator_hash,redirect_uri,product_state,product_state_hash,pkce_challenge,user_id,login_session_id,user_epoch,session_revision,identity_version,operation,target,binding_id,created_seq,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT MAX(seq) FROM auth_security_sequence),?,?)",vec![id.clone().into(),s["client_id"].clone(),c["environment_id"].clone(),b["purpose"].clone(),b["method"].clone(),b["initiatorChallenge"].clone(),b["redirectUri"].clone(),b["state"].clone(),hash(&text(b,"state")).into(),b["codeChallenge"].clone(),s["user_id"].clone(),s["id"].clone(),s["user_epoch"].clone(),s["session_revision"].clone(),us["identity_version"].clone(),b["operation"].clone(),b.get("target").map(|x|Value::String(x.to_string())).unwrap_or(Value::Null),b["bindingId"].clone(),n.into(),(n+600000).into()])?],"VERSION_CONFLICT").await?;
     if use_session {
@@ -84,7 +84,7 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
         let identity = json!({"type":"SESSION","sessionId":s["id"]});
         a.s.batch(vec![login_sessions::client_guard(a,&c)?,login_sessions::active_guard(a,&s)?,
             owner_guard(a,&text(&s,"user_id"),&identity)?,
-            a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
+            a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND identity_version=?)",vec![s["user_id"].clone(),us["identity_version"].clone()])?,
             a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',verified_identity=? WHERE id=? AND status='PENDING'",vec![identity.to_string().into(),id.clone().into()])?
         ],"VERSION_CONFLICT").await?;
         return Ok(
@@ -160,8 +160,8 @@ pub async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Re
     )?;
     shape("PasswordLoginRequest", b)?;
     let address = email(&b["email"])?;
-    a.rate_ip("v2-password", 30).await?;
-    a.rate("v2-password-target", &address, 10, 300000).await?;
+    a.rate_ip("auth:password", 30).await?;
+    a.rate("auth:password-target", &address, 10, 300000).await?;
     let candidate=a.s.one("SELECT l.password_hash FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND e.canonical_email=? AND e.verified_at IS NOT NULL",vec![t["user_id"].clone(),address.clone().into()]).await?;
     let encoded = candidate["password_hash"]
         .as_str()

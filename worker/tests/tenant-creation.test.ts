@@ -6,7 +6,7 @@ import { hash, secret } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
-  test(`V2U-09 tenant creation policy ${mode ?? 'default'} preserves ownership and platform boundaries`, async () => {
+  test(`AUTH-U-09 tenant creation policy ${mode ?? 'default'} preserves ownership and platform boundaries`, async () => {
     const origin = 'http://127.0.0.1:8787'
     const proxy = await getRustProxy({
       AUTH_ORIGIN: origin,
@@ -35,11 +35,19 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         access = secret()
       const statement = (sql: string, ...values: (string | number)[]) =>
         db.prepare(sql).bind(...values)
-      // Trusted fixture issues a live V2 session, not a public claimed-user endpoint.
+      // Trusted fixture issues a live central session, not a public claimed-user endpoint.
       await db.batch([
-        statement("INSERT INTO auth_user VALUES ('creator','Creator','ACTIVE',NULL,?,?)", now, now),
-        statement("INSERT INTO auth_user VALUES ('other','Other','ACTIVE',NULL,?,?)", now, now),
-        statement("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('creator',?)", now),
+        statement(
+          "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('creator','Creator','ACTIVE',NULL,?,?)",
+          now,
+          now,
+        ),
+        statement(
+          "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('other','Other','ACTIVE',NULL,?,?)",
+          now,
+          now,
+        ),
+
         statement(
           "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
           now,
@@ -57,10 +65,7 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         ),
         // Existing organizations remain readable under both creation strategies.
         statement(
-          "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES ('existing','Existing','TEAM','ACTIVE',0,0)",
-        ),
-        statement(
-          "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES ('existing','ACTIVE','creator',?,?)",
+          "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES ('existing','Existing',0,'ACTIVE','creator',?,?)",
           now,
           now,
         ),
@@ -76,7 +81,7 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         token: string | null = access,
       ) {
         const response = await proxy.fetch(
-          new Request(origin + '/api/v2' + path, {
+          new Request(origin + '/api/v1' + path, {
             method: body === undefined ? 'GET' : 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -141,7 +146,7 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         }
       }
       assert.equal(
-        (await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()).n,
+        (await db.prepare('SELECT count(*) n FROM auth_tenant').first()).n,
         mode === undefined || mode === 'SELF_SERVICE' ? 3 : 1,
       )
       const platformBody = {
@@ -165,16 +170,14 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         ).n,
         0,
       )
-      const beforeRevocation = (
-        await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()
-      ).n
+      const beforeRevocation = (await db.prepare('SELECT count(*) n FROM auth_tenant').first()).n
       await statement(
         "UPDATE auth_login_session SET revoked_at=? WHERE id='session'",
         Date.now(),
       ).run()
       assert.equal((await call('/tenants', { name: 'After revocation' })).status, 401)
       assert.equal(
-        (await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()).n,
+        (await db.prepare('SELECT count(*) n FROM auth_tenant').first()).n,
         beforeRevocation,
       )
     } finally {

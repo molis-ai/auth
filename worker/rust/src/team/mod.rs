@@ -12,7 +12,7 @@ use crate::auth::management_access::{
 };
 use crate::{auth::login_sessions, core::http::*, core::identity::Auth, core::security::uuid};
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 pub(crate) fn member_view(m: &Value) -> Value {
     json!({"membershipId":m["id"],"tenantId":m["tenant_id"],"userId":m["user_id"],"role":m["role"],"status":m["status"],"version":m["version"]})
 }
@@ -23,7 +23,7 @@ fn directory_member_view(m: &Value) -> Value {
     result
 }
 pub(crate) fn tenant_view(t: &Value) -> Value {
-    json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"myRole":t["role"],"membershipId":t["membership_id"],"version":t["version"]})
+    json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"myRole":t["role"],"membershipId":t["membership_id"],"membershipVersion":t["membership_version"],"version":t["version"]})
 }
 pub(crate) fn platform_view(t: &Value) -> Value {
     let mut result = json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"ownerUserId":t["owner_user_id"],"version":t["version"]});
@@ -133,14 +133,14 @@ fn audit(
         json!({"changes": diff(&before, &after, fields)}),
     )
 }
-pub(crate) const TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id";
-const PLATFORM_TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,
-    t.managed_at,s.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
-    (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.space_id AND active.status='ACTIVE') member_count,
+pub(crate) const TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_tenant t";
+const PLATFORM_TENANTS: &str = "SELECT t.id,t.name,t.status,t.version,
+    t.managed_at,t.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
+    (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.id AND active.status='ACTIVE') member_count,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
      ORDER BY e.created_at,e.id LIMIT 1) owner_email
-    FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
-    JOIN auth_tenant_membership m ON m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER'
+    FROM auth_tenant t
+    CROSS JOIN auth_tenant_membership m ON m.tenant_id=t.id AND m.status='ACTIVE' AND m.role='OWNER'
     JOIN auth_user u ON u.id=m.user_id";
 const ACTIVE_OWNER_PROFILE: &str = "SELECT u.id,u.display_name,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=u.id AND e.verified_at IS NOT NULL
@@ -152,7 +152,7 @@ impl Service<'_> {
         let t = self
             .a
             .s
-            .one(&format!("{TENANTS} WHERE t.space_id=?"), vec![id.into()])
+            .one(&format!("{TENANTS} WHERE t.id=?"), vec![id.into()])
             .await?;
         ensure(!t.is_null(), 404, "NOT_FOUND")?;
         Ok(t)
@@ -223,14 +223,14 @@ impl Service<'_> {
                         .a
                         .s
                         .one(
-                            &format!("{PLATFORM_TENANTS} WHERE t.space_id=?"),
+                            &format!("{PLATFORM_TENANTS} WHERE t.id=?"),
                             vec![action.tenant_id.clone().into()],
                         )
                         .await?;
                     ensure(!ctx.tenant.is_null(), 404, "NOT_FOUND")?;
                     ctx.guards.push(self.a.s.guard(
-                        "EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND entitlement_revision=?)",
-                        vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone(), ctx.tenant["entitlement_revision"].clone()],
+                        "EXISTS(SELECT 1 FROM auth_tenant WHERE id=? AND version=?)",
+                        vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone()],
                     )?);
                 }
             }
@@ -307,10 +307,11 @@ impl Service<'_> {
                     code: "INVALID_REQUEST",
                 })?;
                 let mut result = json!({"id":id,"name":name,"status":"ACTIVE","version":0,"owner_user_id":owner["id"]});
-                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",vec![id.clone().into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.clone().into(),id.into(),owner["id"].clone(),n.into()])?];
+                let writes=vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",vec![owner["id"].clone()])?,self.a.s.statement("INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES (?,?,?,'ACTIVE',?,?,?)",vec![id.clone().into(),result["name"].clone(),n.into(),self.user(),n.into(),n.into()])?,self.a.s.statement("INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",vec![member.clone().into(),id.into(),owner["id"].clone(),n.into()])?];
                 result = if action.op == "tenant.self-create" {
                     result["role"] = "OWNER".into();
                     result["membership_id"] = member.into();
+                    result["membership_version"] = 0.into();
                     tenant_view(&result)
                 } else {
                     result["created_at"] = n.into();
@@ -332,7 +333,6 @@ impl Service<'_> {
                 t["version"] = (number(&t, "version") + 1).into();
                 let n = now();
                 t["updated_at"] = n.into();
-                let mut w = vec![];
                 if action.op == "tenant.update" {
                     t["name"] = name(&b["name"])
                         .map_err(|_| Failure {
@@ -340,10 +340,6 @@ impl Service<'_> {
                             code: "INVALID_REQUEST",
                         })?
                         .into();
-                    w.push(self.a.s.statement(
-                        "UPDATE auth_space SET name=?,updated_at=? WHERE id=?",
-                        vec![t["name"].clone(), n.into(), t["id"].clone()],
-                    )?);
                 } else {
                     t["status"] = if action.op == "tenant.disable" {
                         "DISABLED"
@@ -352,9 +348,18 @@ impl Service<'_> {
                     }
                     .into();
                 }
-                w.push(self.a.s.statement("UPDATE auth_managed_tenant SET status=?,version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",vec![t["status"].clone(),n.into(),t["id"].clone()])?);
+                let w = vec![self.a.s.statement(
+                    "UPDATE auth_tenant SET name=?,status=?,version=version+1,updated_at=? WHERE id=?",
+                    vec![
+                        t["name"].clone(),
+                        t["status"].clone(),
+                        n.into(),
+                        t["id"].clone(),
+                    ],
+                )?];
                 t["role"] = ctx.member["role"].clone();
                 t["membership_id"] = ctx.member["id"].clone();
+                t["membership_version"] = ctx.member["version"].clone();
                 Ok(Change::new(
                     if action.op == "tenant.update" {
                         tenant_view(&t)
@@ -519,6 +524,7 @@ fn action(path: &str, method: Method) -> Result<Action> {
         tenant_id: tenant,
         id,
         schema,
+        capability: None,
     })
 }
 fn platform_tenant_page(a: &Auth) -> Result<Read> {
@@ -534,7 +540,7 @@ fn platform_tenant_page(a: &Auth) -> Result<Read> {
     if let Some(q) = filters.keyword()? {
         let args = vec![json!(q); 5];
         filters.bind(
-            "(instr(lower(s.name),lower(?))>0 OR instr(lower(t.space_id),lower(?))>0
+            "(instr(lower(t.name),lower(?))>0 OR instr(lower(t.id),lower(?))>0
               OR instr(lower(m.user_id),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0
               OR EXISTS(SELECT 1 FROM auth_user_email e
                         WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
@@ -570,23 +576,24 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "tenant.get" => (
             Access::Member(ALL_ROLES),
             Some(Lookup {
-                sql: format!("{TENANTS} WHERE t.space_id=?"),
+                sql: format!("{TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::Detail(|ctx| {
                 let mut t = ctx.record.clone();
                 t["role"] = ctx.member["role"].clone();
                 t["membership_id"] = ctx.member["id"].clone();
+                t["membership_version"] = ctx.member["version"].clone();
                 Ok(tenant_view(&t))
             }),
         ),
         "tenant.platform-get" => (
             Access::Permission("TENANT_READ"),
             Some(Lookup {
-                sql: format!("{PLATFORM_TENANTS} WHERE t.space_id=?"),
+                sql: format!("{PLATFORM_TENANTS} WHERE t.id=?"),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::Detail(|ctx| Ok(platform_view(&ctx.record))),
         ),
@@ -594,9 +601,9 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Access::Session,
             None,
             Read::page(
-                format!("SELECT t.space_id id,s.name,t.status,t.version,m.id membership_id,m.role
-                         FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
-                         JOIN auth_tenant_membership m ON m.tenant_id=t.space_id
+                format!("SELECT t.id,t.name,t.status,t.version,m.id membership_id,m.version membership_version,m.role
+                         FROM auth_tenant t
+                         JOIN auth_tenant_membership m ON m.tenant_id=t.id
                          WHERE m.user_id={ACTOR} AND m.status='ACTIVE'"),
                 vec![],
                 |row| Ok(tenant_view(row)),
@@ -605,9 +612,9 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         op @ ("member.list" | "member.platform-list") => (
             if op == "member.platform-list" { Access::Permission("TENANT_READ") } else { Access::Member(ALL_ROLES) },
             (op == "member.platform-list").then(|| Lookup {
-                sql: "SELECT space_id id FROM auth_managed_tenant WHERE space_id=?".into(),
+                sql: "SELECT id FROM auth_tenant WHERE id=?".into(),
                 id: action.tenant_id.clone(),
-                guard: None,
+
             }),
             Read::page(
                 "SELECT m.*,u.display_name,(SELECT e.canonical_email FROM auth_user_email e
@@ -623,20 +630,16 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "transfer.list" => (Access::Session, None, transfers::list()),
         _ => unreachable!("only managed tenant reads reach this owner"),
     };
-    let mut result = protocol::read(a, action, access, lookup, Ok(plan)).await?;
-    if action.op == "tenant.list" {
-        result["personalScope"] = json!({"kind":"PERSONAL"});
-    }
-    Ok(result)
+    protocol::read(a, action, access, lookup, Ok(plan)).await
 }
 
 pub(crate) fn matches(path: &str) -> bool {
     [
-        "/api/v2/tenant-creation-policy",
-        "/api/v2/tenants",
-        "/api/v2/platform/tenants",
-        "/api/v2/invitations",
-        "/api/v2/ownership-transfers",
+        "/api/v1/tenant-creation-policy",
+        "/api/v1/tenants",
+        "/api/v1/platform/tenants",
+        "/api/v1/invitations",
+        "/api/v1/ownership-transfers",
     ]
     .iter()
     .any(|prefix| {
@@ -645,7 +648,7 @@ pub(crate) fn matches(path: &str) -> bool {
     })
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
     let action = match action(path, method) {
         Ok(action) => action,
         Err(error) => {
@@ -654,133 +657,82 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         }
     };
     let Some(schema) = action.schema else {
-        let result = read(a, &action).await?;
-        return Ok(json_response(
-            json!({"data":result,"requestId":a.request_id}),
-            200,
-        )?);
+        return read(a, &action).await;
     };
-    let (s, c) = login_sessions::active(a).await?;
-    let b = {
+    shape(schema, &b)?;
+    if b.get("reason").is_some() {
         ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
+            !text(&b, "reason").trim().is_empty(),
             400,
             "INVALID_REQUEST",
         )?;
-        let b = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-        shape(schema, &b)?;
-        if b.get("reason").is_some() {
-            ensure(
-                !text(&b, "reason").trim().is_empty(),
-                400,
-                "INVALID_REQUEST",
-            )?;
+    }
+    let runner = protocol::MutationRunner::new(a)?;
+    let (service, receipt, _) = runner.load(action.op, &action.path, false, vec![]).await?;
+    let leave = action.op == "member.leave";
+    if leave
+        && let Some(result) = membership::replay_leave(&service, &action, &b, &runner.key).await?
+    {
+        return Ok(result);
+    }
+    let ctx = match service.authorize(&action).await {
+        Ok(ctx) => ctx,
+        Err(failure) if leave && failure.status == 404 => {
+            return membership::replay_leave(&service, &action, &b, &runner.key)
+                .await?
+                .ok_or(failure);
         }
-        b
+        Err(failure) => return Err(failure),
     };
-    let mut service = Service { a, s, c };
-    let result = {
-        let key = protocol::key(a)?;
-        let mut last = Failure {
-            status: 409,
-            code: "VERSION_CONFLICT",
-        };
-        let mut output = None;
-        for attempt in 0..2 {
-            if attempt > 0 {
-                let (s, c) = login_sessions::active(a).await?;
-                service = Service { a, s, c };
-            }
-            if action.op == "member.leave"
-                && let Some(result) =
-                    crate::team::membership::replay_leave(&service, &action, &b, &key).await?
-            {
-                output = Some(result);
-                break;
-            }
-            let ctx = match service.authorize(&action).await {
-                Ok(ctx) => ctx,
-                Err(e) if action.op == "member.leave" && e.status == 404 => {
-                    // Another same-key leave can finish between the receipt read and
-                    // membership lookup. Re-read only its committed result.
-                    if let Some(result) =
-                        crate::team::membership::replay_leave(&service, &action, &b, &key).await?
-                    {
-                        output = Some(result);
-                        break;
-                    }
-                    return Err(e);
-                }
-                Err(e) => return Err(e),
-            };
-            let replay = if action.op == "member.leave" {
-                None
-            } else {
-                protocol::replay(&service, &action, &b, &key).await?
-            };
-            if let Some(result) = replay {
-                let mut w = protocol::base(&service)?;
-                w.extend(ctx.guards);
-                a.s.batch(w, "VERSION_CONFLICT").await?;
-                output = Some(result);
-                break;
-            }
-            if attempt > 0 {
-                break;
-            }
-            let attempt: Result<Value> = async {
+    if !leave
+        && let Some(result) =
+            protocol::MutationRunner::replay_data(&receipt, &b)?.map(|mut data| data["data"].take())
+    {
+        let mut guards = protocol::base(&service)?;
+        guards.extend(ctx.guards);
+        a.s.batch(guards, "VERSION_CONFLICT").await?;
+        return Ok(result);
+    }
+    runner
+        .run(
+            async {
                 let change = service.change(&action, &ctx, &b).await?;
-                let mut w = protocol::base(&service)?;
                 let management_event = audit(&service, &action, &ctx, &b, &change)?;
-                w.extend(ctx.guards);
-                w.extend(change.writes);
-                let tenant = if ctx.tenant.is_null() {
-                    change.result["tenantId"].clone()
+                let mut writes = protocol::base(&service)?;
+                writes.extend(ctx.guards);
+                writes.extend(change.writes);
+                let receipt =
+                    protocol::receipt(&service, &action, &b, &runner.key, &change.result)?;
+                Ok(protocol::PreparedMutation {
+                    result: change.result,
+                    writes,
+                    audit: management_event,
+                    receipt,
+                })
+            },
+            async || {
+                let (s, c) = login_sessions::active(a).await?;
+                let service = Service { a, s, c };
+                if leave {
+                    return crate::team::membership::replay_leave(
+                        &service,
+                        &action,
+                        &b,
+                        &runner.key,
+                    )
+                    .await;
+                }
+                let ctx = service.authorize(&action).await?;
+                if let Some(result) = protocol::replay(&service, &action, &b, &runner.key).await? {
+                    let mut guards = protocol::base(&service)?;
+                    guards.extend(ctx.guards);
+                    a.s.batch(guards, "VERSION_CONFLICT").await?;
+                    Ok(Some(result))
                 } else {
-                    ctx.tenant["id"].clone()
-                };
-                w.push(a.s.audit(
-                    action.op,
-                    service.user(),
-                    &a.request_id,
-                    tenant,
-                    change.target_user,
-                    json!({"reason":b["reason"],"targetKind":b["target"]["kind"]}),
-                    false,
-                )?);
-                w.push(management_event);
-                w.extend(protocol::receipt(
-                    &service,
-                    &action,
-                    &b,
-                    &key,
-                    &change.result,
-                )?);
-                a.s.batch(w, "VERSION_CONFLICT").await?;
-                Ok(change.result)
-            }
-            .await;
-            match attempt {
-                Ok(v) => {
-                    output = Some(v);
-                    break;
+                    Ok(None)
                 }
-                Err(e) => {
-                    last = if e.code == "ALREADY_EXISTS" {
-                        Failure {
-                            status: 409,
-                            code: "VERSION_CONFLICT",
-                        }
-                    } else {
-                        e
-                    }
-                }
-            }
-        }
-        output.ok_or(last)?
-    };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+            },
+            "VERSION_CONFLICT",
+        )
+        .await
 }

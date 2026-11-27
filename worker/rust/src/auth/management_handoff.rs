@@ -58,23 +58,23 @@ fn view(a: &Auth, t: &Value, suffix: &str) -> Value {
     json!({"handoffId":t["id"],"redirectUrl":format!("{}/account/handoff/{suffix}",a.origin),"expiresAt":iso(&t["expires_at"])})
 }
 pub(crate) fn matches(path: &str) -> bool {
-    path.starts_with("/api/v2/auth/management-handoffs")
+    path.starts_with("/api/v1/auth/management-handoffs")
         || path == "/account/handoff/start"
         || path == "/account/handoff/finish"
 }
 
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if path.starts_with("/api/v2/") {
+    if path.starts_with("/api/v1/") {
         ensure(
-            method == Method::Post && a.request.url()?.query().is_none(),
+            method == Method::Post && a.http()?.url()?.query().is_none(),
             400,
             "INVALID_REQUEST",
         )?;
-        let b: Value = serde_json::from_str(&bounded(&mut a.request, 8192).await?)?;
+        let b: Value = serde_json::from_str(&bounded(a.http_mut()?, 8192).await?)?;
         let (s, c) = sessions::active(a).await?;
         a.rate("management-handoff", &text(&s, "id"), 20, 60_000)
             .await?;
-        let result = if path == "/api/v2/auth/management-handoffs" {
+        let result = if path == "/api/v1/auth/management-handoffs" {
             shape("ManagementHandoffRequest", &b)?;
             ensure(
                 contains(&parsed(&c, "redirects")?, &b["redirectUri"]),
@@ -86,7 +86,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             view(a, &t, &format!("start?id={}", text(&t, "id")))
         } else {
             ensure(
-                path == "/api/v2/auth/management-handoffs/approve",
+                path == "/api/v1/auth/management-handoffs/approve",
                 404,
                 "NOT_FOUND",
             )?;
@@ -137,11 +137,11 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
         "FORBIDDEN",
     )?;
     ensure(
-        a.request.url()?.origin().ascii_serialization() == a.origin,
+        a.http()?.url()?.origin().ascii_serialization() == a.origin,
         403,
         "FORBIDDEN",
     )?;
-    let q = form(a.request.url()?.query().unwrap_or_default())?;
+    let q = form(a.http()?.url()?.query().unwrap_or_default())?;
     let t = pending(a, &text(&q, "id")).await?;
     let source = sessions::session(a, &text(&t, "source_session")).await?;
     ensure(
@@ -193,44 +193,42 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
     )?;
     let n = now();
     // Preserve original authentication age and absolute expiry; a handoff is not reauthentication.
-    let s = json!({"id":uuid(),"user_id":source["user_id"],"client_id":target["client_id"],"application_id":target["application_id"],"authenticated_at":source["authenticated_at"],"last_active_at":n,"absolute_expires_at":source["absolute_expires_at"],"user_epoch":source["user_epoch"],"session_revision":0});
+    let last_active = n
+        .max(number(&source, "authenticated_at"))
+        .min(number(&source, "absolute_expires_at") - 1);
+    let s = json!({"id":uuid(),"user_id":source["user_id"],"client_id":target["client_id"],"application_id":target["application_id"],"authenticated_at":source["authenticated_at"],"last_active_at":last_active,"absolute_expires_at":source["absolute_expires_at"],"user_epoch":source["user_epoch"],"session_revision":0});
     let (tokens, token_writes) = sessions::tokens(a, &s, n, 0)?;
     let raw = secret();
     let id = web_session::browser_cookie_hash(a, &raw);
     let key = web_session::setting(a, "AUTH_WEB_SESSION_KEY")?;
-    let payload = web_session::seal(
-        &key,
-        &json!({"id":id,"data":{"transactions":{},"tokens":tokens}}).to_string(),
-    )
-    .await
-    .map_err(|_| Failure {
-        status: 503,
-        code: "AUTH_UNAVAILABLE",
-    })?;
-    let mut writes=vec![sessions::session_guard(a,&source,n)?,sessions::client_guard(a,&client)?,sessions::client_guard(a,&target)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND consumed_at IS NULL AND expires_at>? AND browser_hash=? AND code_hash=?)",vec![t["id"].clone(),n.into(),web_session::browser_cookie_hash(a, &proof).into(),hash(&text(&q,"code")).into()])?,a.s.statement("UPDATE auth_management_handoff SET consumed_at=? WHERE id=?",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),s["authenticated_at"].clone(),n.into(),s["absolute_expires_at"].clone(),s["user_epoch"].clone(),source["created_seq"].clone(),source["identity_verified_at"].clone()])?,a.s.statement("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",vec![id.into(),payload.into(),s["absolute_expires_at"].clone()])?];
+    let payload = web_session::seal(&key, &json!({"id":id,"data":tokens}).to_string())
+        .await
+        .map_err(|_| Failure {
+            status: 503,
+            code: "AUTH_UNAVAILABLE",
+        })?;
+    let mut writes=vec![sessions::session_guard(a,&source,n)?,sessions::client_guard(a,&client)?,sessions::client_guard(a,&target)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND consumed_at IS NULL AND expires_at>? AND browser_hash=? AND code_hash=?)",vec![t["id"].clone(),n.into(),web_session::browser_cookie_hash(a, &proof).into(),hash(&text(&q,"code")).into()])?,a.s.statement("UPDATE auth_management_handoff SET consumed_at=? WHERE id=?",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),s["authenticated_at"].clone(),last_active.into(),s["absolute_expires_at"].clone(),s["user_epoch"].clone(),source["created_seq"].clone(),source["identity_verified_at"].clone()])?,a.s.statement("INSERT INTO auth_web_session(id_hash,payload,expires_at) VALUES (?,?,?)",vec![id.into(),payload.into(),s["absolute_expires_at"].clone()])?];
     writes.extend(token_writes);
-    let old = cookie(a, "molis-auth-web")?;
+    let old = cookie(a, web_session::browser_cookie_name(a))?;
     if token(&old) {
         writes.push(a.s.statement(
             "DELETE FROM auth_web_session WHERE id_hash=?",
             vec![web_session::browser_cookie_hash(a, &old).into()],
         )?);
     }
-    writes.push(a.s.audit(
-        "account.v2.management-handoff",
+    writes.push(crate::audit::account(
+        a,
+        "account.management-handoff",
         s["user_id"].clone(),
-        &a.request_id,
-        Value::Null,
-        Value::Null,
+        &target["client_id"],
         json!({"sourceSessionId":source["id"],"loginSessionId":s["id"]}),
-        false,
     )?);
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     let mut r = redirect(&format!("{}/", a.origin))?;
     set_cookie(
         a,
         &mut r,
-        "molis-auth-web",
+        web_session::browser_cookie_name(a),
         &raw,
         (number(&s, "absolute_expires_at") - n) / 1000,
     )?;

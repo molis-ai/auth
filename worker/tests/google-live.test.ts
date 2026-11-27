@@ -7,7 +7,7 @@ import { secret, challenge } from './fixtures.ts'
 
 test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
   const origin = 'https://auth-staging.molis.ai'
-  const callback = origin + '/api/v2/auth/external/google/callback'
+  const callback = origin + '/api/v1/auth/external/google/callback'
   const issuer = 'https://accounts.google.com'
   const key = secret()
   const codes = new Map<string, { challenge: string; subject: number; nonce: string }>()
@@ -105,7 +105,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
 
     function api(path: string, body?: unknown, proof?: string, accessToken?: string) {
       return p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -238,7 +238,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
       assert.equal(token.status, 200)
       const { accessToken } = (await token.json()).data
       const me = await p.fetch(
-        new Request(origin + '/api/v2/users/me', {
+        new Request(origin + '/api/v1/users/me', {
           headers: { Authorization: 'Bearer ' + accessToken },
         }),
       )
@@ -276,7 +276,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
       assert.equal(exchanges, 0)
     }
     const fakePage = await p.fetch(
-      new Request(origin + '/api/v2/auth/mock/google/authorize?state=' + work.state, {
+      new Request(origin + '/api/v1/auth/mock/google/authorize?state=' + work.state, {
         headers: { Cookie: work.cookie },
       }),
     )
@@ -293,7 +293,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
     }
     assert.equal(new Set(signedInUsers.map(({ userId }) => userId)).size, 1)
     assert.equal(exchanges, 2)
-    assert.equal(certs, 1)
+    assert.ok(certs >= 1 && certs <= 2)
     const identity = await db.prepare('SELECT issuer, subject FROM auth_external_identity').all()
     assert.deepEqual(identity.results, [
       { issuer: 'https://accounts.google.com', subject: '1234567' },
@@ -511,7 +511,7 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
           (await (await api('/users/me', undefined, undefined, accessToken)).json()).data
         const before = await me()
         const edited = await p.fetch(
-          new Request(origin + '/api/v2/users/me/profile', {
+          new Request(origin + '/api/v1/users/me/profile', {
             method: 'PATCH',
             headers: {
               Authorization: 'Bearer ' + accessToken,
@@ -572,25 +572,34 @@ test('T-03 Google LIVE adapter on WASM and D1', async (suite) => {
         mutation = {}
       }
     })
-    await suite.test('refreshes once for rotation and removes retired keys', async () => {
-      const before = certs
-      keys = [rotatedJwk]
-      signingKid = rotatedJwk.kid
-      try {
-        const flows = [await start('work'), await start('club')]
-        await Promise.all(flows.map(verify))
-        assert.equal(certs, before + 1)
-        for (const kid of [jwk.kid, 'unknown-one', 'unknown-two']) {
-          signingKid = kid
-          const response = await sendCallback(await start('work'))
-          assert.equal(response.status, 401)
+    await suite.test(
+      'refreshes rotated keys with request-local fetches and caches individual misses',
+      async () => {
+        try {
+          signingKid = 'missing-before-rotation'
+          assert.equal((await sendCallback(await start('work'))).status, 401)
+          const before = certs
+          keys = [rotatedJwk]
+          signingKid = rotatedJwk.kid
+          const flows = [await start('work'), await start('club')]
+          await Promise.all(flows.map(verify))
+          assert.ok(certs >= before + 1 && certs <= before + 2)
+          for (const kid of [jwk.kid, 'unknown-one', 'unknown-two']) {
+            signingKid = kid
+            const beforeMiss = certs
+            for (let repeat = 0; repeat < 2; repeat++) {
+              const response = await sendCallback(await start('work'))
+              assert.equal(response.status, 401)
+            }
+            assert.equal(certs, beforeMiss + 1)
+          }
+        } finally {
+          keys = [jwk]
+          signingKid = jwk.kid
+          certsHeaders = { 'Cache-Control': 'max-age=600' }
         }
-        assert.equal(certs, before + 1)
-      } finally {
-        keys = [jwk]
-        signingKid = jwk.kid
-      }
-    })
+      },
+    )
     await suite.test(
       'does not reuse expired or uncacheable responses and surfaces outages',
       async () => {

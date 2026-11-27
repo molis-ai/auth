@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 
-test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthenticated management requests without effects', async () => {
+test('AUTH-02/07/08/09/10: central boundaries reject unavailable routes and unauthenticated management requests without effects', async () => {
   const origin = 'http://127.0.0.1:8787'
   const config = {
     environmentId: 'unified-local',
@@ -17,8 +17,8 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
   })
   try {
     await initializeLocalRuntime(proxy)
-    assert.equal((await proxy.fetch(new Request(origin + '/api/v2/readiness'))).status, 404)
-    for (const path of ['/api/v2', '/api/v2/auth/providers', '/api/v2/me']) {
+    assert.equal((await proxy.fetch(new Request(origin + '/api/v1/readiness'))).status, 404)
+    for (const path of ['/api/v1', '/api/v1/auth/providers', '/api/v1/me']) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
         const response = await proxy.fetch(new Request(origin + path, { method }))
         assert.equal(response.status, 501, method + ' ' + path)
@@ -26,22 +26,41 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
       }
     }
     for (const path of [
-      '/api/v2/tenants',
-      '/api/v2/platform/tenants',
-      '/api/v2/invitations',
-      '/api/v2/ownership-transfers',
-      '/api/v2/platform/audit-events',
+      '/api/v1/tenants',
+      '/api/v1/platform/tenants',
+      '/api/v1/invitations',
+      '/api/v1/ownership-transfers',
+      '/api/v1/platform/audit-events',
     ]) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+        const declaredWrite =
+          method === 'POST' && ['/api/v1/tenants', '/api/v1/platform/tenants'].includes(path)
         const response = await proxy.fetch(new Request(origin + path, { method }))
-        assert.equal(response.status, 401, method + ' ' + path)
+        assert.equal(response.status, declaredWrite ? 400 : 401, method + ' ' + path)
+        if (declaredWrite) {
+          const valid = await proxy.fetch(
+            new Request(origin + path, {
+              method,
+              headers: {
+                'Content-Type': 'Application/JSON; charset=utf-8',
+                'Idempotency-Key': crypto.randomUUID(),
+              },
+              body: JSON.stringify(
+                path.startsWith('/api/v1/platform/')
+                  ? { name: 'Test', ownerUserId: crypto.randomUUID(), reason: 'test' }
+                  : { name: 'Test' },
+              ),
+            }),
+          )
+          assert.equal(valid.status, 401, method + ' ' + path)
+        }
       }
     }
     for (const path of [
-      '/api/v2/entitlements/check',
-      '/api/v2/catalog/plans',
-      '/api/v2/platform/catalog/features',
-      '/api/v2/platform/subscriptions',
+      '/api/v1/entitlements/check',
+      '/api/v1/catalog/plans',
+      '/api/v1/platform/catalog/features',
+      '/api/v1/platform/subscriptions',
     ]) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
         const response = await proxy.fetch(new Request(origin + path, { method }))
@@ -49,12 +68,7 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
         assert.equal((await response.json()).error.code, 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED')
       }
     }
-    for (const table of [
-      'auth_user',
-      'auth_product_transaction',
-      'auth_space',
-      'auth_managed_tenant',
-    ]) {
+    for (const table of ['auth_user', 'auth_product_transaction', 'auth_tenant']) {
       assert.equal((await proxy.env.DB.prepare(`SELECT count(*) n FROM ${table}`).first()).n, 0)
     }
   } finally {
@@ -92,10 +106,10 @@ test('UAS-40: runtime itself rejects production mock, even when deployment check
       UNIFIED_ACCOUNT_CONFIG: JSON.stringify(config),
     })
     try {
-      const health = await proxy.fetch(new Request(origin + '/api/v2/health'))
+      const health = await proxy.fetch(new Request(origin + '/api/v1/health'))
       assert.equal(health.status, 200)
       const response = await proxy.fetch(
-        new Request(origin + '/api/v2/auth/capabilities?clientId=fixture'),
+        new Request(origin + '/api/v1/auth/capabilities?clientId=fixture'),
       )
       assert.equal(response.status, 503)
       assert.equal((await response.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')

@@ -75,7 +75,7 @@ async function sample(buildDirectory) {
   )
   try {
     await initializeLocalRuntime(proxy)
-    const transactionPath = '/api/v2/auth/transactions'
+    const transactionPath = '/api/v1/auth/transactions'
     const post = (path, body, proof) =>
       proxy.fetch(
         new Request(origin + path, {

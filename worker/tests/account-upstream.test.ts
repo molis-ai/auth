@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { compatibilityDate } from '../scripts/environment.mjs'
 import { initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret } from './fixtures.ts'
+import { hash, secret } from './fixtures.ts'
 
 // Only the Billing operations are fixtures. Both the browser login and Billing's
 // per-request Auth verification run through the compiled Auth Worker and D1.
@@ -165,7 +165,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
       .run()
   await initializeLocalRuntime({ env: { DB: db } })
   await run("UPDATE auth_environment SET kind='TEST',auth_origin=?", origin)
-  await run('UPDATE auth_client_policy SET allowed_origins=?', JSON.stringify([origin]))
+  await run('UPDATE auth_client SET allowed_origins=?', JSON.stringify([origin]))
   await run('UPDATE auth_client SET redirects=?', JSON.stringify([origin + '/account/callback']))
 
   const direct = await mf.getWorker('auth')
@@ -233,11 +233,13 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   async function login(label: string) {
     const browser = { cookie: '', csrf: '' }
     assert.equal((await call(browser, '/session')).data.state, 'ANONYMOUS')
-    const anonymousCookie = browser.cookie
+    assert.equal(browser.cookie, '')
     const sent = await call(browser, '/auth/verification-codes', {
       body: { purpose: 'LOGIN', channel: 'EMAIL', address: label + '@billing.example' },
     })
     assert.equal(sent.status, 200)
+    const anonymousCookie = browser.cookie
+    assert.match(anonymousCookie, /^__Host-molis-auth-web=/)
     const code = await db
       .prepare(
         'SELECT m.credential FROM auth_mock_delivery m JOIN auth_verification_challenge c ON c.delivery_id=m.delivery_id WHERE c.id=?',
@@ -271,15 +273,10 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   const at = Date.now()
   for (const team of ['team-one', 'team-two']) {
     await run(
-      "INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at) VALUES (?,?,'TEAM','ACTIVE',?,?)",
+      "INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at) VALUES (?,?,?,'ACTIVE',?,?,?)",
       team,
       team,
       at,
-      at,
-    )
-    await run(
-      "INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at) VALUES (?,'ACTIVE',?,?,?)",
-      team,
       user,
       at,
       at,
@@ -427,6 +424,13 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   await expectError(call(browser, orders + '/order%2Fone'), 404, 'NOT_FOUND')
   await expectError(call(browser, balance, { method: 'OPTIONS' }), 405, 'METHOD_NOT_ALLOWED')
 
+  const browserSession = () =>
+    db
+      .prepare('SELECT revision,payload FROM auth_web_session WHERE id_hash=?')
+      .bind(hash(browser.cookie.split('=')[1]))
+      .first()
+  const beforeBillingWrites = await browserSession()
+  assert.ok(beforeBillingWrites)
   const action = { method: 'POST', headers: { 'Idempotency-Key': 'action.one' } }
   assert.equal(
     (await call(browser, orders + '/order.active/mock-pay' + teamOne, action)).data.hadBody,
@@ -448,6 +452,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     'ORDER_NOT_REFUNDABLE',
   )
 
+  assert.deepEqual(await browserSession(), beforeBillingWrites)
   await run("UPDATE auth_tenant_membership SET role='MEMBER' WHERE tenant_id='team-one'")
   await expectError(call(browser, orders + teamOne, purchase), 403, 'FORBIDDEN')
   assert.equal((await call(browser, balance + teamOne)).status, 200)
@@ -457,7 +462,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   )
   await expectError(call(browser, balance + teamOne), 404, 'NOT_FOUND')
   assert.equal((await call(browser, balance + teamTwo)).status, 200)
-  await run("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id='team-two'")
+  await run("UPDATE auth_tenant SET status='DISABLED' WHERE id='team-two'")
   await expectError(call(browser, balance + teamTwo), 403, 'TENANT_DISABLED')
   assert.equal((await call(browser, balance)).status, 200)
 
@@ -476,7 +481,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   assert.equal((await call(browser, '/tenants', { upstream: unavailable })).status, 200)
 
   await run('UPDATE auth_login_session SET revoked_at=? WHERE id=?', at, other.login)
-  await expectError(call(other.browser, balance), 401, 'SESSION_EXPIRED')
+  await expectError(call(other.browser, orders, purchase), 401, 'SESSION_EXPIRED')
   await expectError(call(other.browser, balance), 401, 'UNAUTHENTICATED')
   assert.equal(
     (

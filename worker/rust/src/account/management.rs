@@ -1,26 +1,30 @@
 //! AUTH-06 account views and atomic, proof-bound mutations.
 use crate::{
-    auth::login_sessions as sessions, auth::registration,
-    auth::sensitive_transactions as sensitive, core::http::*, core::identity::Auth,
+    auth::login_sessions as sessions,
+    auth::management_access::{MutationRunner, PreparedMutation},
+    auth::registration,
+    auth::sensitive_transactions as sensitive,
+    core::http::*,
+    core::identity::Auth,
     core::security::*,
 };
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 type Writes = Vec<D1PreparedStatement>;
 async fn security(a: &Auth, user: &str) -> Result<Value> {
     a.s.one(
-        "SELECT * FROM auth_user_security WHERE user_id=?",
+        "SELECT account_version,identity_version,session_epoch FROM auth_user WHERE id=?",
         vec![user.into()],
     )
     .await
 }
-const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,s.account_version,
+pub(crate) const USER_VIEW: &str = "SELECT u.display_name,u.avatar_data,u.account_version,
     COALESCE(
         (SELECT canonical_email FROM auth_user_email WHERE user_id=u.id AND verified_at IS NOT NULL ORDER BY id LIMIT 1),
         (SELECT p.email FROM auth_external_identity x JOIN auth_external_profile p ON p.issuer=x.issuer AND p.subject=x.subject WHERE x.user_id=u.id AND p.email IS NOT NULL ORDER BY x.created_at,x.id LIMIT 1)
-    ) AS email FROM auth_user u JOIN auth_user_security s ON s.user_id=u.id WHERE u.id=";
+    ) AS email FROM auth_user u WHERE u.id=";
 const PASSWORD: &str = "SELECT user_id FROM auth_local_credential WHERE user_id=";
-fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
+pub(crate) fn user_view_value(a: &Auth, user: &str, u: &Value) -> Value {
     json!({"issuer":a.origin,"userId":user,"displayName":u["display_name"],"email":u["email"],"avatarUrl":u["avatar_data"],"version":u["account_version"]})
 }
 async fn user_view(a: &Auth, user: &str) -> Result<Value> {
@@ -121,7 +125,7 @@ async fn login_methods_view(a: &Auth) -> Result<Value> {
             prepared(&methods_query(subject))?,
             prepared(&format!("{PASSWORD}{subject}"))?,
             prepared(&format!(
-                "SELECT account_version FROM auth_user_security WHERE user_id={subject}"
+                "SELECT account_version FROM auth_user WHERE id={subject}"
             ))?,
         ])
         .await?
@@ -171,17 +175,7 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
     let credential = next_set()?.into_iter().next().unwrap_or(Value::Null);
     let (s, c) = sessions::active_result(a, credential, digest, origin)?;
     let user = next_set()?.into_iter().next().unwrap_or(Value::Null);
-    let capabilities: Vec<_> = next_set()?
-        .into_iter()
-        .map(|mut p| p["permission"].take())
-        .filter(|permission| {
-            crate::core::contracts::unified_contracts::validate_named(
-                "PlatformCapability",
-                permission,
-            )
-            .is_ok()
-        })
-        .collect();
+    let capabilities = platform_capabilities(next_set()?);
     let mut view = json!({
         "user":user_view_value(a, &text(&s,"user_id"), &user),
         "session":sessions::view(&s),
@@ -195,9 +189,21 @@ async fn account_view(a: &Auth, raw: &str, origin: &str, include_methods: bool) 
     }
     Ok(view)
 }
+pub(crate) fn platform_capabilities(rows: Vec<Value>) -> Vec<Value> {
+    rows.into_iter()
+        .map(|mut p| p["permission"].take())
+        .filter(|permission| {
+            crate::core::contracts::unified_contracts::validate_named(
+                "PlatformCapability",
+                permission,
+            )
+            .is_ok()
+        })
+        .collect()
+}
 pub(crate) async fn web_account_view(a: &Auth, access_token: &str) -> Result<Value> {
     // Browser origin checks run at the BFF boundary; its previous in-process
-    // V2 request carried only the browser session's access token.
+    // The central request carries only the browser session's access token.
     account_view(a, access_token, "", false).await
 }
 pub(crate) async fn verify_web_password(
@@ -238,7 +244,7 @@ pub(crate) async fn verify_web_password(
     })?;
     let user_id = text(&session, "user_id");
     a.rate_batch(&[
-        ("v2-password", &a.client_ip, 30, 60_000),
+        ("auth:password", &a.client_ip, 30, 60_000),
         ("web-current-password", &user_id, 10, 300_000),
     ])
     .await?;
@@ -253,7 +259,7 @@ pub(crate) async fn verify_web_password(
     )
 }
 fn version_guard(a: &Auth, user: &str, us: &Value) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_user WHERE id=? AND account_version=? AND identity_version=? AND session_epoch=?)",vec![user.into(),us["account_version"].clone(),us["identity_version"].clone(),us["session_epoch"].clone()])
 }
 async fn proof(a: &Auth, s: &Value, us: &Value, raw: &str, kind: &str) -> Result<Value> {
     ensure(token(raw), 401, "INVALID_CREDENTIALS")?;
@@ -290,8 +296,8 @@ fn operation(a: &Auth, p: &Value, op: &str, target: &Value) -> Result<D1Prepared
 // change must not log back in through a binding that has just been removed.
 pub(crate) fn identity_changed(a: &Auth, user: &str) -> Result<Writes> {
     Ok(vec![
-        a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) SELECT 'REVOCATION',? WHERE EXISTS(SELECT 1 FROM auth_user_security WHERE user_id=?)",vec![now().into(),user.into()])?,
-        a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,identity_version=identity_version+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?
+        a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) SELECT 'REVOCATION',? WHERE EXISTS(SELECT 1 FROM auth_user WHERE id=?)",vec![now().into(),user.into()])?,
+        a.s.statement("UPDATE auth_user SET account_version=account_version+1,identity_version=identity_version+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE id=?",vec![now().into(),user.into()])?
     ])
 }
 pub(crate) fn revoke_password(a: &Auth, user: &str, keep: Option<&Value>) -> Result<Writes> {
@@ -299,11 +305,11 @@ pub(crate) fn revoke_password(a: &Auth, user: &str, keep: Option<&Value>) -> Res
     let kept = keep.map(|s| s["id"].clone()).unwrap_or(Value::Null);
     let mut w=vec![
         a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('REVOCATION',?)",vec![n.into()])?,
-        a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,identity_version=identity_version+1,session_epoch=session_epoch+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE user_id=?",vec![n.into(),user.into()])?,
+        a.s.statement("UPDATE auth_user SET account_version=account_version+1,identity_version=identity_version+1,session_epoch=session_epoch+1,revoked_before_seq=(SELECT MAX(seq) FROM auth_security_sequence),updated_at=? WHERE id=?",vec![n.into(),user.into()])?,
         a.s.statement("UPDATE auth_login_session SET revoked_at=?,session_revision=session_revision+1 WHERE user_id=? AND revoked_at IS NULL AND (? IS NULL OR id<>?)",vec![n.into(),user.into(),kept.clone(),kept.clone()])?,
     ];
     if keep.is_some() {
-        w.push(a.s.statement("UPDATE auth_login_session SET user_epoch=(SELECT session_epoch FROM auth_user_security WHERE user_id=?),session_revision=session_revision+1 WHERE id=?",vec![user.into(),kept.clone()])?);
+        w.push(a.s.statement("UPDATE auth_login_session SET user_epoch=(SELECT session_epoch FROM auth_user WHERE id=?),session_revision=session_revision+1 WHERE id=?",vec![user.into(),kept.clone()])?);
         for table in ["auth_login_access_token", "auth_login_refresh_token"] {
             w.push(a.s.statement(&format!("UPDATE {table} SET user_epoch=(SELECT user_epoch FROM auth_login_session WHERE id=?),session_revision=(SELECT session_revision FROM auth_login_session WHERE id=?) WHERE login_session_id=?"),vec![kept.clone(),kept.clone(),kept.clone()])?);
         }
@@ -339,6 +345,7 @@ async fn mutation(
         "VERSION_CONFLICT",
     )?;
     if op == "profile" {
+        a.rate("account:profile", &user, 60, 60_000).await?;
         let mut view = user_view(a, &user).await?;
         if b.get("displayName").is_some() {
             view["displayName"] = name(&b["displayName"])
@@ -355,8 +362,13 @@ async fn mutation(
             })?;
         }
         view["version"] = version.into();
-        let mut w=vec![a.s.statement("UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=? WHERE id=?",vec![view["displayName"].clone(),view["avatarUrl"].clone(),now().into(),user.clone().into()])?,a.s.statement("UPDATE auth_user_security SET account_version=account_version+1,updated_at=? WHERE user_id=?",vec![now().into(),user.into()])?];
-        w.push(a.s.statement("INSERT INTO auth_profile_customization(user_id,name_customized,avatar_customized) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET name_customized=MAX(name_customized,excluded.name_customized),avatar_customized=MAX(avatar_customized,excluded.avatar_customized)",vec![s["user_id"].clone(),json!(i64::from(b.get("displayName").is_some())),json!(i64::from(b.get("avatarDataUrl").is_some()))])?);
+        let w = vec![a.s.statement(
+            "UPDATE auth_user SET display_name=?,avatar_data=?,updated_at=?,account_version=account_version+1,
+             name_customized=MAX(name_customized,?),avatar_customized=MAX(avatar_customized,?) WHERE id=?",
+            vec![view["displayName"].clone(), view["avatarUrl"].clone(), now().into(),
+                i64::from(b.get("displayName").is_some()).into(),
+                i64::from(b.get("avatarDataUrl").is_some()).into(), user.into()],
+        )?];
         return Ok((view, w));
     }
     let p = proof(a, s, us, &text(b, "operationProof"), "OPERATION").await?;
@@ -381,13 +393,25 @@ async fn mutation(
         ));
     }
     let (mut list, password_enabled) = methods(a, &user, c).await?;
-    if op != "bind" {
+    let removed = if op != "bind" {
         let existing = sensitive::binding(a, &user, id).await?;
         ensure(existing["type"] != "EMAIL", 403, "FORBIDDEN")?;
         list.retain(|m| m["bindingId"] != id);
-    }
+        let table = if existing["type"] == "PHONE" {
+            "auth_user_phone"
+        } else {
+            "auth_external_identity"
+        };
+        Some(a.s.statement(
+            &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
+            vec![id.into(), user.clone().into()],
+        )?)
+    } else {
+        None
+    };
     if op == "unlink" {
         writes.push(operation(a, &p, "UNLINK_METHOD", &json!({"bindingId":id}))?);
+        writes.extend(removed);
     } else {
         let new = proof(a, s, us, &text(b, "newIdentityProof"), "NEW_IDENTITY").await?;
         ensure(
@@ -412,6 +436,7 @@ async fn mutation(
                 json!({"bindingId":id})
             },
         )?);
+        writes.extend(removed);
         let binding_id = uuid();
         let n = now();
         match text(&identity, "type").as_str() {
@@ -466,18 +491,6 @@ async fn mutation(
         409,
         "LAST_LOGIN_METHOD",
     )?;
-    if op != "bind" {
-        for table in [
-            "auth_user_email",
-            "auth_user_phone",
-            "auth_external_identity",
-        ] {
-            writes.push(a.s.statement(
-                &format!("DELETE FROM {table} WHERE id=? AND user_id=?"),
-                vec![id.into(), user.clone().into()],
-            )?);
-        }
-    }
     writes.extend(consume(a, &p)?);
     writes.extend(identity_changed(a, &user)?);
     Ok((json!({"loginMethods":list,"version":version}), writes))
@@ -491,68 +504,64 @@ async fn replay(
     key: &str,
 ) -> Result<Option<Value>> {
     let row=a.s.one("SELECT * FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at>?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.into(),now().into()]).await?;
-    if row.is_null() {
-        return Ok(None);
-    }
-    ensure(
-        row["request_hash"] == hash(&b.to_string()),
-        409,
-        "IDEMPOTENCY_CONFLICT",
-    )?;
-    let response = parsed(&row, "response_json")?;
-    ensure(response["loginSessionId"] == s["id"], 403, "FORBIDDEN")?;
-    Ok(Some(response["data"].clone()))
+    account_receipt(&row, s, b)
 }
-async fn manage(
-    a: &Auth,
-    s: &Value,
-    c: &Value,
-    b: &Value,
-    op: &str,
-    target: &str,
-) -> Result<Value> {
-    let raw = a.header("Idempotency-Key");
-    ensure(
-        (16..=128).contains(&raw.chars().count()),
-        400,
-        "INVALID_REQUEST",
+fn account_receipt(row: &Value, s: &Value, b: &Value) -> Result<Option<Value>> {
+    let Some(mut response) = MutationRunner::replay_data(row, b)? else {
+        return Ok(None);
+    };
+    ensure(response["loginSessionId"] == s["id"], 403, "FORBIDDEN")?;
+    Ok(Some(response["data"].take()))
+}
+async fn manage(a: &Auth, b: &Value, op: &str, target: &str) -> Result<Value> {
+    let runner = MutationRunner::new(a)?;
+    let raw = a.header("Authorization");
+    let digest = hash(sessions::bearer(&raw));
+    let current_account = target.is_empty();
+    let security = a.s.statement(
+        &format!(
+            "SELECT account_version,identity_version,session_epoch FROM auth_user WHERE id={}",
+            sessions::ACCESS_USER_ID
+        ),
+        vec![digest.into()],
     )?;
-    let key = hash(&raw);
-    if let Some(result) = replay(a, s, b, op, target, &key).await? {
+    let (service, receipt, rows) = runner
+        .load(op, target, current_account, vec![security])
+        .await?;
+    let s = service.s;
+    let c = service.c;
+    let target = if current_account {
+        s["user_id"].as_str().ok_or_else(Failure::unavailable)?
+    } else {
+        target
+    };
+    if let Some(result) = account_receipt(&receipt, &s, b)? {
         return Ok(result);
     }
-    let us = security(a, &text(s, "user_id")).await?;
-    let built = mutation(a, s, c, b, &us, op, target).await;
-    let attempt: Result<Value>=async {
-        let (result,mut writes)=built?;
-        writes.insert(0,version_guard(a,&text(s,"user_id"),&us)?);
-        writes.insert(0,sessions::client_guard(a,c)?);
-        writes.insert(0,sessions::active_guard(a,s)?);
-        writes.push(a.s.audit(&format!("account.v2.{op}"),s["user_id"].clone(),&a.request_id,Value::Null,Value::Null,Value::Null,false)?);
-        writes.push(a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),now().into()])?);
-        writes.push(a.s.statement("INSERT INTO auth_management_result VALUES (?,?,?,?,?,?,200,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?);
-        a.s.batch(writes,"VERSION_CONFLICT").await?;Ok(result)
-    }.await;
-    match attempt {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            let (current, _) = sessions::active(a).await?;
-            if let Some(result) = replay(a, &current, b, op, target, &key).await? {
-                return Ok(result);
-            }
-            Err(if e.code == "ALREADY_EXISTS" {
-                Failure {
-                    status: 409,
-                    code: "IDENTITY_IN_USE",
-                }
-            } else {
-                e
-            })
-        }
-    }
+    let us = rows
+        .into_iter()
+        .next()
+        .and_then(|rows| rows.into_iter().next())
+        .ok_or_else(Failure::unavailable)?;
+    runner.run(async {
+        let (result,mut writes) = mutation(a, &s, &c, b, &us, op, target).await?;
+        writes.insert(0,version_guard(a,&text(&s,"user_id"),&us)?);
+        writes.insert(0,sessions::client_guard(a,&c)?);
+        writes.insert(0,sessions::active_guard(a,&s)?);
+        let audit = crate::audit::account(a, &format!("account.{op}"), s["user_id"].clone(), &s["client_id"], Value::Null)?;
+        let receipt = vec![
+            a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),runner.key.clone().into(),now().into()])?,
+            a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),runner.key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?
+        ];
+        Ok(PreparedMutation { result, writes, audit, receipt })
+    }, async || {
+        let (current, _) = sessions::active(a).await?;
+        replay(a, &current, b, op, target, &runner.key).await
+    }, "IDENTITY_IN_USE").await
 }
 async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     shape("PasswordResetRequest", b)?;
+    a.rate_ip("auth:password-reset", 60).await?;
     let (t, c) = registration::transaction(a, &text(b, "transactionId")).await?;
     ensure(
         t["purpose"] == "PASSWORD_RESET" && t["status"] == "CONSUMED",
@@ -575,42 +584,20 @@ async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     w.extend(consume(a, &p)?);
     w.push(a.s.statement("INSERT INTO auth_local_credential VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET password_hash=excluded.password_hash,changed_at=excluded.changed_at",vec![user.clone().into(),encoded.into(),now().into()])?);
     w.extend(revoke_password(a, &user, None)?);
-    w.push(a.s.audit(
-        "account.v2.password.reset",
+    w.push(crate::audit::account(
+        a,
+        "account.password.reset",
         user.into(),
-        &a.request_id,
+        &t["client_id"],
         Value::Null,
-        Value::Null,
-        Value::Null,
-        false,
     )?);
     a.s.batch(w, "VERSION_CONFLICT").await?;
     Ok(json!({"passwordChanged":true,"nextStep":"LOGIN_REQUIRED"}))
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    let b = if method == Method::Post || method == Method::Patch {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            415,
-            "INVALID_REQUEST",
-        )?;
-        serde_json::from_str(
-            &bounded(
-                &mut a.request,
-                if path.ends_with("/profile") {
-                    200000
-                } else {
-                    16384
-                },
-            )
-            .await?,
-        )?
-    } else {
-        json!({})
-    };
-    let result = if path == "/api/v2/auth/password-reset/complete" && method == Method::Post {
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
+    let result = if path == "/api/v1/auth/password-reset/complete" && method == Method::Post {
         reset(a, &b).await?
-    } else if path == "/api/v2/users/me" && method == Method::Get {
+    } else if path == "/api/v1/users/me" && method == Method::Get {
         account_view(
             a,
             sessions::bearer(&a.header("Authorization")),
@@ -618,35 +605,33 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             true,
         )
         .await?
-    } else if path == "/api/v2/users/me/login-methods" && method == Method::Get {
+    } else if path == "/api/v1/users/me/login-methods" && method == Method::Get {
         login_methods_view(a).await?
     } else {
-        let (s, c) = sessions::active(a).await?;
-        let user = text(&s, "user_id");
         match (path, method) {
-            ("/api/v2/users/me/reauthentications", Method::Post) => {
+            ("/api/v1/users/me/reauthentications", Method::Post) => {
                 shape("ReauthenticationRequest", &b)?;
                 let mut b = b.clone();
                 b["purpose"] = "REAUTH".into();
                 registration::begin(a, &b).await?
             }
-            ("/api/v2/users/me/profile", Method::Patch) => {
+            ("/api/v1/users/me/profile", Method::Patch) => {
                 shape("ProfileUpdateRequest", &b)?;
-                manage(a, &s, &c, &b, "profile", &user).await?
+                manage(a, &b, "profile", "").await?
             }
-            ("/api/v2/users/me/password/change", Method::Post) => {
+            ("/api/v1/users/me/password/change", Method::Post) => {
                 shape("PasswordChangeRequest", &b)?;
-                manage(a, &s, &c, &b, "password", &user).await?
+                manage(a, &b, "password", "").await?
             }
-            ("/api/v2/users/me/login-methods/bind", Method::Post) => {
+            ("/api/v1/users/me/login-methods/bind", Method::Post) => {
                 shape("BindMethodRequest", &b)?;
-                manage(a, &s, &c, &b, "bind", &user).await?
+                manage(a, &b, "bind", "").await?
             }
             (_, Method::Post) => {
                 let parts: Vec<_> = path.trim_matches('/').split('/').collect();
                 ensure(
                     parts.len() == 7
-                        && parts[..5] == ["api", "v2", "users", "me", "login-methods"]
+                        && parts[..5] == ["api", "v1", "users", "me", "login-methods"]
                         && ["replace", "unlink"].contains(&parts[6]),
                     404,
                     "NOT_FOUND",
@@ -659,7 +644,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     },
                     &b,
                 )?;
-                manage(a, &s, &c, &b, parts[6], parts[5]).await?
+                manage(a, &b, parts[6], parts[5]).await?
             }
             _ => {
                 return Err(Failure {
@@ -669,8 +654,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }

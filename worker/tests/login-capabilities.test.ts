@@ -31,7 +31,7 @@ test('LOGIN-P1-04: LIVE without provider credentials exposes password only and r
       "UPDATE auth_environment SET delivery_mode='LIVE',provider_mode='LIVE' WHERE id='unified-local'",
     ).run()
     const response = await p.fetch(
-      new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+      new Request(origin + '/api/v1/auth/capabilities?clientId=molis-work-unified-local'),
     )
     assert.equal(response.status, 200)
     assert.deepEqual((await response.json()).data, { methods: ['ACCOUNT_PASSWORD'] })
@@ -46,7 +46,7 @@ test('LOGIN-P1-04: LIVE without provider credentials exposes password only and r
     assert.equal(
       (
         await p.fetch(
-          new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+          new Request(origin + '/api/v1/auth/capabilities?clientId=molis-work-unified-local'),
         )
       ).status,
       403,
@@ -90,7 +90,7 @@ test('LOGIN-P1-04: missing required password infrastructure fails capability dis
       .filter(Boolean))
       await p.env.DB.prepare(sql).run()
     const r = await p.fetch(
-      new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+      new Request(origin + '/api/v1/auth/capabilities?clientId=molis-work-unified-local'),
     )
     assert.equal(r.status, 503)
     assert.equal((await r.json()).error.code, 'UPSTREAM_UNAVAILABLE')

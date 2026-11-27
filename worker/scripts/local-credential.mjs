@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto'
 import { getRustProxy, initializeLocalRuntime } from './local-runtime.mjs'
 
-// Actual V2 verified signup in a disposable database; never writes the developer's Home/DB.
+// Verified signup in a disposable database; never writes the developer's Home/DB.
 export async function localCredential(email, password) {
   email = email.trim().toLowerCase()
   const origin = 'http://127.0.0.1:8787'
@@ -35,7 +35,7 @@ export async function localCredential(email, password) {
       return value.data
     }
     const digest = (value) => createHash('sha256').update(value).digest('base64url')
-    const t = await post('/api/v2/auth/transactions', {
+    const t = await post('/api/v1/auth/transactions', {
       clientId: 'molis-auth-web-local',
       redirectUri: origin + '/account/callback',
       state: randomBytes(32).toString('base64url'),
@@ -45,7 +45,7 @@ export async function localCredential(email, password) {
       codeChallengeMethod: 'S256',
       initiatorChallenge: digest(proof),
     })
-    const path = '/api/v2/auth/transactions/' + t.transactionId
+    const path = '/api/v1/auth/transactions/' + t.transactionId
     const sent = await post(path + '/challenges', { channel: 'EMAIL', address: email }, true)
     const delivered = await proxy.env.DB.prepare(
       'SELECT credential FROM auth_mock_delivery WHERE delivery_id=(SELECT delivery_id FROM auth_verification_challenge WHERE id=?)',

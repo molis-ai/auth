@@ -66,17 +66,10 @@ test('Rust core does not reference the application or business domains', () => {
   assert.deepEqual(violations, [])
 })
 
-test('only the browser session loopback may call app from a domain', () => {
+test('Rust domains do not call the Worker app entrypoint', () => {
   const violations = sourceFiles(source)
     .filter((file) => extname(file) === '.rs')
-    .map((file) => ({ path: relative(source, file), content: readFileSync(file, 'utf8') }))
-    .filter(({ path, content }) => {
-      const allowed =
-        path === join('web', 'web_session.rs')
-          ? content.replace('crate::app::handle_internal(', '')
-          : content
-      return refersToModule(allowed, ['app'])
-    })
-    .map(({ path }) => path)
+    .filter((file) => refersToModule(readFileSync(file, 'utf8'), ['app']))
+    .map((file) => relative(source, file))
   assert.deepEqual(violations, [])
 })

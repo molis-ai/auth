@@ -49,7 +49,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       trace = false,
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -195,7 +195,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       const state = new URL(first.headers.get('Location')!).searchParams.get('state')!
       const csrf = html.match(/name="csrf" value="([^"]+)"/)![1]
       const response = await p.fetch(
-        new Request(origin + '/api/v2/auth/mock/' + provider + '/authorize', {
+        new Request(origin + '/api/v1/auth/mock/' + provider + '/authorize', {
           method: 'POST',
           headers: {
             Origin: origin,
@@ -833,7 +833,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       },
     )
     await suite.test(
-      'UAS-26/41 V2U-01: independent V2 clients share versions and identity-proof revocation',
+      'UAS-26/41 AUTH-U-01: independent central clients share versions and identity-proof revocation',
       async () => {
         peer = await passwordLogin('alice@example.test', password, true)
         const before = await me(a)
@@ -1009,7 +1009,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         )
         await me(b)
         const events = JSON.stringify(
-          (await db.prepare('SELECT * FROM auth_audit_event').all()).results,
+          (await db.prepare('SELECT * FROM auth_management_audit').all()).results,
         )
         const receipts = JSON.stringify(
           (await db.prepare('SELECT * FROM auth_management_result').all()).results,
@@ -1027,7 +1027,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         const user = (await me(a)).user.userId
         await db
           .prepare(
-            "INSERT INTO auth_management_result VALUES (?,?,'expired-fixture','fixture',?,?,200,'{}',0,1)",
+            "INSERT INTO auth_management_result VALUES (?,?,'expired-fixture','fixture',?,?,'{}',0,1)",
           )
           .bind(user, a.session.clientId, hash(secret()), hash(secret()))
           .run()

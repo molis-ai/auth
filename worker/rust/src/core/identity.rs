@@ -1,4 +1,8 @@
-use crate::{core::http::*, core::security::*, core::store::Store};
+use crate::{
+    core::http::*,
+    core::security::*,
+    core::store::{CommitFence, Store},
+};
 use serde_json::Value;
 use std::cell::Cell;
 use std::sync::Arc;
@@ -11,15 +15,36 @@ pub(crate) fn retry_after_seconds(expires_at: i64, current_ms: i64) -> u64 {
     remaining_ms.div_ceil(1_000).clamp(1, 86_400)
 }
 
+#[derive(Default)]
+pub(crate) struct OperationInput {
+    pub query: String,
+    pub authorization: String,
+    pub origin: String,
+    pub initiator_proof: String,
+    pub idempotency_key: String,
+}
+
+impl OperationInput {
+    fn header(&self, key: &str) -> &str {
+        match key {
+            "Authorization" => &self.authorization,
+            "Origin" => &self.origin,
+            "X-Auth-Initiator-Proof" => &self.initiator_proof,
+            "Idempotency-Key" => &self.idempotency_key,
+            _ => "",
+        }
+    }
+}
+
 pub struct Auth {
     pub s: Store,
     pub origin: String,
     pub(crate) unified_config: Option<Arc<Value>>,
-    pub request: Request,
+    request: Option<Request>,
+    operation: Option<OperationInput>,
     pub request_id: String,
     pub client_ip: String,
     pub retry_after_at: Cell<Option<i64>>,
-    pub(crate) retry_browser_read: bool,
     pub cookies: Vec<String>,
     pub env: Env,
 }
@@ -47,21 +72,53 @@ impl Auth {
             s: Store::new(env.d1("DB")?, log),
             origin,
             unified_config,
-            request,
+            request: Some(request),
+            operation: None,
             request_id: log.id.to_owned(),
             client_ip,
             retry_after_at: Cell::new(None),
-            retry_browser_read: false,
             cookies: vec![],
             env: env.clone(),
         })
     }
+    pub(crate) fn for_operation(
+        &self,
+        input: OperationInput,
+        route: &'static str,
+        fence: Option<CommitFence>,
+    ) -> Self {
+        Self {
+            s: self.s.for_operation(route, fence),
+            origin: self.origin.clone(),
+            unified_config: self.unified_config.clone(),
+            request: None,
+            operation: Some(input),
+            request_id: self.request_id.clone(),
+            client_ip: self.client_ip.clone(),
+            retry_after_at: Cell::new(None),
+            cookies: vec![],
+            env: self.env.clone(),
+        }
+    }
+    pub(crate) fn http(&self) -> Result<&Request> {
+        self.request.as_ref().ok_or_else(Failure::unavailable)
+    }
+    pub(crate) fn http_mut(&mut self) -> Result<&mut Request> {
+        self.request.as_mut().ok_or_else(Failure::unavailable)
+    }
+    pub(crate) fn query(&self) -> Result<String> {
+        if let Some(input) = &self.operation {
+            return Ok(input.query.clone());
+        }
+        Ok(self.http()?.url()?.query().unwrap_or_default().to_owned())
+    }
     pub fn header(&self, key: &str) -> String {
+        if let Some(input) = &self.operation {
+            return input.header(key).to_owned();
+        }
         self.request
-            .headers()
-            .get(key)
-            .ok()
-            .flatten()
+            .as_ref()
+            .and_then(|request| request.headers().get(key).ok().flatten())
             .unwrap_or_default()
     }
     pub async fn rate(&self, kind: &str, subject: &str, limit: i64, window: i64) -> Result<()> {
@@ -86,7 +143,7 @@ impl Auth {
             code: "RATE_LIMITED",
         }
     }
-    pub(crate) async fn rate_batch(&self, rules: &[(&str, &str, i64, i64)]) -> Result<()> {
+    pub(crate) async fn rate_batch(&self, rules: &[(&str, &str, i64, i64)]) -> Result<i64> {
         let n = now();
         let mut bindings = vec![n.into()];
         let mut limits = Vec::new();
@@ -131,7 +188,8 @@ impl Auth {
                 return Err(self.rate_limited(row));
             }
         }
-        ensure(rows.len() == rules.len(), 503, "AUTH_UNAVAILABLE")
+        ensure(rows.len() == rules.len(), 503, "AUTH_UNAVAILABLE")?;
+        Ok(n)
     }
     pub async fn rate_ip(&self, kind: &str, limit: i64) -> Result<()> {
         self.rate(kind, &self.client_ip, limit, 60_000).await

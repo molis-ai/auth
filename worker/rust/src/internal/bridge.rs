@@ -121,11 +121,11 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
     let raw = bearer(&authorization);
     ensure(token(raw), 401, "UNAUTHENTICATED")?;
     ensure(
-        a.request.inner().method() == "POST",
+        a.http()?.inner().method() == "POST",
         405,
         "METHOD_NOT_ALLOWED",
     )?;
-    let body = bounded(&mut a.request, 2048).await?;
+    let body = bounded(a.http_mut()?, 2048).await?;
     ensure(body.trim_start().starts_with('{'), 400, "INVALID_REQUEST")?;
     let owner = if path == VERIFY {
         let Verify {
@@ -149,7 +149,7 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
         // credential below must succeed before the other results are used.
         let snapshot = a.s.batch_read(vec![
             credential,
-            a.s.statement(&format!("{TENANTS} WHERE t.space_id=?"), vec![id.clone().into()])?,
+            a.s.statement(&format!("{TENANTS} WHERE t.id=?"), vec![id.clone().into()])?,
             a.s.statement(
                 &format!("SELECT role FROM auth_tenant_membership WHERE user_id={ACCESS_USER_ID} AND {ACTIVE_MEMBER}"),
                 vec![digest.clone().into(), id.clone().into()],

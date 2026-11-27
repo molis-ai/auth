@@ -58,13 +58,12 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       await db.prepare(sql).run()
     const n = Date.now()
     await db
-      .prepare("INSERT INTO auth_user VALUES ('user','User','ACTIVE',NULL,?,?)")
+      .prepare(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('user','User','ACTIVE',NULL,?,?)",
+      )
       .bind(n, n)
       .run()
-    await db
-      .prepare("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('user',?)")
-      .bind(n)
-      .run()
+
     const call = async (
       path: string,
       body?: unknown,
@@ -74,7 +73,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       fixture?: { trace: boolean; barrier?: string },
     ) => {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -107,9 +106,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
         .run()
       const seq = (await db.prepare('SELECT max(seq) n FROM auth_security_sequence').first()).n
       const epoch = (
-        await db
-          .prepare("SELECT session_epoch FROM auth_user_security WHERE user_id='user'")
-          .first()
+        await db.prepare("SELECT session_epoch FROM auth_user WHERE id='user'").first()
       ).session_epoch
       const redirect =
         client === work
@@ -185,6 +182,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(signed.status, 200)
     const jwksReply = await p.fetch(new Request(origin + '/.well-known/molis-sync-jwks.json'))
     assert.equal(jwksReply.status, 200)
+    assert.equal(jwksReply.headers.get('Cache-Control'), 'public, max-age=60')
     const { keys } = (await jwksReply.json()) as { keys: JWK[] }
     assert.equal(keys[0].kid, 'synthetic-sync')
     assert.equal(keys[0].d, undefined)
@@ -200,7 +198,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(claims.scope, 'molis-sync:read')
     assert.ok(Number(claims.exp) - Number(claims.iat) <= 30)
     // AC-AUTH-01/03: proof and JWKS endpoints use route templates and omit key and grant data.
-    for (const route of ['/api/v2/auth/sync-read-proof', '/.well-known/molis-sync-jwks.json']) {
+    for (const route of ['/api/v1/auth/sync-read-proof', '/.well-known/molis-sync-jwks.json']) {
       const log = await logs.waitFor(
         (event) => event.event === 'auth.http.request' && event.route === route,
       )
@@ -271,11 +269,11 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       async () => {
         const active = await activity(event)
         assert.equal(active.status, 200)
-        assert.deepEqual(active.d1Calls, { read: 1, write: 1 })
+        assert.deepEqual(active.d1Calls, { read: 1, write: 2 })
         const replay = await activity(event)
         assert.equal(replay.status, 200)
         assert.equal(replay.data.lastActiveAt, active.data.lastActiveAt)
-        assert.deepEqual(replay.d1Calls, { read: 1, write: 1 })
+        assert.deepEqual(replay.d1Calls, { read: 1, write: 2 })
 
         const pending = activity(event, activityBarrier)
         try {
@@ -293,15 +291,15 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           const committed = await activity({ ...event, eventId: 'event-two' })
           assert.equal(committed.status, 200)
           assert.equal(committed.data.lastActiveAt, new Date(later).toISOString())
-          assert.deepEqual(committed.d1Calls, { read: 1, write: 1 })
+          assert.deepEqual(committed.d1Calls, { read: 1, write: 2 })
           resumeActivity.resolve()
           const duplicate = await pending
           assert.equal(duplicate.status, 200)
           assert.deepEqual(duplicate.data, committed.data)
-          assert.deepEqual(duplicate.d1Calls, { read: 1, write: 1 })
+          assert.deepEqual(duplicate.d1Calls, { read: 1, write: 2 })
           const receipts = await db
             .prepare(
-              'SELECT event_id,received_at FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',
+              'SELECT event_id,kind FROM auth_login_activity WHERE login_session_id=? ORDER BY event_id',
             )
             .bind(b.session.loginSessionId)
             .all()
@@ -309,7 +307,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
             receipts.results.map((r) => r.event_id),
             ['event-one', 'event-two'],
           )
-          assert.equal(receipts.results[0].received_at, Date.parse(active.data.lastActiveAt))
+          assert.equal(receipts.results[0].kind, event.kind)
         } finally {
           resumeActivity.resolve()
           await pending
@@ -374,7 +372,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     // Even if future verification stamps a fresh epoch, an old anonymous transaction is blocked by sequence.
     await db
       .prepare(
-        "UPDATE auth_identity_proof SET user_epoch=(SELECT session_epoch FROM auth_user_security WHERE user_id='user') WHERE token_hash=?",
+        "UPDATE auth_identity_proof SET user_epoch=(SELECT session_epoch FROM auth_user WHERE id='user') WHERE token_hash=?",
       )
       .bind(hash(pending.code))
       .run()
@@ -418,7 +416,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           .run()
         await db
           .prepare(
-            "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<501) INSERT INTO auth_one_use SELECT 'cleanup-'||n,'fixture','fixture','{}',0 FROM numbers",
+            "WITH RECURSIVE numbers(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM numbers WHERE n<651) INSERT INTO auth_one_use SELECT 'cleanup-'||n,'fixture','fixture','{}',0 FROM numbers",
           )
           .run()
         const old = await code()
@@ -449,7 +447,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
           .run()
         await db
           .prepare(
-            "INSERT INTO auth_verification_challenge (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at) VALUES ('cleanup',?,'EMAIL','fixture','fixture','cleanup','ACCEPTED',5,0,?,0)",
+            "INSERT INTO auth_verification_challenge (id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at) VALUES ('cleanup',?,'EMAIL','fixture','fixture','cleanup','ACCEPTED',5,0,?)",
           )
           .bind(oldId, Date.now() + 60_000)
           .run()
@@ -531,7 +529,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     )
     const deniedCode = await code()
     const wrongOrigin = await p.fetch(
-      new Request(origin + '/api/v2/auth/token', {
+      new Request(origin + '/api/v1/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.test' },
         body: JSON.stringify(deniedCode),

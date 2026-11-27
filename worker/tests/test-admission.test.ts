@@ -56,7 +56,7 @@ test(`ENV-10 AC-AUTH-06: ${artifact} enforces test admission before delivery`, a
   await db.prepare("UPDATE auth_environment SET kind='TEST' WHERE id='unified-local'").run()
   const post = (path: string, body: object, proof?: string) =>
     p.fetch(
-      new Request(origin + '/api/v2/auth/' + path, {
+      new Request(origin + '/api/v1/auth/' + path, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,7 +112,7 @@ test(`ENV-10 AC-AUTH-06: ${artifact} enforces test admission before delivery`, a
 
   if (buildDirectory) {
     const capabilities = await p.fetch(
-      new Request(origin + '/api/v2/auth/capabilities?clientId=molis-work-unified-local'),
+      new Request(origin + '/api/v1/auth/capabilities?clientId=molis-work-unified-local'),
     )
     assert.equal(capabilities.status, 200)
     assert.deepEqual((await capabilities.json()).data.methods, ['ACCOUNT_PASSWORD'])

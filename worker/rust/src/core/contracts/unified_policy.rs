@@ -1,4 +1,4 @@
-//! Foundation boundary for the unified account protocol. No v2 login is issued here.
+//! Foundation boundary for the unified account protocol. Login issuance belongs to the authentication domain.
 use crate::core::http::*;
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};

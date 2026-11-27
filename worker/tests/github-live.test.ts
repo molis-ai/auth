@@ -6,7 +6,7 @@ import { secret, challenge } from './fixtures.ts'
 
 test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
   const origin = process.env.GITHUB_TEST_ORIGIN || 'https://auth-staging.molis.ai'
-  const callback = origin + '/api/v2/auth/external/github/callback'
+  const callback = origin + '/api/v1/auth/external/github/callback'
   const issuer = 'https://github.com/login/oauth'
   const key = secret()
   const codes = new Map<string, { challenge: string; subject: number }>()
@@ -74,7 +74,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
 
     function api(path: string, body?: unknown, proof?: string, accessToken?: string) {
       return p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -197,7 +197,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
       assert.equal(token.status, 200)
       const { accessToken } = (await token.json()).data
       const me = await p.fetch(
-        new Request(origin + '/api/v2/users/me', {
+        new Request(origin + '/api/v1/users/me', {
           headers: { Authorization: 'Bearer ' + accessToken },
         }),
       )
@@ -235,7 +235,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
       assert.equal(exchanges, 0)
     }
     const fakePage = await p.fetch(
-      new Request(origin + '/api/v2/auth/mock/github/authorize?state=' + work.state, {
+      new Request(origin + '/api/v1/auth/mock/github/authorize?state=' + work.state, {
         headers: { Cookie: work.cookie },
       }),
     )
@@ -411,7 +411,7 @@ test('T-03 GitHub LIVE adapter on WASM and D1', async (suite) => {
         const before = (await (await api('/users/me', undefined, undefined, accessToken)).json())
           .data
         const edited = await p.fetch(
-          new Request(origin + '/api/v2/users/me/profile', {
+          new Request(origin + '/api/v1/users/me/profile', {
             method: 'PATCH',
             headers: {
               Authorization: 'Bearer ' + accessToken,

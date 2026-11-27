@@ -47,7 +47,7 @@ function toggleLanguage() {
 
 <template>
   <div v-if="showChrome" class="shell auth-entry">
-    <header class="topbar">
+    <header class="topbar" data-local-hover>
       <a class="wordmark" href="https://molis.ai" target="_blank" rel="noopener noreferrer" :aria-label="t('Molis AI 官网')">
         <img class="brand-logo" :src="logo" alt="" width="30" height="30"><span lang="en">Molis AI</span>
       </a>

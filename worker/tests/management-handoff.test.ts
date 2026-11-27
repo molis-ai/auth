@@ -7,7 +7,7 @@ import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
 
 const origin = 'http://127.0.0.1:8787'
 const redirectUri = 'http://127.0.0.1:4207/account/callback'
-const api = '/api/v2/auth/management-handoffs'
+const api = '/api/v1/auth/management-handoffs'
 const lifetime = 90 * 86_400_000
 
 function cookie(response: Response, name: string) {
@@ -79,15 +79,9 @@ async function fixture(t: TestContext) {
   }
   await db
     .prepare(
-      "INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects) VALUES ('auth-web','auth-web','molis-work-unified-local-app','WEB','[\"account\",\"profile\"]',?)",
+      "INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins) VALUES ('auth-web','auth-web','molis-work-unified-local-app','WEB',?,'unified-local',?)",
     )
-    .bind(JSON.stringify([origin + '/account/callback']))
-    .run()
-  await db
-    .prepare(
-      "INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at) VALUES ('auth-web','unified-account-v2','unified-local',?,0,0)",
-    )
-    .bind(JSON.stringify([origin]))
+    .bind(JSON.stringify([origin + '/account/callback']), JSON.stringify([origin]))
     .run()
 
   async function source(account = crypto.randomUUID()) {
@@ -97,14 +91,14 @@ async function fixture(t: TestContext) {
     const authenticated = now - 8 * 86_400_000 - 321
     const verified = authenticated + 123_456
     await db
-      .prepare("INSERT OR IGNORE INTO auth_user VALUES (?,?,'ACTIVE',NULL,?,?)")
+      .prepare(
+        "INSERT OR IGNORE INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES (?,?,'ACTIVE',NULL,?,?)",
+      )
       .bind(account, 'Handoff User', authenticated, authenticated)
       .run()
     await db
-      .prepare(
-        'INSERT OR IGNORE INTO auth_user_security(user_id,session_epoch,updated_at) VALUES (?,3,?)',
-      )
-      .bind(account, now)
+      .prepare('UPDATE auth_user SET session_epoch=3,updated_at=? WHERE id=?')
+      .bind(now, account)
       .run()
     const sequence = await db
       .prepare(
@@ -193,7 +187,7 @@ async function fixture(t: TestContext) {
       (SELECT count(*) FROM auth_login_session WHERE client_id='auth-web') sessions,
       (SELECT count(*) FROM auth_login_access_token t JOIN auth_login_session s ON s.id=t.login_session_id WHERE s.client_id='auth-web') access,
       (SELECT count(*) FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id WHERE s.client_id='auth-web') refresh,
-      (SELECT count(*) FROM auth_audit_event WHERE action='account.v2.management-handoff' AND outcome='SUCCESS') audits,
+      (SELECT count(*) FROM auth_management_audit WHERE operation='account.management-handoff' AND outcome='SUCCESS') audits,
       (SELECT count(*) FROM auth_web_session) web`,
       )
       .first()

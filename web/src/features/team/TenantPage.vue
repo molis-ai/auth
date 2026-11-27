@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { roleLabel } from "../../shared/format/role-label.ts";
+import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
@@ -14,6 +16,7 @@ type Tenant = {
   status: string;
   myRole: string;
   membershipId: string;
+  membershipVersion: number;
   version: number;
 };
 type Member = {
@@ -25,28 +28,24 @@ type Member = {
   status: string;
   version: number;
 };
-type Write = <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
+const { client, mutate, submitBusyWrite: submitWrite, discard } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   viewerId: string;
   billingEnabled: boolean;
   busy: boolean;
-  mutate: Write;
-  submitWrite: Write;
-  discard: (action: string) => void;
   refreshPending: (action: string) => boolean;
 }>();
 const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: []; openBilling: [tenantId: string] }>();
 const canInviteByPhone = document.querySelector<HTMLMetaElement>(
   'meta[name="molis-tenant-invite-channels"]',
 )?.content.split(" ").includes("PHONE") ?? false;
-const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 
-const directory = cursorCollection<Tenant>(props.client);
-const memberDirectory = cursorCollection<Member>(props.client);
+const directory = cursorCollection<Tenant>(client);
+const memberDirectory = cursorCollection<Member>(client);
 const { loading: tenantsLoading, nextCursor: moreTenants } = directory;
 const { loading: membersLoading } = memberDirectory;
 let directoryRead = 0;
+const billingMembership = ref<string>();
 const selectedTenant = ref<Tenant>();
 const teamTab = ref<"members" | "billing">("members");
 const tenantSearch = ref("");
@@ -88,7 +87,7 @@ const tenantPath = (id: string) => "/tenants/" + encodeURIComponent(id);
 async function refreshDirectory(reconcileSelection = true) {
   if (disposed) return;
   const request = ++directoryRead;
-  if (!(await directory.first("/tenants")) || request !== directoryRead) return;
+  if (!(await directory.first("/tenants", 20, { revalidate: true })) || request !== directoryRead) return;
   const selected = selectedTenant.value;
   if (!reconcileSelection || !selected) return;
   let latest: Tenant | undefined;
@@ -106,6 +105,18 @@ async function refreshDirectory(reconcileSelection = true) {
     await read("members", () => reloadMembers(latest));
   }
 }
+watch([teamTab, () => selectedTenant.value?.tenantId], async ([tab, tenantId], _, onCleanup) => {
+  billingMembership.value = undefined;
+  if (tab !== "billing" || !tenantId || !props.billingEnabled) return;
+  let current = true;
+  onCleanup(() => { current = false; });
+  await read("members", async () => {
+    const latest = await client.request<Tenant>(tenantPath(tenantId));
+    if (!current || disposed) return;
+    selectedTenant.value = latest;
+    if (latest) billingMembership.value = tenantId;
+  });
+});
 function clearMembers() {
   delete errors.members;
   memberPage.value = 1;
@@ -141,21 +152,11 @@ async function nextMemberPage() {
     });
   }
 }
-async function ownMembership(tenant: Tenant) {
-  const match = () => memberDirectory.items.value.find(member => member.membershipId === tenant.membershipId);
-  let own = match();
-  // The API supplies membership versions only in the member directory.
-  // Read further pages only when a member explicitly requests to leave.
-  while (!own && !disposed && selectedTenant.value?.tenantId === tenant.tenantId
-      && await memberDirectory.more()) own = match();
-  return own;
-}
-
 async function lookupTenant(id: string) {
   const loaded = directory.items.value.find(tenant => tenant.tenantId === id);
   if (loaded) return loaded;
   try {
-    return await props.client.request<Tenant>(tenantPath(id));
+    return await client.request<Tenant>(tenantPath(id));
   } catch (error) {
     if (error instanceof AuthError && error.status === 404) return undefined;
     throw error;
@@ -169,7 +170,7 @@ function left(id: string) {
   }
   directory.remove(tenant => tenant.tenantId === id);
 }
-watch(() => tenantName.value.trim(), () => props.discard("create-tenant"), { flush: "sync" });
+watch(() => tenantName.value.trim(), () => discard("create-tenant"), { flush: "sync" });
 function openTenantCreate() {
   tenantName.value = "";
   emit("clearToast");
@@ -184,7 +185,7 @@ function closeTenantCreate() {
 function createTenant() {
   const name = tenantName.value.trim();
   if (!name) return;
-  return props.mutate<Tenant>("/tenants", { name }, {
+  return mutate<Tenant>("/tenants", { name }, {
     action: "create-tenant",
     success: "团队已创建",
     refreshMessage: "团队已创建，但团队列表或成员暂未刷新。",
@@ -208,7 +209,7 @@ function createTenant() {
 
 onMounted(() => {
   void read("policy", async () => {
-    creationMode.value = (await props.client.request<{ mode: string }>("/tenant-creation-policy")).mode;
+    creationMode.value = (await client.request<{ mode: string }>("/tenant-creation-policy")).mode;
   });
   void read("directory", async () => {
     await refreshDirectory();
@@ -221,7 +222,7 @@ onBeforeUnmount(() => {
   disposed = true;
   directory.clear();
   memberDirectory.clear();
-  props.discard("create-tenant");
+  discard("create-tenant");
   emit("dispose");
 });
 </script>
@@ -254,7 +255,7 @@ onBeforeUnmount(() => {
             <button
               v-for="tenant in tenants"
               :key="tenant.tenantId"
-              class="v2-row collection-item tenant-choice"
+              class="console-row collection-item tenant-choice" data-local-hover
               :class="{ selected: selectedTenant?.tenantId === tenant.tenantId }"
               :aria-current="selectedTenant?.tenantId === tenant.tenantId ? 'true' : undefined"
               :disabled="busy"
@@ -266,7 +267,7 @@ onBeforeUnmount(() => {
                   <span class="tenant-choice-name">{{ tenant.name }}</span>
                   <i class="tenant-choice-dot" :class="tenant.status === 'ACTIVE' ? 'is-on' : 'is-off'" aria-hidden="true"></i>
                 </div>
-                <span class="tenant-choice-meta">{{ roleLabels[tenant.myRole] }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
+                <span class="tenant-choice-meta">{{ roleLabel(tenant.myRole) }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
               </div>
             </button>
           </nav>
@@ -288,7 +289,7 @@ onBeforeUnmount(() => {
             v-model:tab="teamTab"
             :client="client"
             :viewer-id="viewerId"
-            :billing-enabled="billingEnabled"
+            :billing-enabled="billingEnabled && billingMembership === selectedTenant.tenantId"
             :tenant="selectedTenant"
             :members="members"
             :loading="membersLoading"
@@ -301,7 +302,6 @@ onBeforeUnmount(() => {
             :submit-write="submitWrite"
             :discard="discard"
             :reload="reloadMembers"
-            :own-membership="ownMembership"
             :leave="refreshDirectory"
             @expired="emit('expired', $event)"
             @order-access-denied="read('directory', refreshDirectory)"

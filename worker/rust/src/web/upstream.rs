@@ -113,35 +113,28 @@ impl<'a> Target<'a> {
     }
 
     pub(super) async fn body(a: &mut Auth) -> Result<Option<String>> {
-        if a.request.inner().body().is_none() {
+        if a.http()?.inner().body().is_none() {
             return Ok(None);
         }
-        let body = bounded(&mut a.request, 16 * 1024).await?;
+        let body = bounded(a.http_mut()?, 16 * 1024).await?;
         if body.is_empty() {
             return Ok(None);
         }
-        ensure(
-            a.header("Content-Type")
-                .split(';')
-                .next()
-                .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/json")),
-            400,
-            "INVALID_REQUEST",
-        )?;
+        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
         // Keep the original JSON, including duplicate keys, for the upstream parser.
         serde_json::from_str::<Value>(&body)?;
         Ok(Some(body))
     }
 
     pub(super) async fn call(&self, a: &Auth, access: &str, body: Option<&str>) -> Result<Reply> {
-        let key = a.request.headers().get("Idempotency-Key")?;
+        let key = a.http()?.headers().get("Idempotency-Key")?;
         ensure(key.as_deref().is_none_or(valid_id), 400, "INVALID_REQUEST")?;
         ensure(token(access), 401, "SESSION_EXPIRED")?;
         let mut input = json!({
             "service": self.mount.service, "path": format!("/api/v1{}", self.suffix),
             "method": self.method, "requestId": a.request_id, "accessToken": access,
         });
-        if let Some(query) = a.request.url()?.query() {
+        if let Some(query) = a.http()?.url()?.query() {
             input["query"] = json!(query);
         }
         if let Some(body) = body {
@@ -159,7 +152,11 @@ impl<'a> Target<'a> {
                 .map_err(|_| unavailable())?,
         );
         let status = response.status_code();
-        let mut data: Value = response.json().await.map_err(|_| unavailable())?;
+        let stream = response.stream().map_err(|_| unavailable())?;
+        let raw = bounded_stream(stream, 256 * 1024)
+            .await
+            .map_err(|_| unavailable())?;
+        let mut data: Value = serde_json::from_str(&raw).map_err(|_| unavailable())?;
         let shared = a
             .env
             .secret("MOLIS_INTERNAL_SECRET")

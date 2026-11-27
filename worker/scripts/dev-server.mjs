@@ -26,7 +26,7 @@ export async function startAuthWorker(config, name, settings) {
       },
     })
     await worker.ready
-    const response = await worker.fetch(settings.platform.vars.AUTH_ORIGIN + '/api/v2/readiness', {
+    const response = await worker.fetch(settings.platform.vars.AUTH_ORIGIN + '/api/v1/readiness', {
       signal: AbortSignal.timeout(10000),
     })
     if (!response.ok)

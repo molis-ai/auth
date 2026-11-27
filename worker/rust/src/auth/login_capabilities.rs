@@ -1,7 +1,7 @@
 //! Configuration readiness for one registered client; never a provider health probe or authorization grant.
 use crate::{auth::login_sessions::client, core::http::*, core::identity::Auth};
 use serde_json::{Value, json};
-use worker::{Method, Response};
+use worker::Method;
 
 pub(crate) fn available(a: &Auth, c: &Value) -> Vec<&'static str> {
     let mock = matches!(c["kind"].as_str(), Some("LOCAL" | "TEST"));
@@ -31,22 +31,19 @@ pub(crate) fn available(a: &Auth, c: &Value) -> Vec<&'static str> {
     }
     methods
 }
-pub async fn route(a: &Auth, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, method: Method) -> Result<Value> {
     ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
-    let query = form(a.request.url()?.query().unwrap_or_default())?;
+    let query = form(&a.query()?)?;
     shape("LoginCapabilitiesQuery", &query)?;
     let c = client(a, &text(&query, "clientId")).await?;
-    response(a, &c)
+    describe(a, &c)
 }
 
-pub(crate) fn response(a: &Auth, c: &Value) -> Result<Response> {
+pub(crate) fn describe(a: &Auth, c: &Value) -> Result<Value> {
     ensure(
         a.env.durable_object("PASSWORD_KDF").is_ok(),
         503,
         "UPSTREAM_UNAVAILABLE",
     )?;
-    Ok(json_response(
-        json!({"data":{"methods":available(a, c)},"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(json!({"methods":available(a, c)}))
 }

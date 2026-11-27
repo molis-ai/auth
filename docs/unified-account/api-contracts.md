@@ -2,7 +2,7 @@
 
 本文件说明 Auth 账号服务及产品接入。身份、会话、资料、租户、成员和平台管理接口以 [Auth 可执行合同](../../contracts/unified-account/README.md) 为准。
 
-AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](../history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
+AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 统一账号协议，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [历史整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
 ## 当前登录入口与三端行为（2026-11-15）
 
@@ -12,9 +12,9 @@ AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](
 
 | 浏览器入口（POST） | 请求 | 中央 Auth 操作 | 成功数据 |
 | --- | --- | --- | --- |
-| `/api/account/auth/login/password` | `identifier,password` | `POST /api/v2/auth/login/password` | `{account:AccountView}` |
-| `/api/account/auth/verification-codes` | `purpose:"LOGIN",channel:"EMAIL"或"SMS",address` | `POST /api/v2/auth/verification-codes` | `verificationId,expiresAt,retryAfterSeconds` |
-| `/api/account/auth/login/code` | `verificationId,code` | `POST /api/v2/auth/login/code` | `{account:AccountView}` |
+| `/api/account/auth/login/password` | `identifier,password` | `POST /api/v1/auth/login/password` | `{account:AccountView}` |
+| `/api/account/auth/verification-codes` | `purpose:"LOGIN",channel:"EMAIL"或"SMS",address` | `POST /api/v1/auth/verification-codes` | `verificationId,expiresAt,retryAfterSeconds` |
+| `/api/account/auth/login/code` | `verificationId,code` | `POST /api/v1/auth/login/code` | `{account:AccountView}` |
 
 这些入口均返回通用 `{data,requestId}` 包装。产品后端补齐可信客户端、回调和发起证明，
 浏览器持有的是产品端验证句柄。密码、邮箱码和手机码登录使用上表入口。
@@ -46,7 +46,7 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 
 ## 1 边界与版本
 
-中央接口使用 `/api/v2`。Auth 拥有身份、登录会话、资料、租户和成员。套餐、订阅、订单、Credit、权益及计费审计归独立 Billing 服务，账号中心通过[同源挂载](../account-billing-bff.md)访问。Club BFF 和 Work Host 持有本产品会话、短期事务与展示缓存。
+中央接口使用 `/api/v1`。Auth 拥有身份、登录会话、资料、租户和成员。套餐、订阅、订单、Credit、权益及计费审计归独立 Billing 服务，账号中心通过[同源挂载](../account-billing-bff.md)访问。Club BFF 和 Work Host 持有本产品会话、短期事务与展示缓存。
 
 | 合同组 | 内容 | 实现 owner |
 | --- | --- | --- |
@@ -59,9 +59,9 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 | API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
 | API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
 
-当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account/management.rs)和[团队](../../worker/rust/src/team/mod.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、V1 团队 API和权限矩阵实现已删除，不保留别名或失败降级。
+当前公开账号运行入口位于 `/api/v1`。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account/management.rs)和[团队](../../worker/rust/src/team/mod.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、V1 团队 API和权限矩阵实现已删除，不保留别名或失败降级。
 
-V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 V2 用户与租户，不读取或自动转换旧 TEAM。
+平台登记登录客户端与允许来源，相关策略由服务端决定。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 统一账号协议 用户与租户，不读取或自动转换旧 TEAM。
 
 ## 2 API-01 通用约定
 
@@ -107,7 +107,7 @@ Work 将上游错误转换为本仓库 owner 错误合同，不把 Auth 的错�
 
 ## 3 API-02 产品内认证事务
 
-以下路径均相对 `/api/v2`。页面只接触本产品 API-08，BFF/Host 保存上游事务凭据和 PKCE。工程初始建议：事务 10 分钟、验证码 5 分钟且最多 5 次错误、同目标重发间隔 60 秒、登录码 60 秒、敏感操作证明 5 分钟。这些是 AUTH-01 要固化的配置默认值，不改变 C-34 的 30/90 天规则；总发送限额按 IP、目标和客户端在部署配置中明确。
+以下路径均相对 `/api/v1`。页面只接触本产品 API-08，BFF/Host 保存上游事务凭据和 PKCE。工程初始建议：事务 10 分钟、验证码 5 分钟且最多 5 次错误、同目标重发间隔 60 秒、登录码 60 秒、敏感操作证明 5 分钟。这些是 AUTH-01 要固化的配置默认值，不改变 C-34 的 30/90 天规则；总发送限额按 IP、目标和客户端在部署配置中明确。
 
 | 方法与路径 | 请求 | 成功数据及约束 |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ complete 的数据按 kind 分别包含 `code`、`operationProof`、`newIdentity
 
 Google/GitHub 流程：BFF/Host 创建事务 → 浏览器访问 browserStartUrl → Auth 建立一次性浏览器绑定并跳官方/受控 mock 提供方 → Auth 回调验证提供方 state、浏览器绑定和身份 → 回精确产品回调（仅事务结果和产品 state）→ 原 BFF/Host 用发起方证明完成并换码。提供方 state 与产品 state 分开保存；认证取消、退出或换号后的迟到回调不能建立会话。Google 验证其 OIDC 响应，GitHub 使用其可信稳定用户标识，不能假设两者都是 id_token。
 
-AUTH-05 的 mock 实现使用 `/api/v2/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v2/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](../history/unified-account/development-tasks.md#10-auth-05-实施记录)。
+AUTH-05 的 mock 实现使用 `/api/v1/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v1/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md#10-auth-05-实施记录)。
 
 PASSWORD_RESET 仅向已验证邮箱对应的已有账号发出找回证明，未知目标返回等形状的投递受理结果但不创建账号。找回完成不自动签发登录码。BIND/REPLACE 的目标用户必须来自当前会话，并要求 API-03 的再次验证证明。
 
@@ -202,7 +202,7 @@ Auth 控制台专用 `GET /api/account/login-sessions` 使用同源登录 Cookie
 | 方法与路径 | 请求/返回 | 权限及条件 |
 | --- | --- | --- |
 | GET `/tenants` | 当前用户 TenantView 列表及个人 Scope | 仅本人加入的租户；停用租户仅必要摘要 |
-| GET `/tenant-creation-policy` | `{mode:SELF_SERVICE/PLATFORM_ONLY}` | 当前 V2 登录；策略来自受信部署配置，不接受页面覆盖 |
+| GET `/tenant-creation-policy` | `{mode:SELF_SERVICE/PLATFORM_ONLY}` | 当前统一账号会话；策略来自受信部署配置，不接受页面覆盖 |
 | POST `/tenants` | `{name}` → TenantView | SELF_SERVICE 模式；所有者固定为当前登录用户，原子建立唯一 OWNER，要求 Idempotency-Key；不赠送订阅或席位 |
 | GET `/tenants/{tenantId}` | TenantView、允许的管理操作 | 正常租户当前成员；平台查看走平台接口 |
 | PATCH `/tenants/{tenantId}` | `name,expectedVersion` → TenantView | OWNER/ADMIN |
@@ -230,7 +230,7 @@ Invitation 含 `invitationId,tenantId,targetSummary,status:PENDING/ACCEPTED/DECL
 
 AUTH-07 与 AUTH-10 已开放本节接口，返回形状以可执行合同为准。成员列表仅含 ACTIVE 成员；本人邀请列表仅含当前身份匹配、未过期且租户启用的 PENDING 邀请。管理员的租户邀请列表保留历史状态，交接列表按仍有效的参与成员关系查询。列表使用服务端保存的随机游标，有效 15 分钟，绑定用户、客户端、路由、页大小及当前管理权限/成员版本；每次请求及最终返回前复核权限。
 
-邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。Auth 网页默认按邮箱创建邀请，受邀者使用匹配的已验证邮箱登录后，从本人邀请列表接受。EMAIL 在 LOCAL/TEST 显式 MOCK 模式中写入模拟通知 outbox，其余环境直接创建站内邀请。手机号邀请目前只支持 Mock 通知。USER 目标继续供已有 API 调用方使用，不出现在 Auth 网页邀请表单。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
+邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。Auth 网页默认按邮箱创建邀请，受邀者使用匹配的已验证邮箱登录后，从本人邀请列表接受。EMAIL 在 LOCAL/TEST 显式 MOCK 模式中写入模拟通知 outbox，其余环境直接创建站内邀请。手机号邀请目前只支持 Mock 通知。USER 目标继续供已有 API 调用方使用，不出现在 Auth 网页邀请表单。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 本人已成功 leave 的同键、同请求重试，可在仍有效的原用户/客户端会话下取回本人旧成员的 LEFT 结果；仍须租户启用、该旧成员确为对应版本的 LEFT。它不要求已离开的成员仍 ACTIVE，不返回其他租户数据，也不会退出后来重新加入的成员。移除他人的回执仍要求操作者当前具备对应管理权限。新的幂等键按当前成员和版本处理，不复用历史操作。
 
@@ -299,11 +299,11 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 ## 11 切换与合同交付
 
-2026-11-08 决定按上线前直接替换执行：新环境注册 V2 用户，不保留旧账号、密码编码、Team、Cookie、Token、SDK 别名或协议回退。历史盘点与双栈演练不再是当前交付条件，也不授权本次清空真实库。当前两个仓库的基线、实现与验证见 [V2 整合方案](v2-consolidation.md)。
+2026-11-08 决定按上线前直接替换执行：新环境注册 统一账号协议 用户，不保留旧账号、密码编码、Team、Cookie、Token、SDK 别名或协议回退。历史盘点与双栈演练不再是当前交付条件，也不授权本次清空真实库。当前两个仓库的基线、实现与验证见 [历史整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。
 
 合同交付包含 OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、平台能力与租户角色、版本与幂等约定、脱敏夹具和变更记录。Rust 与消费端 TypeScript 使用同一合同样本校验，禁止分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
 
-合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需验证认证成功、拒绝、失败和竞态。实现拆分及完整覆盖见[开发任务](../history/unified-account/development-tasks.md)。
+合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需验证认证成功、拒绝、失败和竞态。实现拆分及完整覆盖见[开发任务](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md)。
 
 ## 12 API-10 当前平台管理
 

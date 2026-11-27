@@ -22,7 +22,7 @@ const fixtures = read("fixtures.json").fixtures as {
 const policy = read("policy.json");
 const openapi = read("openapi.json");
 
-test("V2C-01 retired service credentials have no public schema, capability or operation", () => {
+test("AUTH-C-01 retired service credentials have no public schema, capability or operation", () => {
   for (const capability of ["SERVICE_READ", "SERVICE_WRITE"])
     assert.equal(validateNamed("PlatformCapability", capability), false);
   assert.equal(
@@ -151,7 +151,7 @@ test("AUTH-01: OpenAPI operations have resolved schemas, authority and complete 
     string,
     Record<string, Record<string, unknown>>,
   ][]) {
-    assert.ok(path.startsWith("/api/v2/") || path.startsWith("/api/account/"));
+    assert.ok(path.startsWith("/api/v1/") || path.startsWith("/api/account/"));
     for (const operation of Object.values(methods)) {
       const operationId = String(operation.operationId);
       assert.equal(ids.has(operationId), false, `duplicate ${operationId}`);

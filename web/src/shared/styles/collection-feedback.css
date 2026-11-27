@@ -1,37 +1,29 @@
 /* Shared feedback for Auth collections: only actual controls advertise clickability. */
-.v2-console .collection-item,
-.v2-console .v2-row,
-.v2-console tbody tr { transition:background-color 140ms ease, box-shadow 140ms ease; }
+.auth-console .collection-item,
+.auth-console .console-row,
+.auth-console tbody tr { transition:background-color 140ms ease, box-shadow 140ms ease; }
 @media (hover:hover) {
- .v2-console .collection-item:has(button:not(:disabled)):hover,
- .v2-console button.collection-item:not(:disabled):hover { background:#eceef4; box-shadow:0 2px 7px #19191b12; }
- .v2-console .collection-item.selected:hover { background:#e1e6f6; }
- .v2-console .v2-row:not(.collection-item):hover,
- .v2-console tbody tr:has(td:not(.tm-empty)):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
- #app .v2-console dialog header button:not(:disabled):hover,
- #app .v2-console dialog button[aria-label^="关闭"]:not(:disabled):hover {
+ .auth-console .collection-item:has(button:not(:disabled)):hover,
+ .auth-console button.collection-item:not(:disabled):hover { background:#eceef4; box-shadow:0 2px 7px #19191b12; }
+ .auth-console .collection-item.selected:hover { background:#e1e6f6; }
+ .auth-console .console-row:not(.collection-item):hover,
+ .auth-console tbody tr:has(td:not([data-collection-status])):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
+ #app .auth-console dialog header button:not(:disabled):hover,
+ #app .auth-console dialog button[aria-label^="关闭"]:not(:disabled):hover {
   background-color:#e9e9ed;
   color:var(--ink);
   box-shadow:inset 0 0 0 1px #19191b12;
  }
- #app .v2-console :is(tbody tr:has(td:not(.tm-empty)), .v2-row:not(.collection-item)):not([inert]):hover {
+ #app .auth-console :is(tbody tr:has(td:not([data-collection-status])), .console-row:not(.collection-item)):not([inert]):hover {
   background-color:#efeff2;
   box-shadow:inset 0 0 0 1px #19191b08;
  }
 }
-.v2-console .collection-item:focus-within { box-shadow:0 0 0 2px #5068b740; }
-.v2-console .v2-row:focus-within,
-.v2-console tbody tr:focus-within { background:#eceef4; }
-.v2-console button.collection-item:not(:disabled),
-.v2-console .collection-item button:not(:disabled) { cursor:pointer; }
+.auth-console .collection-item:focus-within { box-shadow:0 0 0 2px #5068b740; }
+.auth-console .console-row:focus-within,
+.auth-console tbody tr:focus-within { background:#eceef4; }
+.auth-console button.collection-item:not(:disabled),
+.auth-console .collection-item button:not(:disabled) { cursor:pointer; }
 @media(prefers-reduced-motion:reduce) {
- .v2-console .collection-item,.v2-console .v2-row,.v2-console tbody tr { transition:none; }
+ .auth-console .collection-item,.auth-console .console-row,.auth-console tbody tr { transition:none; }
 }
-/* Tenant navigation states never paint into the fixed gap between items. */
-.v2-console .tenant-page .tenant-directory .tenant-choice { box-shadow:none; }
-.v2-console .tenant-page .tenant-directory .tenant-choice.selected { background:var(--accent-soft); }
-@media(hover:hover) {
- .v2-console .tenant-page .tenant-directory .tenant-choice:not(:disabled):hover { background:#eceef4; box-shadow:inset 0 0 0 1px #19191b0a; }
- .v2-console .tenant-page .tenant-directory .tenant-choice.selected:not(:disabled):hover { background:#e1e6f6; box-shadow:none; }
-}
-.v2-console .tenant-page .tenant-directory .tenant-choice:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

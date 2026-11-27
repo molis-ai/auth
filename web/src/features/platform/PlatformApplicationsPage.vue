@@ -1,22 +1,16 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onDeactivated, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { readPages } from "../../shared/api/read-pages.ts";
+import { useAccountContext } from "../../shared/api/account-context.ts";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { AuthError } from "../../shared/api/account-client.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
-import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
-const PlatformClients = defineAsyncComponent(() => import("./PlatformClients.vue"));
+const PlatformClients = lazyComponent(() => import("./PlatformClients.vue"));
+const { client, run, submitWrite, submitBusyWrite, mutate, discard, expireAccount, expireWithToast } = useAccountContext();
 const props = defineProps<{
-  client: AccountClient;
   capabilities: string[];
   busy: boolean;
-  visit: number;
-  run: (task: () => Promise<void>) => Promise<void>;
-  submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  submitBusyWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  mutate: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
-  discard: (action: string) => void;
-  expireAccount: (error: unknown) => boolean;
-  expireWithToast: (error: unknown) => void;
 }>();
 const applicationSearch = ref("");
 
@@ -41,47 +35,28 @@ const newApplicationName = ref(""),
   appName = ref(""),
   appStatus = ref("ACTIVE");
 
-watch(newApplicationName, () => props.discard("create-application"), { flush: "sync" });
+watch(newApplicationName, () => discard("create-application"), { flush: "sync" });
 watch([appName, appStatus, () => selectedApplication.value?.applicationId, () => selectedApplication.value?.version],
-  () => props.discard("edit-application"), { flush: "sync" });
+  () => discard("edit-application"), { flush: "sync" });
 
 function can(capability: string) {
   return props.capabilities.includes(capability);
 }
 
-watch(() => props.visit, () => {
+onMounted(() => {
   selectedApplication.value = undefined;
-  void props.run(async () => {
+  void run(async () => {
     applicationClientCounts.value.clear();
-    applications.value = await list("/platform/applications");
+    applications.value = await readPages<Application>(client, "/platform/applications");
     if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
   });
-}, { immediate: true });
+});
 
-// Keep the list alive for global write-refresh retries while the page is hidden.
-onDeactivated(() => {
+onBeforeUnmount(() => {
   selectedApplication.value = undefined;
   createApplicationDialog.value?.close();
 });
 
-async function list<T>(path: string): Promise<T[]> {
-  const result: T[] = [];
-  let cursor: string | null = null;
-  const seen = new Set<string>();
-  do {
-    const page: { items: T[]; nextCursor: string | null } =
-      await props.client.request<{ items: T[]; nextCursor: string | null }>(
-        path +
-          "?limit=100" +
-          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-      );
-    result.push(...page.items);
-    cursor = page.nextCursor;
-    if (cursor && seen.has(cursor)) throw Error("分页状态发生变化，请刷新");
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return result;
-}
 
 function openApplication(a: Application) {
   selectedApplication.value = a;
@@ -102,7 +77,7 @@ async function createApplication() {
   if (props.busy || !name) return;
   createApplicationError.value = "";
   try {
-    await props.submitBusyWrite<Application>("/platform/applications", { name }, {
+    await submitBusyWrite<Application>("/platform/applications", { name }, {
       action: "create-application",
       success: "应用已创建",
       refreshMessage: "应用已创建，但应用列表暂未刷新。",
@@ -113,17 +88,17 @@ async function createApplication() {
         createApplicationDialog.value?.close();
         openApplication(created);
       },
-      after: async () => { applications.value = await list("/platform/applications"); },
+      after: async () => { applications.value = await readPages<Application>(client, "/platform/applications"); },
     });
   } catch (error) {
     if (error instanceof AuthError && error.code === "CANCELLED") return;
-    if (!props.expireAccount(error)) createApplicationError.value = accountErrorMessage(error);
+    if (!expireAccount(error)) createApplicationError.value = accountErrorMessage(error);
   }
 }
 function editApplication() {
   const application = selectedApplication.value;
   if (!application) return;
-  return props.mutate<Application>("/platform/applications/" + application.applicationId, {
+  return mutate<Application>("/platform/applications/" + application.applicationId, {
     name: appName.value, status: appStatus.value, expectedVersion: application.version,
   }, {
     method: "PATCH",
@@ -135,7 +110,7 @@ function editApplication() {
       openApplication(saved);
     },
     after: async saved => {
-      applications.value = await list("/platform/applications");
+      applications.value = await readPages<Application>(client, "/platform/applications");
       const latest = applications.value.find(a => a.applicationId === saved.applicationId);
       if (latest && selectedApplication.value?.applicationId === saved.applicationId &&
         selectedApplication.value.version === saved.version &&
@@ -146,7 +121,7 @@ function editApplication() {
 </script>
 
 <template>
-  <section class="applications-page">
+  <section class="applications-page" data-console-layout="rail" data-console-flush>
     <div class="applications-layout">
       <aside class="applications-rail" aria-label="应用列表">
         <div class="apps-rail-head">

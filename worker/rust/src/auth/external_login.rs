@@ -100,7 +100,7 @@ fn redirect(url: &str) -> Result<Response> {
     Ok(r)
 }
 fn q(a: &Auth) -> Result<Value> {
-    form(a.request.url()?.query().unwrap_or_default())
+    form(a.http()?.url()?.query().unwrap_or_default())
 }
 fn target(t: &Value, result: &str) -> Result<String> {
     let mut u = Url::parse(&text(t, "redirect_uri")).map_err(|_| Failure {
@@ -129,7 +129,7 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
     )?;
     check_provider(a, c, p)?;
     target(t, "VERIFIED")?;
-    a.rate_ip("v2-provider-start", 30).await?;
+    a.rate_ip("federation:start", 30).await?;
     let n = now();
     let state = secret();
     let nonce = secret();
@@ -137,9 +137,9 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
     let ticket = secret();
     let context = json!({"state":state,"nonce":nonce,"verifier":verifier,"clientVersion":c["version"],"policyVersion":c["policy_version"],"environmentVersion":c["environment_version"]});
     let encrypted = sealed(a, &context).await?;
-    a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND provider_state_hash IS NULL)",vec![t["id"].clone()])?,a.s.statement("UPDATE auth_product_transaction SET provider_state_hash=?,provider_nonce_hash=?,provider_pkce_verifier_sealed=? WHERE id=?",vec![hash(&state).into(),hash(&nonce).into(),encrypted.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_one_use VALUES (?,'V2_PROVIDER_START',?,?,?)",vec![hash(&ticket).into(),hash(&text(t,"id")).into(),json!({"transactionId":t["id"]}).to_string().into(),(n+60000).min(number(t,"expires_at")).into()])?],"VERSION_CONFLICT").await?;
+    a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND provider_state_hash IS NULL)",vec![t["id"].clone()])?,a.s.statement("UPDATE auth_product_transaction SET provider_state_hash=?,provider_nonce_hash=?,provider_pkce_verifier_sealed=? WHERE id=?",vec![hash(&state).into(),hash(&nonce).into(),encrypted.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_one_use VALUES (?,'PROVIDER_START',?,?,?)",vec![hash(&ticket).into(),hash(&text(t,"id")).into(),json!({"transactionId":t["id"]}).to_string().into(),(n+60000).min(number(t,"expires_at")).into()])?],"VERSION_CONFLICT").await?;
     Ok(
-        json!({"browserStartUrl":format!("{}/api/v2/auth/external/{p}/browser-start?ticket={ticket}",a.origin)}),
+        json!({"browserStartUrl":format!("{}/api/v1/auth/external/{p}/browser-start?ticket={ticket}",a.origin)}),
     )
 }
 async fn checked(a: &Auth, t: &Value, p: &str) -> Result<(Value, Value)> {
@@ -190,7 +190,7 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     fields(&b, &["ticket"], &[])?;
     let ticket = text(&b, "ticket");
     ensure(token(&ticket), 400, "INVALID_REQUEST")?;
-    let receipt=a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?",vec![hash(&ticket).into(),now().into()]).await?;
+    let receipt=a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='PROVIDER_START' AND expires_at>?",vec![hash(&ticket).into(),now().into()]).await?;
     ensure(!receipt.is_null(), 401, "INVALID_CREDENTIALS")?;
     let t =
         a.s.one(
@@ -202,13 +202,13 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     ensure(t["method"] == provider(p)?, 400, "INVALID_REQUEST")?;
     let state = text(&ctx, "state");
     let browser = secret();
-    a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
+    a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), &browser, 600));
     #[cfg(feature = "mock-provider")]
     if c["provider_mode"] == "MOCK" {
         return redirect(&format!(
-            "{}/api/v2/auth/mock/{p}/authorize?state={state}",
+            "{}/api/v1/auth/mock/{p}/authorize?state={state}",
             a.origin
         ));
     }
@@ -238,7 +238,7 @@ async fn commit_identity(
             crate::auth::sensitive_transactions::verified(a, t, &verified_identity, now()).await?,
         );
     } else {
-        let existing=a.s.one("SELECT x.user_id,u.status,us.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id LEFT JOIN auth_user_security us ON us.user_id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
+        let existing=a.s.one("SELECT x.user_id,u.status,u.session_epoch FROM auth_external_identity x JOIN auth_user u ON u.id=x.user_id WHERE x.issuer=? AND x.subject=?",vec![identity["issuer"].clone(),identity["subject"].clone()]).await?;
         crate::auth::test_admission::Admission::load(a)?
             .external(a, identity, &existing["user_id"])
             .await?;
@@ -266,32 +266,27 @@ async fn commit_identity(
             epoch = number(&existing, "session_epoch");
             writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_external_identity WHERE issuer=? AND subject=? AND user_id=?)",vec![identity["issuer"].clone(),identity["subject"].clone(),user.clone().into()])?);
         }
-        writes.push(a.s.statement(
-            "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-            vec![user.clone().into(), n.into()],
-        )?);
+
         writes.extend(crate::auth::external_profile::save(a, identity, &user)?);
         if identity.get("profile").is_some() {
             writes.push(a.s.statement(
-                "UPDATE auth_user_security SET account_version=account_version+1 WHERE user_id=?",
+                "UPDATE auth_user SET account_version=account_version+1 WHERE id=?",
                 vec![user.clone().into()],
             )?);
         }
         writes.push(boundary(a, t, &user, epoch)?);
         writes.push(a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![user.clone().into(),epoch.into(),t["id"].clone()])?);
-        writes.push(a.s.audit(
-            "account.v2.external.verify",
+        writes.push(crate::audit::account(
+            a,
+            "account.external.verify",
             user.into(),
-            &a.request_id,
+            &c["client_id"],
             Value::Null,
-            Value::Null,
-            Value::Null,
-            false,
         )?);
     }
     #[cfg(feature = "mock-provider")]
     if let Some((digest, binding)) = mock_code {
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.as_str().into(),binding.as_str().into(),now().into()])?);
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='MOCK_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.as_str().into(),binding.as_str().into(),now().into()])?);
         writes.push(a.s.statement(
             "DELETE FROM auth_one_use WHERE token_hash=?",
             vec![digest.as_str().into()],
@@ -302,6 +297,7 @@ async fn commit_identity(
 }
 
 async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
+    a.rate_ip("federation:callback", 120).await?;
     let mut b = q(a)?;
     let state = text(&b, "state");
     ensure(token(&state), 400, "INVALID_REQUEST")?;
@@ -366,7 +362,7 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
             _ if !live => {
                 let digest = hash(&raw);
                 let binding = hash(&format!("{p}:{state}:{browser}"));
-                let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.as_str().into(),binding.as_str().into(),now().into()]).await?;
+                let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='MOCK_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.as_str().into(),binding.as_str().into(),now().into()]).await?;
                 ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
                 let claims = opened(
                     a,

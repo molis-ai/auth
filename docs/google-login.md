@@ -6,7 +6,7 @@ Google 的真实 OIDC 适配位于 Auth 的 [google_login.rs](../worker/rust/src
 
 Google Auth Platform 创建 **Web application** 客户端。开发与生产使用独立项目/凭据，受众 External，只请求 `openid email profile`。当前使用服务端跳转流程，JavaScript origins 留空。
 
-授权回调登记为 `<AUTH_ORIGIN>/api/v2/auth/external/google/callback`。例如当前本地开发入口为 `http://127.0.0.1:8787/api/v2/auth/external/google/callback`；正式环境必须使用实际 Auth HTTPS 域名。Work 的产品回跳地址登记在 Auth 的客户端策略中，不登记为 Google 回调。
+授权回调登记为 `<AUTH_ORIGIN>/api/v1/auth/external/google/callback`。例如当前本地开发入口为 `http://127.0.0.1:8787/api/v1/auth/external/google/callback`；正式环境必须使用实际 Auth HTTPS 域名。Work 的产品回跳地址登记在 Auth 的客户端策略中，不登记为 Google 回调。
 
 本地在已忽略的 `secrets/dev.properties` 中填写同一个 Google Web 客户端的 ID 和密钥。
 

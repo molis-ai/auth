@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["mock-provider", "mock-delivery"]
+default = []
 mock-provider = []
 mock-delivery = []
 
@@ -22,15 +22,17 @@ js-sys = "0.3"
 sha2 = "0.10"
 pbkdf2 = "=0.12.2"
 base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 hex = "0.4"
+hmac = "0.12"
 unicode-normalization = "0.1"
-regex = "1"
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
 futures-util = "0.3"
 png = "0.18"
 url = "2"
 
 [build-dependencies]
-regex = "1"
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
 serde_json = "1"
 
 [profile.release]
@@ -39,3 +41,9 @@ lto = true
 codegen-units = 1
 # wasm-bindgen needs the externref table metadata; stripping all symbols removes it.
 strip = "debuginfo"
+
+[profile.release.package.sha2]
+opt-level = 3
+
+[profile.release.package.pbkdf2]
+opt-level = 3

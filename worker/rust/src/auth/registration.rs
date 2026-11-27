@@ -5,10 +5,10 @@ use crate::{
     core::http::*,
     core::identity::Auth,
     core::security::*,
-    delivery::{MailSender, Message, Sender, SmsSender},
+    delivery::{self, Message},
 };
 use serde_json::{Value, json};
-use worker::{D1PreparedStatement, Method, Response};
+use worker::{D1PreparedStatement, Method};
 const TX: i64 = 600000;
 const CODE: i64 = 300000;
 pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1PreparedStatement> {
@@ -21,7 +21,7 @@ pub(crate) fn tx_guard(a: &Auth, t: &Value, n: i64, status: &str) -> Result<D1Pr
     )
 }
 pub(crate) fn boundary(a: &Auth, t: &Value, user: &str, epoch: i64) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_user_security us JOIN auth_user u ON u.id=us.user_id WHERE us.user_id=? AND u.status='ACTIVE' AND us.session_epoch=? AND COALESCE(us.revoked_before_seq,0)<?)",vec![user.into(),epoch.into(),t["created_seq"].clone()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_user u WHERE u.id=? AND u.status='ACTIVE' AND u.session_epoch=? AND COALESCE(u.revoked_before_seq,0)<?)",vec![user.into(),epoch.into(),t["created_seq"].clone()])
 }
 pub(crate) async fn transaction(a: &Auth, id: &str) -> Result<(Value, Value)> {
     let t =
@@ -101,7 +101,7 @@ async fn begin_unprotected(a: &Auth, b: &Value) -> Result<(Value, Value)> {
         400,
         "INVALID_REQUEST",
     )?;
-    a.rate_ip("v2-begin", 60).await?;
+    a.rate_ip("auth:begin", 60).await?;
     let n = now();
     let t = a.s.batch_returning(
         vec![client_guard(a,&c)?,a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?],
@@ -160,29 +160,30 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let channel = text(b, "channel");
     let subject = format!("{channel}:{target}");
     let window = delivery_limit("sendQuotaWindowSeconds") * 1000;
-    a.rate_batch(&[
-        ("v2-delivery-ip", &a.client_ip, 60, 60_000),
-        (
-            "v2-delivery-ip-hour",
-            &a.client_ip,
-            delivery_limit("sendQuotaPerIp"),
-            window,
-        ),
-        (
-            "v2-delivery-target",
-            &subject,
-            delivery_limit("sendQuotaPerTarget"),
-            window,
-        ),
-        (
-            "v2-delivery-client",
-            &text(c, "client_id"),
-            delivery_limit("sendQuotaPerClient"),
-            window,
-        ),
-        ("v2-delivery-resend", &subject, 1, 60_000),
-    ])
-    .await?;
+    let reserved_at = a
+        .rate_batch(&[
+            ("delivery:ip", &a.client_ip, 60, 60_000),
+            (
+                "delivery:ip-hour",
+                &a.client_ip,
+                delivery_limit("sendQuotaPerIp"),
+                window,
+            ),
+            (
+                "delivery:target",
+                &subject,
+                delivery_limit("sendQuotaPerTarget"),
+                window,
+            ),
+            (
+                "delivery:client",
+                &text(c, "client_id"),
+                delivery_limit("sendQuotaPerClient"),
+                window,
+            ),
+            ("delivery:resend", &subject, 1, 60_000),
+        ])
+        .await?;
     let n = now();
     let id = uuid();
     let delivery = uuid();
@@ -196,7 +197,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         credential: &credential,
         expires,
     };
-    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET invalidated_at=? WHERE transaction_id=? AND invalidated_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE transaction_id=? AND kind='VERIFICATION' AND consumed_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_verification_challenge(id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at,next_send_at) VALUES (?,?,?,?,?,?,'ACCEPTED',5,?,?,?)",vec![id.clone().into(),t["id"].clone(),channel.clone().into(),target.clone().into(),hash(&format!("{id}:{credential}")).into(),delivery.clone().into(),n.into(),expires.into(),(n+60000).into()])?];
+    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET invalidated_at=? WHERE transaction_id=? AND invalidated_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE transaction_id=? AND kind='VERIFICATION' AND consumed_at IS NULL",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_verification_challenge(id,transaction_id,channel,canonical_target,credential_hash,delivery_id,delivery_status,max_attempts,created_at,expires_at) VALUES (?,?,?,?,?,?,'ACCEPTED',5,?,?)",vec![id.clone().into(),t["id"].clone(),channel.clone().into(),target.clone().into(),hash(&format!("{id}:{credential}")).into(),delivery.clone().into(),n.into(),expires.into()])?];
     // Unknown reset targets get the same accepted response, without delivery or account creation.
     let password_reset = t["purpose"] == "PASSWORD_RESET";
     let deliver = if password_reset {
@@ -225,6 +226,19 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
                 // Keep the challenge pending so even a late delivery cannot authorize a reset.
                 return Ok(receipt);
             }
+            // Release only this failed resend reservation. Other quotas still account for the attempt.
+            if let Err(release) =
+                a.s.run(
+                    "DELETE FROM auth_rate_bucket WHERE bucket_hash=? AND expires_at=?",
+                    vec![
+                        hash(&format!("delivery:resend:{subject}")).into(),
+                        (reserved_at + 60_000).into(),
+                    ],
+                )
+                .await
+            {
+                a.s.log_failure("delivery.resend_release", &release, delivery_started);
+            }
             return Err(error);
         }
         let completed = now();
@@ -232,65 +246,71 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         return Ok(receipt);
     }
     if deliver {
-        writes.push(if channel == "EMAIL" {
-            MailSender::enqueue(a, c, &m)?
-        } else {
-            SmsSender::enqueue(a, c, &m)?
-        });
+        writes.push(delivery::enqueue_mock(a, c, &m, &channel)?);
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(receipt)
 }
+pub(crate) async fn authenticate_challenge(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    q: &Value,
+    id: &str,
+    credential: &str,
+) -> Result<()> {
+    let n = now();
+    ensure(
+        !q.is_null()
+            && q["delivery_status"] == "ACCEPTED"
+            && q["consumed_at"].is_null()
+            && q["invalidated_at"].is_null()
+            && number(q, "expires_at") > n
+            && number(q, "attempts") < 5,
+        401,
+        "INVALID_CREDENTIALS",
+    )?;
+    crate::auth::test_admission::Admission::load(a)?.target(&text(q, "canonical_target"))?;
+    let remote = q["verifier"] == "ALIYUN";
+    let supported = if remote {
+        c["delivery_mode"] == "LIVE"
+    } else {
+        crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
+            || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL")
+    };
+    ensure(supported, 503, "UPSTREAM_UNAVAILABLE")?;
+    // Claim one attempt before comparing any credential. The transaction guard
+    // and conditional update serialize competing checks on the same challenge.
+    let started = now();
+    a.s.batch(vec![
+        client_guard(a,c)?,
+        tx_guard(a,t,started,"PENDING")?,
+        a.s.guard(
+            "EXISTS(SELECT 1 FROM auth_verification_challenge
+             WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",
+            vec![id.into(),started.into()],
+        )?,
+        a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?,
+    ], "VERSION_CONFLICT").await?;
+    let matched = if remote {
+        crate::delivery::sms_auth::verify(a, id, &text(q, "canonical_target"), credential).await?
+    } else {
+        q["credential_hash"] == hash(&format!("{id}:{}", credential))
+    };
+    ensure(matched, 401, "INVALID_CREDENTIALS")?;
+    Ok(())
+}
+
 pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
     shape("VerifyChallengeRequest", b)?;
-    a.rate_ip("v2-verify", 120).await?;
-    let n = now();
+    a.rate_ip("auth:verify", 120).await?;
     let q =
         a.s.one(
             "SELECT * FROM auth_verification_challenge WHERE id=? AND transaction_id=?",
             vec![id.into(), t["id"].clone()],
         )
         .await?;
-    ensure(
-        !q.is_null()
-            && q["delivery_status"] == "ACCEPTED"
-            && q["consumed_at"].is_null()
-            && q["invalidated_at"].is_null()
-            && number(&q, "expires_at") > n
-            && number(&q, "attempts") < 5,
-        401,
-        "INVALID_CREDENTIALS",
-    )?;
-    crate::auth::test_admission::Admission::load(a)?.target(&text(&q, "canonical_target"))?;
-    let matched = if q["verifier"] == "ALIYUN" {
-        ensure(c["delivery_mode"] == "LIVE", 503, "UPSTREAM_UNAVAILABLE")?;
-        // Reserve an attempt before network I/O, including failed/uncertain requests.
-        a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND attempts<max_attempts AND expires_at>?)",vec![id.into(),now().into()])?,a.s.statement("UPDATE auth_verification_challenge SET attempts=attempts+1 WHERE id=?",vec![id.into()])?],"VERSION_CONFLICT").await?;
-        crate::delivery::sms_auth::verify(
-            a,
-            id,
-            &text(&q, "canonical_target"),
-            &text(b, "credential"),
-        )
-        .await?
-    } else {
-        ensure(
-            crate::delivery::supports_mock_delivery(&c["kind"], &c["delivery_mode"])
-                || (c["delivery_mode"] == "LIVE" && q["channel"] == "EMAIL"),
-            503,
-            "UPSTREAM_UNAVAILABLE",
-        )?;
-        q["credential_hash"] == hash(&format!("{id}:{}", text(b, "credential")))
-    };
-    if !matched {
-        if q["verifier"] != "ALIYUN" {
-            a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.statement("UPDATE auth_verification_challenge SET attempts=MIN(attempts+1,max_attempts) WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL",vec![id.into()])?],"VERSION_CONFLICT").await?;
-        }
-        return Err(Failure {
-            status: 401,
-            code: "INVALID_CREDENTIALS",
-        });
-    }
+    authenticate_challenge(a, t, c, &q, id, &text(b, "credential")).await?;
     let n = now();
     let proof = secret();
     let expires = (n + CODE).min(number(t, "expires_at"));
@@ -305,7 +325,7 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
             .await?;
         ensure(existing.is_null(), 409, "IDENTITY_IN_USE")?;
     }
-    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND (attempts<max_attempts OR (verifier='ALIYUN' AND attempts=max_attempts)) AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
+    let mut writes=vec![client_guard(a,c)?,tx_guard(a,t,n,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND consumed_at IS NULL AND invalidated_at IS NULL AND expires_at>?)",vec![id.into(),n.into()])?,a.s.statement("UPDATE auth_verification_challenge SET consumed_at=? WHERE id=?",vec![n.into(),id.into()])?,a.s.statement("INSERT INTO auth_identity_proof(token_hash,transaction_id,kind,binding_hash,verified_identity,created_at,expires_at) VALUES (?,?,'VERIFICATION',?,?,?,?)",vec![hash(&proof).into(),t["id"].clone(),hash(id).into(),json!({"channel":q["channel"],"target":target}).to_string().into(),n.into(),expires.into()])?];
     if crate::auth::sensitive_transactions::protected(t) {
         writes.extend(
             crate::auth::sensitive_transactions::verified(
@@ -318,13 +338,10 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         );
     }
     if t["purpose"] == "PASSWORD_RESET" {
-        let user=a.s.one("SELECT e.id binding_id,e.user_id,us.session_epoch,us.identity_version FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id LEFT JOIN auth_user_security us ON us.user_id=e.user_id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL AND u.status='ACTIVE'",vec![target.into()]).await?;
+        let user=a.s.one("SELECT e.id binding_id,e.user_id,u.session_epoch,u.identity_version FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL AND u.status='ACTIVE'",vec![target.into()]).await?;
         ensure(!user.is_null(), 401, "INVALID_CREDENTIALS")?;
         let epoch = number(&user, "session_epoch");
-        writes.push(a.s.statement(
-            "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-            vec![user["user_id"].clone(), n.into()],
-        )?);
+
         writes.push(boundary(a, t, &text(&user, "user_id"), epoch)?);
         writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email WHERE id=? AND user_id=? AND verified_at IS NOT NULL)",vec![user["binding_id"].clone(),user["user_id"].clone()])?);
         writes.push(a.s.statement("UPDATE auth_product_transaction SET user_id=?,user_epoch=?,binding_id=?,target=?,status='VERIFIED' WHERE id=?",vec![user["user_id"].clone(),epoch.into(),user["binding_id"].clone(),json!({"identityVersion":number(&user,"identity_version")}).to_string().into(),t["id"].clone()])?);
@@ -337,10 +354,83 @@ pub(crate) fn new_user(a: &Auth, id: &str, n: i64) -> Result<Vec<D1PreparedState
 }
 async fn code_identity(a: &Auth, is_email: bool, target: &str) -> Result<Value> {
     a.s.one(if is_email {
-        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_email p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_email=?"
+        "SELECT p.user_id,u.session_epoch,u.status FROM auth_user_email p JOIN auth_user u ON u.id=p.user_id WHERE p.canonical_email=?"
     } else {
-        "SELECT p.user_id,us.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id LEFT JOIN auth_user_security us ON us.user_id=p.user_id WHERE p.canonical_phone=?"
+        "SELECT p.user_id,u.session_epoch,u.status FROM auth_user_phone p JOIN auth_user u ON u.id=p.user_id WHERE p.canonical_phone=?"
     }, vec![target.into()]).await
+}
+
+pub(crate) struct PasswordIdentity {
+    pub address: String,
+    is_phone: bool,
+}
+
+impl PasswordIdentity {
+    pub(crate) fn new(a: &Auth, identifier: &Value, accepts_phone: bool) -> Result<Self> {
+        let raw = identifier.as_str().ok_or_else(Failure::invalid_request)?;
+        let is_phone = raw.starts_with("+86");
+        ensure(!is_phone || accepts_phone, 400, "INVALID_REQUEST")?;
+        let address = if is_phone {
+            raw.to_owned()
+        } else {
+            email(identifier)?
+        };
+        crate::auth::test_admission::Admission::load(a)?.target(&address)?;
+        Ok(Self { address, is_phone })
+    }
+
+    pub(crate) fn subject(&self, binding: &str) -> String {
+        let (table, column) = if self.is_phone {
+            ("auth_user_phone", "canonical_phone")
+        } else {
+            ("auth_user_email", "canonical_email")
+        };
+        format!(
+            "(SELECT user_id FROM {table} WHERE {column}={binding} AND verified_at IS NOT NULL)"
+        )
+    }
+
+    pub(crate) fn lookup(&self, a: &Auth) -> Result<D1PreparedStatement> {
+        a.s.statement(
+            &format!(
+                "SELECT u.id,u.status,u.session_epoch,l.password_hash
+                FROM auth_user u JOIN auth_local_credential l ON l.user_id=u.id WHERE u.id={}",
+                self.subject("?1")
+            ),
+            vec![self.address.clone().into()],
+        )
+    }
+
+    pub(crate) async fn verify(
+        &self,
+        a: &Auth,
+        candidate: &Value,
+        password: &str,
+    ) -> Result<D1PreparedStatement> {
+        let encoded = candidate["password_hash"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{VERSION}{}", "00".repeat(48)));
+        ensure(
+            matches(password, &encoded, a).await? && candidate["status"] == "ACTIVE",
+            401,
+            "INVALID_CREDENTIALS",
+        )?;
+        a.s.guard(
+            &format!(
+                "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user u ON u.id=l.user_id
+                WHERE l.user_id={} AND l.user_id=? AND l.password_hash=?
+                  AND u.status='ACTIVE' AND u.session_epoch=?)",
+                self.subject("?")
+            ),
+            vec![
+                self.address.clone().into(),
+                candidate["id"].clone(),
+                encoded.into(),
+                candidate["session_epoch"].clone(),
+            ],
+        )
+    }
 }
 
 pub(crate) async fn identify(
@@ -378,6 +468,9 @@ async fn identify_once(
     let mut creating_code_identity = false;
     let user: String;
     let epoch: i64;
+    if op == "email-signup" {
+        a.rate_ip("auth:email-signup", 60).await?;
+    }
     if op == "password" {
         shape("PasswordLoginRequest", b)?;
         ensure(
@@ -387,45 +480,16 @@ async fn identify_once(
             "INVALID_REQUEST",
         )?;
         let identifier = b.get("identifier").unwrap_or(&b["email"]);
-        let raw_identifier = identifier.as_str().ok_or_else(Failure::invalid_request)?;
-        let is_phone = raw_identifier.starts_with("+86");
-        ensure(
-            !is_phone || t["method"] == "ACCOUNT_PASSWORD",
-            400,
-            "INVALID_REQUEST",
-        )?;
-        let address = if is_phone {
-            raw_identifier.to_owned()
-        } else {
-            email(identifier)?
-        };
-        crate::auth::test_admission::Admission::load(a)?.target(&address)?;
+        let identity = PasswordIdentity::new(a, identifier, t["method"] == "ACCOUNT_PASSWORD")?;
         a.rate_batch(&[
-            ("v2-password", &a.client_ip, 30, 60_000),
-            ("v2-password-target", &address, 10, 300_000),
+            ("auth:password", &a.client_ip, 30, 60_000),
+            ("auth:password-target", &identity.address, 10, 300_000),
         ])
         .await?;
-        let query = if is_phone {
-            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_phone e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_phone=? AND e.verified_at IS NOT NULL"
-        } else {
-            "SELECT u.id,u.status,us.session_epoch,l.password_hash FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id JOIN auth_local_credential l ON l.user_id=u.id LEFT JOIN auth_user_security us ON us.user_id=u.id WHERE e.canonical_email=? AND e.verified_at IS NOT NULL"
-        };
-        let candidate = a.s.one(query, vec![address.clone().into()]).await?;
-        let encoded = candidate["password_hash"]
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or(format!("{VERSION}{}", "00".repeat(48)));
-        ensure(
-            matches(&text(b, "password"), &encoded, a).await? && candidate["status"] == "ACTIVE",
-            401,
-            "INVALID_CREDENTIALS",
-        )?;
+        let candidate = a.s.first(identity.lookup(a)?).await?;
+        writes.push(identity.verify(a, &candidate, &text(b, "password")).await?);
         user = text(&candidate, "id");
         epoch = number(&candidate, "session_epoch");
-        writes.push(a.s.guard(
-            if is_phone { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_phone e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_phone=? AND e.verified_at IS NOT NULL)" } else { "EXISTS(SELECT 1 FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND l.password_hash=? AND e.canonical_email=? AND e.verified_at IS NOT NULL)" },
-            vec![user.clone().into(), encoded.into(),address.into()],
-        )?);
     } else {
         shape(
             if op == "code" {
@@ -530,10 +594,7 @@ async fn identify_once(
             }
         }
     }
-    writes.push(a.s.statement(
-        "INSERT OR IGNORE INTO auth_user_security(user_id,updated_at) VALUES (?,?)",
-        vec![user.clone().into(), n.into()],
-    )?);
+
     writes.push(boundary(a, t, &user, epoch)?);
     writes.push(a.s.statement(
         "UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=? WHERE id=?",
@@ -547,14 +608,12 @@ async fn identify_once(
             vec![hash(&text(b, "verificationProof")).into(), now().into()],
         )?);
     }
-    writes.push(a.s.audit(
-        "account.v2.verify",
+    writes.push(crate::audit::account(
+        a,
+        "account.verify",
         user.clone().into(),
-        &a.request_id,
+        &t["client_id"],
         Value::Null,
-        Value::Null,
-        Value::Null,
-        false,
     )?);
     match a.s.batch(writes, "VERSION_CONFLICT").await {
         Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(false),
@@ -602,7 +661,7 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
         boundary(a, t, &user, number(t, "user_epoch"))?,
     ];
     if reset {
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email e JOIN auth_user_security us ON us.user_id=e.user_id WHERE e.id=? AND e.user_id=? AND e.verified_at IS NOT NULL AND us.identity_version=?)",vec![t["binding_id"].clone(),user.clone().into(),identity_version.clone()])?);
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_user_email e JOIN auth_user u ON u.id=e.user_id WHERE e.id=? AND e.user_id=? AND e.verified_at IS NOT NULL AND u.identity_version=?)",vec![t["binding_id"].clone(),user.clone().into(),identity_version.clone()])?);
     }
     writes.push(a.s.statement(
         "UPDATE auth_product_transaction SET status='CONSUMED',completed_at=? WHERE id=?",
@@ -616,18 +675,8 @@ pub(crate) async fn complete(a: &Auth, t: &Value, c: &Value) -> Result<Value> {
         json!({"kind":"LOGIN_CODE","code":value,"state":t["product_state"],"expiresAt":iso(&json!(expires))})
     })
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
     let parts: Vec<_> = path.trim_matches('/').split('/').collect();
-    let b = if method == Method::Post {
-        ensure(
-            a.header("Content-Type").split(';').next() == Some("application/json"),
-            415,
-            "INVALID_REQUEST",
-        )?;
-        serde_json::from_str(&bounded(&mut a.request, 16384).await?)?
-    } else {
-        json!({})
-    };
     let result = if parts.len() == 4 && method == Method::Post {
         begin(a, &b).await?
     } else {
@@ -713,8 +762,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
         }
     };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    Ok(result)
 }

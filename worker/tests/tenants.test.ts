@@ -64,7 +64,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       callerOrigin?: string,
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -267,7 +267,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         ])
         alpha = ok(both[0], 'PlatformTenantView')
         assert.deepEqual(ok(both[1]), alpha)
-        assert.equal((await db.prepare('SELECT count(*) n FROM auth_managed_tenant').first()).n, 1)
+        assert.equal((await db.prepare('SELECT count(*) n FROM auth_tenant').first()).n, 1)
         assert.equal(
           (
             await db
@@ -290,7 +290,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         beta = await create('Beta', other.userId)
         assert.equal((await tenant(alpha.tenantId, ownerClub)).tenantId, alpha.tenantId)
         const mine = ok(await call('/tenants', undefined, owner), 'MyTenantsPage')
-        assert.deepEqual(mine.personalScope, { kind: 'PERSONAL' })
+        assert.equal(mine.items[0].membershipVersion, 0)
         assert.equal(mine.items.length, 1)
         assert.equal((await call('/tenants/' + alpha.tenantId, undefined, outsider)).status, 404)
         assert.equal((await call('/tenants/' + alpha.tenantId, undefined, platform)).status, 404)
@@ -611,7 +611,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const deliveries = await db.prepare('SELECT count(*) n FROM auth_mock_notification').first()
         await db
           .prepare(
-            "CREATE TRIGGER fail_invitation_audit BEFORE INSERT ON auth_audit_event WHEN NEW.action='invitation.create' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END",
+            "CREATE TRIGGER fail_invitation_audit BEFORE INSERT ON auth_management_audit WHEN NEW.operation='invitation.create' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END",
           )
           .run()
         const r = await call(
@@ -1130,21 +1130,16 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           400,
         )
         const fresh = ok(await call('/platform/tenants?limit=1', undefined, platform))
-        await db
-          .prepare('UPDATE auth_one_use SET expires_at=0 WHERE token_hash=?')
-          .bind(hash(fresh.nextCursor))
-          .run()
+        const [payload, signature] = fresh.nextCursor.split('.')
+        const tampered = `${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
         assert.equal(
-          (await call('/platform/tenants?limit=1&cursor=' + fresh.nextCursor, undefined, platform))
-            .status,
+          (await call('/platform/tenants?limit=1&cursor=' + tampered, undefined, platform)).status,
           400,
         )
       },
     )
     async function cursorCount() {
-      const result = await db
-        .prepare("SELECT count(*) n FROM auth_one_use WHERE purpose='V2_TENANT_CURSOR'")
-        .first()
+      const result = await db.prepare('SELECT count(*) n FROM auth_one_use').first()
       return result.n
     }
     async function atListSnapshot(
@@ -1183,7 +1178,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       const path = '/platform/tenants?limit=' + limit
       const firstResponse = await calls(path, platform)
       const paged = ok(firstResponse)
-      assert.deepEqual(firstResponse.d1Calls, { read: 1, write: 1 })
+      assert.deepEqual(firstResponse.d1Calls, oneRead)
       assert.ok(paged.nextCursor)
       await permission(platform, 'APPLICATION_READ')
       await db
@@ -1207,10 +1202,10 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         }
         const finalResponse = await calls(path + '&cursor=' + paged.nextCursor, platform)
         const finalPage = ok(finalResponse)
-        assert.deepEqual(finalResponse.d1Calls, { read: 2, write: 0 })
+        assert.deepEqual(finalResponse.d1Calls, oneRead)
         assert.equal(finalPage.nextCursor, null)
         assert.deepEqual(finalPage.items, all.items.slice(limit))
-        assert.equal(await cursorCount(), n + 1)
+        assert.equal(await cursorCount(), n)
       } finally {
         await db.prepare('DROP TRIGGER fixture_block_read_writes').run()
       }
@@ -1300,7 +1295,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
     )
 
     await suite.test(
-      'UAS-26 validates current authorization in the list snapshot and again before a cursor write',
+      'UAS-26 issues cursors from one authorized snapshot and rechecks scope on the next request',
       async () => {
         const path = '/platform/tenants'
         const terminal = path + '?limit=100'
@@ -1324,8 +1319,12 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const permissionDrift = await atListSnapshot(paginated, reader, 'after', () =>
           permission(reader, 'TENANT_READ'),
         )
-        assert.equal(permissionDrift.status, 409)
-        assert.equal(permissionDrift.error.code, 'VERSION_CONFLICT')
+        const permissionCursor = ok(permissionDrift).nextCursor
+        assert.ok(permissionCursor)
+        assert.equal(
+          (await call(paginated + '&cursor=' + permissionCursor, undefined, reader)).status,
+          400,
+        )
         assert.equal(await cursorCount(), n)
 
         const members = '/tenants/' + alpha.tenantId + '/members?limit=1'
@@ -1337,22 +1336,26 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(alpha.tenantId, other.userId)
             .run(),
         )
-        assert.equal(membershipDrift.status, 409)
-        assert.equal(membershipDrift.error.code, 'VERSION_CONFLICT')
+        const membershipCursor = ok(membershipDrift).nextCursor
+        assert.ok(membershipCursor)
+        assert.equal(
+          (await call(members + '&cursor=' + membershipCursor, undefined, other)).status,
+          400,
+        )
         assert.equal(await cursorCount(), n)
 
         const first = all.items[0]
         const rowDrift = ok(
           await atListSnapshot(paginated, reader, 'after', () =>
             db
-              .prepare('UPDATE auth_managed_tenant SET version=version+1 WHERE space_id=?')
+              .prepare('UPDATE auth_tenant SET version=version+1 WHERE id=?')
               .bind(first.tenantId)
               .run(),
           ),
         )
         assert.deepEqual(rowDrift.items, [first])
         assert.ok(rowDrift.nextCursor)
-        assert.equal(await cursorCount(), n + 1)
+        assert.equal(await cursorCount(), n)
 
         const revoked = await atListSnapshot(paginated, reader, 'after', () =>
           db
@@ -1360,9 +1363,8 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(Date.now(), reader.session.loginSessionId)
             .run(),
         )
-        assert.equal(revoked.status, 409)
-        assert.equal(revoked.error.code, 'VERSION_CONFLICT')
-        assert.equal(await cursorCount(), n + 1)
+        assert.ok(ok(revoked).nextCursor)
+        assert.equal(await cursorCount(), n)
         const denied = await call(terminal, undefined, reader)
         assert.equal(denied.status, 401)
         assert.equal(denied.error.code, 'SESSION_EXPIRED')
@@ -1375,7 +1377,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           (
             await db
               .prepare(
-                "SELECT * FROM auth_audit_event WHERE action LIKE 'tenant.%' OR action LIKE 'invitation.%' OR action LIKE 'transfer.%'",
+                "SELECT * FROM auth_management_audit WHERE operation LIKE 'tenant.%' OR operation LIKE 'invitation.%' OR operation LIKE 'transfer.%'",
               )
               .all()
           ).results,
@@ -1436,9 +1438,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         await permission(platform, 'CLIENT_READ')
         await permission(platform, 'AUDIT_READ')
         await db.batch([
-          db
-            .prepare("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?")
-            .bind(disabled.tenantId),
+          db.prepare("UPDATE auth_tenant SET status='DISABLED' WHERE id=?").bind(disabled.tenantId),
           db
             .prepare(
               `INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at,ended_at)
@@ -1471,16 +1471,14 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const series =
           'WITH RECURSIVE fixture(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM fixture WHERE n<2048)'
         await db.batch([
-          db.prepare(`${series} INSERT INTO auth_user
+          db.prepare(`${series} INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at)
           SELECT 'fixture-user-'||n,'Fixture User','ACTIVE',NULL,0,0 FROM fixture WHERE n<=512`),
           db.prepare(`${series} INSERT INTO auth_user_email
           SELECT 'fixture-email-'||n,'fixture-user-'||n,'fixture-'||n||'@example.test',1,0 FROM fixture WHERE n<=512`),
           db.prepare(`${series} INSERT INTO auth_user_phone
           SELECT 'fixture-phone-'||n,'fixture-user-'||n,printf('+86139%08d',n),1,0 FROM fixture WHERE n<=512`),
-          db.prepare(`${series} INSERT INTO auth_space(id,name,space_type,status,created_at,updated_at)
-          SELECT 'fixture-space-'||n,'Fixture Space','TEAM','ACTIVE',0,0 FROM fixture WHERE n<=256`),
-          db.prepare(`${series} INSERT INTO auth_managed_tenant(space_id,status,managed_by,managed_at,updated_at)
-          SELECT 'fixture-space-'||n,'ACTIVE','fixture-user-'||n,0,0 FROM fixture WHERE n<=256`),
+          db.prepare(`${series} INSERT INTO auth_tenant(id,name,created_at,status,managed_by,managed_at,updated_at)
+          SELECT 'fixture-space-'||n,'Fixture Space',0,'ACTIVE','fixture-user-'||n,0,0 FROM fixture WHERE n<=256`),
           db.prepare(`${series} INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at)
           SELECT 'fixture-membership-'||n,'fixture-space-'||(1+(n-1)%256),'fixture-user-'||n,
                  CASE WHEN n<=256 THEN 'OWNER' ELSE 'MEMBER' END,'ACTIVE',0
@@ -1510,15 +1508,11 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           SELECT 'fixture-app-'||n,'Fixture Application' FROM fixture WHERE n<=256`),
           db
             .prepare(
-              `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'CLI','[]','[]'
-          FROM fixture UNION ALL SELECT 'fixture-work-client','fixture-work-client',?,'CLI','[]','[]'`,
+              `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'CLI','[]','unified-local','[]'
+          FROM fixture UNION ALL SELECT 'fixture-work-client','fixture-work-client',?,'CLI','[]','unified-local','[]'`,
             )
             .bind(workApp),
-          db.prepare(`INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
-          SELECT client_id,'unified-account-v2','unified-local','[]',0,0 FROM auth_client WHERE client_id LIKE 'fixture-%'`),
-          db.prepare(`INSERT INTO auth_client_product(client_id,product)
-          SELECT client_id,'WORK' FROM auth_client WHERE client_id LIKE 'fixture-%'`),
           db.prepare(`${series} INSERT INTO auth_management_audit
           (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
           SELECT 'fixture-audit-'||n,'fixture-user-'||(1+(n-1)%256),'molis-work-unified-local',
@@ -1908,8 +1902,8 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           'd1-trace',
         )
         const transferred = ok(response, 'PlatformTenantView')
-        // Session, permission, tenant, receipt and one batch for all three owner lookups.
-        assert.deepEqual(response.d1Calls, { read: 5, write: 1 })
+        // Session and receipt share a read. Permission, tenant and all owner lookups use the other three.
+        assert.deepEqual(response.d1Calls, { read: 4, write: 1 })
         assert.deepEqual(
           transferred,
           ok(await call(path, undefined, tenantReader), 'PlatformTenantView'),
@@ -1968,11 +1962,11 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.equal(
           (
             await db
-              .prepare('SELECT entitlement_revision FROM auth_managed_tenant WHERE space_id=?')
+              .prepare('SELECT version FROM auth_tenant WHERE id=?')
               .bind(team.tenantId)
               .first()
-          ).entitlement_revision,
-          4,
+          ).version,
+          recovered.version,
         )
 
         const stamped = Date.now() - 10_000

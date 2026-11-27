@@ -1,16 +1,17 @@
 use crate::{core::http::*, core::security::uuid};
 use serde_json::Value;
+use std::rc::Rc;
 use wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, D1Result};
 
-pub(crate) enum WebSessionAccess {
-    Lease(String, i64),
-    ReadSnapshot(String, i64),
+pub(crate) struct CommitFence {
+    pub condition: &'static str,
+    pub bindings: Vec<Value>,
 }
 
 pub struct Store {
-    pub db: D1Database,
-    pub(crate) web_session_access: Option<WebSessionAccess>,
+    db: Rc<D1Database>,
+    pub(crate) commit_fence: Option<CommitFence>,
     log_env: &'static str,
     request_id: String,
     route: &'static str,
@@ -18,11 +19,24 @@ pub struct Store {
 impl Store {
     pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
-            db,
-            web_session_access: None,
+            db: Rc::new(db),
+            commit_fence: None,
             log_env: log.env,
             request_id: log.id.to_owned(),
             route: log.route,
+        }
+    }
+    pub(crate) fn for_operation(
+        &self,
+        route: &'static str,
+        commit_fence: Option<CommitFence>,
+    ) -> Self {
+        Self {
+            db: Rc::clone(&self.db),
+            commit_fence,
+            log_env: self.log_env,
+            request_id: self.request_id.clone(),
+            route,
         }
     }
     pub(crate) fn log_failure(&self, phase: &'static str, failure: &Failure, started: i64) {
@@ -92,38 +106,57 @@ impl Store {
             .map(|_| ())
             .map_err(|error| self.database_failure(error, "d1.run", started))
     }
-    pub fn guard(&self, condition: &str, mut values: Vec<Value>) -> Result<D1PreparedStatement> {
+    pub fn guard(&self, condition: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
+        self.require(condition, values, 0)
+    }
+    pub(crate) fn authorization_guard(
+        &self,
+        condition: &str,
+        values: Vec<Value>,
+    ) -> Result<D1PreparedStatement> {
+        self.require(condition, values, -1)
+    }
+    fn require(
+        &self,
+        condition: &str,
+        mut values: Vec<Value>,
+        denied: i32,
+    ) -> Result<D1PreparedStatement> {
         values.insert(0, Value::String(uuid()));
-        self.statement(&format!("INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN ({condition}) THEN 1 ELSE 0 END)"),values)
+        self.statement(
+            &format!("INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN ({condition}) THEN 1 ELSE {denied} END)"),
+            values,
+        )
     }
     pub async fn batch(
         &self,
         statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<()> {
-        self.write_batch(statements, conflict, false)
-            .await
-            .map(|_| ())
+        self.write_batch(statements, conflict).await.map(|_| ())
     }
-    pub(crate) async fn batch_page_cursor(
-        &self,
-        statements: Vec<D1PreparedStatement>,
-    ) -> Result<()> {
-        // A page read may issue a scoped cursor without changing its browser session.
-        self.write_batch(statements, "VERSION_CONFLICT", true)
-            .await
-            .map(|_| ())
+    pub(crate) fn read_fence(&self) -> Result<Option<D1PreparedStatement>> {
+        self.commit_fence
+            .as_ref()
+            .map(|fence| {
+                self.statement(
+                    &format!("SELECT 1 WHERE {}", fence.condition),
+                    fence.bindings.clone(),
+                )
+            })
+            .transpose()
     }
+
     pub(crate) async fn batch_returning(
         &self,
         mut statements: Vec<D1PreparedStatement>,
         returning: D1PreparedStatement,
         conflict: &'static str,
     ) -> Result<Value> {
-        let index = statements.len() + usize::from(self.web_session_access.is_some());
+        let index = statements.len() + usize::from(self.commit_fence.is_some());
         statements.push(returning);
         let started = now();
-        let results = self.write_batch(statements, conflict, false).await?;
+        let results = self.write_batch(statements, conflict).await?;
         let result = results.get(index).ok_or_else(Failure::unavailable)?;
         self.result_rows(result, "d1.batch", started)?
             .into_iter()
@@ -170,17 +203,9 @@ impl Store {
         &self,
         mut statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
-        page_cursor: bool,
     ) -> Result<Vec<D1Result>> {
-        if let Some(access) = &self.web_session_access {
-            let (id, revision, status) = match access {
-                WebSessionAccess::Lease(id, revision) => (id, revision, "BUSY"),
-                WebSessionAccess::ReadSnapshot(id, revision) if page_cursor => {
-                    (id, revision, "READY")
-                }
-                WebSessionAccess::ReadSnapshot(..) => return Err(Failure::unavailable()),
-            };
-            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status=? AND expires_at>?)", vec![id.clone().into(),(*revision).into(),status.into(),now().into()])?);
+        if let Some(fence) = &self.commit_fence {
+            statements.insert(0, self.guard(fence.condition, fence.bindings.clone())?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         let started = now();
@@ -188,36 +213,27 @@ impl Store {
             Ok(results) => Ok(results),
             Err(e) => {
                 let msg = e.to_string();
-                Err(if msg.contains("CHECK constraint failed") {
-                    Failure {
-                        status: 409,
-                        code: conflict,
-                    }
-                } else if msg.contains("UNIQUE constraint failed") {
-                    Failure {
-                        status: 409,
-                        code: "ALREADY_EXISTS",
-                    }
-                } else {
-                    self.database_failure(e, "d1.batch", started)
-                })
+                Err(
+                    if msg.contains("CHECK constraint failed: auth_write_authorized") {
+                        Failure {
+                            status: 403,
+                            code: "FORBIDDEN",
+                        }
+                    } else if msg.contains("CHECK constraint failed") {
+                        Failure {
+                            status: 409,
+                            code: conflict,
+                        }
+                    } else if msg.contains("UNIQUE constraint failed") {
+                        Failure {
+                            status: 409,
+                            code: "ALREADY_EXISTS",
+                        }
+                    } else {
+                        self.database_failure(e, "d1.batch", started)
+                    },
+                )
             }
         }
-    }
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Keep each audit event field explicit at call sites"
-    )]
-    pub fn audit(
-        &self,
-        action: &str,
-        actor: Value,
-        request_id: &str,
-        space: Value,
-        target: Value,
-        summary: Value,
-        denied: bool,
-    ) -> Result<D1PreparedStatement> {
-        self.statement("INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,space_id,request_id,occurred_at,change_summary) VALUES (?,?,?,?,?,?,?,?,?)",vec![uuid().into(),action.into(),(if denied {"DENIED"} else {"SUCCESS"}).into(),actor.clone(),if target.is_null(){actor}else{target},space,request_id.into(),now().into(),summary])
     }
 }

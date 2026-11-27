@@ -11,8 +11,15 @@ export function webAssetConfig(directory = path('web/dist')) {
   return {
     directory,
     binding: 'ASSETS',
-    // Auth owns method errors for existing assets. The Worker serves GET and HEAD via ASSETS.
-    run_worker_first: true,
+    run_worker_first: [
+      '/',
+      '/login',
+      '/console',
+      '/api/*',
+      '/account/*',
+      '/.well-known/*',
+      '/internal/*',
+    ],
     html_handling: 'none',
     not_found_handling: 'none',
   }

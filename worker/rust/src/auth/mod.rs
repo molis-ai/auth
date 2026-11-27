@@ -13,29 +13,28 @@ pub(crate) mod sync_read_proof;
 pub(crate) mod test_admission;
 
 use crate::core::{http::Result, identity::Auth};
-use worker::{Method, Response};
+use serde_json::Value;
+use worker::Method;
 
-pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if path.starts_with("/api/v2/auth/external/") {
-        return external_login::browser(a, path, method).await;
-    }
-    #[cfg(feature = "mock-provider")]
-    if path.starts_with("/api/v2/auth/mock/") {
-        return external_login::browser(a, path, method).await;
-    }
-    if path == "/api/v2/auth/capabilities" {
+pub(crate) fn external_route(path: &str) -> bool {
+    path.starts_with("/api/v1/auth/external/")
+        || (cfg!(feature = "mock-provider") && path.starts_with("/api/v1/auth/mock/"))
+}
+
+pub(crate) async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<Value> {
+    if path == "/api/v1/auth/capabilities" {
         return login_capabilities::route(a, method).await;
     }
     if matches!(
         path,
-        "/api/v2/auth/login/password"
-            | "/api/v2/auth/login/code"
-            | "/api/v2/auth/verification-codes"
+        "/api/v1/auth/login/password"
+            | "/api/v1/auth/login/code"
+            | "/api/v1/auth/verification-codes"
     ) {
-        return login_commands::route(a, path, method).await;
+        return login_commands::route(a, path, method, body).await;
     }
-    if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
-        return registration::route(a, path, method).await;
+    if path == "/api/v1/auth/transactions" || path.starts_with("/api/v1/auth/transactions/") {
+        return registration::route(a, path, method, body).await;
     }
-    login_sessions::route(a, path, method).await
+    login_sessions::route(a, path, method, body).await
 }

@@ -33,12 +33,13 @@ export class AuthFlow {
     }
     return value;
   }
+  reserve(existing?: Window | null) {
+    const popup = existing && !existing.closed ? existing : window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
+    return popup;
+  }
   open(reserved?: Window | null) {
-    this.popup =
-      reserved && !reserved.closed
-        ? reserved
-        : window.open("about:blank", "_blank");
-    if (this.popup) this.popup.opener = null;
+    this.popup = this.reserve(reserved);
     return Boolean(this.popup);
   }
   navigate(url: string) {
@@ -70,3 +71,40 @@ export class AuthFlow {
   }
 }
 export class FlowCancelled extends Error {}
+
+export function mayChooseAuthMethod(current: string, next: string, providerPending: boolean) {
+  return !providerPending && (current !== next || next === "GOOGLE" || next === "GITHUB");
+}
+
+export function watchProvider(flow: AuthFlow, target: string | undefined, hooks: {
+  start(): void;
+  active(): boolean;
+  read(): Promise<{ status?: string }>;
+  complete(): Promise<void>;
+  failed(error?: unknown): Promise<void>;
+}) {
+  if (!target) throw Error("授权地址不可用");
+  const url = new URL(target);
+  if (url.origin !== location.origin) throw Error("授权地址不匹配");
+  flow.navigate(url.href);
+  hooks.start();
+
+  let delay = 500;
+  async function poll() {
+    if (!hooks.active()) return;
+    try {
+      const { status } = await hooks.read();
+      if (status === "CONSUMED") {
+        await hooks.complete();
+      } else if (status === "CANCELLED" || status === "EXPIRED" || flow.closed) {
+        await hooks.failed();
+      } else {
+        delay = Math.min(4000, delay * 2);
+        flow.schedule(poll, delay);
+      }
+    } catch (error) {
+      if (!(error instanceof FlowCancelled)) await hooks.failed(error);
+    }
+  }
+  flow.schedule(poll, delay);
+}

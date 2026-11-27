@@ -353,6 +353,7 @@ add(
     status: en('ACTIVE', 'DISABLED'),
     myRole: ref('TenantRole'),
     membershipId: id,
+    membershipVersion: version,
     version,
   }),
 )
@@ -391,9 +392,9 @@ add('ApplicationCreateRequest', obj({ name }))
 add('ApplicationUpdateRequest', obj({ name, status: en('ACTIVE', 'DISABLED'), ...expected }))
 const origins = { ...arr(str(1, 2048, { format: 'http-origin' }), 32, 1), uniqueItems: true }
 const redirects = { ...arr(url, 32, 1), uniqueItems: true }
-add('PlatformLoginClient', obj({ clientId: id, applicationId: id, clientType: en('WEB', 'MACOS', 'CLI'), status: en('ACTIVE', 'DISABLED'), version, environmentId: id, policyVersion: version, allowedOrigins: origins, redirectAllowlist: redirects, product: nullable(en('WORK', 'CLUB')) }))
+add('PlatformLoginClient', obj({ clientId: id, applicationId: id, clientType: en('WEB', 'MACOS', 'CLI'), status: en('ACTIVE', 'DISABLED'), version, environmentId: id, policyVersion: version, allowedOrigins: origins, redirectAllowlist: redirects }))
 add('PlatformLoginClientPage', obj({ items: arr(ref('PlatformLoginClient')), nextCursor: nullable(str(1, 2048)) }))
-add('LoginClientCreateRequest', obj({ clientId: id, clientType: en('WEB', 'MACOS', 'CLI'), environmentId: id, allowedOrigins: origins, redirectAllowlist: redirects, product: en('WORK', 'CLUB') }, ['clientId', 'clientType', 'environmentId', 'allowedOrigins', 'redirectAllowlist']))
+add('LoginClientCreateRequest', obj({ clientId: id, clientType: en('WEB', 'MACOS', 'CLI'), environmentId: id, allowedOrigins: origins, redirectAllowlist: redirects }))
 add('LoginClientUpdateRequest', obj({ status: en('ACTIVE', 'DISABLED'), allowedOrigins: origins, redirectAllowlist: redirects, expectedPolicyVersion: version, ...expected }))
 add('PlatformUser', obj({ userId: id, displayName: name, email: nullable(str(3,254,{format:'email'})), status: en('ACTIVE', 'DISABLED'), version }))
 add('PlatformUserPage', obj({ items: arr(ref('PlatformUser')), nextCursor: nullable(str(1, 2048)) }))
@@ -475,19 +476,17 @@ for (const item of [
   'PlatformTenantView',
   'Membership',
   'Invitation',
-  'OwnershipTransfer',
   'AuditEvent',
 ]) {
   add(`${item}Page`, obj({ items: arr(ref(item === 'Membership' ? 'TenantMember' : item)), nextCursor: nullable(str(1, 2048)) }))
 }
-add(
-  'MyTenantsPage',
-  obj({
-    personalScope: obj({ kind: literal('PERSONAL') }),
-    items: arr(ref('TenantView')),
-    nextCursor: nullable(str(1, 2048)),
-  }),
-)
+add('MyTenantsPage', obj({items: arr(ref('TenantView')), nextCursor: nullable(str(1, 2048))}))
+add('OwnershipTransferListItem', obj({
+  ...(defs.OwnershipTransfer.properties as Record<string, Schema>),
+  tenantName: name,
+  myMembershipId: id,
+}))
+add('OwnershipTransferPage', obj({items: arr(ref('OwnershipTransferListItem')), nextCursor: nullable(str(1, 2048))}))
 
 // Product-facing schemas contain handles only. Central proofs and tokens are deliberately impossible here.
 add(
@@ -717,7 +716,6 @@ const environmentBase = {
   authOrigin: str(1, 2048, { format: 'http-origin' }),
   productOrigin: str(1, 2048, { format: 'http-origin' }),
   clientId: id,
-  policyProfile: literal('unified-account-v2'),
   redirectAllowlist: { ...arr(url, 32, 1), uniqueItems: true },
 }
 add(
@@ -802,7 +800,6 @@ const errorCodes: Record<string, string[]> = {
     'POLICY_MISMATCH',
     'TENANT_DISABLED',
     'REAUTH_REQUIRED',
-    'CLIENT_POLICY_REQUIRES_V2',
     'TENANT_API_REQUIRED',
   ],
   '404': ['NOT_FOUND'],
@@ -1382,7 +1379,6 @@ for (const central of [...endpoints].filter((e) =>
 const policy = {
   contractVersion: '1.3.0',
   implementationStatus: 'CONTRACT_ONLY',
-  policyProfile: 'unified-account-v2',
   defaults: {
     transactionTtlSeconds: 600,
     challengeTtlSeconds: 300,
@@ -1705,7 +1701,7 @@ const paths: Record<string, Record<string, unknown>> = {}
 for (const e of endpoints) {
   const outputName = `${e.output}Response`
   if (!defs[outputName]) add(outputName, obj({ data: ref(e.output), requestId: id }))
-  const path = e.group === 'API-08' ? e.path : `/api/v2${e.path}`
+  const path = e.group === 'API-08' ? e.path : `/api/v1${e.path}`
   const parameters: unknown[] = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => ({
     name: match[1],
     in: 'path',

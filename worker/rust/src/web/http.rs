@@ -24,9 +24,9 @@ pub(crate) fn log_route(path: &str) -> &'static str {
         return mount.log_route;
     }
     match path {
-        "/api/v2/health" => "/api/v2/health",
-        "/api/v2/readiness" => "/api/v2/readiness",
-        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
+        "/api/v1/health" => "/api/v1/health",
+        "/api/v1/readiness" => "/api/v1/readiness",
+        "/api/v1/auth/sync-read-proof" => "/api/v1/auth/sync-read-proof",
         "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
         "/account/handoff/start" => "/account/handoff/start",
         "/account/handoff/finish" => "/account/handoff/finish",
@@ -42,8 +42,8 @@ pub(crate) fn log_route(path: &str) -> &'static str {
     }
 }
 
-pub(crate) fn retry_after(external: bool, status: u16, retry_after_at: Option<i64>) -> Option<u64> {
-    (external && status == 429).then(|| {
+pub(crate) fn retry_after(status: u16, retry_after_at: Option<i64>) -> Option<u64> {
+    (status == 429).then(|| {
         retry_after_at
             .map(|expires_at| retry_after_seconds(expires_at, now()))
             .unwrap_or(DEFAULT_RETRY_AFTER)
@@ -58,7 +58,7 @@ pub(crate) fn render_error(
 ) -> worker::Result<Response> {
     if let Some((_, seconds)) = rate_limit.filter(|(request, _)| {
         let path = request.path();
-        path.starts_with("/api/v2/") || path.starts_with("/api/account/")
+        path.starts_with("/api/v1/") || path.starts_with("/api/account/")
     }) {
         json_response(
             json!({"error":{"code":error.code,"retryAfterSeconds":seconds},"requestId":id}),
@@ -75,8 +75,6 @@ pub(crate) fn finalize_response(
     mut response: Response,
     a: &Auth,
     id: &str,
-    external: bool,
-    status: u16,
     retry_after: Option<u64>,
 ) -> worker::Result<Response> {
     if response.status_code() < 400 {
@@ -88,8 +86,6 @@ pub(crate) fn finalize_response(
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
-    } else if external && status == 409 && a.retry_browser_read {
-        response.headers_mut().set("Retry-After", "0")?;
     }
     with_security_headers(response, id, a.origin.starts_with("https:"))
 }

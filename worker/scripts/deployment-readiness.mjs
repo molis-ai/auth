@@ -17,14 +17,13 @@ export function verifyDeploymentDatabase(execute, vars, migrationsDir) {
   const literal = (value) => "'" + value.replaceAll("'", "''") + "'"
   const sql = `SELECT name FROM d1_migrations;
     SELECT EXISTS (
-      SELECT 1 FROM auth_environment e JOIN auth_client_policy p ON p.environment_id=e.id
-      JOIN auth_client c ON c.client_id=p.client_id
+      SELECT 1 FROM auth_environment e JOIN auth_client c ON c.environment_id=e.id
       JOIN auth_application app ON app.id=c.application_id
       WHERE e.id=${literal(environmentId)} AND e.auth_origin=${literal(authOrigin)}
       AND e.kind=${literal(kind)} AND e.status='ACTIVE' AND c.status='ACTIVE'
       AND c.client_id=${literal(vars.AUTH_WEB_CLIENT_ID)}
-      AND app.status='ACTIVE' AND p.policy_profile='unified-account-v2'
-      AND EXISTS (SELECT 1 FROM json_each(p.allowed_origins) WHERE value=${literal(authOrigin)})
+      AND app.status='ACTIVE'
+      AND EXISTS (SELECT 1 FROM json_each(c.allowed_origins) WHERE value=${literal(authOrigin)})
       AND EXISTS (SELECT 1 FROM json_each(c.redirects) WHERE value=${literal(authOrigin + '/account/callback')})
       AND e.delivery_mode='LIVE' AND e.provider_mode='LIVE'
     ) AS ready;

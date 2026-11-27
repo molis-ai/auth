@@ -84,7 +84,7 @@ test('LIVE SMS: shared Auth challenges, provider validation, replay and cancella
       .run()
     async function api(path: string, body: unknown, proof?: string) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

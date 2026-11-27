@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from "vue";
+import { lazyComponent } from "./shared/components/lazy-component.ts";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AuthEntry from "./features/auth-entry/AuthEntry.vue";
 import AuthEntryShell from "./features/auth-entry/AuthEntryShell.vue";
 import { entryText } from "./features/auth-entry/entry-copy.ts";
 import { entryLanguage } from "./features/auth-entry/entry-preferences.ts";
 import { useAccountSession } from "./app/use-account-session.ts";
-const ConsoleShell = defineAsyncComponent(() => import("./shared/components/ConsoleShell.vue"));
-const AccountProfile = defineAsyncComponent(() => import("./features/account/AccountProfile.vue"));
-const AccountSecurityPage = defineAsyncComponent(() => import("./features/account/AccountSecurityPage.vue"));
-const PlatformUsers = defineAsyncComponent(() => import("./features/platform/PlatformUsers.vue"));
-const PlatformTenants = defineAsyncComponent(() => import("./features/platform/PlatformTenants.vue"));
-const PlatformAudit = defineAsyncComponent(() => import("./features/platform/PlatformAudit.vue"));
-const PlatformApplicationsPage = defineAsyncComponent(() => import("./features/platform/PlatformApplicationsPage.vue"));
-const PendingPage = defineAsyncComponent(() => import("./features/team/PendingPage.vue"));
-const TenantPage = defineAsyncComponent(() => import("./features/team/TenantPage.vue"));
-const BillingCenterPage = defineAsyncComponent(() => import("./features/billing/BillingCenterPage.vue"));
+import { provideAccountContext } from "./shared/api/account-context.ts";
+const ConsoleShell = lazyComponent(() => import("./shared/components/ConsoleShell.vue"));
+const AccountProfile = lazyComponent(() => import("./features/account/AccountProfile.vue"));
+const AccountSecurityPage = lazyComponent(() => import("./features/account/AccountSecurityPage.vue"));
+const PlatformUsers = lazyComponent(() => import("./features/platform/PlatformUsers.vue"));
+const PlatformTenants = lazyComponent(() => import("./features/platform/PlatformTenants.vue"));
+const PlatformAudit = lazyComponent(() => import("./features/platform/PlatformAudit.vue"));
+const PlatformApplicationsPage = lazyComponent(() => import("./features/platform/PlatformApplicationsPage.vue"));
+const PendingPage = lazyComponent(() => import("./features/team/PendingPage.vue"));
+const TenantPage = lazyComponent(() => import("./features/team/TenantPage.vue"));
+const BillingCenterPage = lazyComponent(() => import("./features/billing/BillingCenterPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -25,12 +27,24 @@ function showToast(text: string) {
   toastTimer = setTimeout(clearToast, 5000);
 }
 
-const page = ref("account");
-const billingSubjectId = ref("personal");
-const platformTenantFocus = ref<string>();
-const auditTenantScope = ref<string | null>(null);
-const applicationVisit = ref(0);
-const securityVisit = ref(0);
+const consolePages = new Set([
+  "account", "security", "tenants", "pending", "subscriptions", "users",
+  "platform-tenants", "audit", "applications",
+]);
+function readLocation() {
+  const url = new URL(location.href);
+  const target = url.pathname === "/console" ? url.searchParams.get("page") : null;
+  return {
+    target: target && consolePages.has(target) ? target : "account",
+    subjectId: url.searchParams.get("subject") ?? undefined,
+  };
+}
+const initial = readLocation();
+const page = ref(initial.target);
+const billingSubjectId = ref(initial.target === "subscriptions" ? (initial.subjectId ?? "personal") : "personal");
+const platformTenantFocus = ref(initial.target === "platform-tenants" ? initial.subjectId : undefined);
+const auditTenantScope = ref<string | null>(initial.target === "audit" ? (initial.subjectId ?? null) : null);
+let navigationVersion = 0;
 const securityPage = ref<{ cancelSecurity: () => Promise<void>; resetPage: () => void }>();
 
 const {
@@ -40,28 +54,54 @@ const {
   retryRefresh, run, starting, startup, submitBusyWrite, submitWrite,
 } = useAccountSession(page, { clearToast, showToast, resetConsole });
 
-function resetConsole() {
-  securityPage.value?.resetPage();
-  page.value = "account";
-  platformTenantFocus.value = undefined;
-  auditTenantScope.value = null;
-}
+provideAccountContext({
+  client, mutate, submitWrite, submitBusyWrite, discard, run, expireAccount, expireWithToast,
+});
 
-async function navigate(target: string, subjectId?: string) {
-  await securityPage.value?.cancelSecurity();
+watch(() => account.value?.user?.userId, (id, previous) => {
+  if (id && id !== previous && page.value === "security") void run(refreshLoginMethods);
+});
+
+function setPage(target: string, subjectId?: string) {
   billingSubjectId.value = target === "subscriptions" ? (subjectId ?? "personal") : "personal";
   platformTenantFocus.value = target === "platform-tenants" ? subjectId : undefined;
   auditTenantScope.value = target === "audit" ? (subjectId ?? null) : null;
   page.value = target;
+}
+
+function resetConsole() {
+  navigationVersion++;
+  securityPage.value?.resetPage();
+  setPage("account");
+  if (location.pathname === "/console" && location.search) history.replaceState(null, "", "/console");
+}
+
+async function navigate(target: string, subjectId?: string, updateHistory = true) {
+  if (!consolePages.has(target)) return;
+  const version = ++navigationVersion;
+  await securityPage.value?.cancelSecurity();
+  if (version !== navigationVersion) return;
+  setPage(target, subjectId);
+  if (updateHistory) {
+    const params = new URLSearchParams({ page: target });
+    if (subjectId) params.set("subject", subjectId);
+    const path = "/console?" + params;
+    if (location.pathname + location.search !== path) history.pushState(null, "", path);
+  }
   if (target === "security") {
-    securityVisit.value++;
+    securityPage.value?.resetPage();
     await run(refreshLoginMethods);
-  } else if (target === "applications") {
-    applicationVisit.value++;
   } else {
     clearToast();
   }
 }
+
+function restoreNavigation() {
+  const { target, subjectId } = readLocation();
+  void navigate(target, subjectId, false);
+}
+onMounted(() => window.addEventListener("popstate", restoreNavigation));
+onBeforeUnmount(() => window.removeEventListener("popstate", restoreNavigation));
 function openTeamBilling(tenantId: string) {
   void navigate("subscriptions", tenantId);
 }
@@ -112,39 +152,28 @@ function openPlatformTenant(tenantId: string) {
         :github-account="methods.find(item => item.type === 'GITHUB')?.maskedLabel"
         :phone-account="methods.find(item => item.type === 'PHONE')?.maskedLabel"
         :bound-method-count="boundMethodCount"
-        :client="client"
         :on-saved="refreshAccount"
         @expired="expireWithToast"
         @navigate="navigate"
       />
       <AccountSecurityPage
         v-if="page === 'security'"
-        :key="accountScope + ':' + securityVisit"
+        :key="accountScope"
         ref="securityPage"
-        :client="client"
         :user="account.user"
         :methods="methods"
         :bound-method-count="boundMethodCount"
         :busy="busy"
-        :run="run"
-        :mutate="mutate"
-        :submit-busy-write="submitBusyWrite"
-        :discard="discard"
         :refresh-account="refreshAccount"
         :refresh-login-methods="refreshLoginMethods"
-        :expire-with-toast="expireWithToast"
         :logout="logout"
       />
       <TenantPage
         v-if="page === 'tenants' && account.user"
         :key="accountScope"
-        :client="client"
         :viewer-id="account.user.userId"
         :billing-enabled="!endingSession"
         :busy="busy"
-        :mutate="mutate"
-        :submit-write="submitBusyWrite"
-        :discard="discard"
         :refresh-pending="action => refreshIssues.has(action)"
         @expired="expireWithToast"
         @dispose="disposePageIssues('tenants')"
@@ -154,9 +183,8 @@ function openPlatformTenant(tenantId: string) {
       <PendingPage
         v-if="page === 'pending' && account.user"
         :key="accountScope"
-        :client="client"
         :busy="busy"
-        :mutate="mutate"
+
         @expired="expireWithToast"
         @dispose="disposePageIssues('pending')"
         @navigate="navigate"
@@ -164,7 +192,6 @@ function openPlatformTenant(tenantId: string) {
       <BillingCenterPage
         v-if="page === 'subscriptions' && account.user && !endingSession"
         :key="accountScope + ':' + billingSubjectId"
-        :client="client"
         :viewer-id="account.user.userId"
         :viewer-name="account.user.displayName"
         :viewer-email="account.user.email"
@@ -173,17 +200,14 @@ function openPlatformTenant(tenantId: string) {
       />
       <PlatformUsers
         v-if="page === 'users'"
-        :client="client"
         :capabilities="account.capabilities ?? []"
-        :submit-write="submitWrite"
+
         @expired="expireWithToast"
       />
       <PlatformTenants
         v-if="page === 'platform-tenants'"
         :key="accountScope"
-        :client="client"
         :capabilities="account.capabilities ?? []"
-        :submit-write="submitWrite"
         :initial-tenant-id="platformTenantFocus"
         @expired="expireWithToast"
         @notify="showToast"
@@ -192,36 +216,25 @@ function openPlatformTenant(tenantId: string) {
       <PlatformAudit
         v-if="page === 'audit'"
         :key="accountScope"
-        :client="client"
         :capabilities="account.capabilities ?? []"
         :initial-tenant-scope="auditTenantScope"
         @expired="expireWithToast"
         @notify="showToast"
         @open-tenant="openPlatformTenant"
       />
-      <KeepAlive>
         <PlatformApplicationsPage
           v-if="page === 'applications'"
           :key="accountScope"
-          :visit="applicationVisit"
-          :client="client"
           :capabilities="account.capabilities ?? []"
           :busy="busy"
-          :run="run"
-          :submit-write="submitWrite"
-          :submit-busy-write="submitBusyWrite"
-          :mutate="mutate"
-          :discard="discard"
-          :expire-account="expireAccount"
-          :expire-with-toast="expireWithToast"
+
         />
-      </KeepAlive>
     </main>
     </div>
   </ConsoleShell>
 </template>
 <style>
-.v2-form {
+.account-form {
   max-width: 520px;
 }
 </style>

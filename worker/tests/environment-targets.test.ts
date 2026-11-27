@@ -65,7 +65,7 @@ test('Wrangler commands keep credentials and explicit flags while stripping targ
   )
 })
 
-test('V2-01: the Auth test deployment pins account, Worker, route and D1 independently of properties', (t) => {
+test('ENV-U-01: the Auth test deployment pins account, Worker, route and D1 independently of properties', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'auth-targets-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const root = pathToFileURL(directory + '/')

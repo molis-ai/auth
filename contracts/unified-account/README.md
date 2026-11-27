@@ -2,7 +2,7 @@
 
 状态：AUTH-01 合同与结构校验已实现；本目录不实现登录、租户、订阅或权益服务。业务语义来自 [API-01 至 API-10](../../docs/unified-account/api-contracts.md)，产品决定来自[需求文档](../../docs/unified-account/requirements.md)。OpenAPI 每个操作均标记 `CONTRACT_ONLY`，不能用合同存在代替运行中的接口验收。
 
-运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](../../docs/history/unified-account/delivery.md)。
+运行实现已由 AUTH-01 至 AUTH-12 分阶段交付，实际状态见[验收矩阵](../../docs/unified-account/acceptance-matrix.md)；CONTRACT_ONLY 描述本目录只提供合同，不是运行状态查询。三端固定版本与字节摘要见[交付记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery.md)。
 
 ## 文件与使用
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | `generate.ts` | 请求/响应、认证联合类型、权限、状态与夹具的唯一维护入口 |
 | `schemas.json` | JSON Schema 2020-12；所有对象明确字段，写入拒绝未知字段 |
-| `openapi.json` | OpenAPI 3.1；中央 `/api/v2`、产品固定操作映射、错误和安全说明 |
+| `openapi.json` | OpenAPI 3.1；中央 `/api/v1`、产品固定操作映射、错误和安全说明 |
 | `policy.json` | 工程默认值、操作权限、状态转换、proof 绑定、原子不变量、mock 与迁移边界 |
 | `fixtures.json` | 无真实身份或秘密的正反样本；每个 Schema 及联合分支都有结构样本，另有攻击/边界样本 |
 | `validator-profile.json` | Rust/TS 共用的支持关键词、格式及精确正则清单；扩展前须补两端测试 |
@@ -57,24 +57,24 @@ TTL、重发/尝试次数、分页和限流初始值集中于 `policy.defaults`�
 - date-time 采用 UTC 秒或三位毫秒，拒绝无效日历日期。URI 采用 ASCII HTTP(S)，Unicode 域名先转 Punycode、路径先百分号编码；禁止凭据、空白、控制字符、反斜杠及通配符。origin 要求规范源地址，不带路径。此结构检查不能替代注册的 origin/精确回调比对。
 - email 是本期明确支持的 ASCII 邮箱传输格式；地址规范化、已有邮箱兼容与身份唯一性由领域层执行。local-path 拒绝绝对/协议相对地址、反斜杠、控制符及危险编码；产品还应按可返回的页面清单检查。
 - 不检查“expectedVersion 是否当前”“两个日期先后”“订阅显示状态是否符合时间”“容量是否足够”“是否成员”“proof 是否真实/已消费”“返回角色是否来自当前事实”等。它们是 `policy.json` 的领域不变量，由 AUTH-03..10 的持久化/并发/鉴权测试验证。通过 Schema 从不等于已认证或有权益。
-- OpenAPI 的错误集合包括 AUTH-02 的明确拒绝码；尚未实现的 v2 入口可返回 UNIFIED_ACCOUNT_NOT_IMPLEMENTED，不能返回虚构成功数据。
+- OpenAPI 的错误集合包括 AUTH-02 的明确拒绝码；尚未实现的中央入口可返回 UNIFIED_ACCOUNT_NOT_IMPLEMENTED，不能返回虚构成功数据。
 
 ## 变更记录
 
-- 1.2.0 开发增量：API-10 增加应用与 V2 登录客户端的列表、读取、创建、修改；分别要求 APPLICATION_READ/WRITE、CLIENT_READ/WRITE。客户端与策略版本同时检查；允许登记无产品映射的 Auth 自身客户端，Work/Club 映射显式指定。服务端会话、权限、域记录、审计与幂等回执原子提交；这不表示页面、SDK 或全部 V1 替换已完成。
-- 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [V2 收敛方案](../../docs/unified-account/v2-consolidation.md)。
-- 1.1.0（2026-11-05）：新增平台订阅库存只读接口 `GET /api/v2/platform/subscriptions/{subscriptionId}/seat-pools` 及对应产品映射。要求 `SUBSCRIPTION_READ`，不要求平台人员属于租户，租户停用时仍允许平台读取；个人订阅返回空列表，分页限定当前账号/Client/订阅。席位分配仍只允许租户管理者，未增加迁移或支付。
+- 1.2.0 开发增量：API-10 增加应用与 统一账号协议 登录客户端的列表、读取、创建、修改；分别要求 APPLICATION_READ/WRITE、CLIENT_READ/WRITE。客户端与策略版本同时检查；允许登记无产品映射的 Auth 自身客户端，Work/Club 映射显式指定。服务端会话、权限、域记录、审计与幂等回执原子提交；这不表示页面、SDK 或全部 V1 替换已完成。
+- 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [历史收敛方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。
+- 1.1.0（2026-11-05）：新增平台订阅库存只读接口 `GET /api/v1/platform/subscriptions/{subscriptionId}/seat-pools` 及对应产品映射。要求 `SUBSCRIPTION_READ`，不要求平台人员属于租户，租户停用时仍允许平台读取；个人订阅返回空列表，分页限定当前账号/Client/订阅。席位分配仍只允许租户管理者，未增加迁移或支付。
 - 1.0.0（2026-11-04）：覆盖 API-01..09；固定中央与产品 DTO、四类完成材料、认证用途联合、平台/租户权限、订阅与席位结构、mock 端口、迁移记录、工程默认值和两语言共用正反夹具。交付的是可执行合同，不是完整统一账号业务实现。
 
 ## 多端个人资料读取
 
-Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`（`MeView`）。`user` 提供本人昵称、头像、邮箱及账号版本；`loginMethods` 提供服务端生成的展示标签；`passwordEnabled` 提供密码状态。产品侧只投影所需字段，不推导身份、不重新脱敏。登录方式操作的 `expectedVersion` 使用同一快照的 `user.version`（账号版本，不是内部 identity_version）。
+Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v1/users/me`（`MeView`）。`user` 提供本人昵称、头像、邮箱及账号版本；`loginMethods` 提供服务端生成的展示标签；`passwordEnabled` 提供密码状态。产品侧只投影所需字段，不推导身份、不重新脱敏。登录方式操作的 `expectedVersion` 使用同一快照的 `user.version`（账号版本，不是内部 identity_version）。
 
 展示规则由 `worker/rust/src/account/management.rs` 的 `user_view` / `method_view` 维护：本人资料邮箱按 `user.email` 返回；EMAIL 登录方式标签隐藏邮箱本地部分，PHONE 标签遮中间四位；Google 返回邮箱、GitHub 返回用户名。消费者原样展示各自语义字段，不把隐藏后的标签作为登录或绑定输入。原始手机号和第三方 subject 不通过个人资料视图返回。会话令牌不属于个人资料，不能随此视图下发。
 
 ### 账号管理免登录衔接
 
-`POST /api/v2/auth/management-handoffs` 由已登录产品 BFF 调用，提交已登记的 `redirectUri` 与浏览器发起凭证的 S256 challenge。返回 Auth `/account/handoff/start` 导航地址。Auth 设置独立 HttpOnly 浏览器凭证后返回产品的已登记回调（`handoff` 参数）；产品须校验其 HttpOnly 发起凭证并通过当前同一个产品会话调用 `POST /api/v2/auth/management-handoffs/approve`，随后导航到 Auth `/account/handoff/finish`。
+`POST /api/v1/auth/management-handoffs` 由已登录产品 BFF 调用，提交已登记的 `redirectUri` 与浏览器发起凭证的 S256 challenge。返回 Auth `/account/handoff/start` 导航地址。Auth 设置独立 HttpOnly 浏览器凭证后返回产品的已登记回调（`handoff` 参数）；产品须校验其 HttpOnly 发起凭证并通过当前同一个产品会话调用 `POST /api/v1/auth/management-handoffs/approve`，随后导航到 Auth `/account/handoff/finish`。
 
 总有效期 60 秒。Auth 原子校验两端浏览器凭证、原登录会话 revision/有效性、客户端策略和一次性消费状态后建立自己的 Web 会话。访问令牌和刷新令牌只留服务端；目标固定为 Auth 根管理页。跳转保留原认证时间、最近身份验证时间和绝对过期时间，不授予新的敏感操作验证。替换旧 Auth Web cookie 时轮换会话引用。管理交接表已纳入[当前 D1 基线](../../docs/cloudflare-deployment.md#d1-迁移基线)。
 
@@ -82,7 +82,7 @@ Work 与 Club 的个人资料及登录方式统一消费 `GET /api/v2/users/me`�
 
 ## 简化登录入口
 
-产品登录调用 `POST /api/v2/auth/login/password`（邮箱或手机号 + 密码），或 `POST /api/v2/auth/verification-codes` 后调用 `POST /api/v2/auth/login/code`（`verificationId` + 六位验证码）。验证编号绑定发起方证明、客户端、用途与有效期，不能作为登录凭据。Auth 内部保留验证记录和一次性授权码；BFF/Host 私下交换会话，浏览器不接触 token。找回密码、第三方授权和绑定验证继续使用独立用途。
+产品登录调用 `POST /api/v1/auth/login/password`（邮箱或手机号 + 密码），或 `POST /api/v1/auth/verification-codes` 后调用 `POST /api/v1/auth/login/code`（`verificationId` + 六位验证码）。验证编号绑定发起方证明、客户端、用途与有效期，不能作为登录凭据。Auth 内部保留验证记录和一次性授权码；BFF/Host 私下交换会话，浏览器不接触 token。找回密码、第三方授权和绑定验证继续使用独立用途。
 
 ## 当前产品登录接口
 

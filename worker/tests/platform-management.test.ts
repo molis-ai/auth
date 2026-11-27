@@ -6,7 +6,7 @@ import { hash, secret, challenge } from './fixtures.ts'
 import { bootstrapPlatform } from '../scripts/platform-bootstrap.mjs'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
-test('V2U-04 V2 platform applications and clients require explicit current authority', async () => {
+test('AUTH-U-04 central platform applications and clients require explicit current authority', async () => {
   const origin = 'http://127.0.0.1:8787'
   const p = await getRustProxy({
     AUTH_ORIGIN: origin,
@@ -36,8 +36,12 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     const statement = (sql: string, ...values: (string | number)[]) =>
       db.prepare(sql).bind(...values)
     await db.batch([
-      statement("INSERT INTO auth_user VALUES ('admin','Admin','ACTIVE',NULL,?,?)", n, n),
-      statement("INSERT INTO auth_user_security(user_id,updated_at) VALUES ('admin',?)", n),
+      statement(
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('admin','Admin','ACTIVE',NULL,?,?)",
+        n,
+        n,
+      ),
+
       statement(
         "INSERT INTO auth_security_sequence(seq,kind,created_at) VALUES (1,'TRANSACTION',?)",
         n,
@@ -62,7 +66,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       token: string | null = access,
     ) {
       const response = await p.fetch(
-        new Request(origin + '/api/v2/platform' + path, {
+        new Request(origin + '/api/v1/platform' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -87,7 +91,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       ).run()
     }
     assert.equal((await call('/applications', undefined, 'GET', secret(), null)).status, 401)
-    assert.equal((await call('/applications')).status, 403) // V1 admin configuration is not V2 authority.
+    assert.equal((await call('/applications')).status, 403) // V1 admin configuration is not central authority.
     assert.equal((await call('/applications', { name: 'Denied' })).status, 403)
     await grant('APPLICATION_WRITE')
     assert.equal((await call('/applications')).status, 403)
@@ -141,7 +145,6 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       environmentId: 'unified-local',
       allowedOrigins: ['http://127.0.0.1:4208'],
       redirectAllowlist: ['http://127.0.0.1:4208/account/callback'],
-      product: 'WORK',
     }
     assert.equal(
       (await call('/applications/' + app.applicationId + '/clients', clientBody)).status,
@@ -166,10 +169,10 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal(
       (
         await db
-          .prepare("SELECT policy_profile FROM auth_client_policy WHERE client_id='managed-client'")
+          .prepare("SELECT environment_id FROM auth_client WHERE client_id='managed-client'")
           .first()
-      ).policy_profile,
-      'unified-account-v2',
+      ).environment_id,
+      'unified-local',
     )
     assert.equal((await call('/clients/managed-client')).status, 403)
     await grant('CLIENT_READ')
@@ -212,7 +215,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await statement(
       "UPDATE auth_platform_permission SET status='ACTIVE',revoked_at=NULL,version=version+1 WHERE user_id='admin' AND permission='CLIENT_WRITE'",
     ).run()
-    const before = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n
+    const before = (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n
     assert.ok(
       (
         await call('/applications/' + app.applicationId + '/clients', {
@@ -224,12 +227,15 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal(
       (
         await db
-          .prepare("SELECT count(*) n FROM auth_client_policy WHERE client_id='failed-client'")
+          .prepare("SELECT count(*) n FROM auth_client WHERE client_id='failed-client'")
           .first()
       ).n,
       0,
     )
-    assert.equal((await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n, before)
+    assert.equal(
+      (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n,
+      before,
+    )
     // Bootstrap refuses existing grants and rolls back without adding authority.
     await assert.rejects(() => bootstrapPlatform(db, 'admin'))
     await db.prepare('DELETE FROM auth_platform_permission').run()
@@ -237,7 +243,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal((await db.prepare('SELECT count(*) n FROM auth_platform_permission').first()).n, 0)
     const initialized = await bootstrapPlatform(db, 'admin')
     const meResponse = await p.fetch(
-      new Request(origin + '/api/v2/users/me', { headers: { Authorization: 'Bearer ' + access } }),
+      new Request(origin + '/api/v1/users/me', { headers: { Authorization: 'Bearer ' + access } }),
     )
     assert.equal(meResponse.status, 200)
     const me = await meResponse.json()
@@ -249,12 +255,8 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await assert.rejects(() => bootstrapPlatform(db, 'admin'))
 
     await statement(
-      "INSERT INTO auth_user VALUES ('target','Target','ACTIVE',NULL,?,?)",
+      "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('target','Target','ACTIVE',NULL,?,?)",
       n,
-      n,
-    ).run()
-    await statement(
-      "INSERT INTO auth_user_security(user_id,updated_at) VALUES ('target',?)",
       n,
     ).run()
     ok(await call('/users'), 'PlatformUserPage')
@@ -280,7 +282,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
           'PATCH',
         )
       ).status,
-      409,
+      403,
     )
     const stopped = ok(
       await call(
@@ -364,12 +366,12 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     )
     const audit = await db
       .prepare(
-        "SELECT change_summary FROM auth_audit_event WHERE action='user.email' AND outcome='SUCCESS'",
+        "SELECT target_id,reason FROM auth_management_audit WHERE operation='user.email' AND outcome='SUCCESS'",
       )
       .first()
-    assert.equal(JSON.parse(audit.change_summary).targetId, 'target')
-    assert.equal(JSON.parse(audit.change_summary).reason, changeEmail.reason)
-    const deniedEmail = async (body: unknown, path = '/api/v2/users/me/reauthentications') => {
+    assert.equal(audit.target_id, 'target')
+    assert.equal(audit.reason, changeEmail.reason)
+    const deniedEmail = async (body: unknown, path = '/api/v1/users/me/reauthentications') => {
       const r = await p.fetch(
         new Request(origin + path, {
           method: 'POST',
@@ -393,10 +395,11 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await deniedEmail({ ...base, operation: 'UNLINK_METHOD', target: { bindingId: 'occupied' } })
     await deniedEmail(
       { ...base, purpose: 'BIND', method: 'EMAIL_CODE' },
-      '/api/v2/auth/transactions',
+      '/api/v1/auth/transactions',
     )
-    // V2C-01: an authenticated operator cannot resurrect retired service administration.
-    const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n
+    // AUTH-C-01: an authenticated operator cannot resurrect retired service administration.
+    const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_management_audit').first())
+      .n
     assert.equal((await call('/applications/' + app.applicationId + '/services')).status, 404)
     assert.equal(
       (await call('/applications/' + app.applicationId + '/services', { name: 'Retired' })).status,
@@ -414,7 +417,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
         400,
       )
     assert.equal(
-      (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n,
+      (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n,
       beforeRetired,
     )
     await statement(
