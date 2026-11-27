@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-test("V2U-03 browser presentation uses the shared BFF client and keeps secrets outside browser persistence", () => {
+test("AUTH-U-03 browser presentation uses the shared BFF client and keeps secrets outside browser persistence", () => {
   const sourceDirectory = fileURLToPath(new URL("../src/", import.meta.url));
   const preferencesPath = join(sourceDirectory, "features", "auth-entry", "entry-preferences.ts");
   const source = readdirSync(sourceDirectory, { recursive: true, withFileTypes: true })

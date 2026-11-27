@@ -27,6 +27,7 @@ export function useAccountSession(
   const accountGeneration = ref(0);
   let openReported = false;
   let profileMethodsRequested = false;
+  let initialProfileMethods: Promise<void> | undefined;
   let methodsRequest = 0;
   const methods = ref<LoginMethod[]>([]);
   const boundMethodCount = computed(() => {
@@ -125,9 +126,10 @@ export function useAccountSession(
     if (openReported) return;
     const scope = accountGeneration.value;
     openReported = true;
-    // Let the profile watcher enqueue its initial read before reporting activity.
-    void nextTick(() => {
-      if (scope === accountGeneration.value && account.value?.state === "AUTHENTICATED") {
+    // First paint and navigation stay independent of the activity heartbeat.
+    void nextTick(async () => {
+      await initialProfileMethods;
+      if (scope === accountGeneration.value && !endingSession.value && account.value?.state === "AUTHENTICATED") {
         return reportOpenActivity(scope);
       }
     });
@@ -157,7 +159,7 @@ export function useAccountSession(
     if (!userId || account.value?.state !== "AUTHENTICATED" || target !== "account" || profileMethodsRequested) return;
     profileMethodsRequested = true;
     const scope = accountGeneration.value;
-    void refreshLoginMethods().catch(error => {
+    initialProfileMethods = refreshLoginMethods().catch(error => {
       if (scope === accountGeneration.value) expireWithToast(error);
     });
   });
@@ -254,6 +256,7 @@ export function useAccountSession(
     lastSessionCheckAt = undefined;
     openReported = false;
     profileMethodsRequested = false;
+    initialProfileMethods = undefined;
     submissions.setAccount(undefined);
     refreshIssues.clear();
     account.value = next;

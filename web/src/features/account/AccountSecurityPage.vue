@@ -134,7 +134,7 @@ defineExpose({ cancelSecurity, resetPage });
 </script>
 
 <template>
-  <section class="console-card security-page">
+  <section class="console-card security-page" data-console-layout="rail" data-console-flush>
     <div class="collection-layout security-layout">
       <aside class="collection-list security-nav" aria-label="账号安全分类">
         <h1>账号安全</h1>
@@ -158,7 +158,7 @@ defineExpose({ cancelSecurity, resetPage });
             <span class="security-rail-body">
               <button
                 type="button"
-                class="security-rail-btn"
+                class="security-rail-btn" data-local-hover
                 :aria-current="securityTab === id ? 'page' : undefined"
                 :disabled="busy"
                 @click.stop="selectSecurityTab(id)"
@@ -182,7 +182,7 @@ defineExpose({ cancelSecurity, resetPage });
           </template>
           <dialog
             ref="logoutDialog"
-            class="logout-confirm"
+            class="logout-confirm" data-local-hover
             aria-labelledby="logout-confirm-title"
             aria-describedby="logout-confirm-description"
             @close="logoutTrigger?.focus()"

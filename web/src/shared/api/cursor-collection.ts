@@ -6,7 +6,10 @@ interface Page<T> {
   nextCursor: string | null;
 }
 
-export function cursorCollection<T>(client: Pick<AccountClient, "request">) {
+type CollectionClient = Pick<AccountClient, "request"> &
+  Partial<Pick<AccountClient, "peekRead" | "invalidateReads">>;
+
+export function cursorCollection<T>(client: CollectionClient) {
   const pages = shallowRef<Page<T>[]>([]);
   const items = computed(() => pages.value.flatMap(page => page.items));
   const nextCursor = computed(() => pages.value.at(-1)?.nextCursor ?? null);
@@ -27,16 +30,19 @@ export function cursorCollection<T>(client: Pick<AccountClient, "request">) {
     pages.value = [];
   }
 
-  async function read(cursor: string | null) {
+  function pagePath(cursor: string | null) {
+    return path + (path.includes("?") ? "&" : "?") + "limit=" + limit +
+      (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+  }
+
+  async function read(cursor: string | null, background = false) {
     inFlight?.abort();
     const request = new AbortController();
     inFlight = request;
-    loading.value = true;
+    loading.value = !background;
     try {
       const page = await client.request<Page<T>>(
-        path + (path.includes("?") ? "&" : "?") + "limit=" + limit +
-          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-        undefined, "GET", undefined, request.signal,
+        pagePath(cursor), undefined, "GET", undefined, request.signal,
       );
       if (request.signal.aborted) return false;
       if (cursor && page.nextCursor && pages.value.some(previous => previous.nextCursor === page.nextCursor)) {
@@ -55,14 +61,23 @@ export function cursorCollection<T>(client: Pick<AccountClient, "request">) {
     }
   }
 
-  function first(resource: string, size = 20) {
+  function first(resource: string, size = 20, { revalidate = false } = {}) {
     path = resource;
     limit = size;
+    if (revalidate) {
+      const target = pagePath(null);
+      const cached = client.peekRead?.<Page<T>>(target);
+      if (cached) {
+        pages.value = [cached];
+        client.invalidateReads?.(target);
+        return read(null, true);
+      }
+    }
     return read(null);
   }
 
   function more() {
-    return !loading.value && nextCursor.value ? read(nextCursor.value) : Promise.resolve(false);
+    return !inFlight && nextCursor.value ? read(nextCursor.value) : Promise.resolve(false);
   }
 
   function remove(predicate: (item: T) => boolean) {

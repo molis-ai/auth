@@ -7,14 +7,14 @@
  .auth-console button.collection-item:not(:disabled):hover { background:#eceef4; box-shadow:0 2px 7px #19191b12; }
  .auth-console .collection-item.selected:hover { background:#e1e6f6; }
  .auth-console .console-row:not(.collection-item):hover,
- .auth-console tbody tr:has(td:not(.tm-empty)):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
+ .auth-console tbody tr:has(td:not([data-collection-status])):hover { background:#efeff2; box-shadow:0 1px 4px #19191b0a; }
  #app .auth-console dialog header button:not(:disabled):hover,
  #app .auth-console dialog button[aria-label^="关闭"]:not(:disabled):hover {
   background-color:#e9e9ed;
   color:var(--ink);
   box-shadow:inset 0 0 0 1px #19191b12;
  }
- #app .auth-console :is(tbody tr:has(td:not(.tm-empty)), .console-row:not(.collection-item)):not([inert]):hover {
+ #app .auth-console :is(tbody tr:has(td:not([data-collection-status])), .console-row:not(.collection-item)):not([inert]):hover {
   background-color:#efeff2;
   box-shadow:inset 0 0 0 1px #19191b08;
  }
@@ -27,11 +27,3 @@
 @media(prefers-reduced-motion:reduce) {
  .auth-console .collection-item,.auth-console .console-row,.auth-console tbody tr { transition:none; }
 }
-/* Tenant navigation states never paint into the fixed gap between items. */
-.auth-console .tenant-page .tenant-directory .tenant-choice { box-shadow:none; }
-.auth-console .tenant-page .tenant-directory .tenant-choice.selected { background:var(--accent-soft); }
-@media(hover:hover) {
- .auth-console .tenant-page .tenant-directory .tenant-choice:not(:disabled):hover { background:#eceef4; box-shadow:inset 0 0 0 1px #19191b0a; }
- .auth-console .tenant-page .tenant-directory .tenant-choice.selected:not(:disabled):hover { background:#e1e6f6; box-shadow:none; }
-}
-.auth-console .tenant-page .tenant-directory .tenant-choice:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

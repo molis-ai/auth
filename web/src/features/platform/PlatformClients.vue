@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readPages } from "../../shared/api/read-pages.ts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
@@ -60,18 +61,7 @@ function replaceClients(items: LoginClient[]) {
 
 async function load() {
   if (!canRead.value || !active) return;
-  const items: LoginClient[] = [];
-  const seen = new Set<string>();
-  let cursor: string | null = null;
-  do {
-    const result: { items: LoginClient[]; nextCursor: string | null } = await props.client.request(
-      listPath + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-    );
-    items.push(...result.items);
-    cursor = result.nextCursor;
-    if (cursor && seen.has(cursor)) throw Error("分页状态已变化，请刷新");
-    if (cursor) seen.add(cursor);
-  } while (cursor && active);
+  const items = await readPages<LoginClient>(props.client, listPath, () => active);
   if (!active) return;
   replaceClients(items);
   loaded.value = true;

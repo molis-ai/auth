@@ -7823,7 +7823,6 @@
                 "POLICY_MISMATCH",
                 "TENANT_DISABLED",
                 "REAUTH_REQUIRED",
-                "CLIENT_POLICY_REQUIRES_V2",
                 "TENANT_API_REQUIRED"
               ]
             },

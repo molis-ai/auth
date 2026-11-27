@@ -2,7 +2,7 @@
 
 本文件说明 Auth 账号服务及产品接入。身份、会话、资料、租户、成员和平台管理接口以 [Auth 可执行合同](../../contracts/unified-account/README.md) 为准。
 
-AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
+AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 统一账号协议，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [历史整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
 ## 当前登录入口与三端行为（2026-11-15）
 
@@ -59,9 +59,9 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 | API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
 | API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
 
-当前只提供 V2 账号运行入口。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account/management.rs)和[团队](../../worker/rust/src/team/mod.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、V1 团队 API和权限矩阵实现已删除，不保留别名或失败降级。
+当前公开账号运行入口位于 `/api/v1`。请求由[路由](../../worker/rust/src/app.rs)分发到[登录会话](../../worker/rust/src/auth/login_sessions.rs)、[资料与安全](../../worker/rust/src/account/management.rs)和[团队](../../worker/rust/src/team/mod.rs)等领域模块。旧 V1 认证、OAuth2 用户授权、根会话、V1 团队 API和权限矩阵实现已删除，不保留别名或失败降级。
 
-V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求自行选择。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 V2 用户与租户，不读取或自动转换旧 TEAM。
+平台登记登录客户端与允许来源，相关策略由服务端决定。每个入口执行同一会话、客户端、平台或租户权限守卫。新环境直接创建 统一账号协议 用户与租户，不读取或自动转换旧 TEAM。
 
 ## 2 API-01 通用约定
 
@@ -202,7 +202,7 @@ Auth 控制台专用 `GET /api/account/login-sessions` 使用同源登录 Cookie
 | 方法与路径 | 请求/返回 | 权限及条件 |
 | --- | --- | --- |
 | GET `/tenants` | 当前用户 TenantView 列表及个人 Scope | 仅本人加入的租户；停用租户仅必要摘要 |
-| GET `/tenant-creation-policy` | `{mode:SELF_SERVICE/PLATFORM_ONLY}` | 当前 V2 登录；策略来自受信部署配置，不接受页面覆盖 |
+| GET `/tenant-creation-policy` | `{mode:SELF_SERVICE/PLATFORM_ONLY}` | 当前统一账号会话；策略来自受信部署配置，不接受页面覆盖 |
 | POST `/tenants` | `{name}` → TenantView | SELF_SERVICE 模式；所有者固定为当前登录用户，原子建立唯一 OWNER，要求 Idempotency-Key；不赠送订阅或席位 |
 | GET `/tenants/{tenantId}` | TenantView、允许的管理操作 | 正常租户当前成员；平台查看走平台接口 |
 | PATCH `/tenants/{tenantId}` | `name,expectedVersion` → TenantView | OWNER/ADMIN |
@@ -299,7 +299,7 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 ## 11 切换与合同交付
 
-2026-11-08 决定按上线前直接替换执行：新环境注册 V2 用户，不保留旧账号、密码编码、Team、Cookie、Token、SDK 别名或协议回退。历史盘点与双栈演练不再是当前交付条件，也不授权本次清空真实库。当前两个仓库的基线、实现与验证见 [V2 整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v2-consolidation.md)。
+2026-11-08 决定按上线前直接替换执行：新环境注册 统一账号协议 用户，不保留旧账号、密码编码、Team、Cookie、Token、SDK 别名或协议回退。历史盘点与双栈演练不再是当前交付条件，也不授权本次清空真实库。当前两个仓库的基线、实现与验证见 [历史整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。
 
 合同交付包含 OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、平台能力与租户角色、版本与幂等约定、脱敏夹具和变更记录。Rust 与消费端 TypeScript 使用同一合同样本校验，禁止分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
 

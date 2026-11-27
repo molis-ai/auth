@@ -1,3 +1,5 @@
+import { ReadOnlyCache } from "./read-only-cache.ts";
+
 /** Same-origin account client. Central credentials and proofs belong to the same-origin Host/BFF. */
 export interface AccountView {
   state: "ANONYMOUS" | "AUTHENTICATED" | "OFFLINE_CACHED" | "EXPIRED";
@@ -37,6 +39,7 @@ export class AccountClient {
   private closed = false;
   private csrf = "";
   private generation = 0;
+  private readonly readCache = new ReadOnlyCache();
   private readonly pending = new Set<AbortController>();
   private bootstrap?: Promise<AccountView>;
   private signout?: Promise<unknown>;
@@ -96,8 +99,29 @@ export class AccountClient {
       if (signout) await signout;
       this.checkGeneration(generation);
       if (method !== "GET" && !this.csrf) await this.bootstrapSession();
-      return this.send<T>(path, body, method, generation, signal, key);
+      const cached = method === "GET" ? this.readCache.read(path) : undefined;
+      if (cached?.hit) return cached.value as T;
+      const data = await this.send<T>(path, body, method, generation, signal, key);
+      if (cached && !cached.hit) cached.remember(data);
+      return data;
     }, signal);
+  }
+
+  peekRead<T>(path: string): T | undefined {
+    const cached = this.readCache.read(path);
+    return cached?.hit ? cached.value as T : undefined;
+  }
+
+  hasCachedRead(path: string): boolean {
+    return this.readCache.read(path)?.hit === true;
+  }
+
+  invalidateReads(prefix = ""): void {
+    this.readCache.invalidate(prefix);
+  }
+
+  private accountScope(view: AccountView | undefined): void {
+    this.readCache.setScope(view?.state === "AUTHENTICATED" ? view.user?.userId : undefined);
   }
 
   private bootstrapSession(): Promise<AccountView> {
@@ -121,6 +145,7 @@ export class AccountClient {
     const previous = [...this.pending];
     this.generation++;
     this.bootstrap = undefined;
+    this.readCache.setScope();
     // Logout fences in-flight responses and reaches the server without waiting for old work.
     const result = this.track(async (generation, signal) => {
       if (!this.csrf) await this.bootstrapSession();
@@ -152,6 +177,7 @@ export class AccountClient {
   }
   close(): void {
     this.closed = true;
+    this.readCache.setScope();
     this.generation++;
     for (const controller of this.pending) controller.abort(CANCEL);
   }
@@ -238,6 +264,7 @@ export class AccountClient {
       // Another response may already have supplied a newer token.
       if (path !== LOGIN_CAPABILITIES_PATH && csrf && this.csrf === sentCsrf) this.csrf = csrf;
       if (!response.ok) {
+        if (response.status === 401) this.readCache.setScope();
         const code = /^[A-Z][A-Z0-9_]{1,63}$/.test(reply?.error?.code ?? "")
           ? reply.error.code : "AUTH_UNAVAILABLE";
         const requestId = typeof reply?.requestId === "string" ? reply.requestId : "";
@@ -245,6 +272,15 @@ export class AccountClient {
       }
       if (!reply || !Object.hasOwn(reply, "data"))
         throw new AuthError("INVALID_RESPONSE");
+      if (path === "/session") this.accountScope(reply.data);
+      if (path.startsWith("/auth/login/")) this.accountScope(reply.data?.account);
+      if (method !== "GET") {
+        if (path.startsWith("/billing/")) this.readCache.invalidate("/billing/");
+        else {
+          for (const prefix of ["/tenants", "/tenant-creation-policy", "/login-methods"])
+            this.readCache.invalidate(prefix);
+        }
+      }
       return reply.data as T;
     } catch (error) {
       this.checkGeneration(generation);

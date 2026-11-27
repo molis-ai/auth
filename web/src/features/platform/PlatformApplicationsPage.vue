@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readPages } from "../../shared/api/read-pages.ts";
 import { useAccountContext } from "../../shared/api/account-context.ts";
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -46,7 +47,7 @@ onMounted(() => {
   selectedApplication.value = undefined;
   void run(async () => {
     applicationClientCounts.value.clear();
-    applications.value = await list("/platform/applications");
+    applications.value = await readPages<Application>(client, "/platform/applications");
     if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
   });
 });
@@ -56,24 +57,6 @@ onBeforeUnmount(() => {
   createApplicationDialog.value?.close();
 });
 
-async function list<T>(path: string): Promise<T[]> {
-  const result: T[] = [];
-  let cursor: string | null = null;
-  const seen = new Set<string>();
-  do {
-    const page: { items: T[]; nextCursor: string | null } =
-      await client.request<{ items: T[]; nextCursor: string | null }>(
-        path +
-          "?limit=100" +
-          (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-      );
-    result.push(...page.items);
-    cursor = page.nextCursor;
-    if (cursor && seen.has(cursor)) throw Error("分页状态发生变化，请刷新");
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  return result;
-}
 
 function openApplication(a: Application) {
   selectedApplication.value = a;
@@ -105,7 +88,7 @@ async function createApplication() {
         createApplicationDialog.value?.close();
         openApplication(created);
       },
-      after: async () => { applications.value = await list("/platform/applications"); },
+      after: async () => { applications.value = await readPages<Application>(client, "/platform/applications"); },
     });
   } catch (error) {
     if (error instanceof AuthError && error.code === "CANCELLED") return;
@@ -127,7 +110,7 @@ function editApplication() {
       openApplication(saved);
     },
     after: async saved => {
-      applications.value = await list("/platform/applications");
+      applications.value = await readPages<Application>(client, "/platform/applications");
       const latest = applications.value.find(a => a.applicationId === saved.applicationId);
       if (latest && selectedApplication.value?.applicationId === saved.applicationId &&
         selectedApplication.value.version === saved.version &&
@@ -138,7 +121,7 @@ function editApplication() {
 </script>
 
 <template>
-  <section class="applications-page">
+  <section class="applications-page" data-console-layout="rail" data-console-flush>
     <div class="applications-layout">
       <aside class="applications-rail" aria-label="应用列表">
         <div class="apps-rail-head">

@@ -23,7 +23,7 @@ test('local admin bootstrap uses current Rust policy and password encoding', asy
   await assert.rejects(localCredential('admin@example.com', 'password123'), /INVALID_REQUEST/)
 })
 
-test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong password', async () => {
+test('central authenticates a known PBKDF2 encoding vector and rejects a wrong password', async () => {
   const origin = 'http://127.0.0.1:8787'
   const proxy = await getRustProxy({
     AUTH_ORIGIN: origin,

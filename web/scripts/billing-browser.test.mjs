@@ -158,7 +158,7 @@ try {
   await run(authDb, "UPDATE auth_environment SET kind='TEST',auth_origin=?", origin);
   await run(authDb, "UPDATE auth_client SET allowed_origins=?", JSON.stringify([origin]));
   await run(authDb, "UPDATE auth_client SET redirects=?", JSON.stringify([origin + "/account/callback"]));
-  auth = await runtime.getWorker("auth");
+  auth = { fetch: (url, options) => runtime.dispatchFetch(url, options) };
   unavailable = await runtime.getWorker("without-billing");
   identity = await runtime.getWorker("verify-fixture");
   browser = await ChromeHarness.start(profile);

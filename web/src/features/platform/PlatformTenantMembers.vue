@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { roleLabel } from "../../shared/format/role-label.ts";
 import type { PlatformTenantMember } from "./platform-tenants.ts";
 
 defineProps<{
@@ -8,9 +9,6 @@ defineProps<{
   canLoadMore: boolean;
 }>();
 const emit = defineEmits<{ more: [] }>();
-const roleLabel: Record<PlatformTenantMember["role"], string> = {
-  OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员",
-};
 </script>
 
 <template>
@@ -28,7 +26,7 @@ const roleLabel: Record<PlatformTenantMember["role"], string> = {
         <strong class="pt-kv-strong">{{ member.displayName || member.userId }}</strong>
         <span v-if="member.email" class="pt-kv-sub">{{ member.email }}</span>
       </div>
-      <div class="pt-member-role"><span class="pt-pill is-neutral">{{ roleLabel[member.role] }}</span></div>
+      <div class="pt-member-role"><span class="pt-pill is-neutral">{{ roleLabel(member.role) }}</span></div>
     </div>
   </div>
   <div v-else class="pt-empty-state is-compact" role="status">

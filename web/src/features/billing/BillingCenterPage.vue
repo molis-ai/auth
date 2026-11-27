@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { roleLabel } from "../../shared/format/role-label.ts";
 import { useAccountContext } from "../../shared/api/account-context.ts";
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { AuthError } from "../../shared/api/account-client.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
@@ -29,7 +30,6 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ expired: [error: AuthError] }>();
 
-const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 const credits = new Intl.NumberFormat("zh-CN");
 const selectedKey = ref<string>(props.initialSubjectId || "personal");
 const tenantDirectory = cursorCollection<TenantLedger>(client);
@@ -38,12 +38,15 @@ const tenantsError = ref("");
 const summaries = reactive<Record<string, LedgerSummary>>({});
 const lifetime = new AbortController();
 const focusedTenant = ref<TenantLedger>();
+const cachedDirectory = ref(false);
+const validatedSubject = ref("");
+
 
 const selectedTenant = computed(() =>
   selectedKey.value === "personal"
     ? undefined
-    : tenants.value.find(tenant => tenant.tenantId === selectedKey.value) ??
-      (focusedTenant.value?.tenantId === selectedKey.value ? focusedTenant.value : undefined),
+    : (focusedTenant.value?.tenantId === selectedKey.value ? focusedTenant.value : undefined) ??
+      tenants.value.find(tenant => tenant.tenantId === selectedKey.value),
 );
 
 const billingScope = computed(() => {
@@ -63,7 +66,10 @@ async function loadTenants(append = false) {
   tenantsError.value = "";
   try {
     if (append) await tenantDirectory.more();
-    else await tenantDirectory.first("/tenants");
+    else {
+      cachedDirectory.value = client.hasCachedRead("/tenants?limit=20");
+      await tenantDirectory.first("/tenants", 20, { revalidate: true });
+    }
     if (lifetime.signal.aborted) return;
     const key = selectedKey.value;
     if (key !== "personal" && !tenants.value.some(t => t.tenantId === key)) {
@@ -89,6 +95,26 @@ async function loadTenants(append = false) {
   }
 }
 
+watch([selectedKey, cachedDirectory], async ([key, cached], _, onCleanup) => {
+  validatedSubject.value = "";
+  if (!cached || key === "personal") return;
+  const controller = new AbortController();
+  onCleanup(() => controller.abort());
+  try {
+    const latest = await client.request<TenantLedger>(
+      "/tenants/" + encodeURIComponent(key), undefined, "GET", undefined, controller.signal,
+    );
+    if (controller.signal.aborted) return;
+    focusedTenant.value = latest;
+    validatedSubject.value = key;
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    if (error instanceof AuthError && error.status === 401) emit("expired", error);
+    else if (error instanceof AuthError && (error.status === 404 || error.code === "TENANT_DISABLED")) selectLedger("personal");
+    else tenantsError.value = accountErrorMessage(error);
+  }
+}, { immediate: true });
+
 function updateSummary(key: string, value: LedgerSummary) {
   summaries[key] = value;
 }
@@ -105,7 +131,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="console-card billing-center-page" aria-label="订阅与账单">
+  <section class="console-card billing-center-page" data-console-layout="rail" aria-label="订阅与账单">
     <div class="billing-directory-shell">
       <aside class="billing-rail" aria-label="账本目录">
         <div class="billing-rail-head">
@@ -175,7 +201,7 @@ onBeforeUnmount(() => {
                   />
                 </span>
                 <span class="billing-rail-sub">
-                  <span>{{ roleLabels[tenant.myRole] ?? tenant.myRole }}{{ tenant.status !== "ACTIVE" ? " · 已停用" : "" }}</span>
+                  <span>{{ roleLabel(tenant.myRole) ?? tenant.myRole }}{{ tenant.status !== "ACTIVE" ? " · 已停用" : "" }}</span>
                   <span v-if="typeof summaries[tenant.tenantId]?.available === 'number'" class="billing-rail-cr">
                     {{ credits.format(summaries[tenant.tenantId]!.available!) }} Cr
                   </span>
@@ -193,13 +219,13 @@ onBeforeUnmount(() => {
       <div class="billing-directory-detail">
         <div class="billing-directory-inner">
           <BillingPanel
-            v-if="selectedKey === 'personal' || selectedTenant"
+            v-if="selectedKey === 'personal' || (selectedTenant && (!cachedDirectory || validatedSubject === selectedKey))"
             :key="billingScope"
             :client="client"
             :viewer-id="viewerId"
             :owner-name="selectedTenant ? selectedTenant.name : viewerName"
             :tenant-id="selectedTenant?.tenantId"
-            :role-label="selectedTenant ? (roleLabels[selectedTenant.myRole] ?? selectedTenant.myRole) : '本人'"
+            :role-label="selectedTenant ? (roleLabel(selectedTenant.myRole) ?? selectedTenant.myRole) : '本人'"
             :can-manage-orders="canManageSelected"
             @expired="emit('expired', $event)"
             @order-access-denied="loadTenants(false)"

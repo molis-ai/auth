@@ -1,6 +1,6 @@
 # 阿里云短信认证
 
-Auth 网页与 Molis Work 使用同一套 V2 challenge / verify / phone / complete 接口。唯一短信认证适配位于 `worker/rust/src/delivery/sms_auth.rs`；Workers HTTP 与 RPC 签名位于 `runtime/aliyun.js`。不调用 Dysmsapi，不使用普通短信套餐。
+Auth 网页与 Molis Work 使用同一套 统一账号协议 challenge / verify / phone / complete 接口。唯一短信认证适配位于 `worker/rust/src/delivery/sms_auth.rs`；Workers HTTP 与 RPC 签名位于 `runtime/aliyun.js`。不调用 Dysmsapi，不使用普通短信套餐。
 
 ## 部署配置
 

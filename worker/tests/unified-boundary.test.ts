@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 
-test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthenticated management requests without effects', async () => {
+test('AUTH-02/07/08/09/10: central boundaries reject unavailable routes and unauthenticated management requests without effects', async () => {
   const origin = 'http://127.0.0.1:8787'
   const config = {
     environmentId: 'unified-local',

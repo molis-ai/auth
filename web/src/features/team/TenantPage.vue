@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { roleLabel } from "../../shared/format/role-label.ts";
 import { useAccountContext } from "../../shared/api/account-context.ts";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { AuthError } from "../../shared/api/account-client.ts";
@@ -38,13 +39,13 @@ const emit = defineEmits<{ expired: [error: unknown]; dispose: []; clearToast: [
 const canInviteByPhone = document.querySelector<HTMLMetaElement>(
   'meta[name="molis-tenant-invite-channels"]',
 )?.content.split(" ").includes("PHONE") ?? false;
-const roleLabels: Record<string, string> = { OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员" };
 
 const directory = cursorCollection<Tenant>(client);
 const memberDirectory = cursorCollection<Member>(client);
 const { loading: tenantsLoading, nextCursor: moreTenants } = directory;
 const { loading: membersLoading } = memberDirectory;
 let directoryRead = 0;
+const billingMembership = ref<string>();
 const selectedTenant = ref<Tenant>();
 const teamTab = ref<"members" | "billing">("members");
 const tenantSearch = ref("");
@@ -86,7 +87,7 @@ const tenantPath = (id: string) => "/tenants/" + encodeURIComponent(id);
 async function refreshDirectory(reconcileSelection = true) {
   if (disposed) return;
   const request = ++directoryRead;
-  if (!(await directory.first("/tenants")) || request !== directoryRead) return;
+  if (!(await directory.first("/tenants", 20, { revalidate: true })) || request !== directoryRead) return;
   const selected = selectedTenant.value;
   if (!reconcileSelection || !selected) return;
   let latest: Tenant | undefined;
@@ -104,6 +105,18 @@ async function refreshDirectory(reconcileSelection = true) {
     await read("members", () => reloadMembers(latest));
   }
 }
+watch([teamTab, () => selectedTenant.value?.tenantId], async ([tab, tenantId], _, onCleanup) => {
+  billingMembership.value = undefined;
+  if (tab !== "billing" || !tenantId || !props.billingEnabled) return;
+  let current = true;
+  onCleanup(() => { current = false; });
+  await read("members", async () => {
+    const latest = await client.request<Tenant>(tenantPath(tenantId));
+    if (!current || disposed) return;
+    selectedTenant.value = latest;
+    if (latest) billingMembership.value = tenantId;
+  });
+});
 function clearMembers() {
   delete errors.members;
   memberPage.value = 1;
@@ -242,7 +255,7 @@ onBeforeUnmount(() => {
             <button
               v-for="tenant in tenants"
               :key="tenant.tenantId"
-              class="console-row collection-item tenant-choice"
+              class="console-row collection-item tenant-choice" data-local-hover
               :class="{ selected: selectedTenant?.tenantId === tenant.tenantId }"
               :aria-current="selectedTenant?.tenantId === tenant.tenantId ? 'true' : undefined"
               :disabled="busy"
@@ -254,7 +267,7 @@ onBeforeUnmount(() => {
                   <span class="tenant-choice-name">{{ tenant.name }}</span>
                   <i class="tenant-choice-dot" :class="tenant.status === 'ACTIVE' ? 'is-on' : 'is-off'" aria-hidden="true"></i>
                 </div>
-                <span class="tenant-choice-meta">{{ roleLabels[tenant.myRole] }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
+                <span class="tenant-choice-meta">{{ roleLabel(tenant.myRole) }} · {{ tenant.status === 'ACTIVE' ? '正常' : '已停用' }}</span>
               </div>
             </button>
           </nav>
@@ -276,7 +289,7 @@ onBeforeUnmount(() => {
             v-model:tab="teamTab"
             :client="client"
             :viewer-id="viewerId"
-            :billing-enabled="billingEnabled"
+            :billing-enabled="billingEnabled && billingMembership === selectedTenant.tenantId"
             :tenant="selectedTenant"
             :members="members"
             :loading="membersLoading"

@@ -6,7 +6,7 @@ import { hash, secret } from './fixtures.ts'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
 for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
-  test(`V2U-09 tenant creation policy ${mode ?? 'default'} preserves ownership and platform boundaries`, async () => {
+  test(`AUTH-U-09 tenant creation policy ${mode ?? 'default'} preserves ownership and platform boundaries`, async () => {
     const origin = 'http://127.0.0.1:8787'
     const proxy = await getRustProxy({
       AUTH_ORIGIN: origin,
@@ -35,7 +35,7 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         access = secret()
       const statement = (sql: string, ...values: (string | number)[]) =>
         db.prepare(sql).bind(...values)
-      // Trusted fixture issues a live V2 session, not a public claimed-user endpoint.
+      // Trusted fixture issues a live central session, not a public claimed-user endpoint.
       await db.batch([
         statement(
           "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('creator','Creator','ACTIVE',NULL,?,?)",

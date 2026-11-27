@@ -1,6 +1,6 @@
 # Work / Club 统一账号接入与管理说明
 
-> 2026-11-08：尚未上线，直接使用 V2，不保留旧账号、协议或 SDK 兼容。Auth 与 Work 的实现、验证及剩余验收见 [V2 整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v2-consolidation.md)。Club 未在本次两个检出核对，不以历史记录代替当前验收。
+> 2026-11-08：尚未上线，直接使用 统一账号协议，不保留旧账号、协议或 SDK 兼容。Auth 与 Work 的实现、验证及剩余验收见 [历史整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。Club 未在本次两个检出核对，不以历史记录代替当前验收。
 
 本说明对应本分支合同开发版 1.2.0。真实域名、发送服务及 Google/GitHub LIVE 联调不由本地 mock 验证证明；历史 AUTH-12 [矩阵](acceptance-matrix.md)和[摘要](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery-manifest.json)只记录当时交付。
 
@@ -54,9 +54,9 @@ X-CSRF-Token: <本次浏览器会话的 CSRF>
 
 ## 平台与租户管理
 
-### 本地首位 V2 平台人员初始化
+### 本地首位 统一账号协议 平台人员初始化
 
-隔离本地 D1 完成迁移后，若平台授权表为空，可在 Auth 检出根目录执行 `npm run admin`，创建新的本地平台管理员。命令拒绝接管已有账号。普通授权、回收和用户状态管理使用独立的 V2 平台能力与页面，服务端每次复核当前权限和版本。
+隔离本地 D1 完成迁移后，若平台授权表为空，可在 Auth 检出根目录执行 `npm run admin`，创建新的本地平台管理员。命令拒绝接管已有账号。普通授权、回收和用户状态管理使用独立的 统一账号协议 平台能力与页面，服务端每次复核当前权限和版本。
 
 ### 创建策略（1.2.0 开发版）
 
@@ -79,14 +79,14 @@ X-CSRF-Token: <本次浏览器会话的 CSRF>
 
 普通退出仅当前产品本次登录；全部退出覆盖该账号两产品所有登录。改密保留可信当前登录、撤销其余；找回重设撤销全部。退出远端撤销不确定时显示 UNCONFIRMED，不表示已让所有设备退出。离线缓存只能展示身份，不授权成员管理或付费功能；Work 本地能力继续可用。
 
-Auth 的旧认证、OAuth2、Team 和权限矩阵入口已删除，Work 不读取 personal 旧凭据。新环境直接注册 V2 用户，不设计旧密码、第三方身份、Cookie 或 Token 接续。[账号迁移方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/account-migration-plan.md)中的旧演练只作历史记录，不是现行操作流程。没有对真实库执行清空或自动重建。
+Auth 的旧认证、OAuth2、Team 和权限矩阵入口已删除，Work 不读取 personal 旧凭据。新环境直接注册 统一账号协议 用户，不设计旧密码、第三方身份、Cookie 或 Token 接续。[账号迁移方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/account-migration-plan.md)中的旧演练只作历史记录，不是现行操作流程。没有对真实库执行清空或自动重建。
 
 仍有可用方式时，登录并再次验证后绑定/换绑；仅忘记邮箱密码可走找回密码入口。全部丢失时先向邮箱服务商、运营商或 Google/GitHub 找回原方式；首期没有人工恢复，新注册账号不自动继承原账号资料或内容，也不按相同邮箱自动合并。
 
 
-## Auth 自身的 V2 浏览器入口
+## Auth 自身的 统一账号协议 浏览器入口
 
-Auth Vue 页面也调用同源 `/api/account`。`AUTH_WEB_CLIENT_ID` 必须登记为当前环境的 V2 WEB 客户端，回调固定到 Auth origin 的 `/account/callback`。BFF 的 opaque HttpOnly Cookie 只引用 `auth_web_session`；D1 中的会话与待办证明用 `AUTH_WEB_SESSION_KEY` 加密，绑定记录 ID。写请求同时检查 Origin 与 CSRF，所有中央写入在原 BFF revision 上提交；退出先清本地会话并提高 revision，迟到写入不能恢复它。
+Auth Vue 页面也调用同源 `/api/account`。`AUTH_WEB_CLIENT_ID` 必须登记为当前环境的 统一账号协议 WEB 客户端，回调固定到 Auth origin 的 `/account/callback`。BFF 的 opaque HttpOnly Cookie 只引用 `auth_web_session`；D1 中的会话与待办证明用 `AUTH_WEB_SESSION_KEY` 加密，绑定记录 ID。写请求同时检查 Origin 与 CSRF，所有中央写入在原 BFF revision 上提交；退出先清本地会话并提高 revision，迟到写入不能恢复它。
 
 登录成功后，BFF 在同一 guarded batch 中创建新的加密会话引用并删除匿名引用，响应更新 Cookie 和 CSRF。旧匿名 Cookie 不获得登录后的权限，旧 CSRF 不能写入新会话；失败的登录不向匿名引用保存认证材料。浏览器仍只接触 opaque Cookie，中央 Token 不进入响应。
 

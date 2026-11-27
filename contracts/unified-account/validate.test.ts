@@ -22,7 +22,7 @@ const fixtures = read("fixtures.json").fixtures as {
 const policy = read("policy.json");
 const openapi = read("openapi.json");
 
-test("V2C-01 retired service credentials have no public schema, capability or operation", () => {
+test("AUTH-C-01 retired service credentials have no public schema, capability or operation", () => {
   for (const capability of ["SERVICE_READ", "SERVICE_WRITE"])
     assert.equal(validateNamed("PlatformCapability", capability), false);
   assert.equal(

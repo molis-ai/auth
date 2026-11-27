@@ -102,3 +102,12 @@
 @media (max-width: 760px) {
   .auth-console .tenant-page input:not([type=checkbox]) { font-size: 16px; height: 40px; }
 }
+
+/* Tenant navigation states never paint into the fixed gap between items. */
+.auth-console .tenant-page .tenant-directory .tenant-choice { box-shadow:none; }
+.auth-console .tenant-page .tenant-directory .tenant-choice.selected { background:var(--accent-soft); }
+@media(hover:hover) {
+ .auth-console .tenant-page .tenant-directory .tenant-choice:not(:disabled):hover { background:#eceef4; box-shadow:inset 0 0 0 1px #19191b0a; }
+ .auth-console .tenant-page .tenant-directory .tenant-choice.selected:not(:disabled):hover { background:#e1e6f6; box-shadow:none; }
+}
+.auth-console .tenant-page .tenant-directory .tenant-choice:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

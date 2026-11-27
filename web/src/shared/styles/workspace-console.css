@@ -119,18 +119,8 @@
 .account-menu-email { font-size:11px; color:var(--muted); }
 .account-menu-chevron { width:12px; height:12px; color:var(--muted); stroke-width:2; }
 
-/* Secondary navigation is a full-height column adjoining the primary rail. */
-.auth-console .workspace-body main:has(.security-page),
-.auth-console .workspace-body main:has(.pending-page),
-.auth-console .workspace-body main:has(.billing-center-page),
-.auth-console .workspace-body main:has(.platform-users-page),
-.auth-console .workspace-body main:has(.platform-tenants-page),
-.auth-console .workspace-body main:has(.platform-audit-page),
-.auth-console .workspace-body main:has(.applications-page) { padding:0; }
-.auth-console .security-page,
-.auth-console .pending-page,
-.auth-console .platform-tenants-page,
-.auth-console .platform-audit-page,
-.auth-console .applications-page { margin:0; }
+/* Pages with a secondary rail own the full width beside the primary navigation. */
+.auth-console .workspace-body main:has([data-console-layout="rail"]) { padding:0; }
+.auth-console [data-console-flush] { margin:0; }
 
 .session-check-placeholder { min-height:40px; display:flex; align-items:center; }

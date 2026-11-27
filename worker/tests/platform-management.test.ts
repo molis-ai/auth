@@ -6,7 +6,7 @@ import { hash, secret, challenge } from './fixtures.ts'
 import { bootstrapPlatform } from '../scripts/platform-bootstrap.mjs'
 import { validateNamed } from '../../contracts/unified-account/validate.ts'
 
-test('V2U-04 V2 platform applications and clients require explicit current authority', async () => {
+test('AUTH-U-04 central platform applications and clients require explicit current authority', async () => {
   const origin = 'http://127.0.0.1:8787'
   const p = await getRustProxy({
     AUTH_ORIGIN: origin,
@@ -91,7 +91,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       ).run()
     }
     assert.equal((await call('/applications', undefined, 'GET', secret(), null)).status, 401)
-    assert.equal((await call('/applications')).status, 403) // V1 admin configuration is not V2 authority.
+    assert.equal((await call('/applications')).status, 403) // V1 admin configuration is not central authority.
     assert.equal((await call('/applications', { name: 'Denied' })).status, 403)
     await grant('APPLICATION_WRITE')
     assert.equal((await call('/applications')).status, 403)
@@ -397,7 +397,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       { ...base, purpose: 'BIND', method: 'EMAIL_CODE' },
       '/api/v1/auth/transactions',
     )
-    // V2C-01: an authenticated operator cannot resurrect retired service administration.
+    // AUTH-C-01: an authenticated operator cannot resurrect retired service administration.
     const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_management_audit').first())
       .n
     assert.equal((await call('/applications/' + app.applicationId + '/services')).status, 404)

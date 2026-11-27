@@ -800,7 +800,6 @@ const errorCodes: Record<string, string[]> = {
     'POLICY_MISMATCH',
     'TENANT_DISABLED',
     'REAUTH_REQUIRED',
-    'CLIENT_POLICY_REQUIRES_V2',
     'TENANT_API_REQUIRED',
   ],
   '404': ['NOT_FOUND'],

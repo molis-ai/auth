@@ -10,15 +10,15 @@
 | --- | --- | --- | --- | --- |
 | T03-SMS | `+86` 手机验证码注册、登录、绑定、换绑和再次验证 | 已选阿里云短信。申请材料草稿和 API 映射已准备。控制台要求登录，企业账号及已有资源待核对。Auth 仍走 mock | 企业管理员登录后查资质、签名和模板，按缺项提交。报备后在授权测试号码验证 | 阿里云企业账号管理员申请，Auth 接适配器 |
 | T03-MAIL | 邮箱验证码注册、密码找回和邮箱证明 | 已在 GoDaddy 的 Titan Webmail 核实 `support@molis.ai` 为 Pro Light。专用发件邮箱、账号级 SMTP 设置和实际外发额度待核。管理员后台要求单独登录。Cloudflare Email Sending 暂缓，Auth 仍走 mock | 确认专用发件邮箱及 SMTP 认证方式，从隔离 Auth Worker 试投并检查认证、时延和限流。Resend 保留为事务邮件 API 备选 | 邮箱管理员准备资源，Auth 接适配器 |
-| T03-GOOGLE | Google 登录、绑定、换绑和再次验证 | Auth v2 只支持模拟授权和换码。已删除的 v1 Google 实现仅可从 Git 历史参考。用户正在确认 Google Cloud 项目 | 选定项目后配置授权页、隔离 Web 客户端及精确 Auth 回调 | Google 项目管理员登记，Auth 接适配器 |
+| T03-GOOGLE | Google 登录、绑定、换绑和再次验证 | Auth 统一账号协议 只支持模拟授权和换码。已删除的 v1 Google 实现仅可从 Git 历史参考。用户正在确认 Google Cloud 项目 | 选定项目后配置授权页、隔离 Web 客户端及精确 Auth 回调 | Google 项目管理员登记，Auth 接适配器 |
 | T03-GITHUB | GitHub 登录、绑定、换绑和再次验证 | `molis-ai` 组织已登记 staging 应用 #4002147 和生产应用 #4002664。三端 staging 真实登录、Club 再次验证及重复绑定拒绝通过，绑定和换绑成功路径的夹具测试通过 | [Auth #3](https://github.com/molis-ai/auth/pull/3) 已合入 `main`（`99c28b3`）。生产待确认，先对齐仓库域名和产品客户端，再按验收及回滚方案发布。[生产配置与发布门槛](#github-生产上线准备) | `molis-ai` 组织管理员负责应用，Auth 及 Work、Club 发布负责人负责接入 |
 | T03-ENV | 供应商回调、Work/Club 回跳及密钥注入 | Cloudflare 已分别绑定 `auth-staging.molis.ai` 与 `club-staging.molis.ai` 到独立 staging Worker。两个 Worker 各使用专用 D1 | 已验两个域名可达；Work 网页实测使用 `http://127.0.0.1:44207`，Tauri 分发包使用 `http://127.0.0.1:4173`，两者使用独立 Auth 客户端 | Cloudflare 管理员与 Auth、Work、Club 联调负责人 |
 
 记录进度时分别填资源状态（待申请、已提交、已获批）、适配状态（mock、LIVE 已实现）和联调证据（待验、实际送达或官方回调已验）。每次提交补控制台工单或应用引用、账号归属、环境、负责人和日期。真实密钥值由管理员放入目标环境的秘密存储。
 
-现行 v2 投递与验证见 [delivery/mod.rs](../../worker/rust/src/delivery/mod.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/mail-delivery.md)
+现行 统一账号协议 投递与验证见 [delivery/mod.rs](../../worker/rust/src/delivery/mod.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/mail-delivery.md)
 
-GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [management.rs](../../worker/rust/src/account/management.rs) · [unified_policy.rs](../../worker/rust/src/core/contracts/unified_policy.rs)
+GitHub 已在 staging 启用真实授权与回调，Google 统一账号协议 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [management.rs](../../worker/rust/src/account/management.rs) · [unified_policy.rs](../../worker/rust/src/core/contracts/unified_policy.rs)
 
 租户定向邀请使用同样的投递渠道，但走独立的通知路径。若随本批启用真实邀请，补相应通知模板及验收，单独跟踪。[邀请投递](../../worker/rust/src/delivery/mod.rs)
 
@@ -46,7 +46,7 @@ GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权
 | Cloudflare Email Sending（暂缓） | 邮件增量约 US$2.45。若为此新开 Workers Paid，另加 US$5 月费 | DNS 验证发信域，在 Auth Worker 用邮件 binding 或 REST | 已核实 Molis 账号为 Workers Free，向普通邮箱发信需要升级。 [邮件价格](https://developers.cloudflare.com/email-service/platform/pricing/) · [Workers 价格](https://developers.cloudflare.com/workers/platform/pricing/) |
 | Resend | Pro US$20/月，含 50,000 封。免费方案每月 3,000 封且每日 100 封 | 验证发信域，创建限该域的发送权限 key。Worker 调 `POST /emails`，可用 `deliveryId` 作为幂等键 | 可快速验证低量事务邮件，费用有明显的免费和付费台阶。[价格](https://resend.com/pricing?product=transactional) · [发信 API](https://resend.com/docs/api-reference/emails/send-email) · [发送权限](https://resend.com/changelog/new-api-key-permissions) |
 | 腾讯云邮件推送 | 约 ¥19 | 校验发信域及地址，提交验证码模板审核。Worker 调 `SendEmail`，以模板 ID 注入验证码变量 | 公司已有腾讯云账号或希望短信、邮件集中管理时优先对照试投。[价格](https://cloud.tencent.com/document/product/1288/47930) · [模板与发送](https://cloud.tencent.com/document/product/1288/77251) · [发信 API](https://cloud.tencent.com/document/api/1288/51034) |
-| Amazon SES | 基础发送约 US$1 | 选 AWS 区域，验证域及 DKIM，申请退出沙盒，再用 SES v2 `SendEmail` 与 AWS 签名 | 已有 AWS SES 正式账号和运维体系时可优先。新账号要增加区域、IAM 和沙盒申请工作。[价格](https://aws.amazon.com/ses/pricing/) · [沙盒申请](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html) · [发信 API](https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html) |
+| Amazon SES | 基础发送约 US$1 | 选 AWS 区域，验证域及 DKIM，申请退出沙盒，再用 SES 统一账号协议 `SendEmail` 与 AWS 签名 | 已有 AWS SES 正式账号和运维体系时可优先。新账号要增加区域、IAM 和沙盒申请工作。[价格](https://aws.amazon.com/ses/pricing/) · [沙盒申请](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html) · [发信 API](https://docs.aws.amazon.com/ses/latest/APIReference-统一账号协议/API_SendEmail.html) |
 | Postmark | Basic 约 US$15/月，免费联调每月 100 封 | 验证发件人或域名，使用 HTTPS 事务邮件 API，检查消息正文留存设置 | 需要独立事务流和投递事件时可对照试投。 [价格](https://postmarkapp.com/pricing) · [发信 API](https://postmarkapp.com/developer/api/email-api) |
 
 **独立事务邮件服务。** 发信子域候选为 `mail.molis.ai`，发件人候选为 `Molis AI <no-reply@mail.molis.ai>`，均待 DNS 管理员确认。隔离发信使用独立验证域或账号、指定收件人和独立凭据。按服务商生成的记录验证 SPF、DKIM 等所需 DNS，核对 DMARC 策略及对齐。模板分别覆盖「验证 Molis AI 注册邮箱」「重设 Molis AI 密码」「验证 Molis AI 邮箱」。正文包含验证码和有效期，用现有挑战状态验证消费。试投用实际目标用户会用的邮箱服务，记录收件箱或垃圾箱、投递耗时和退信。[Resend 域验证](https://resend.com/docs/dashboard/domains/introduction)
@@ -80,7 +80,7 @@ Google Cloud 项目是 Google 存放 OAuth 客户端、授权页配置和项目�
 
 #### GitHub 生产上线准备
 
-2026-11-08，已在 `molis-ai` 下登记独立 OAuth App `Molis AI Auth Production`（#4002664）。首页为 `https://auth.molis.ai`，唯一回调为 `https://auth.molis.ai/api/v1/auth/external/github/callback`，通配匹配和 Device Flow 关闭。已分配 Client ID `Ov23limq0OUD4PsZh6LZ`，客户端密钥待发布确认后生成。 [生产 OAuth 应用](https://github.com/organizations/molis-ai/settings/applications/4002664)
+2026-11-08，已在 `molis-ai` 下登记独立 OAuth App `Molis AI Auth Production`（#4002664）。首页为 `https://auth.molis.ai`，唯一回调为 `https://auth.molis.ai/api/v1/auth/external/github/callback`，通配匹配和 Device Flow 关闭。已分配客户端标识，客户端密钥待发布确认后生成。 [生产 OAuth 应用](https://github.com/organizations/molis-ai/settings/applications/4002664)
 
 Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生产 `AUTH_ORIGIN` 为该域名。旧 `workers.dev` 入口仍启用。正式域名 `/login` 返回 200，无凭据访问 GitHub 回调返回 401 `INVALID_TOKEN`，正式 OAuth 授权和会话仍待验收。当前生产版本 `b6e35a45` 承载 100% 流量，生产分支自动构建关闭。 [生产域名](https://dash.cloudflare.com/200c8682734af6babc8d4ae4afaff221/workers/services/view/molis-auth-production/production/domains) · [生产部署记录](https://dash.cloudflare.com/200c8682734af6babc8d4ae4afaff221/workers/services/view/molis-auth-production/production/deployments)
 
@@ -88,7 +88,7 @@ Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生�
 | --- | --- |
 | Auth 生产 Worker | 将仓库生产 Wrangler 的 `AUTH_ORIGIN`、自定义域路由及部署校验对齐 `https://auth.molis.ai`，明确保留现有 `workers.dev` 入口的兼容安排。当前校验硬编码旧域名且拒绝自定义域。现有 Console seed 也写旧回调，先核对生产登记及旧客户端使用，再形成兼容的更新方案。保留生产 D1 和 `PASSWORD_KDF` 绑定。 |
 | GitHub 参数 | 在生产配置校验中明确允许公开参数 `UNIFIED_GITHUB_CLIENT_ID`，并绑定 #4002664 的 Client ID。发布获批后，通过生产 Worker 的秘密绑定设置 `UNIFIED_GITHUB_CLIENT_SECRET` 和独立的 `PROVIDER_STATE_KEY`（32 个随机字节，无填充 base64url）。将代码、配置和密钥一起放入候选版本。 |
-| 统一账号 v2 | `UNIFIED_ACCOUNT_CONFIG` 与生产 D1 的 `auth_environment` 对齐，使用独立生产环境 ID、`PRODUCTION / LIVE / LIVE` 和正式 Auth 来源。核对 D1 迁移记录、备份和旧版本兼容性，再登记获准试点的应用、客户端、产品、来源和精确回调。直接套用 staging seed 会带入隔离客户端，生产登记须单独准备。现行生产配置要求 LIVE，邮件和短信目前仍缺 LIVE 投递适配。 |
+| 统一账号 统一账号协议 | `UNIFIED_ACCOUNT_CONFIG` 与生产 D1 的 `auth_environment` 对齐，使用独立生产环境 ID、`PRODUCTION / LIVE / LIVE` 和正式 Auth 来源。核对 D1 迁移记录、备份和旧版本兼容性，再登记获准试点的应用、客户端、产品、来源和精确回调。直接套用 staging seed 会带入隔离客户端，生产登记须单独准备。现行生产配置要求 LIVE，邮件和短信目前仍缺 LIVE 投递适配。 |
 | Work 与 Club 回跳 | Work 由发布负责人确认实际包的数字回环端口与 `/account/callback`。Club 当前可达入口为 `https://adeptify.me`，其 `/account/callback` 本次探测返回 404。确认候选 Club Worker 的回调路由及 BFF 服务绑定、`MOLIS_CLUB_ACCOUNT_CONFIG` 和独立会话密钥，再登记产品回调。GitHub 应用只登记上表的 Auth 回调。 |
 
 1. **发布前验收。** 基于包含 Auth #3 的候选提交对齐生产配置和校验，跑合同、OAuth、部署测试和生产 dry run。在独立数据上演练登记、回跳、D1 迁移兼容和回退。记录生产完整版本 ID、候选提交与版本 ID、试点客户端、观察窗口和回滚负责人。D-09 存量归属与旧客户端切换按 [账号迁移方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/account-migration-plan.md) 验收。
@@ -100,8 +100,8 @@ Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生�
 
 1. **隔离环境。** 已部署独立 Worker `molis-auth-staging`、`molis-club-staging` 并各绑定同名专用 D1。两个自定义域名已在 Cloudflare 回读确认。Auth 环境为 `TEST / MOCK 投递 / LIVE 提供方`，Club BFF 通过 Worker 服务绑定到 Auth staging。Auth 已登记 Club 的 HTTPS 回调及 Work 的数字回环回调。 [Auth staging 配置](../../worker/deploy/staging/wrangler.json) · [客户端初始化](../../worker/deploy/staging/seed.sql)
 2. **投递适配。** Auth 保持挑战生成、限流、用途、次数、过期与一次性消费规则。现有 `Sender::enqueue` 返回 D1 写入语句，LIVE 应先设计如何原子登记挑战和待投递任务，再在事务外发送并保存回执。短期验证码载荷加密、按过期清理。邮件可用供应商幂等键。短信遇到超时等结果未知的情况应核对回执再决定重试。保留密码找回的防账号枚举语义，覆盖未知邮箱在 LIVE 下的响应。API 接受、供应商回执和实际送达分别取证。
-3. **OAuth 适配。** 在现有 Auth v2 `external_login` 复用一次性 browser-start、浏览器绑定、state、PKCE、超时和客户端版本检查。Google 用固定官方端点换码并校验 ID Token 签名、签发者、受众、到期时间与 nonce，以 `sub` 关联。GitHub 换码后只用服务端认证得到的数字 ID。两端共用 Auth 的稳定身份映射，禁止按邮箱自动合并；重放、取消、并发首次登录、凭据撤销和远端换码结果未知须分别处理。同步更新 `usableForLogin`、登录方式绑定与替换保护。优先验证现有 Worker Fetch/Web Crypto 和可复用的签名校验代码。选择 SDK 时先验证 Workers/WASM 运行时兼容性。
-4. **产品回跳。** Google/GitHub 的服务商回调指向 Auth。Auth 完成验证后再回到产品的精确 `/account/callback`，Club 使用该环境的 HTTPS 来源，Work 继续用已登记的数字回环 HTTP 地址和实际端口。Work 桌面需用系统浏览器实测无应用窗口 Cookie 的回跳。产品继续走统一账号 v2 合同和现有 Host/BFF。供应商 secrets 注入 Auth，Club 只保有自身 BFF 会话密钥。[产品接入指南](integration-guide.md) · [Work 配置边界](https://github.com/molis-ai/molis-work/blob/d20f07c988efc080d7db12ff867652b819fa2408/horizontal/account/README.md) · [Club 配置说明](https://github.com/molis-ai/molis-club/blob/9ad3a6669c6227b3dee2fd416cbe03fb31a16784/docs/AUTH-SETUP.md)
+3. **OAuth 适配。** 在现有 Auth 统一账号协议 `external_login` 复用一次性 browser-start、浏览器绑定、state、PKCE、超时和客户端版本检查。Google 用固定官方端点换码并校验 ID Token 签名、签发者、受众、到期时间与 nonce，以 `sub` 关联。GitHub 换码后只用服务端认证得到的数字 ID。两端共用 Auth 的稳定身份映射，禁止按邮箱自动合并；重放、取消、并发首次登录、凭据撤销和远端换码结果未知须分别处理。同步更新 `usableForLogin`、登录方式绑定与替换保护。优先验证现有 Worker Fetch/Web Crypto 和可复用的签名校验代码。选择 SDK 时先验证 Workers/WASM 运行时兼容性。
+4. **产品回跳。** Google/GitHub 的服务商回调指向 Auth。Auth 完成验证后再回到产品的精确 `/account/callback`，Club 使用该环境的 HTTPS 来源，Work 继续用已登记的数字回环 HTTP 地址和实际端口。Work 桌面需用系统浏览器实测无应用窗口 Cookie 的回跳。产品继续走统一账号 统一账号协议 合同和现有 Host/BFF。供应商 secrets 注入 Auth，Club 只保有自身 BFF 会话密钥。[产品接入指南](integration-guide.md) · [Work 配置边界](https://github.com/molis-ai/molis-work/blob/d20f07c988efc080d7db12ff867652b819fa2408/horizontal/account/README.md) · [Club 配置说明](https://github.com/molis-ai/molis-club/blob/9ad3a6669c6227b3dee2fd416cbe03fb31a16784/docs/AUTH-SETUP.md)
 5. **隔离联调后交付。** 记录资源、版本、非秘密配置、秘密引用、环境与联系人。邮件验收注册/找回实际收件和验证码完成，短信验收三家主要运营商样本实际到达、首登和复登、绑定、失败和限流，Google/GitHub 分别验官方授权、拒绝/取消、错误或重复回调、跨端同一 Auth 用户和 GitHub 无邮箱账号。校验配置缺失明确失败、生产拒绝 mock。把真实证据补到 UAS-03/04/05/39/40/41，T-04 继续负责实际分发形态与多设备验收。[验收矩阵](acceptance-matrix.md)
 
 2026-11-08，真实 GitHub 登录通过的 Auth staging 版本为 `28174880-4cae-438e-bba7-3fc3adba1b5e`。
@@ -113,7 +113,7 @@ Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生�
 ### T-04 Work Tauri 分发包的 GitHub 回跳
 
 - 2026-11-08，以 Work `d20f07c98` 构建 macOS arm64 `0.1.0` Release DMG。App 通过签名校验，DMG 中的可执行文件与签名资源清单和被测 App 一致。此包为本地临时签名，未做 Apple 公证。DMG SHA-256：`bee9a398f74bcfaa42f79611990f07f8314b33babcb8e08ab8fa19d42d43bae6`。
-- 隔离 Home 用专用的 Auth v1 测试账号完成安装登录；真实 GitHub 测试从桌面内的「Molis 账号」发起，使用独立 v2 客户端 `molis-work-tauri-staging`，Auth 只允许回跳到 `http://127.0.0.1:4173/account/callback`。
+- 隔离 Home 用专用的 Auth v1 测试账号完成安装登录；真实 GitHub 测试从桌面内的「Molis 账号」发起，使用独立 统一账号协议 客户端 `molis-work-tauri-staging`，Auth 只允许回跳到 `http://127.0.0.1:4173/account/callback`。
 - 首轮真实 GitHub 授权已完成，系统 Chrome 到达 Work 回跳地址，但回跳请求返回 `account.unavailable`。当时 D1 显示 GitHub 事务为 `VERIFIED`、桌面客户端有效会话为 0。一次重启复用原 WebView 数据时，工作台能显示但账号按钮无响应，人工点击也未触发授权。
 - 同一分发包使用干净的 WebView 数据目录，等待隔离 Work 主机就绪，并让该主机通过本机系统代理访问 Auth。重新从桌面发起真实 GitHub 登录后，Chrome 回跳显示「验证完成」；原 Work 窗口自动更新，显示「个人资料与安全」和「退出登录」。隔离 D1 回读新事务为 `CONSUMED`，同一 GitHub 用户在 Tauri、Work 网页和 Club 各有一个有效会话。正式 Work 常驻服务已恢复并通过健康检查。
 - 上述首轮通过使用干净的 WebView 数据和系统代理；已有 WebView 与直连条件见下次复测。

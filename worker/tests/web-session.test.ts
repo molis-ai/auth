@@ -74,7 +74,7 @@ test('BFF observes key rotation without changing credential rows on reads', asyn
   assert.equal((await session(newCookie)).status, 200)
 })
 
-test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async (t) => {
+test('AUTH-U-03 AUTH-U-07 same-origin BFF hides proofs, persists encrypted login, and rejects CSRF', async (t) => {
   const origin = 'http://127.0.0.1:8787',
     bffKey = secret()
   const fixturePassword = secret() + 'aA!5'
@@ -555,7 +555,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     assert.equal((await call('/api/account/logout', { scope: 'INVALID' })).status, 400)
     assert.equal(ok(await call('/api/account/session')).state, 'AUTHENTICATED')
     assert.equal((await call('/api/account/platform/applications')).status, 403)
-    // V2C-01: retired service administration has no BFF mapping even with a valid login.
+    // AUTH-C-01: retired service administration has no BFF mapping even with a valid login.
     for (const path of [
       '/api/account/platform/applications/retired/services',
       '/api/account/platform/services/retired/rotate',
@@ -725,7 +725,11 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         const again = ok(
           await call('/api/account/auth/transactions', { purpose: 'LOGIN', method: 'PHONE_OTP' }),
         )
-        assert.equal(again.status, 'PENDING', 'the browser can immediately start a new V2 login')
+        assert.equal(
+          again.status,
+          'PENDING',
+          'the browser can immediately start a new central login',
+        )
         ok(await call('/api/account/auth/transactions/' + again.handle + '/cancel', {}))
       }
       assert.equal(
@@ -879,7 +883,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         assert.equal(await bucketHits(localPasswordBucket), localPasswordHits)
       },
     )
-    // V2-04: reload the same worker bindings, then change the local session generation twice.
+    // ENV-U-04: reload the same worker bindings, then change the local session generation twice.
     await p.updateBindings({ MOLIS_LOCAL_GENERATION: 'fixture-dev-first' })
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
     const signedIn = ok(
@@ -903,7 +907,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       )
     }
     await t.test(
-      'AC-AUTH-01/03 correlates a BFF response, V2 dispatch and D1 failure without inputs',
+      'AC-AUTH-01/03 correlates a BFF response, central dispatch and D1 failure without inputs',
       async () => {
         ok(await call('/api/account/session'))
         const tx = ok(
@@ -1445,18 +1449,18 @@ test(
     })
 
     await t.test(
-      'lightweight browser account reads preserve the original V2 error boundary',
+      'lightweight browser account reads preserve the original central error boundary',
       async () => {
         const { b, accessToken } = await authenticated()
         const before = await row(b)
         const headers = { 'X-Fixture-Barrier': 'web-session-missing-config' }
-        const v2 = await p.fetch(
+        const central = await p.fetch(
           new Request(origin + '/api/v1/users/me', {
             headers: { ...headers, Authorization: 'Bearer ' + accessToken },
           }),
         )
-        assert.equal(v2.status, 503)
-        assert.equal((await v2.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')
+        assert.equal(central.status, 503)
+        assert.equal((await central.json()).error.code, 'UNIFIED_CONFIGURATION_INVALID')
         const browser = await request(b, '/session', { headers })
         assert.equal(browser.status, 503)
         assert.equal((await browser.json()).error.code, 'AUTH_UNAVAILABLE')

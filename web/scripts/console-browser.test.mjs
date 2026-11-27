@@ -1,4 +1,4 @@
-// V2U-03/05/07: real Auth WASM/D1 and Chrome; temporary data, explicit mock delivery only.
+// AUTH-U-03/05/07: real Auth WASM/D1 and Chrome; temporary data, explicit mock delivery only.
 import assert from "node:assert/strict";
 import http from "node:http";
 import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -22,7 +22,7 @@ const { ChromeHarness } = await import(
 const { acquireSlot } = await import(
   pathToFileURL(join(resolve(workRoot), "scripts/machine-slot.mjs")).href
 );
-await acquireSlot("browser", { label: "Auth V2 browser regression" });
+await acquireSlot("browser", { label: "Auth central browser regression" });
 import {
   getRustProxy,
   initializeLocalRuntime,
@@ -30,9 +30,9 @@ import {
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const evidence = process.env.AUTH_BROWSER_EVIDENCE_DIR
   ? resolve(process.env.AUTH_BROWSER_EVIDENCE_DIR)
-  : mkdtempSync(join(tmpdir(), "auth-v2-browser-evidence-"));
+  : mkdtempSync(join(tmpdir(), "auth-console-browser-evidence-"));
 mkdirSync(evidence, { recursive: true });
-const profile = mkdtempSync(join(tmpdir(), "auth-v2-chrome-"));
+const profile = mkdtempSync(join(tmpdir(), "auth-console-chrome-"));
 let proxy, browser, page, origin;
 const requests = [];
 const scripts = new Set();
@@ -196,7 +196,7 @@ try {
     );
     await page.click("[data-qa-click]");
   };
-  // ENTRY-01: the original visual composition opens directly on the V2 form.
+  // ENTRY-01: the original visual composition opens directly on the central form.
   await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('button[type=submit]').disabled");
   assert.deepEqual(await page.evaluate("window.__authPerformance.requests.slice(0, 3).map(item => item.path)"), ['/session', '/session', '/auth/capabilities']);
   await page.wait("Boolean(document.querySelector('.auth-entry img.brand-logo')?.naturalWidth)");
@@ -630,7 +630,7 @@ try {
   await db.batch([
     db
       .prepare(
-        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('qa-v2-target','QA 目标用户','ACTIVE',NULL,?,?)",
+        "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('qa-auth-target','QA 目标用户','ACTIVE',NULL,?,?)",
       )
       .bind(fixtureTime, fixtureTime),
   ]);
@@ -687,7 +687,7 @@ try {
   assert.equal(await page.evaluate("document.querySelector('.client-create-dialog[open]').getBoundingClientRect().width <= innerWidth - 32"), true);
   await page.screenshot(join(evidence, "platform-client-create-390.png"));
   await page.viewport(1440, 900);
-  await fillLabel("客户端 ID", "qa-v2-client", ".client-create-dialog[open]");
+  await fillLabel("客户端 ID", "qa-auth-client", ".client-create-dialog[open]");
   await fillLabel("环境 ID", "unified-local", ".client-create-dialog[open]");
   await fillLabel("允许来源", "http://127.0.0.1:43999", ".client-create-dialog[open]");
   await fillLabel(
@@ -713,7 +713,7 @@ try {
   await page.wait("!document.querySelector('.client-edit-dialog[open]') && document.querySelector('.pc-item')?.textContent.includes('44999')");
   const registered = await db
     .prepare(
-      "SELECT c.redirects,c.allowed_origins FROM auth_client c WHERE c.client_id='qa-v2-client'",
+      "SELECT c.redirects,c.allowed_origins FROM auth_client c WHERE c.client_id='qa-auth-client'",
     )
     .first();
   assert.deepEqual(JSON.parse(registered.redirects), [
@@ -736,7 +736,7 @@ try {
       (
         await db
           .prepare(
-            "SELECT status FROM auth_client WHERE client_id='qa-v2-client'",
+            "SELECT status FROM auth_client WHERE client_id='qa-auth-client'",
           )
           .first()
       ).status,
@@ -758,7 +758,7 @@ try {
       "!document.body.textContent.includes('服务凭据')&&!document.body.textContent.includes('创建服务凭据')",
     ),
   );
-  console.log("PASS V2C-01 retired service credential controls are absent");
+  console.log("PASS AUTH-C-01 retired service credential controls are absent");
   await click("用户与权限");
   await page.wait("Boolean(document.querySelector('.pu-search'))");
   await page.fill(".pu-search", "QA 目标用户");
@@ -767,8 +767,8 @@ try {
   );
   assert.equal(await page.evaluate("document.querySelector('.pu-user-name').textContent"), "QA 目标用户");
   await page.click(".pu-user-item");
-  await page.wait("document.querySelector('.pu-selected-meta')?.textContent.includes('qa-v2-target')");
-  assert.equal(await page.evaluate("document.querySelector('.pu-user-item').textContent.includes('qa-v2-target')"), false);
+  await page.wait("document.querySelector('.pu-selected-meta')?.textContent.includes('qa-auth-target')");
+  assert.equal(await page.evaluate("document.querySelector('.pu-user-item').textContent.includes('qa-auth-target')"), false);
   assert.equal(await page.evaluate("Boolean(document.querySelector('.platform-users-page input[maxlength=\"500\"]'))"), false);
   await page.fill(".pu-search", "");
   assert.ok([...scripts].some(path => path.includes("/PlatformUsers-")));
@@ -778,7 +778,7 @@ try {
   await page.wait(`Boolean(document.querySelector('${auditModal} button[type=submit]:disabled'))`);
   await click("取消");
   await page.wait(`!document.querySelector('${auditModal}')`);
-  assert.equal((await db.prepare("SELECT status FROM auth_user WHERE id='qa-v2-target'").first()).status, "ACTIVE");
+  assert.equal((await db.prepare("SELECT status FROM auth_user WHERE id='qa-auth-target'").first()).status, "ACTIVE");
   for (const [button, status] of [
     ["停用账号", "DISABLED"],
     ["恢复账号", "ACTIVE"],
@@ -793,7 +793,7 @@ try {
     assert.equal(
       (
         await db
-          .prepare("SELECT status FROM auth_user WHERE id='qa-v2-target'")
+          .prepare("SELECT status FROM auth_user WHERE id='qa-auth-target'")
           .first()
       ).status,
       status,
@@ -823,7 +823,7 @@ try {
       (
         await db
           .prepare(
-            "SELECT status FROM auth_platform_permission WHERE user_id='qa-v2-target' AND permission='USER_READ'",
+            "SELECT status FROM auth_platform_permission WHERE user_id='qa-auth-target' AND permission='USER_READ'",
           )
           .first()
       ).status,
@@ -837,7 +837,7 @@ try {
   await page.screenshot(join(evidence, "platform-email-audit.png"));
   await click("确认保存");
   await page.wait(`!document.querySelector('${auditModal}') && document.querySelector('.pu-selected-meta')?.textContent.includes('qa-admin-maintained@example.test')`);
-  assert.equal((await db.prepare("SELECT canonical_email FROM auth_user_email WHERE user_id='qa-v2-target'").first()).canonical_email,'qa-admin-maintained@example.test');
+  assert.equal((await db.prepare("SELECT canonical_email FROM auth_user_email WHERE user_id='qa-auth-target'").first()).canonical_email,'qa-admin-maintained@example.test');
   console.log('PASS browser administrator maintains email');
   for (const width of [1440, 1024, 390]) {
     await page.viewport(width, 900);
@@ -864,7 +864,7 @@ try {
     await page.wait(`[...document.querySelector(${JSON.stringify(selector)})?.options ?? []].some(o => o.value === ${JSON.stringify(userId)})`);
     await page.evaluate(`{ const select = document.querySelector(${JSON.stringify(selector)}); select.value = ${JSON.stringify(userId)}; select.dispatchEvent(new Event('change', { bubbles: true })); }`);
   };
-  await chooseOwner("初始所有者", "qa-v2-target");
+  await chooseOwner("初始所有者", "qa-auth-target");
   await page.fill("#pt-create-reason", "浏览器验收平台建团");
   const creationStart = await page.evaluate("window.__authPerformance.requests.length");
   await click("确认创建团队");
@@ -936,7 +936,7 @@ try {
   const governedTeam = await db.prepare("SELECT id FROM auth_tenant WHERE name='QA 平台治理团队'").first();
   const governanceRoles = await db.prepare("SELECT user_id,role FROM auth_tenant_membership WHERE tenant_id=? ORDER BY role").bind(governedTeam.id).all();
   assert.deepEqual(governanceRoles.results, [
-    { user_id: "qa-v2-target", role: "ADMIN" },
+    { user_id: "qa-auth-target", role: "ADMIN" },
     { user_id: operator.id, role: "OWNER" },
   ]);
   for (const width of [1440, 390]) {
@@ -980,7 +980,7 @@ try {
   await page.screenshot(join(evidence,'logout-toast.png'));
   await page.wait("!document.querySelector('.account-toast')");
   console.log("PASS browser logout and no token storage");
-  // ENTRY-02: email registration, remember-email opt-in, reset and logout cleanup use the same V2 client.
+  // ENTRY-02: email registration, remember-email opt-in, reset and logout cleanup use the same central client.
   await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]'))");
   await click('邮箱验证');
   await page.fill('input[type=email]', 'entry-union@example.test');
@@ -1127,21 +1127,30 @@ try {
   for(const provider of ['Google','GitHub']) {
     const known=new Set((await browser.command('Target.getTargets')).targetInfos.map(t=>t.targetId));
     const loginNavigations=requests.filter(r=>r.path==='/login').length;
-    await click('使用 '+provider+' 登录');
-    let target;
-    for(let i=0;i<100;i++) {
-      target=(await browser.command('Target.getTargets')).targetInfos.find(t=>t.type==='page'&&!known.has(t.targetId)&&t.url.includes('/auth/mock/'));
-      if(target)break;
-      await new Promise(resolve=>setTimeout(resolve,100));
+    async function launchPopup() {
+      await click('使用 '+provider+' 登录');
+      let target;
+      for(let i=0;i<100;i++) {
+        target=(await browser.command('Target.getTargets')).targetInfos.find(t=>t.type==='page'&&!known.has(t.targetId)&&t.url.includes('/auth/mock/'));
+        if(target)break;
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      assert.ok(target,provider+' authorization popup opens');
+      known.add(target.targetId);
+      return target;
     }
-    assert.ok(target,provider+' authorization popup opens');
+    const cancelled = await launchPopup();
+    await browser.command("Target.closeTarget", { targetId: cancelled.targetId });
+    await page.wait("document.querySelector('.auth-entry')?.textContent.includes('第三方登录未完成')");
+    const target = await launchPopup();
+    assert.notEqual(target.targetId, cancelled.targetId);
     const popup=await browser.page(target.targetId);await popup.viewport(800,700);await popup.command('Page.bringToFront');
     await popup.wait("Boolean(document.querySelector('button[value=SUCCESS]'))");await popup.click('button[value=SUCCESS]');
     await page.wait("Boolean(document.querySelector('.console-tabs'))");await page.command('Page.bringToFront');
     assert.equal(requests.filter(r=>r.path==='/login').length,loginNavigations,'provider callback preserves the initiating page');
     await click('退出登录');await page.wait("Boolean(document.querySelector('.auth-entry input[autocomplete=username]')) && !document.querySelector('.entry-primary').disabled");
   }
-  console.log('PASS ENTRY-03 Google/GitHub callbacks through the restored entry');
+  console.log('PASS ENTRY-03 Google/GitHub reopen after popup cancellation and complete callbacks');
 
 
   if(process.env.AUTH_ACCOUNT_CYCLES === '1') {

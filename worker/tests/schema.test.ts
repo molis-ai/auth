@@ -65,7 +65,7 @@ test('a single fresh Auth baseline creates the expected indexes and drops unused
   }
 })
 
-test('V2C-02 current tenant schema enforces ownership, membership, foreign keys and rollback', () => {
+test('AUTH-C-02 current tenant schema enforces ownership, membership, foreign keys and rollback', () => {
   const db = database()
   try {
     db.exec(
@@ -109,7 +109,7 @@ test('V2C-02 current tenant schema enforces ownership, membership, foreign keys 
   }
 })
 
-test('V2C-02 a fresh database has no retired V1 token, member, invitation or service storage', () => {
+test('AUTH-C-02 a fresh database has no retired V1 token, member, invitation or service storage', () => {
   const db = database()
   try {
     for (const table of [

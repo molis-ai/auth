@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { dateFormatter as sharedDateFormatter } from "../../shared/format/date.ts";
 import { useAccountContext } from "../../shared/api/account-context.ts";
 import { lazyComponent } from "../../shared/components/lazy-component.ts";
 import { nextTick, onBeforeUnmount, ref } from 'vue';
@@ -21,7 +22,7 @@ const error = ref(''), avatarSelected = ref(false), cropFile = ref<File|null>(nu
 let active = true;
 const nameInput = ref<HTMLInputElement>();
 const editingName = ref(false), nameSaving = ref(false), inlineName = ref(''), nameError = ref('');
-const viewerTime = new Intl.DateTimeFormat('en-US', { timeZoneName: 'longOffset' });
+const viewerTime = sharedDateFormatter('en-US', { timeZoneName: 'longOffset' });
 const viewerZone = viewerTime.resolvedOptions().timeZone;
 const zoneOffset = viewerTime.formatToParts().find(part => part.type === 'timeZoneName')?.value;
 const utcOffset = zoneOffset === 'GMT' ? 'UTC+00:00' : zoneOffset?.replace('GMT', 'UTC');

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AccountClient } from "../src/shared/api/account-client.ts";
-test("V2U-07 client uses same-origin cookies/CSRF and never installs bearer credentials", async () => {
+test("AUTH-U-07 client uses same-origin cookies/CSRF and never installs bearer credentials", async () => {
   const calls: { url: string; init: RequestInit }[] = [];
   const client = new AccountClient({
     origin: "http://127.0.0.1:8787",
@@ -40,7 +40,7 @@ test("V2U-07 client uses same-origin cookies/CSRF and never installs bearer cred
     await assert.rejects(() => client.request(path));
   client.close();
 });
-test("V2U-07 canceled generation cannot deliver a late login result", async () => {
+test("AUTH-U-07 canceled generation cannot deliver a late login result", async () => {
   let release!: () => void;
   const client = new AccountClient({
     origin: "http://127.0.0.1:8787",
@@ -573,4 +573,30 @@ test("server errors preserve code, HTTP status and request ID", async () => {
   await assert.rejects(client.request("/login-methods"), {
     code: "FORBIDDEN", status: 403, requestId: "request-fixture",
   });
+});
+
+test("scoped lookups hit the cache, and mutations and account changes invalidate it", async () => {
+  let account = "user-one";
+  let calls = 0;
+  const client = new AccountClient({
+    origin,
+    fetch: async url => {
+      const path = accountPath(url);
+      if (path === "/session") return reply("csrf", { state: "AUTHENTICATED", user: { userId: account } });
+      if (path === "/tenants?limit=20") return reply("csrf", { sequence: ++calls });
+      return reply();
+    },
+  });
+  await client.session();
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 1 });
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 1 });
+  await client.request("/tenants", {});
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 2 });
+  account = "user-two";
+  await client.session();
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 3 });
+  await client.logout();
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 4 });
+  assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 5 });
+  client.close();
 });

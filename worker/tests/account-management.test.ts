@@ -833,7 +833,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       },
     )
     await suite.test(
-      'UAS-26/41 V2U-01: independent V2 clients share versions and identity-proof revocation',
+      'UAS-26/41 AUTH-U-01: independent central clients share versions and identity-proof revocation',
       async () => {
         peer = await passwordLogin('alice@example.test', password, true)
         const before = await me(a)

@@ -71,7 +71,7 @@ AUTH-12 汇总轮复验 E-A1 至 E-A10；两产品本轮复验基础检查、E-X
 
 | 编号 | 文件或脚本（仓库前缀） | 证明范围 |
 | --- | --- | --- |
-| E-A1 | `A:contracts/unified-account/validate.test.ts`、`A:worker/tests/unified-configuration.test.ts`、`A:worker/tests/unified-schema.test.ts`、`A:worker/rust-tests/unified-boundary.test.ts`、`A:worker/rust-tests/unified-policy.test.ts` | 合同、环境、v1/v2 与主体/权限隔离 |
+| E-A1 | `A:contracts/unified-account/validate.test.ts`、`A:worker/tests/unified-configuration.test.ts`、`A:worker/tests/unified-schema.test.ts`、`A:worker/rust-tests/unified-boundary.test.ts`、`A:worker/rust-tests/unified-policy.test.ts` | 合同、环境、路由版本与主体、权限隔离 |
 | E-A2 | `A:worker/rust-tests/login-sessions.test.ts` | 独立会话、活动、时钟、刷新与撤销 |
 | E-A3 | `A:worker/rust-tests/registration.test.ts` | 邮箱/手机验证和 mock 投递 |
 | E-A4 | `A:worker/rust-tests/external-login.test.ts` | Google/GitHub mock 授权与回调 |

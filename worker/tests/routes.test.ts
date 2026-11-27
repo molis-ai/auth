@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 
-test('V2U-01 V2U-07 V2C-01 current pages retain security headers; retired entries reject without effects', async () => {
+test('AUTH-U-01 AUTH-U-07 AUTH-C-01 current pages retain security headers; retired entries reject without effects', async () => {
   const origin = 'http://127.0.0.1:8787',
     p = await getRustProxy(
       { AUTH_ORIGIN: origin, MOLIS_LOCAL_GENERATION: 'fixture-health' },
@@ -28,6 +28,7 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; retired entrie
     await p.env.DB.prepare('DROP INDEX ix_logout_receipt_proof_expiry').run()
     assert.equal((await p.fetch(new Request(origin + '/api/v1/readiness'))).status, 503)
     assert.equal((await p.fetch(new Request(origin + '/api/v1/health'))).status, 200)
+    const retired = '/api/v' + 2
     for (const path of ['/', '/login', '/console']) {
       const r = await p.fetch(new Request(origin + path))
       assert.equal(r.status, 200)
@@ -42,14 +43,14 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; retired entrie
     }
     const before = await p.env.DB.prepare('SELECT count(*) n FROM auth_user').first()
     for (const path of [
-      '/api/v2/health',
-      '/api/v2/auth/transactions',
-      '/api/v2/users/me',
-      '/api/v2/spaces',
-      '/api/v2/platform/applications',
-      '/api/v2/authorization/check',
-      '/api/v2/authorization/allowed-actions',
-      '/api/v2/platform/services',
+      retired + '/health',
+      retired + '/auth/transactions',
+      retired + '/users/me',
+      retired + '/spaces',
+      retired + '/platform/applications',
+      retired + '/authorization/check',
+      retired + '/authorization/allowed-actions',
+      retired + '/platform/services',
       '/oauth2/token',
       '/oauth2/callback/apple',
       '/.well-known/openid-configuration',

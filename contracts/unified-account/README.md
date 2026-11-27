@@ -57,12 +57,12 @@ TTL、重发/尝试次数、分页和限流初始值集中于 `policy.defaults`�
 - date-time 采用 UTC 秒或三位毫秒，拒绝无效日历日期。URI 采用 ASCII HTTP(S)，Unicode 域名先转 Punycode、路径先百分号编码；禁止凭据、空白、控制字符、反斜杠及通配符。origin 要求规范源地址，不带路径。此结构检查不能替代注册的 origin/精确回调比对。
 - email 是本期明确支持的 ASCII 邮箱传输格式；地址规范化、已有邮箱兼容与身份唯一性由领域层执行。local-path 拒绝绝对/协议相对地址、反斜杠、控制符及危险编码；产品还应按可返回的页面清单检查。
 - 不检查“expectedVersion 是否当前”“两个日期先后”“订阅显示状态是否符合时间”“容量是否足够”“是否成员”“proof 是否真实/已消费”“返回角色是否来自当前事实”等。它们是 `policy.json` 的领域不变量，由 AUTH-03..10 的持久化/并发/鉴权测试验证。通过 Schema 从不等于已认证或有权益。
-- OpenAPI 的错误集合包括 AUTH-02 的明确拒绝码；尚未实现的 v2 入口可返回 UNIFIED_ACCOUNT_NOT_IMPLEMENTED，不能返回虚构成功数据。
+- OpenAPI 的错误集合包括 AUTH-02 的明确拒绝码；尚未实现的中央入口可返回 UNIFIED_ACCOUNT_NOT_IMPLEMENTED，不能返回虚构成功数据。
 
 ## 变更记录
 
-- 1.2.0 开发增量：API-10 增加应用与 V2 登录客户端的列表、读取、创建、修改；分别要求 APPLICATION_READ/WRITE、CLIENT_READ/WRITE。客户端与策略版本同时检查；允许登记无产品映射的 Auth 自身客户端，Work/Club 映射显式指定。服务端会话、权限、域记录、审计与幂等回执原子提交；这不表示页面、SDK 或全部 V1 替换已完成。
-- 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [V2 收敛方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v2-consolidation.md)。
+- 1.2.0 开发增量：API-10 增加应用与 统一账号协议 登录客户端的列表、读取、创建、修改；分别要求 APPLICATION_READ/WRITE、CLIENT_READ/WRITE。客户端与策略版本同时检查；允许登记无产品映射的 Auth 自身客户端，Work/Club 映射显式指定。服务端会话、权限、域记录、审计与幂等回执原子提交；这不表示页面、SDK 或全部 V1 替换已完成。
+- 1.2.0（2026-11-08，开发中）：增加当前用户自行创建租户与读取创建策略的中央/产品映射；默认 SELF_SERVICE，可由受信部署配置切为 PLATFORM_ONLY。自行创建不接受 ownerUserId，平台代建仍要求 TENANT_CREATE；不改变旧 TEAM 记录、不赠送订阅或席位。见 [历史收敛方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md)。
 - 1.1.0（2026-11-05）：新增平台订阅库存只读接口 `GET /api/v1/platform/subscriptions/{subscriptionId}/seat-pools` 及对应产品映射。要求 `SUBSCRIPTION_READ`，不要求平台人员属于租户，租户停用时仍允许平台读取；个人订阅返回空列表，分页限定当前账号/Client/订阅。席位分配仍只允许租户管理者，未增加迁移或支付。
 - 1.0.0（2026-11-04）：覆盖 API-01..09；固定中央与产品 DTO、四类完成材料、认证用途联合、平台/租户权限、订阅与席位结构、mock 端口、迁移记录、工程默认值和两语言共用正反夹具。交付的是可执行合同，不是完整统一账号业务实现。
 
