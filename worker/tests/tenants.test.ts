@@ -611,7 +611,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const deliveries = await db.prepare('SELECT count(*) n FROM auth_mock_notification').first()
         await db
           .prepare(
-            "CREATE TRIGGER fail_invitation_audit BEFORE INSERT ON auth_audit_event WHEN NEW.action='invitation.create' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END",
+            "CREATE TRIGGER fail_invitation_audit BEFORE INSERT ON auth_management_audit WHEN NEW.operation='invitation.create' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END",
           )
           .run()
         const r = await call(
@@ -1377,7 +1377,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           (
             await db
               .prepare(
-                "SELECT * FROM auth_audit_event WHERE action LIKE 'tenant.%' OR action LIKE 'invitation.%' OR action LIKE 'transfer.%'",
+                "SELECT * FROM auth_management_audit WHERE operation LIKE 'tenant.%' OR operation LIKE 'invitation.%' OR operation LIKE 'transfer.%'",
               )
               .all()
           ).results,

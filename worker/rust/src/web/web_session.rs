@@ -104,6 +104,14 @@ pub(crate) fn browser_cookie_hash(a: &Auth, cookie: &str) -> String {
         Err(_) => hash(cookie),
     }
 }
+pub(crate) fn browser_cookie_name(a: &Auth) -> &'static str {
+    if a.origin.starts_with("https:") {
+        "__Host-molis-auth-web"
+    } else {
+        "molis-auth-web"
+    }
+}
+
 pub(crate) fn setting(a: &Auth, name: &str) -> Result<String> {
     let value = a
         .env
@@ -381,7 +389,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         .header("Cookie")
         .split(';')
         .map(str::trim)
-        .filter_map(|v| v.strip_prefix("molis-auth-web=").map(str::to_owned))
+        .filter_map(|v| v.split_once('='))
+        .filter(|(name, _)| *name == browser_cookie_name(a))
+        .map(|(_, value)| value.to_owned())
         .collect();
     ensure(values.len() <= 1, 401, "INVALID_CREDENTIALS")?;
     let mut cookie = values.first().cloned().unwrap_or_default();
@@ -708,7 +718,8 @@ fn browser_response(
         response.headers_mut().append(
             "Set-Cookie",
             &format!(
-                "molis-auth-web={cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{}",
+                "{}={cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{}",
+                browser_cookie_name(a),
                 SESSION_MAX_AGE_MS / 1000,
                 if a.origin.starts_with("https:") {
                     "; Secure"

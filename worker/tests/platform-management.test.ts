@@ -215,7 +215,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await statement(
       "UPDATE auth_platform_permission SET status='ACTIVE',revoked_at=NULL,version=version+1 WHERE user_id='admin' AND permission='CLIENT_WRITE'",
     ).run()
-    const before = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n
+    const before = (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n
     assert.ok(
       (
         await call('/applications/' + app.applicationId + '/clients', {
@@ -232,7 +232,10 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       ).n,
       0,
     )
-    assert.equal((await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n, before)
+    assert.equal(
+      (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n,
+      before,
+    )
     // Bootstrap refuses existing grants and rolls back without adding authority.
     await assert.rejects(() => bootstrapPlatform(db, 'admin'))
     await db.prepare('DELETE FROM auth_platform_permission').run()
@@ -363,11 +366,11 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     )
     const audit = await db
       .prepare(
-        "SELECT change_summary FROM auth_audit_event WHERE action='user.email' AND outcome='SUCCESS'",
+        "SELECT target_id,reason FROM auth_management_audit WHERE operation='user.email' AND outcome='SUCCESS'",
       )
       .first()
-    assert.equal(JSON.parse(audit.change_summary).targetId, 'target')
-    assert.equal(JSON.parse(audit.change_summary).reason, changeEmail.reason)
+    assert.equal(audit.target_id, 'target')
+    assert.equal(audit.reason, changeEmail.reason)
     const deniedEmail = async (body: unknown, path = '/api/v1/users/me/reauthentications') => {
       const r = await p.fetch(
         new Request(origin + path, {
@@ -395,7 +398,8 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       '/api/v1/auth/transactions',
     )
     // V2C-01: an authenticated operator cannot resurrect retired service administration.
-    const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n
+    const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_management_audit').first())
+      .n
     assert.equal((await call('/applications/' + app.applicationId + '/services')).status, 404)
     assert.equal(
       (await call('/applications/' + app.applicationId + '/services', { name: 'Retired' })).status,
@@ -413,7 +417,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
         400,
       )
     assert.equal(
-      (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n,
+      (await db.prepare('SELECT count(*) n FROM auth_management_audit').first()).n,
       beforeRetired,
     )
     await statement(

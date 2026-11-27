@@ -535,7 +535,7 @@ async fn manage(
         writes.insert(0,version_guard(a,&text(s,"user_id"),&us)?);
         writes.insert(0,sessions::client_guard(a,c)?);
         writes.insert(0,sessions::active_guard(a,s)?);
-        writes.push(a.s.audit(&format!("account.v2.{op}"),s["user_id"].clone(),&a.request_id,Value::Null,Value::Null,Value::Null,false)?);
+        writes.push(crate::audit::account(a, &format!("account.{op}"), s["user_id"].clone(), &s["client_id"], Value::Null)?);
         writes.push(a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),now().into()])?);
         writes.push(a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?);
         a.s.batch(writes,"VERSION_CONFLICT").await?;Ok(result)
@@ -583,14 +583,12 @@ async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     w.extend(consume(a, &p)?);
     w.push(a.s.statement("INSERT INTO auth_local_credential VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET password_hash=excluded.password_hash,changed_at=excluded.changed_at",vec![user.clone().into(),encoded.into(),now().into()])?);
     w.extend(revoke_password(a, &user, None)?);
-    w.push(a.s.audit(
-        "account.v2.password.reset",
+    w.push(crate::audit::account(
+        a,
+        "account.password.reset",
         user.into(),
-        &a.request_id,
+        &t["client_id"],
         Value::Null,
-        Value::Null,
-        Value::Null,
-        false,
     )?);
     a.s.batch(w, "VERSION_CONFLICT").await?;
     Ok(json!({"passwordChanged":true,"nextStep":"LOGIN_REQUIRED"}))

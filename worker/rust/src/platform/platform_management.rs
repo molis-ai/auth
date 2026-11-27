@@ -411,20 +411,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
         w.extend(ctx.guards);
         w.extend(change.writes);
-        let target = change.result["clientId"]
-            .as_str()
-            .or(change.result["applicationId"].as_str())
-            .or(change.result["userId"].as_str())
-            .unwrap_or_default();
-        w.push(a.s.audit(
-            action.op,
-            service.user(),
-            &a.request_id,
-            Value::Null,
-            Value::Null,
-            json!({"targetId":target,"reason":body["reason"]}),
-            false,
-        )?);
         w.push(management_event);
         w.extend(protocol::receipt(
             &service,

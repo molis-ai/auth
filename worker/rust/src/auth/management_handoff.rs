@@ -212,28 +212,26 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
     })?;
     let mut writes=vec![sessions::session_guard(a,&source,n)?,sessions::client_guard(a,&client)?,sessions::client_guard(a,&target)?,a.s.guard("EXISTS(SELECT 1 FROM auth_management_handoff WHERE id=? AND consumed_at IS NULL AND expires_at>? AND browser_hash=? AND code_hash=?)",vec![t["id"].clone(),n.into(),web_session::browser_cookie_hash(a, &proof).into(),hash(&text(&q,"code")).into()])?,a.s.statement("UPDATE auth_management_handoff SET consumed_at=? WHERE id=?",vec![n.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),s["authenticated_at"].clone(),last_active.into(),s["absolute_expires_at"].clone(),s["user_epoch"].clone(),source["created_seq"].clone(),source["identity_verified_at"].clone()])?,a.s.statement("INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",vec![id.into(),payload.into(),s["absolute_expires_at"].clone()])?];
     writes.extend(token_writes);
-    let old = cookie(a, "molis-auth-web")?;
+    let old = cookie(a, web_session::browser_cookie_name(a))?;
     if token(&old) {
         writes.push(a.s.statement(
             "DELETE FROM auth_web_session WHERE id_hash=?",
             vec![web_session::browser_cookie_hash(a, &old).into()],
         )?);
     }
-    writes.push(a.s.audit(
-        "account.v2.management-handoff",
+    writes.push(crate::audit::account(
+        a,
+        "account.management-handoff",
         s["user_id"].clone(),
-        &a.request_id,
-        Value::Null,
-        Value::Null,
+        &target["client_id"],
         json!({"sourceSessionId":source["id"],"loginSessionId":s["id"]}),
-        false,
     )?);
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     let mut r = redirect(&format!("{}/", a.origin))?;
     set_cookie(
         a,
         &mut r,
-        "molis-auth-web",
+        web_session::browser_cookie_name(a),
         &raw,
         (number(&s, "absolute_expires_at") - n) / 1000,
     )?;

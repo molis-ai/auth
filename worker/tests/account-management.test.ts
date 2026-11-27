@@ -1009,7 +1009,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
         )
         await me(b)
         const events = JSON.stringify(
-          (await db.prepare('SELECT * FROM auth_audit_event').all()).results,
+          (await db.prepare('SELECT * FROM auth_management_audit').all()).results,
         )
         const receipts = JSON.stringify(
           (await db.prepare('SELECT * FROM auth_management_result').all()).results,

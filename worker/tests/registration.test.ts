@@ -477,7 +477,9 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
       409,
     )
 
-    const audit = JSON.stringify((await db.prepare('SELECT * FROM auth_audit_event').all()).results)
+    const audit = JSON.stringify(
+      (await db.prepare('SELECT * FROM auth_management_audit').all()).results,
+    )
     assert.ok(!audit.includes(password))
     assert.ok(!audit.includes(delivered.credential))
   } finally {

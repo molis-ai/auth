@@ -100,6 +100,7 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
         };
         filters.bind("a.outcome=?", [json!(outcome)]);
     }
+    filters.bind("a.target_type<>'ACCOUNT_SECURITY'", []);
     let date = |key| {
         filters.values[key]
             .as_str()

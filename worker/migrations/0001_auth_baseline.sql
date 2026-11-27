@@ -68,16 +68,6 @@ CREATE TABLE auth_client (
  UNIQUE(client_id,environment_id)
 );
 
-CREATE TABLE auth_audit_event (
- id TEXT PRIMARY KEY, action TEXT NOT NULL, outcome TEXT NOT NULL CHECK(outcome IN ('SUCCESS','DENIED')),
- actor_user_id TEXT, target_user_id TEXT, space_id TEXT, application_id TEXT,
- request_id TEXT NOT NULL, occurred_at INTEGER NOT NULL, change_summary TEXT, denial_reason TEXT
-);
-
-CREATE INDEX ix_audit_user_time ON auth_audit_event(target_user_id,occurred_at,id);
-
-CREATE INDEX ix_audit_space_time ON auth_audit_event(space_id,occurred_at,id);
-
 CREATE TABLE auth_write_guard (id TEXT PRIMARY KEY, ok INTEGER NOT NULL CHECK(ok=1));
 
 CREATE TABLE auth_environment (

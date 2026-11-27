@@ -187,7 +187,7 @@ async function fixture(t: TestContext) {
       (SELECT count(*) FROM auth_login_session WHERE client_id='auth-web') sessions,
       (SELECT count(*) FROM auth_login_access_token t JOIN auth_login_session s ON s.id=t.login_session_id WHERE s.client_id='auth-web') access,
       (SELECT count(*) FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id WHERE s.client_id='auth-web') refresh,
-      (SELECT count(*) FROM auth_audit_event WHERE action='account.v2.management-handoff' AND outcome='SUCCESS') audits,
+      (SELECT count(*) FROM auth_management_audit WHERE operation='account.management-handoff' AND outcome='SUCCESS') audits,
       (SELECT count(*) FROM auth_web_session) web`,
       )
       .first()

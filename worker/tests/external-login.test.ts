@@ -468,7 +468,7 @@ test('AUTH-05 isolated Google/GitHub authorization through real transactions and
         await accepted(f)
         const tokens = await finish(f)
         const events = JSON.stringify(
-          (await db.prepare('SELECT * FROM auth_audit_event').all()).results,
+          (await db.prepare('SELECT * FROM auth_management_audit').all()).results,
         )
         for (const value of [
           encryptionKey,

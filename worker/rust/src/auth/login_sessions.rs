@@ -376,14 +376,12 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
         let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.as_str().into()])?];
         writes.extend(new_tokens);
-        writes.push(a.s.audit(
-            "account.v2.token",
+        writes.push(crate::audit::account(
+            a,
+            "account.token",
             s["user_id"].clone(),
-            &a.request_id,
-            Value::Null,
-            Value::Null,
+            &s["client_id"],
             json!({"loginSessionId":s["id"]}),
-            false,
         )?);
         if let Err(e) = a.s.batch(writes, "VERSION_CONFLICT").await {
             if e.status == 409 {
@@ -413,14 +411,12 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     let (result, new_tokens) = tokens(a, &s, n, 0)?;
     let mut writes=vec![client_guard(a,&c)?,a.s.guard("EXISTS(SELECT 1 FROM auth_identity_proof p JOIN auth_product_transaction t ON t.id=p.transaction_id JOIN auth_user u ON u.id=p.user_id WHERE p.token_hash=? AND p.consumed_at IS NULL AND p.expires_at>? AND p.user_epoch=u.session_epoch AND u.status='ACTIVE' AND t.created_seq>COALESCE(u.revoked_before_seq,0))",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),n.into(),n.into(),(n+ABSOLUTE).into(),s["user_epoch"].clone(),p["created_seq"].clone(),n.into()])?];
     writes.extend(new_tokens);
-    writes.push(a.s.audit(
-        "account.v2.token",
+    writes.push(crate::audit::account(
+        a,
+        "account.token",
         s["user_id"].clone(),
-        &a.request_id,
-        Value::Null,
-        Value::Null,
+        &s["client_id"],
         json!({"loginSessionId":s["id"]}),
-        false,
     )?);
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(result)
@@ -496,18 +492,16 @@ async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
         writes.push(a.s.statement("UPDATE auth_login_session SET revoked_at=?,session_revision=session_revision+1 WHERE id=?",vec![n.into(),s["id"].clone()])?);
     }
     writes.push(a.s.statement("INSERT INTO auth_logout_receipt(request_key_hash,proof_hash,login_session_id,scope,created_at,expires_at) VALUES (?,?,?,?,?,?)",vec![keyhash.into(),digest.into(),s["id"].clone(),scope.into(),n.into(),(n+RECEIPT).into()])?);
-    writes.push(a.s.audit(
+    writes.push(crate::audit::account(
+        a,
         if all {
-            "account.v2.logout.all"
+            "account.logout.all"
         } else {
-            "account.v2.logout"
+            "account.logout"
         },
         s["user_id"].clone(),
-        &a.request_id,
-        Value::Null,
-        Value::Null,
+        &s["client_id"],
         json!({"loginSessionId":s["id"]}),
-        false,
     )?);
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(result)

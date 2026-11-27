@@ -276,14 +276,12 @@ async fn commit_identity(
         }
         writes.push(boundary(a, t, &user, epoch)?);
         writes.push(a.s.statement("UPDATE auth_product_transaction SET status='VERIFIED',user_id=?,user_epoch=?,provider_pkce_verifier_sealed=NULL WHERE id=?",vec![user.clone().into(),epoch.into(),t["id"].clone()])?);
-        writes.push(a.s.audit(
-            "account.v2.external.verify",
+        writes.push(crate::audit::account(
+            a,
+            "account.external.verify",
             user.into(),
-            &a.request_id,
+            &c["client_id"],
             Value::Null,
-            Value::Null,
-            Value::Null,
-            false,
         )?);
     }
     #[cfg(feature = "mock-provider")]

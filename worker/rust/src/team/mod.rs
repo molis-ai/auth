@@ -737,20 +737,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 let management_event = audit(&service, &action, &ctx, &b, &change)?;
                 w.extend(ctx.guards);
                 w.extend(change.writes);
-                let tenant = if ctx.tenant.is_null() {
-                    change.result["tenantId"].clone()
-                } else {
-                    ctx.tenant["id"].clone()
-                };
-                w.push(a.s.audit(
-                    action.op,
-                    service.user(),
-                    &a.request_id,
-                    tenant,
-                    change.target_user,
-                    json!({"reason":b["reason"],"targetKind":b["target"]["kind"]}),
-                    false,
-                )?);
                 w.push(management_event);
                 w.extend(protocol::receipt(
                     &service,

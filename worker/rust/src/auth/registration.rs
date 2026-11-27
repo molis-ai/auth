@@ -562,14 +562,12 @@ async fn identify_once(
             vec![hash(&text(b, "verificationProof")).into(), now().into()],
         )?);
     }
-    writes.push(a.s.audit(
-        "account.v2.verify",
+    writes.push(crate::audit::account(
+        a,
+        "account.verify",
         user.clone().into(),
-        &a.request_id,
+        &t["client_id"],
         Value::Null,
-        Value::Null,
-        Value::Null,
-        false,
     )?);
     match a.s.batch(writes, "VERSION_CONFLICT").await {
         Err(error) if creating_code_identity && error.code == "ALREADY_EXISTS" => Ok(false),

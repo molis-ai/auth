@@ -199,20 +199,4 @@ impl Store {
             }
         }
     }
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Keep each audit event field explicit at call sites"
-    )]
-    pub fn audit(
-        &self,
-        action: &str,
-        actor: Value,
-        request_id: &str,
-        space: Value,
-        target: Value,
-        summary: Value,
-        denied: bool,
-    ) -> Result<D1PreparedStatement> {
-        self.statement("INSERT INTO auth_audit_event(id,action,outcome,actor_user_id,target_user_id,space_id,request_id,occurred_at,change_summary) VALUES (?,?,?,?,?,?,?,?,?)",vec![uuid().into(),action.into(),(if denied {"DENIED"} else {"SUCCESS"}).into(),actor.clone(),if target.is_null(){actor}else{target},space,request_id.into(),now().into(),summary])
-    }
 }

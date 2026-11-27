@@ -113,6 +113,7 @@ test('V2C-02 a fresh database has no retired V1 token, member, invitation or ser
   const db = database()
   try {
     for (const table of [
+      'auth_audit_event',
       'auth_authentication',
       'auth_transaction',
       'auth_code',
@@ -138,7 +139,6 @@ test('V2C-02 a fresh database has no retired V1 token, member, invitation or ser
       'auth_identity_proof',
       'auth_tenant_membership',
       'auth_one_use',
-      'auth_audit_event',
       'auth_web_session',
     ])
       assert.equal(db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n, 0, table)
