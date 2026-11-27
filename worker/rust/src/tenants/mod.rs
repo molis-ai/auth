@@ -639,7 +639,10 @@ pub(crate) fn matches(path: &str) -> bool {
         "/api/v2/ownership-transfers",
     ]
     .iter()
-    .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
+    .any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
 }
 
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
