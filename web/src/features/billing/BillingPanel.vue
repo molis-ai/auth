@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
 import type {
   BillingBalance, BillingInterval, BillingLedgerEntry, BillingOrder, BillingPlan,
   BillingSubscription, CreateBillingOrder,
-} from "../lib/billing-types.ts";
-import { cursorCollection } from "../lib/cursor-collection.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
-import { IdempotentSubmit } from "../lib/idempotent-submit.ts";
+} from "./billing-types.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
+import { IdempotentSubmit } from "../../shared/api/idempotent-submit.ts";
 
 const props = defineProps<{
   client: AccountClient;

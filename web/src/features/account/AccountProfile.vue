@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { defineAsyncComponent, nextTick, onBeforeUnmount, ref } from 'vue';
-import { AccountClient, AuthError, type AccountView } from '../lib/account-client.ts';
-import { accountErrorMessage } from '../lib/errors.ts';
-import '../styles/profile.css';
+import { AccountClient, AuthError, type AccountView } from '../../shared/api/account-client.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
+import './profile.css';
 
 const AvatarCropper = defineAsyncComponent(() => import('./AvatarCropper.vue'));
 const props = defineProps<{

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { AccountClient } from '../lib/account-client.ts';
-import AuthenticationPanel from './AuthenticationPanel.vue';
+import type { AccountClient } from '../../shared/api/account-client.ts';
+import { AuthenticationPanel } from '../auth-entry/index.ts';
 defineProps<{client: AccountClient; authorizationPopup?: Window | null; securityAction: string; reauth: string; newIdentity: boolean; binding?: {bindingId:string;type:string}; target: Record<string,string>; busy:boolean}>();
 const emit = defineEmits<{verified:[value:{handle:string}]; cancel:[]; finish:[handle?:string]}>();
 </script>

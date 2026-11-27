@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, type Ref } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
-import type { WriteOptions } from "../lib/idempotent-submit.ts";
-import { platformTenantPath as teamPath, type PlatformTenant } from "../lib/platform-tenants.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
+import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
+import { platformTenantPath as teamPath, type PlatformTenant } from "./platform-tenants.ts";
 import PlatformOwnerPicker from "./PlatformOwnerPicker.vue";
 
 const props = defineProps<{

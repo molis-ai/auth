@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
-import type { PlatformDirectoryUser } from "../lib/platform-tenants.ts";
-import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
+import type { PlatformDirectoryUser } from "./platform-tenants.ts";
+import { useDebouncedSearch } from "../../shared/composables/use-debounced-search.ts";
 
 const props = defineProps<{
   client: AccountClient;

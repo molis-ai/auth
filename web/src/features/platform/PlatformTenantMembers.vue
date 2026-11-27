@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlatformTenantMember } from "../lib/platform-tenants.ts";
+import type { PlatformTenantMember } from "./platform-tenants.ts";
 
 defineProps<{
   members: readonly PlatformTenantMember[];

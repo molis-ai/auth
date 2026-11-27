@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { AuthError, type AccountClient } from '../lib/account-client.ts';
-import { accountErrorMessage } from '../lib/errors.ts';
+import { AuthError, type AccountClient } from '../../shared/api/account-client.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
 
 interface LoginSession {
   productName: string;

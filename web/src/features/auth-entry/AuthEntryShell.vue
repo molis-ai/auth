@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { entryText } from '../lib/entry-copy.ts';
-import { entryLanguage, saveEntryLanguage } from '../lib/entry-preferences.ts';
-import logo from '../assets/molis-logo.png';
+import { entryText } from './entry-copy.ts';
+import { entryLanguage, saveEntryLanguage } from './entry-preferences.ts';
+import logo from '../../assets/molis-logo.png';
 
 defineProps<{ showChrome: boolean }>();
 const language = ref(entryLanguage());

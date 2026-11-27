@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { AuthError, type AccountClient } from '../lib/account-client.ts';
-import { AuthFlow, FlowCancelled } from '../lib/auth-flow.ts';
-import { accountErrorMessage } from '../lib/errors.ts';
-import type { WriteOptions } from '../lib/idempotent-submit.ts';
+import { AuthError, type AccountClient } from '../../shared/api/account-client.ts';
+import { AuthFlow, FlowCancelled } from '../auth-entry/index.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
+import type { WriteOptions } from '../../shared/api/idempotent-submit.ts';
 
 const props = defineProps<{
   client: AccountClient;

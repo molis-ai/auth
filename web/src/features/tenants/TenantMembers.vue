@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { AccountClient } from '../lib/account-client.ts';
-import { accountErrorMessage } from '../lib/errors.ts';
-import type { WriteOptions } from '../lib/idempotent-submit.ts';
+import type { AccountClient } from '../../shared/api/account-client.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
+import type { WriteOptions } from '../../shared/api/idempotent-submit.ts';
 type Member = { displayName: string; email: string | null; membershipId: string; userId: string; role: string; status: string; version: number };
 type Tenant = { tenantId: string; name: string; status: string; myRole: string; membershipId: string; version: number };
 const props = defineProps<{
@@ -25,7 +25,7 @@ const props = defineProps<{
   submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 }>();
 const tab = defineModel<'members' | 'billing'>('tab', { required: true });
-const BillingPanel = defineAsyncComponent(() => import('./BillingPanel.vue'));
+const BillingPanel = defineAsyncComponent(() => import('../billing/index.ts'));
 const emit = defineEmits<{
   left: [tenantId: string];
   expired: [error: unknown];

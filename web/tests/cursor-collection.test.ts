@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { effectScope } from "vue";
-import { cursorCollection } from "../src/lib/cursor-collection.ts";
+import { cursorCollection } from "../src/shared/api/cursor-collection.ts";
 
 test("collections request one page at a time and retry the same cursor after failure", async () => {
   const calls: string[] = [];

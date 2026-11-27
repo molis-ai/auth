@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { cursorCollection } from "../lib/cursor-collection.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
 import {
   auditActorLabel,
   auditOperationMeta,
@@ -12,9 +12,9 @@ import {
   targetKindTone,
   type AuditCategory,
   type AuditEvent,
-} from "../lib/platform-audit.ts";
-import { platformTenantPath, type PlatformTenant } from "../lib/platform-tenants.ts";
-import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
+} from "./platform-audit.ts";
+import { platformTenantPath, type PlatformTenant } from "./platform-tenants.ts";
+import { useDebouncedSearch } from "../../shared/composables/use-debounced-search.ts";
 import AuditEventDrawer from "./AuditEventDrawer.vue";
 
 const props = defineProps<{

@@ -8,7 +8,7 @@ import {
   formatDiffValue,
   targetKindTone,
   type AuditEvent,
-} from "../lib/platform-audit.ts";
+} from "./platform-audit.ts";
 
 const props = defineProps<{
   event: AuditEvent | null;

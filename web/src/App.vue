@@ -4,26 +4,26 @@ import {
   AccountClient,
   AuthError,
   type AccountView,
-} from "./lib/account-client.ts";
-import type { AuthCompletion } from "./lib/auth-flow.ts";
-import AuthEntry from "./components/AuthEntry.vue";
-import AuthEntryShell from "./components/AuthEntryShell.vue";
-import { entryText } from "./lib/entry-copy.ts";
-import { entryLanguage, rememberEmail } from "./lib/entry-preferences.ts";
-import { accountErrorMessage } from "./lib/errors.ts";
-import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./lib/idempotent-submit.ts";
-const ConsoleShell = defineAsyncComponent(() => import("./components/ConsoleShell.vue"));
-const AccountProfile = defineAsyncComponent(() => import("./components/AccountProfile.vue"));
-const AccountSecurityEditor = defineAsyncComponent(() => import("./components/AccountSecurityEditor.vue"));
-const AccountPassword = defineAsyncComponent(() => import("./components/AccountPassword.vue"));
-const AccountSessions = defineAsyncComponent(() => import("./components/AccountSessions.vue"));
-const PlatformUsers = defineAsyncComponent(() => import("./components/PlatformUsers.vue"));
-const PlatformTenants = defineAsyncComponent(() => import("./components/PlatformTenants.vue"));
-const PlatformAudit = defineAsyncComponent(() => import("./components/PlatformAudit.vue"));
-const PlatformClients = defineAsyncComponent(() => import("./components/PlatformClients.vue"));
-const PendingPage = defineAsyncComponent(() => import("./components/PendingPage.vue"));
-const TenantPage = defineAsyncComponent(() => import("./components/TenantPage.vue"));
-const BillingCenterPage = defineAsyncComponent(() => import("./components/BillingCenterPage.vue"));
+} from "./shared/api/account-client.ts";
+import type { AuthCompletion } from "./features/auth-entry/auth-flow.ts";
+import AuthEntry from "./features/auth-entry/AuthEntry.vue";
+import AuthEntryShell from "./features/auth-entry/AuthEntryShell.vue";
+import { entryText } from "./features/auth-entry/entry-copy.ts";
+import { entryLanguage, rememberEmail } from "./features/auth-entry/entry-preferences.ts";
+import { accountErrorMessage } from "./shared/api/errors.ts";
+import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "./shared/api/idempotent-submit.ts";
+const ConsoleShell = defineAsyncComponent(() => import("./shared/components/ConsoleShell.vue"));
+const AccountProfile = defineAsyncComponent(() => import("./features/account/AccountProfile.vue"));
+const AccountSecurityEditor = defineAsyncComponent(() => import("./features/account/AccountSecurityEditor.vue"));
+const AccountPassword = defineAsyncComponent(() => import("./features/account/AccountPassword.vue"));
+const AccountSessions = defineAsyncComponent(() => import("./features/account/AccountSessions.vue"));
+const PlatformUsers = defineAsyncComponent(() => import("./features/platform/PlatformUsers.vue"));
+const PlatformTenants = defineAsyncComponent(() => import("./features/platform/PlatformTenants.vue"));
+const PlatformAudit = defineAsyncComponent(() => import("./features/platform/PlatformAudit.vue"));
+const PlatformClients = defineAsyncComponent(() => import("./features/platform/PlatformClients.vue"));
+const PendingPage = defineAsyncComponent(() => import("./features/tenants/PendingPage.vue"));
+const TenantPage = defineAsyncComponent(() => import("./features/tenants/TenantPage.vue"));
+const BillingCenterPage = defineAsyncComponent(() => import("./features/billing/BillingCenterPage.vue"));
 const environmentLabel = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
 const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;

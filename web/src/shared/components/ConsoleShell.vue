@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { AccountView } from "../lib/account-client.ts";
+import type { AccountView } from "../api/account-client.ts";
 import "../styles/console.css";
 import "../styles/workspace-console.css";
 import "../styles/collection-feedback.css";

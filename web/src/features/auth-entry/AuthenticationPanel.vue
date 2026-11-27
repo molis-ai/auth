@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AuthFlow, FlowCancelled, type AuthCompletion } from "../lib/auth-flow.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
+import { AuthFlow, FlowCancelled, type AuthCompletion } from "./auth-flow.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
-import { entryText } from "../lib/entry-copy.ts";
-import { rememberedEmail, rememberEmail } from "../lib/entry-preferences.ts";
-import { AccountClient, type AccountView } from "../lib/account-client.ts";
+import { entryText } from "./entry-copy.ts";
+import { rememberedEmail, rememberEmail } from "./entry-preferences.ts";
+import { AccountClient, type AccountView } from "../../shared/api/account-client.ts";
 const props = defineProps<{
   client: AccountClient;
   authorizationPopup?: Window | null;

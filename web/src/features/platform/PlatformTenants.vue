@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { cursorCollection } from "../lib/cursor-collection.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
-import type { WriteOptions } from "../lib/idempotent-submit.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
+import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import {
   auditActorLabel,
   auditOperationMeta,
@@ -12,10 +12,10 @@ import {
   formatRelativeAuditTime,
   platformAuditPath,
   type AuditEvent,
-} from "../lib/platform-audit.ts";
+} from "./platform-audit.ts";
 import AuditEventDrawer from "./AuditEventDrawer.vue";
-import { platformTenantPath as teamPath, tenantOwner, type PlatformTenant, type PlatformTenantMember } from "../lib/platform-tenants.ts";
-import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
+import { platformTenantPath as teamPath, tenantOwner, type PlatformTenant, type PlatformTenantMember } from "./platform-tenants.ts";
+import { useDebouncedSearch } from "../../shared/composables/use-debounced-search.ts";
 import PlatformTenantDialogs from "./PlatformTenantDialogs.vue";
 import PlatformTenantMembers from "./PlatformTenantMembers.vue";
 

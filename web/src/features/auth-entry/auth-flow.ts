@@ -1,4 +1,4 @@
-import type { AccountView } from "./account-client.ts";
+import type { AccountView } from "../../shared/api/account-client.ts";
 
 export interface AuthCompletion {
   handle: string;

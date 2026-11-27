@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { cursorCollection } from "../lib/cursor-collection.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
 import BillingPanel from "./BillingPanel.vue";
 
 interface TenantLedger {

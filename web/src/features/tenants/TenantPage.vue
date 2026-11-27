@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { AuthError, type AccountClient } from "../lib/account-client.ts";
-import { cursorCollection } from "../lib/cursor-collection.ts";
-import { accountErrorMessage } from "../lib/errors.ts";
-import type { WriteOptions } from "../lib/idempotent-submit.ts";
+import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
+import { accountErrorMessage } from "../../shared/api/errors.ts";
+import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import TenantMembers from "./TenantMembers.vue";
-import { syncCreatedTenant } from "../lib/tenant-selection.ts";
-import "../styles/tenant-page.css";
+import { syncCreatedTenant } from "./tenant-selection.ts";
+import "./tenant-page.css";
 
 type Tenant = {
   tenantId: string;

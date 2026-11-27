@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { accountErrorMessage } from '../lib/errors.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
 const props = defineProps<{ file:File; apply:(image:string)=>Promise<void> }>();
 const emit = defineEmits<{ close:[] }>();
 const modal=ref<HTMLDialogElement>(), stage=ref<SVGSVGElement>();

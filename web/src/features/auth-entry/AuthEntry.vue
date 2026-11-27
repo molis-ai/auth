@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue';
-import type { AccountClient } from '../lib/account-client.ts';
-import type { AuthCompletion } from '../lib/auth-flow.ts';
+import type { AccountClient } from '../../shared/api/account-client.ts';
+import type { AuthCompletion } from './auth-flow.ts';
 import AuthenticationPanel from './AuthenticationPanel.vue';
-import { accountErrorMessage } from '../lib/errors.ts';
-import { entryText } from '../lib/entry-copy.ts';
+import { accountErrorMessage } from '../../shared/api/errors.ts';
+import { entryText } from './entry-copy.ts';
 const props = defineProps<{
   client: AccountClient;
   busy: boolean;
