@@ -1,11 +1,33 @@
 use crate::{
-    http::*,
-    identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
-    security::uuid,
-    store::WebSessionAccess,
+    core::http::*,
+    core::identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
+    core::security::uuid,
+    core::store::WebSessionAccess,
 };
 use serde_json::{Value, json};
 use worker::{Env, Method, Request, Response};
+
+fn failure_route(path: &str) -> &'static str {
+    static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
+    match path {
+        "/api/v2/health" => "/api/v2/health",
+        "/api/v2/readiness" => "/api/v2/readiness",
+        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
+        "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
+        "/account/handoff/start" => "/account/handoff/start",
+        "/account/handoff/finish" => "/account/handoff/finish",
+        "/api/account/login-sessions" => "/api/account/login-sessions",
+        "/account/callback" => "/account/callback",
+        _ if crate::web::billing::matches(path) => "/api/account/billing/*",
+        "/" | "/login" | "/console" => "/",
+        _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
+        _ => ROUTES
+            .iter()
+            .copied()
+            .find(|template| matches_route_template(path, template))
+            .unwrap_or("unmatched"),
+    }
+}
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
     let id = if crate::web::billing::matches(&req.path()) {
@@ -212,7 +234,7 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         path,
         "/.well-known/molis-sync-jwks.json" | "/api/v2/auth/sync-read-proof"
     ) {
-        return crate::sync_read_proof::route(a, path, method).await;
+        return crate::auth::sync_read_proof::route(a, path, method).await;
     }
 
     if path.starts_with("/api/v2/auth/management-handoffs")
@@ -226,7 +248,7 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
     }
     if path == "/api/v2/readiness" && method == Method::Get {
         ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
-        for query in include_str!("schema-readiness.sql")
+        for query in include_str!("core/schema-readiness.sql")
             .split(';')
             .map(str::trim)
             .filter(|statement| !statement.is_empty())
@@ -244,7 +266,7 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
                 503,
                 "UNIFIED_CONFIGURATION_INVALID",
             )?;
-            crate::test_admission::Admission::load(a)?;
+            crate::auth::test_admission::Admission::load(a)?;
             ensure(
                 crate::auth::login_capabilities::available(a, &registration).len() == 5
                     && token(&crate::web::web_session::setting(
@@ -265,8 +287,8 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         if path == "/api/v2/entitlements/check" {
             return crate::billing::entitlements::route(a, method).await;
         }
-        if crate::management_audit::matches(path) {
-            return crate::management_audit::route(a, path, method).await;
+        if crate::audit::matches(path) {
+            return crate::audit::route(a, path, method).await;
         }
         if crate::billing::matches(path) {
             return crate::billing::route(a, path, method).await;
@@ -287,7 +309,7 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             || path.starts_with("/api/v2/users/me/")
             || path == "/api/v2/auth/password-reset/complete"
         {
-            return crate::account_management::route(a, path, method).await;
+            return crate::account::management::route(a, path, method).await;
         }
         if path.starts_with("/api/v2/auth/external/") {
             return crate::auth::external_login::browser(a, path, method).await;

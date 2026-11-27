@@ -1,9 +1,9 @@
 //! One-use, browser-bound handoff. Product bearer credentials never cross the browser.
 use crate::{
     auth::login_sessions as sessions,
-    http::*,
-    identity::Auth,
-    security::{challenge, hash, secret, uuid},
+    core::http::*,
+    core::identity::Auth,
+    core::security::{challenge, hash, secret, uuid},
     web::web_session,
 };
 use serde_json::{Value, json};

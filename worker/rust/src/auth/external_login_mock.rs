@@ -3,9 +3,9 @@ use super::{cookie_value, flow, provider, q, redirect, sealed};
 use crate::{
     auth::login_sessions::client_guard,
     auth::registration::tx_guard,
-    http::*,
-    identity::Auth,
-    security::{challenge, hash, secret},
+    core::http::*,
+    core::identity::Auth,
+    core::security::{challenge, hash, secret},
 };
 use serde_json::{Value, json};
 use worker::{Method, Response, Url};

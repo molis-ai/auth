@@ -8,8 +8,8 @@ import {
   platformAuditPath,
   auditActorLabel,
   targetKindTone,
-} from "../src/lib/platform-audit.ts";
-import { tenantOwner } from "../src/lib/platform-tenants.ts";
+} from "../src/features/platform/platform-audit.ts";
+import { tenantOwner } from "../src/features/platform/platform-tenants.ts";
 
 test("auditOperationMeta maps known operations and classifies unknown operations by prefix", () => {
   assert.deepEqual(auditOperationMeta("tenant.create"), { label: "平台创建团队", category: "tenant" });

@@ -1,9 +1,9 @@
 //! Directed invitations: possession of an id is never proof of recipient identity.
 use crate::{
-    http::*,
-    management_protocol::{self as protocol, ACTOR, Read},
-    management_protocol::{Action, Change, Context, Service, expected},
-    security::uuid,
+    auth::management_access::{self as protocol, ACTOR, Read},
+    auth::management_access::{Action, Change, Context, Service, expected},
+    core::http::*,
+    core::security::uuid,
     tenants::member_view,
 };
 use serde_json::{Value, json};

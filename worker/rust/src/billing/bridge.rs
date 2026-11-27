@@ -2,9 +2,11 @@
 use crate::{
     app::{bounded, with_security_headers},
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
-    http::*,
-    identity::Auth,
-    management_protocol::{ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, require_member},
+    auth::management_access::{
+        ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, require_member,
+    },
+    core::http::*,
+    core::identity::Auth,
     tenants::TENANTS,
     web::web_session::setting,
 };

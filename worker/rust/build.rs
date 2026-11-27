@@ -1,4 +1,4 @@
-#[path = "src/contract_structure.rs"]
+#[path = "src/core/contracts/contract_structure.rs"]
 mod contract_structure;
 
 use serde_json::Value;
@@ -55,7 +55,7 @@ fn main() {
 fn generate_contract_patterns(manifest: &std::path::Path, output: PathBuf) {
     const SCHEMAS: &str = "../../contracts/unified-account/schemas.json";
     const PROFILE: &str = "../../contracts/unified-account/validator-profile.json";
-    for path in [SCHEMAS, PROFILE, "src/contract_structure.rs"] {
+    for path in [SCHEMAS, PROFILE, "src/core/contracts/contract_structure.rs"] {
         println!("cargo:rerun-if-changed={path}");
     }
     let read_json = |path| {

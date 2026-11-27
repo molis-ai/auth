@@ -2,10 +2,10 @@
 use super::billing;
 use crate::{
     auth::{login_capabilities, login_sessions},
-    http::*,
-    identity::Auth,
-    security::{hash, secret},
-    store::WebSessionAccess,
+    core::http::*,
+    core::identity::Auth,
+    core::security::{hash, secret},
+    core::store::WebSessionAccess,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
@@ -278,7 +278,7 @@ impl WebSession<'_> {
         if self.data["tokens"].is_null() {
             return Ok(json!({"state":"ANONYMOUS"}));
         }
-        let me = crate::account_management::web_account_view(
+        let me = crate::account::management::web_account_view(
             self.a,
             self.data["tokens"]["accessToken"].as_str().unwrap_or(""),
         )

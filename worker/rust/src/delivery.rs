@@ -4,7 +4,7 @@ pub(crate) mod mail_delivery;
 pub(crate) mod mail_templates;
 pub(crate) mod sms_auth;
 
-use crate::{http::*, identity::Auth};
+use crate::{core::http::*, core::identity::Auth};
 use serde_json::Value;
 use worker::D1PreparedStatement;
 pub(crate) struct Message<'a> {
@@ -85,7 +85,7 @@ pub(crate) fn invitation_notification(
     a.s.statement(
         "INSERT INTO auth_mock_notification VALUES (?,?,?,?,'TENANT_INVITATION',?,?,?)",
         vec![
-            crate::security::uuid().into(),
+            crate::core::security::uuid().into(),
             c["environment_id"].clone(),
             channel.into(),
             destination.into(),

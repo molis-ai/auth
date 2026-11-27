@@ -1,15 +1,16 @@
 //! AUTH-07 managed tenants, membership roles, and platform authorization.
+use crate::core::management_protocol::{PageFilters, PageOrder};
 
 pub(crate) mod creation;
 pub(crate) mod invitations;
 pub(crate) mod membership;
 pub(crate) mod transfers;
 
-use crate::management_protocol::{
+use crate::auth::management_access::{
     self as protocol, ACTIVE_MEMBER, ACTOR, ALL_ROLES, Access, Action, Change, Context, Lookup,
-    MANAGER_ROLES, PageFilters, PageOrder, Read, Service, expected, require_member,
+    MANAGER_ROLES, Read, Service, expected, require_member,
 };
-use crate::{auth::login_sessions, http::*, identity::Auth, security::uuid};
+use crate::{auth::login_sessions, core::http::*, core::identity::Auth, core::security::uuid};
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 pub(crate) fn member_view(m: &Value) -> Value {
@@ -42,7 +43,7 @@ fn audit(
     body: &Value,
     change: &Change,
 ) -> Result<D1PreparedStatement> {
-    use crate::management_audit::{diff, success};
+    use crate::audit::{diff, success};
     let mut after = change.result.clone();
     let (kind, key, before, fields): (_, _, _, &[_]) = match action.op {
         "tenant.create" | "tenant.self-create" => {
@@ -541,11 +542,13 @@ fn platform_tenant_page(a: &Auth) -> Result<Read> {
             args,
         );
     }
-    Ok(filters.source_page(
-        PLATFORM_TENANTS,
-        |row| Ok(platform_view(row)),
-        PageOrder::TimeDesc("managed_at"),
-    ))
+    Ok(filters
+        .source_page(
+            PLATFORM_TENANTS,
+            |row| Ok(platform_view(row)),
+            PageOrder::TimeDesc("managed_at"),
+        )
+        .into())
 }
 
 async fn read(a: &Auth, action: &Action) -> Result<Value> {

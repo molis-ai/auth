@@ -8,10 +8,10 @@ pub(crate) mod subscriptions;
 
 use crate::{
     auth::login_sessions,
-    http::*,
-    identity::Auth,
-    management_protocol::{self as protocol, Access, Lookup},
-    management_protocol::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
+    auth::management_access::{self as protocol, Access, Lookup},
+    auth::management_access::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
+    core::http::*,
+    core::identity::Auth,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
@@ -198,7 +198,7 @@ impl Service<'_> {
             };
             changes.push(json!({"field":"seatQuantities","before":brief(before_quantities)?,"after":brief(q)?}));
         }
-        crate::management_audit::success(
+        crate::audit::success(
             self,
             action,
             tenant,

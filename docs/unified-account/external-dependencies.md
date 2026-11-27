@@ -18,7 +18,7 @@
 
 现行 v2 投递与验证见 [delivery.rs](../../worker/rust/src/delivery.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](../history/mail-delivery.md)
 
-GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [account_management.rs](../../worker/rust/src/account_management.rs) · [unified_policy.rs](../../worker/rust/src/unified_policy.rs)
+GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [management.rs](../../worker/rust/src/account/management.rs) · [unified_policy.rs](../../worker/rust/src/core/contracts/unified_policy.rs)
 
 租户定向邀请使用同样的投递渠道，但走独立的通知路径。若随本批启用真实邀请，补相应通知模板及验收，单独跟踪。[邀请投递](../../worker/rust/src/delivery.rs)
 

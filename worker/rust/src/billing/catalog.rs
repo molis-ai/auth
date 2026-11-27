@@ -1,8 +1,8 @@
 //! Append-only catalog publication; old subscriptions keep their selected version.
 use crate::{
-    http::*,
-    management_protocol::Read,
-    management_protocol::{Action, Change, Service},
+    auth::management_access::Read,
+    auth::management_access::{Action, Change, Service},
+    core::http::*,
 };
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -60,7 +60,7 @@ impl Service<'_> {
             ));
         }
         let id = json!(action.id);
-        crate::http::shape("Id", &id)?;
+        crate::core::http::shape("Id", &id)?;
         ensure(!text(b, "name").trim().is_empty(), 400, "INVALID_REQUEST")?;
         let mut ids = HashSet::new();
         let mut features = HashSet::new();

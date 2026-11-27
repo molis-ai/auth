@@ -1,9 +1,9 @@
 //! Ownership transfer swaps roles atomically and never changes seat assignments.
 use crate::{
-    http::*,
-    management_protocol::{self as protocol, ACTOR, Read},
-    management_protocol::{Action, Change, Context, Service, expected},
-    security::uuid,
+    auth::management_access::{self as protocol, ACTOR, Read},
+    auth::management_access::{Action, Change, Context, Service, expected},
+    core::http::*,
+    core::security::uuid,
     tenants::member_view,
 };
 use serde_json::{Value, json};

@@ -15,17 +15,17 @@
 | GET | `/credits/ledger` | 200 | `BillingPage<BillingLedgerEntry>` |
 | POST | `/entitlements/check` | 200 | `BillingEntitlement`，取决于 Billing 是否提供可选能力 |
 
-数据类型见 [billing-types.ts](../web/src/lib/billing-types.ts)。金额为币种的最小单位，Credit 为整数，时间为 UTC Unix 毫秒。目录和余额等接口缺省使用 `product=WORK&ownerKind=USER`，个人 ID 通常省略。团队使用 `ownerKind=TENANT&ownerId=<tenantId>`。订单列表与流水支持 `limit`（默认 20，范围 1–100）和 `cursor`（原样使用上一页的 `nextCursor`）。团队成员读取团队余额和授权范围内的流水，团队订单读写需要当前 OWNER 或 ADMIN 角色。
+数据类型见 [billing-types.ts](../web/src/features/billing/billing-types.ts)。金额为币种的最小单位，Credit 为整数，时间为 UTC Unix 毫秒。目录和余额等接口缺省使用 `product=WORK&ownerKind=USER`，个人 ID 通常省略。团队使用 `ownerKind=TENANT&ownerId=<tenantId>`。订单列表与流水支持 `limit`（默认 20，范围 1–100）和 `cursor`（原样使用上一页的 `nextCursor`）。团队成员读取团队余额和授权范围内的流水，团队订单读写需要当前 OWNER 或 ADMIN 角色。
 
 ## 页面调用示例
 
-以下示例的导入路径适用于 `web/src/lib`。
+以下示例的导入路径适用于 `web/src/features/billing`。
 
 ```ts
-import type { AccountClient } from "./account-client";
+import type { AccountClient } from "../../shared/api/account-client.ts";
 import type {
   BillingBalance, BillingOrder, BillingPage, CreateBillingOrder,
-} from "./billing-types";
+} from "./billing-types.ts";
 
 export function billingCalls(account: AccountClient, tenantId?: string) {
   const query = new URLSearchParams({

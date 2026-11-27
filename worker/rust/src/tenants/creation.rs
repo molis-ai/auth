@@ -1,5 +1,5 @@
 //! Trusted deployment policy controls new self-service tenants, never existing membership.
-use crate::http::*;
+use crate::core::http::*;
 use worker::Env;
 
 pub fn parse(value: Option<&str>) -> Result<&'static str> {

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 
 const schemaProbes = readFileSync(
-  new URL('../rust/src/schema-readiness.sql', import.meta.url),
+  new URL('../rust/src/core/schema-readiness.sql', import.meta.url),
   'utf8',
 )
 const notReady = 'Auth deployment D1 schema or browser client registration is not ready'

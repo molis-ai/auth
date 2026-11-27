@@ -1,11 +1,11 @@
 //! AUTH-10 online entitlement decisions from current identity and commercial facts.
 use crate::{
     auth::login_sessions,
-    http::*,
-    identity::Auth,
-    management_protocol as protocol,
-    management_protocol::{ACTIVE_MEMBER, ALL_ROLES, Context, require_member},
-    security::hash,
+    auth::management_access as protocol,
+    auth::management_access::{ACTIVE_MEMBER, ALL_ROLES, Context, require_member},
+    core::http::*,
+    core::identity::Auth,
+    core::security::hash,
     tenants::TENANTS,
 };
 use serde_json::{Value, json};

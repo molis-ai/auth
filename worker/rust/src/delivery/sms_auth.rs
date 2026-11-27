@@ -1,5 +1,5 @@
 //! One remote verifier shared by every Auth client. No credentials reach product clients.
-use crate::{http::*, identity::Auth, security::hash};
+use crate::{core::http::*, core::identity::Auth, core::security::hash};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen(module = "/src/runtime/aliyun.js")]

@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import App from "./App.vue";
-import "./styles/calm.css";
-import "./styles/auth-entry.css";
-import "./styles/interaction-feedback.css";
+import "./shared/styles/calm.css";
+import "./features/auth-entry/auth-entry.css";
+import "./shared/styles/interaction-feedback.css";
 
 createApp(App).mount("#app");

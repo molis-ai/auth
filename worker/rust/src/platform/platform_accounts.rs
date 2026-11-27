@@ -1,10 +1,11 @@
 //! V2 user availability and explicit platform grants.
+use crate::core::management_protocol::{PageFilters, PageOrder};
 use crate::{
-    http::*,
-    identity::Auth,
-    management_protocol::{Action, Change, Context, Service},
-    management_protocol::{Lookup, PageFilters, PageOrder, Read},
-    security::uuid,
+    auth::management_access::{Action, Change, Context, Service},
+    auth::management_access::{Lookup, Read},
+    core::http::*,
+    core::identity::Auth,
+    core::security::uuid,
 };
 use serde_json::{Value, json};
 use worker::Method;
@@ -40,7 +41,7 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         (["platform", "users", u, "permissions", cap], Method::Patch) => {
             id = (*u).into();
             target = (*cap).into();
-            crate::http::shape("PlatformCapability", &json!(cap))?;
+            crate::core::http::shape("PlatformCapability", &json!(cap))?;
             ("permission.set", Some("PlatformPermissionRequest"))
         }
         _ => {
@@ -51,7 +52,7 @@ pub fn action(path: &str, method: Method) -> Result<Action> {
         }
     };
     if !id.is_empty() {
-        crate::http::shape("Id", &json!(id))?;
+        crate::core::http::shape("Id", &json!(id))?;
     }
     Ok(Action {
         op,
@@ -104,9 +105,11 @@ fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatemen
 
 pub fn user_page(a: &Auth) -> Result<Read> {
     let mut filters = PageFilters::parse(a, &["status", "q"])?;
-    filters.status()?;
+    filters.status(&["ACTIVE", "DISABLED"])?;
     filters.search(&["display_name", "email", "id"])?;
-    Ok(filters.page(USERS, |row| Ok(user_view(row)), PageOrder::IdAsc))
+    Ok(filters
+        .page(USERS, |row| Ok(user_view(row)), PageOrder::IdAsc)
+        .into())
 }
 pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
     let user = || Lookup {
@@ -168,7 +171,7 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
                 n.into(),
             ],
         )?);
-        w.extend(crate::account_management::revoke_password(
+        w.extend(crate::account::management::revoke_password(
             s.a, &a.id, None,
         )?);
         row["email"] = target.into();
@@ -184,7 +187,7 @@ pub async fn change(s: &Service<'_>, a: &Action, c: &Context, b: &Value) -> Resu
         ensure(a.id != text(&s.s, "user_id"), 403, "FORBIDDEN")?;
         if b["status"] == "DISABLED" {
             w.push(s.a.s.guard("NOT EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND permission='PLATFORM_PERMISSION_WRITE' AND status='ACTIVE') OR EXISTS(SELECT 1 FROM auth_platform_permission p JOIN auth_user u ON u.id=p.user_id WHERE p.user_id<>? AND p.permission='PLATFORM_PERMISSION_WRITE' AND p.status='ACTIVE' AND u.status='ACTIVE')",vec![a.id.clone().into(),a.id.clone().into()])?);
-            w.extend(crate::account_management::revoke_password(
+            w.extend(crate::account::management::revoke_password(
                 s.a, &a.id, None,
             )?);
         } else {
