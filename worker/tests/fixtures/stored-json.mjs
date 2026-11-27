@@ -25,7 +25,7 @@ class D1Database {
         const { sql } = statements[index]
         const column = sql.includes('FROM (SELECT p.*,json_array(')
           ? 'definition'
-          : sql.includes('FROM (SELECT * FROM auth_management_audit')
+          : sql.includes('FROM auth_management_audit a')
             ? 'change_summary'
             : undefined
         if (!column) return result

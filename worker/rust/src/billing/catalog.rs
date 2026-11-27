@@ -1,8 +1,8 @@
 //! Append-only catalog publication; old subscriptions keep their selected version.
 use crate::{
     http::*,
-    tenants::protocol::Read,
-    tenants::{Action, Change, Service},
+    management_protocol::Read,
+    management_protocol::{Action, Change, Service},
 };
 use serde_json::{Value, json};
 use std::collections::HashSet;

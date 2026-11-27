@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   compileDocument,
   validateNamed,
@@ -71,7 +72,7 @@ test("AUTH-01 / UAS-01,11,26: the same redacted positive and negative fixtures a
 test("AUTH-01: generated artifacts are reproducible without changing files", () => {
   execFileSync(
     process.execPath,
-    [new URL("generate.ts", import.meta.url).pathname, "--check"],
+    [fileURLToPath(new URL("generate.ts", import.meta.url)), "--check"],
     {
       stdio: "pipe",
     },

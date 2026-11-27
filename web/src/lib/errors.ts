@@ -13,7 +13,7 @@ const messages: Record<string, string> = {
   LAST_LOGIN_METHOD: "请先添加另一种可用登录方式，再解绑当前方式。",
   RATE_LIMITED: "操作太频繁，请稍后再试。",
   TRANSACTION_EXPIRED: "本次验证已结束，请重新发起。",
-  OWNER_TRANSFER_REQUIRED: "请先完成所有权交接，再退出租户。",
+  OWNER_TRANSFER_REQUIRED: "请先完成所有权交接，再退出团队。",
   CAPACITY_CONFLICT: "席位容量不足，请先核对现有分配。",
   POLICY_MISMATCH: "当前账号入口的配置不匹配，请联系管理员。",
   NOT_FOUND: "这项信息已不存在或无法访问，请刷新后查看。",

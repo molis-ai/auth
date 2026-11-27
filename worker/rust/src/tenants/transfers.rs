@@ -1,12 +1,13 @@
 //! Ownership transfer swaps roles atomically and never changes seat assignments.
 use crate::{
     http::*,
+    management_protocol::{self as protocol, ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{self, ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected, member_view},
+    tenants::member_view,
 };
 use serde_json::{Value, json};
-fn view(r: &Value) -> Value {
+pub(super) fn view(r: &Value) -> Value {
     json!({"transferId":r["id"],"tenantId":r["tenant_id"],"fromMembershipId":r["from_membership_id"],"toMembershipId":r["to_membership_id"],"status":if r["status"]=="PENDING"&&number(r,"expires_at")<=now(){json!("EXPIRED")}else{r["status"].clone()},"expiresAt":iso(&r["expires_at"]),"version":r["version"]})
 }
 pub fn list() -> Read {
@@ -149,6 +150,107 @@ impl Service<'_> {
             result,
             writes: w,
             target_user: ctx.to["user_id"].clone(),
+        })
+    }
+}
+
+impl Service<'_> {
+    pub(super) async fn platform_transfer_owner(
+        &self,
+        ctx: &Context,
+        body: &Value,
+    ) -> Result<Change> {
+        expected(body, &ctx.tenant)?;
+        let tenant = &ctx.tenant["id"];
+        let previous = &ctx.tenant["owner_user_id"];
+        let target = &body["newOwnerUserId"];
+        ensure(target != previous, 409, "VERSION_CONFLICT")?;
+
+        let member = |user: &Value| {
+            self.a.s.statement(
+                "SELECT * FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE'",
+                vec![tenant.clone(), user.clone()],
+            )
+        };
+        let [old_members, new_users, new_members]: [Vec<Value>; 3] = self
+            .a
+            .s
+            .batch_read(vec![
+                member(previous)?,
+                self.a
+                    .s
+                    .statement(super::ACTIVE_OWNER_PROFILE, vec![target.clone()])?,
+                member(target)?,
+            ])
+            .await?
+            .try_into()
+            .map_err(|_| Failure::unavailable())?;
+        let owner = old_members
+            .into_iter()
+            .next()
+            .filter(|m| m["role"] == "OWNER")
+            .ok_or(Failure {
+                status: 409,
+                code: "VERSION_CONFLICT",
+            })?;
+        let new_user = new_users.into_iter().next().ok_or(Failure {
+            status: 404,
+            code: "NOT_FOUND",
+        })?;
+        let new_member = new_members.into_iter().next();
+        let n = now();
+        let mut writes = vec![
+            self.member_guard(&owner)?,
+            self.a.s.guard(
+                "EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",
+                vec![target.clone()],
+            )?,
+        ];
+        writes.push(if let Some(member) = &new_member {
+            self.member_guard(member)?
+        } else {
+            self.a.s.guard(
+                "NOT EXISTS(SELECT 1 FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE')",
+                vec![tenant.clone(), target.clone()],
+            )?
+        });
+        writes.push(self.a.s.statement(
+            "UPDATE auth_tenant_membership SET role='ADMIN',version=version+1 WHERE id=?",
+            vec![owner["id"].clone()],
+        )?);
+        writes.push(if let Some(member) = &new_member {
+            self.a.s.statement(
+                "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
+                vec![member["id"].clone()],
+            )?
+        } else {
+            self.a.s.statement(
+                "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",
+                vec![uuid().into(), tenant.clone(), target.clone(), n.into()],
+            )?
+        });
+        writes.push(self.a.s.statement(
+            "UPDATE auth_ownership_transfer
+             SET status=CASE WHEN expires_at<=? THEN 'EXPIRED' ELSE 'CANCELLED' END,
+                 version=version+1,resolved_at=? WHERE tenant_id=? AND status='PENDING'",
+            vec![n.into(), n.into(), tenant.clone()],
+        )?);
+        writes.push(self.a.s.statement(
+            "UPDATE auth_managed_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",
+            vec![n.into(), tenant.clone()],
+        )?);
+        let mut updated = ctx.tenant.clone();
+        updated["owner_user_id"] = target.clone();
+        updated["owner_display_name"] = new_user["display_name"].clone();
+        updated["owner_email"] = new_user["email"].clone();
+        updated["member_count"] =
+            (number(&updated, "member_count") + i64::from(new_member.is_none())).into();
+        updated["updated_at"] = n.into();
+        updated["version"] = (number(&updated, "version") + 1).into();
+        Ok(Change {
+            result: super::platform_view(&updated),
+            writes,
+            target_user: target.clone(),
         })
     }
 }

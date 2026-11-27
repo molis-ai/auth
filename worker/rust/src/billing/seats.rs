@@ -3,9 +3,9 @@ use crate::{
     billing::subscriptions::{POOLS, pool_view},
     http::*,
     identity::Auth,
+    management_protocol::{ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected},
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;
@@ -27,6 +27,7 @@ pub fn list(a: &Auth, action: &Action) -> Result<Read> {
         "ENDED"
     };
     Ok(Read::Page {
+        order: crate::management_protocol::PageOrder::IdAsc,
         sql: format!("SELECT a.* FROM billing_seat_assignment a
                       WHERE a.tenant_id=? AND a.status=? AND (a.user_id={ACTOR} OR EXISTS(
                           SELECT 1 FROM auth_tenant_membership m WHERE m.tenant_id=a.tenant_id
@@ -54,7 +55,7 @@ impl Service<'_> {
         };
         Ok(vec![
             self.a.s.statement("UPDATE billing_seat_pool SET version=version+1 WHERE tenant_id=? AND EXISTS(SELECT 1 FROM billing_seat_assignment a WHERE a.subscription_id=billing_seat_pool.subscription_id AND a.seat_type_id=billing_seat_pool.seat_type_id AND a.membership_id=? AND a.status='ASSIGNED')",vec![m["tenant_id"].clone(),m["id"].clone()])?,
-            self.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) SELECT lower(hex(randomblob(16))),?,?,tenant_id,'seat.member-release','ASSIGNMENT',id,'SUCCESS',?,json_object('membershipId',membership_id,'subscriptionId',subscription_id,'seatTypeId',seat_type_id,'userId',user_id,'changes',json_array(json_object('field','status','before','ASSIGNED','after','ENDED'),json_object('field','endReason','before',NULL,'after',?))),?,? FROM billing_seat_assignment WHERE tenant_id=? AND membership_id=? AND status='ASSIGNED'",vec![self.user(),self.s["client_id"].clone(),reason.into(),reason.into(),self.a.request_id.clone().into(),n.into(),m["tenant_id"].clone(),m["id"].clone()])?,
+            crate::management_audit::member_seat_releases(self, m, reason, n)?,
             self.a.s.statement("UPDATE billing_seat_assignment SET status='ENDED',ended_at=?,end_reason=?,version=version+1 WHERE tenant_id=? AND membership_id=? AND status='ASSIGNED'",vec![n.into(),reason.into(),m["tenant_id"].clone(),m["id"].clone()])?,
             self.a.s.guard("NOT EXISTS(SELECT 1 FROM billing_seat_assignment WHERE tenant_id=? AND membership_id=? AND status='ASSIGNED')",vec![m["tenant_id"].clone(),m["id"].clone()])?,
             self.a.s.statement("INSERT INTO billing_user_revision VALUES (?,1) ON CONFLICT(user_id) DO UPDATE SET version=version+1",vec![m["user_id"].clone()])?,
@@ -231,6 +232,14 @@ impl Service<'_> {
             "version",
         ];
         let changes:Vec<_>=fields.into_iter().filter(|k|before[k]!=after[k]).map(|k|json!({"field":k,"before":if before[k].is_null(){Value::Null}else{json!(before[k].to_string())},"after":if after[k].is_null(){Value::Null}else{json!(after[k].to_string())}})).collect();
-        self.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) VALUES (?,?,?,?,?,'ASSIGNMENT',?,'SUCCESS',?,?,?,?)",vec![uuid().into(),self.user(),self.s["client_id"].clone(),action.tenant_id.clone().into(),action.op.into(),after["assignmentId"].clone(),b["reason"].clone(),json!({"before":before,"after":result,"changes":changes}).to_string().into(),self.a.request_id.clone().into(),now().into()])
+        crate::management_audit::success(
+            self,
+            action,
+            action.tenant_id.clone().into(),
+            "ASSIGNMENT",
+            &after["assignmentId"],
+            &b["reason"],
+            json!({"before":before,"after":result,"changes":changes}),
+        )
     }
 }

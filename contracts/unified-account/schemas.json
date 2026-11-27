@@ -4209,6 +4209,40 @@
         },
         "version": {
           "$ref": "#/$defs/Version"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "memberCount": {
+          "$ref": "#/$defs/Version"
+        },
+        "ownerDisplayName": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerEmail": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 254,
+              "format": "email"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -4348,6 +4382,28 @@
       "required": [
         "name",
         "ownerUserId",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "PlatformTenantTransferRequest": {
+      "type": "object",
+      "properties": {
+        "newOwnerUserId": {
+          "$ref": "#/$defs/Id"
+        },
+        "expectedVersion": {
+          "$ref": "#/$defs/Version"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "newOwnerUserId",
+        "expectedVersion",
         "reason"
       ],
       "additionalProperties": false
@@ -5844,6 +5900,28 @@
         "actorUserId": {
           "$ref": "#/$defs/Id"
         },
+        "actorDisplayName": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tenantName": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DisplayName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "operation": {
           "$ref": "#/$defs/Id"
         },
@@ -5925,6 +6003,21 @@
           },
           "minItems": 0,
           "maxItems": 100
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [

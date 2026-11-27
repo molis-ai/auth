@@ -162,6 +162,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     )
     assert.equal(ok(await call('/api/account/session')).state, 'ANONYMOUS')
     assert.ok(cookie && csrf)
+    assert.equal((await call('/api/account/login-sessions')).status, 401)
     // LOGIN-P1-04: the BFF binds client identity; capabilities expose no proofs or secrets.
     const methods = ['ACCOUNT_PASSWORD', 'EMAIL_CODE', 'PHONE_OTP', 'GOOGLE', 'GITHUB']
     assert.deepEqual(ok(await call('/api/account/auth/capabilities')).methods, methods)
@@ -237,6 +238,7 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
     )
     assert.equal(done.account.state, 'AUTHENTICATED')
     assert.ok(validateNamed('AccountView', done.account))
+    assert.equal(ok(await call('/api/account/me')).passwordEnabled, false)
     await t.test(
       'session projection reads no password state and preserves SELECT failures',
       async () => {
@@ -252,6 +254,91 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
           await db
             .prepare('ALTER TABLE hidden_local_credential RENAME TO auth_local_credential')
             .run()
+        }
+      },
+    )
+    await t.test(
+      'login session directory only returns the current account’s live session summaries',
+      async () => {
+        const currentId = done.account.session.loginSessionId
+        const timestamp = Date.now()
+        const retainSession = db.prepare(
+          `INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,revoked_at)
+         SELECT ?,COALESCE(?,user_id),?,?,?,?+7776000000,user_epoch+?,created_seq,?
+         FROM auth_login_session WHERE id=?`,
+        )
+        const otherUser = 'qa-sessions-other'
+        const work = 'molis-work-unified-local'
+        const club = 'molis-club-unified-local'
+        const workActivity = timestamp - 120_000
+        const clubActivity = timestamp - 180_000
+        const fixture = (
+          id: string,
+          client: string,
+          lastActive: number,
+          epoch = 0,
+          revoked: number | null = null,
+          owner: string | null = null,
+        ) =>
+          retainSession.bind(
+            id,
+            owner,
+            client,
+            lastActive,
+            lastActive,
+            lastActive,
+            epoch,
+            revoked,
+            currentId,
+          )
+        await db.batch([
+          db
+            .prepare(
+              "INSERT INTO auth_user(id,display_name,status,created_at,updated_at) VALUES (?,'Other account','ACTIVE',?,?)",
+            )
+            .bind(otherUser, timestamp, timestamp),
+          db
+            .prepare('INSERT INTO auth_user_security(user_id,updated_at) VALUES (?,?)')
+            .bind(otherUser, timestamp),
+          fixture('qa-sessions-work', work, workActivity),
+          fixture('qa-sessions-club', club, clubActivity),
+          fixture('qa-sessions-expired', work, timestamp - 31 * 86_400_000),
+          fixture('qa-sessions-revoked', work, timestamp, 0, timestamp),
+          fixture('qa-sessions-invalid-epoch', work, timestamp, 1),
+          fixture('qa-sessions-different-user', work, timestamp, 0, null, otherUser),
+        ])
+        try {
+          assert.deepEqual(ok(await call('/api/account/login-sessions')), {
+            items: [
+              {
+                productName: 'Molis Work Local',
+                clientType: 'WEB',
+                lastActiveAt: done.account.session.lastActiveAt,
+                current: true,
+              },
+              {
+                productName: 'Molis Work Local',
+                clientType: 'MACOS',
+                lastActiveAt: new Date(workActivity).toISOString(),
+                current: false,
+              },
+              {
+                productName: 'Molis Club Local',
+                clientType: 'WEB',
+                lastActiveAt: new Date(clubActivity).toISOString(),
+                current: false,
+              },
+            ],
+            hasMore: false,
+          })
+          assert.equal((await call('/api/account/login-sessions?userId=' + otherUser)).status, 400)
+          assert.equal((await call('/api/account/login-sessions', {})).status, 405)
+        } finally {
+          await db.batch([
+            db.prepare("DELETE FROM auth_login_session WHERE id LIKE 'qa-sessions-%'"),
+            db.prepare('DELETE FROM auth_user_security WHERE user_id=?').bind(otherUser),
+            db.prepare('DELETE FROM auth_user WHERE id=?').bind(otherUser),
+          ])
         }
       },
     )
@@ -375,6 +462,28 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
       }),
     )
     assert.equal(ok(await call('/api/account/session')).state, 'AUTHENTICATED')
+    assert.equal(ok(await call('/api/account/me')).passwordEnabled, true)
+    const browserPasswordOperation = {
+      method: 'EMAIL_PASSWORD',
+      operation: 'CHANGE_PASSWORD',
+      target: { kind: 'PASSWORD' },
+      useSession: true,
+    }
+    const denied = await call('/api/account/reauthentications', {
+      ...browserPasswordOperation,
+      currentPassword: 'incorrect-test-password',
+    })
+    assert.equal(denied.status, 401)
+    assert.equal(denied.error.code, 'INVALID_CREDENTIALS')
+    assert.equal(ok(await call('/api/account/session')).user.userId, done.account.user.userId)
+    const verified = ok(
+      await call('/api/account/reauthentications', {
+        ...browserPasswordOperation,
+        currentPassword: fixturePassword,
+      }),
+    )
+    assert.equal(verified.nextStep, 'COMPLETE')
+    ok(await call('/api/account/auth/transactions/' + verified.handle + '/cancel', {}))
     const wrongPassword = ok(
       await call('/api/account/reauthentications', {
         method: 'EMAIL_PASSWORD',

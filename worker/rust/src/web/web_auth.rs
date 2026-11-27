@@ -113,6 +113,12 @@ pub async fn route(
     let create = path == "/api/account/auth/transactions" && method == Method::Post;
     let reauth = path == "/api/account/reauthentications" && method == Method::Post;
     if create || reauth {
+        let current_password = if reauth {
+            b.as_object_mut()
+                .and_then(|body| body.remove("currentPassword"))
+        } else {
+            None
+        };
         shape(
             if reauth {
                 "ProductReauthenticationRequest"
@@ -132,6 +138,20 @@ pub async fn route(
         } else {
             ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
             s.data["transactions"] = json!({});
+        }
+        if let Some(password) = current_password {
+            ensure(
+                b["operation"] == "CHANGE_PASSWORD" && b["useSession"] == true,
+                400,
+                "INVALID_REQUEST",
+            )?;
+            shape("LoginPassword", &password)?;
+            crate::account_management::verify_web_password(
+                s.a,
+                s.data["tokens"]["accessToken"].as_str().unwrap_or(""),
+                password.as_str().ok_or_else(Failure::invalid_request)?,
+            )
+            .await?;
         }
         let mut t = json!({"method":b["method"],"purpose":purpose,"proof":secret(),"verifier":secret(),"state":secret(),"status":"PENDING"});
         let mut input = json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"purpose":purpose,"method":b["method"],"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))});

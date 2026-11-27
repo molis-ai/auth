@@ -58,7 +58,11 @@ class D1Database {
     await this.pause('batch', queries, 'after')
     if (this.plans) {
       for (const { sql, values } of statements) {
-        if (sql.startsWith('WITH actor AS (SELECT') && sql.includes('WHERE id>? ORDER BY id')) {
+        if (
+          sql.startsWith('WITH actor AS (SELECT') &&
+          sql.includes('LIMIT CASE WHEN EXISTS(SELECT 1 FROM actor)') &&
+          sql.endsWith('THEN ? ELSE 0 END')
+        ) {
           const plan = await this.db
             .prepare('EXPLAIN QUERY PLAN ' + sql)
             .bind(...values)

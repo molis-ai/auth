@@ -1,9 +1,10 @@
 //! Directed invitations: possession of an id is never proof of recipient identity.
 use crate::{
     http::*,
+    management_protocol::{self as protocol, ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{self, ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected, member_view},
+    tenants::member_view,
 };
 use serde_json::{Value, json};
 fn target(user: &str) -> String {
@@ -47,7 +48,7 @@ pub fn list(action: &Action) -> Read {
         )
     }
 }
-fn view(i: &Value) -> Value {
+pub(super) fn view(i: &Value) -> Value {
     let target = match text(i, "target_kind").as_str() {
         "EMAIL" => format!(
             "***@{}",
@@ -64,17 +65,7 @@ fn view(i: &Value) -> Value {
                 .rev()
                 .collect::<String>()
         ),
-        _ => format!(
-            "账号 …{}",
-            text(i, "target_user_id")
-                .chars()
-                .rev()
-                .take(6)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<String>()
-        ),
+        _ => "账号邀请".into(),
     };
     json!({"invitationId":i["id"],"tenantId":i["tenant_id"],"targetSummary":target.chars().take(254).collect::<String>(),"status":if i["status"]=="PENDING"&&number(i,"expires_at")<=now(){json!("EXPIRED")}else{i["status"].clone()},"expiresAt":iso(&i["expires_at"]),"version":i["version"]})
 }
@@ -144,7 +135,12 @@ impl Service<'_> {
                 )?);
             }
             w.push(self.a.s.statement("INSERT INTO auth_tenant_invitation(id,tenant_id,target_kind,target_email,target_phone,target_user_id,inviter_membership_id,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?,'PENDING',?,?)",vec![id.clone().into(),ctx.tenant["id"].clone(),row["target_kind"].clone(),row["target_email"].clone(),row["target_phone"].clone(),row["target_user_id"].clone(),ctx.member["id"].clone(),n.into(),expires.into()])?);
-            if kind != "USER" {
+            let mock_email = kind == "EMAIL"
+                && crate::delivery::supports_invitation_notifications(
+                    &self.c["kind"],
+                    &self.c["delivery_mode"],
+                );
+            if kind == "PHONE" || mock_email {
                 w.push(crate::delivery::invitation_notification(self.a,&self.c,if kind=="EMAIL"{"EMAIL"}else{"SMS"},&value,&json!({"invitationId":id,"tenantName":ctx.tenant["name"],"expiresAt":iso(&json!(expires))}),expires)?);
             }
             return Ok(Change::new(view(&row), w));

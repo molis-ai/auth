@@ -16,7 +16,7 @@
 .console-header, .console-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .console-heading { margin: 42px 0 24px; }.console-heading h1 { margin: 10px 0; font-size: 34px; }.console-heading p { color: #6b8073; }
 .console-card { background: #fff; border: 1px solid #dce5d9; border-radius: 14px; padding: 24px; margin: 18px 0; overflow-wrap: anywhere; }
-.console-card h2 { font-size: 20px; font-weight: 550; margin-top: 0; }.console-card h3 { font-size: 15px; font-weight: 550; }.console-card p { line-height: 1.8; font-size: 13px; }
+.console-card h2 { font-size: 20px; font-weight: 550; margin-top: 0; }.console-card h3 { font-size: 15px; font-weight: 550; }.console-card p { font-size: 13px; }
 .console-card code { display: block; font-size: 12px; overflow-wrap: anywhere; margin: 7px 0; }.console-muted { font-size: 12px; line-height: 1.8; color: #6c7c70; }
 .account-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 15px 24px; font-size: 13px; }.account-summary label { margin: 0 0 0 auto; }
 .console-tabs { display: flex; gap: 8px; border-bottom: 1px solid #dce5d9; margin-top: 28px; }.console-tabs button { padding: 13px 22px; border: 0; background: transparent; color: #6b8073; cursor: pointer; }

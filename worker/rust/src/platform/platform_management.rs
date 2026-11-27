@@ -3,9 +3,9 @@ use crate::{
     auth::login_sessions,
     http::*,
     identity::Auth,
+    management_protocol::{self as protocol, Access, Lookup, Read},
+    management_protocol::{Action, Change, Context, Service},
     security::uuid,
-    tenants::protocol::{self, Access, Lookup, Read},
-    tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
 use worker::{Method, Response};
@@ -216,6 +216,68 @@ impl Service<'_> {
         Ok(Change::new(client_view(&row)?, writes))
     }
 }
+fn audit(
+    service: &Service<'_>,
+    action: &Action,
+    ctx: &Context,
+    body: &Value,
+    after: &Value,
+) -> Result<worker::D1PreparedStatement> {
+    use crate::management_audit::{diff, success};
+    let (kind, key, before, fields): (_, _, _, &[_]) = match action.op {
+        "application.create" | "application.update" => (
+            "APPLICATION",
+            "applicationId",
+            ctx.record.clone(),
+            &["name", "status"],
+        ),
+        "client.create" | "client.update" => {
+            let before = if action.op == "client.update" {
+                client_view(&ctx.record)?
+            } else {
+                Value::Null
+            };
+            (
+                "CLIENT",
+                "clientId",
+                before,
+                &[
+                    "applicationId",
+                    "clientType",
+                    "status",
+                    "environmentId",
+                    "product",
+                    "allowedOrigins",
+                    "redirectAllowlist",
+                ],
+            )
+        }
+        "permission.set" => {
+            let before = json!({"capability":ctx.from["permission"],"status":ctx.from["status"]});
+            ("USER", "userId", before, &["capability", "status"])
+        }
+        "user.status" => ("USER", "userId", ctx.record.clone(), &["status"]),
+        "user.email" => ("USER", "userId", ctx.record.clone(), &["email"]),
+        _ => return Err(Failure::unavailable()),
+    };
+    let mut changes = diff(&before, after, fields);
+    if action.op == "permission.set" && before["capability"] == after["capability"] {
+        changes.insert(
+            0,
+            json!({"field":"capability","before":before["capability"],"after":after["capability"]}),
+        );
+    }
+    success(
+        service,
+        action,
+        Value::Null,
+        kind,
+        &after[key],
+        &body["reason"],
+        json!({"changes": changes}),
+    )
+}
+
 fn validate_redirects(b: &Value) -> Result<()> {
     for redirect in b["redirectAllowlist"]
         .as_array()
@@ -253,6 +315,16 @@ fn application_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedS
 }
 
 async fn read(a: &Auth, action: &Action) -> Result<Value> {
+    if action.op == "user.list" {
+        return protocol::read(
+            a,
+            action,
+            Access::Permission("USER_READ"),
+            None,
+            crate::platform::platform_accounts::user_page(a),
+        )
+        .await;
+    }
     let application = || Lookup {
         sql: format!("{APPLICATIONS} WHERE id=?"),
         id: action.id.clone(),
@@ -310,10 +382,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     fields(
         &q,
         &[],
-        if action.op.ends_with(".list") {
-            &["limit", "cursor"]
-        } else {
-            &[]
+        match action.op {
+            "user.list" => &["limit", "cursor", "status", "q"],
+            op if op.ends_with(".list") => &["limit", "cursor"],
+            _ => &[],
         },
     )?;
     if action.schema.is_none() {
@@ -345,6 +417,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         }
         let change = service.administration_change(&action, &ctx, &body).await?;
         let mut w = protocol::base(&service)?;
+        let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
         w.extend(ctx.guards);
         w.extend(change.writes);
         let target = change.result["clientId"]
@@ -361,6 +434,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             json!({"targetId":target,"reason":body["reason"]}),
             false,
         )?);
+        w.push(management_event);
         w.extend(protocol::receipt(
             &service,
             &action,

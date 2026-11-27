@@ -261,6 +261,53 @@ fn check_active(credential: Credential, n: i64) -> Result<(Value, Value)> {
 pub(crate) async fn active(a: &Auth) -> Result<(Value, Value)> {
     check_active(credential(a, &json!({})).await?, now())
 }
+pub(crate) async fn web_login_sessions(a: &Auth, access_token: &str) -> Result<Value> {
+    const LIMIT: usize = 100;
+    let (digest, credential) = active_lookup(a, access_token)?;
+    let n = now();
+    // Scope the list to the browser's verified login and its environment.
+    // The credential and its list are read from the same database snapshot.
+    let list = a.s.statement(
+        &format!(
+            "SELECT app.name product_name,c.client_type,s.last_active_at,s.id=current_login.id AS is_current
+             FROM auth_login_access_token current_token
+             JOIN auth_login_session current_login ON current_login.id=current_token.login_session_id
+             JOIN auth_client_policy current_policy ON current_policy.client_id=current_login.client_id
+             JOIN auth_login_session s ON s.user_id=current_login.user_id
+             {SESSION_JOINS} {CLIENT_POLICY_JOINS}
+             WHERE current_token.token_hash=? AND {LIVE} AND c.status='ACTIVE'
+               AND e.id=current_policy.environment_id
+             ORDER BY is_current DESC,s.last_active_at DESC,s.id
+             LIMIT ?"
+        ),
+        vec![digest.clone().into(), n.into(), n.into(), ((LIMIT + 1) as i64).into()],
+    )?;
+    let [credentials, rows] =
+        a.s.batch_read(vec![credential, list])
+            .await?
+            .try_into()
+            .map_err(|_| Failure::unavailable())?;
+    active_result(
+        a,
+        credentials.into_iter().next().unwrap_or(Value::Null),
+        digest,
+        "",
+    )?;
+    let has_more = rows.len() > LIMIT;
+    let items: Vec<_> = rows
+        .into_iter()
+        .take(LIMIT)
+        .map(|row| {
+            json!({
+                "productName": row["product_name"],
+                "clientType": row["client_type"],
+                "lastActiveAt": iso(&row["last_active_at"]),
+                "current": number(&row, "is_current") == 1,
+            })
+        })
+        .collect();
+    Ok(json!({"items": items, "hasMore": has_more}))
+}
 pub(crate) fn active_guard(a: &Auth, s: &Value) -> Result<D1PreparedStatement> {
     a.s.guard(&format!("EXISTS(SELECT 1 FROM auth_login_session s JOIN auth_user_security us ON us.user_id=s.user_id JOIN auth_user u ON u.id=s.user_id JOIN auth_login_access_token t ON t.login_session_id=s.id WHERE s.id=? AND s.session_revision=? AND {LIVE} AND t.token_hash=? AND t.expires_at>? AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision)"),vec![s["id"].clone(),s["session_revision"].clone(),now().into(),now().into(),s["access_hash"].clone(),now().into()])
 }

@@ -4,7 +4,7 @@
  transition:background-color 140ms ease, background-image 140ms ease, box-shadow 140ms ease, filter 140ms ease;
 }
 @media(hover:hover) {
- #app :is(.auth-entry, .v2-console) :is(button, a[href], [role=button]):not(:disabled):not([aria-disabled=true]):not(:where(.auth-entry .topbar *)):not(.tenant-choice):not(.auth-entry .account-methods button):hover {
+ #app :is(.auth-entry, .v2-console) :is(button, a[href], [role=button]):not(:disabled):not([aria-disabled=true]):not(:where(.auth-entry .topbar *, .workspace-sidebar *, .security-rail-btn, .logout-confirm *)):not(.tenant-choice):not(.auth-entry .account-methods button):hover {
   background-image:linear-gradient(#8080801a,#8080801a);
   filter:brightness(.96);
   cursor:pointer;

@@ -8,7 +8,12 @@ use serde_json::{Value, json};
 use worker::{Env, Method, Request, Response};
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    let (response, _) = handle_inner(req, env, None, None, uuid()).await?;
+    let id = if crate::web::billing::matches(&req.path()) {
+        billing_request_id(&req)
+    } else {
+        uuid()
+    };
+    let (response, _) = handle_inner(req, env, None, None, id).await?;
     Ok(response)
 }
 pub(crate) async fn handle_internal(
@@ -80,18 +85,37 @@ async fn handle_response(
     log: &RequestLog<'_>,
 ) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
     let id = log.id;
+    if url.path() == "/internal/v1" || url.path().starts_with("/internal/v1/") {
+        let response = with_security_headers(
+            error_response(
+                Failure {
+                    status: 404,
+                    code: "NOT_FOUND",
+                },
+                id,
+            )?,
+            id,
+            url.scheme() == "https",
+        )?;
+        return Ok((response, None, Some("NOT_FOUND")));
+    }
     if req.method() == Method::Get && url.path() == "/api/v2/health" {
         let response = with_security_headers(health_response(id)?, id, url.scheme() == "https")?;
         return Ok((response, None, None));
     }
     let external = access.is_none();
+    let is_billing = crate::web::billing::matches(url.path());
     let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
             log_failure(log.env, id, log.route, "initialize", &e, log.started);
             let code = e.code;
-            let response =
-                with_security_headers(error_response(e, id)?, id, url.scheme() == "https")?;
+            let response = if is_billing {
+                crate::web::billing::error_response(e, id)?
+            } else {
+                error_response(e, id)?
+            };
+            let response = with_security_headers(response, id, url.scheme() == "https")?;
             return Ok((response, None, Some(code)));
         }
     };
@@ -121,6 +145,8 @@ async fn handle_response(
                     json!({"error":{"code":e.code,"retryAfterSeconds":retry_after},"requestId":id}),
                     429,
                 )?
+            } else if is_billing {
+                crate::web::billing::error_response(e, id)?
             } else {
                 error_response(e, id)?
             }
@@ -149,7 +175,7 @@ fn health_response(id: &str) -> worker::Result<Response> {
     )
 }
 
-fn with_security_headers(
+pub(crate) fn with_security_headers(
     mut response: Response,
     id: &str,
     https: bool,
@@ -238,6 +264,9 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         }
         if path == "/api/v2/entitlements/check" {
             return crate::billing::entitlements::route(a, method).await;
+        }
+        if crate::management_audit::matches(path) {
+            return crate::management_audit::route(a, path, method).await;
         }
         if crate::billing::matches(path) {
             return crate::billing::route(a, path, method).await;
@@ -350,9 +379,9 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
             &config["kind"],
             &config["deliveryMode"],
         ) {
-            "EMAIL PHONE USER"
+            "EMAIL PHONE"
         } else {
-            "USER"
+            "EMAIL"
         };
         let mut metadata =
             format!("<meta name=\"molis-tenant-invite-channels\" content=\"{channels}\">");

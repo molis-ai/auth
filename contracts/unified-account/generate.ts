@@ -362,7 +362,12 @@ add(
 )
 add(
   'PlatformTenantView',
-  obj({ tenantId: id, name, status: en('ACTIVE', 'DISABLED'), ownerUserId: id, version }),
+  obj({
+    tenantId: id, name, status: en('ACTIVE', 'DISABLED'), ownerUserId: id, version,
+    createdAt: time, updatedAt: time, memberCount: version,
+    ownerDisplayName: nullable(str(0, 120)),
+    ownerEmail: nullable(str(3, 254, { format: 'email' })),
+  }, ['tenantId', 'name', 'status', 'ownerUserId', 'version']),
 )
 add(
   'Membership',
@@ -375,7 +380,7 @@ add(
     version,
   }),
 )
-// Member directory details are only exposed through tenant-authorized list reads.
+// Member directory details require team membership or platform TENANT_READ.
 add('TenantMember', obj({
   ...(defs.Membership.properties as Record<string, Schema>),
   displayName: str(0, 120),
@@ -383,6 +388,7 @@ add('TenantMember', obj({
 }))
 add('TenantUpdateRequest', obj({ name, ...expected }))
 add('TenantCreateRequest', obj({ name, ownerUserId: id, reason }))
+add('PlatformTenantTransferRequest', obj({ newOwnerUserId: id, ...expected, reason }))
 add('PlatformApplication', obj({ applicationId: id, name, status: en('ACTIVE', 'DISABLED'), version }))
 add('PlatformApplicationPage', obj({ items: arr(ref('PlatformApplication')), nextCursor: nullable(str(1, 2048)) }))
 add('ApplicationCreateRequest', obj({ name }))
@@ -587,6 +593,8 @@ add(
   obj({
     auditEventId: id,
     actorUserId: id,
+    actorDisplayName: nullable(str(0, 120)),
+    tenantName: nullable(name),
     operation: id,
     target: obj({ kind: id, id }),
     tenantId: nullable(id),
@@ -596,7 +604,9 @@ add(
       obj({ field: id, before: nullable(str(0, 1000)), after: nullable(str(0, 1000)) }),
       100,
     ),
-  }),
+    reason: nullable(reason),
+    requestId: id,
+  }, ['auditEventId', 'actorUserId', 'operation', 'target', 'tenantId', 'occurredAt', 'result', 'changes']),
 )
 add(
   'EntitlementSource',
@@ -1268,6 +1278,8 @@ for (const action of ['disable', 'enable'])
     'platform:TENANT_STATUS',
     true,
   )
+ep('API-05', 'get', '/platform/tenants/{tenantId}/members', 'listPlatformTenantMembers', undefined, 'MembershipPage', 'platform:TENANT_READ')
+ep('API-05', 'post', '/platform/tenants/{tenantId}/transfer-owner', 'transferPlatformTenantOwner', 'PlatformTenantTransferRequest', 'PlatformTenantView', 'platform:TENANT_STATUS', true)
 ep('API-05', 'get', '/tenants/{tenantId}/members', 'listMembers', undefined, 'MembershipPage')
 ep(
   'API-05',
@@ -2039,6 +2051,24 @@ for (const flow of policy.authenticationFlows)
     requiresCurrentSession: ['REAUTH', 'BIND', 'REPLACE'].includes(flow.purpose),
   })
 
+const directoryFilters = { status: en('ACTIVE', 'DISABLED'), q: str(0, 128) }
+const auditFilters = {
+  tenantId: id,
+  category: en('account', 'tenant', 'app', 'billing'),
+  operation: id,
+  actorUserId: id,
+  targetId: id,
+  result: en('SUCCEEDED', 'DENIED'),
+  from: { type: 'string', format: 'date-time' },
+  to: { type: 'string', format: 'date-time' },
+  q: str(0, 128),
+}
+const managementFilters: Record<string, Record<string, Schema>> = {
+  '/platform/tenants': directoryFilters,
+  '/platform/users': directoryFilters,
+  '/platform/audit-events': auditFilters,
+}
+
 const paths: Record<string, Record<string, unknown>> = {}
 for (const e of endpoints) {
   const outputName = `${e.output}Response`
@@ -2073,6 +2103,9 @@ for (const e of endpoints) {
       },
       { name: 'cursor', in: 'query', schema: { type: 'string', minLength: 1, maxLength: 2048 } },
     )
+  if (e.method === 'get')
+    for (const [name, schema] of Object.entries(managementFilters[e.path.replace(/^\/api\/account/, '')] ?? {}))
+      parameters.push({ name, in: 'query', schema: rewriteRefs(schema) })
   if (e.query === 'assignment-state')
     parameters.push({
       name: 'state',

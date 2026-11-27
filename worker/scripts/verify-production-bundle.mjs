@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -72,7 +80,11 @@ const fixtureHash = report('Default', fixture)
 
 const staging = mkdtempSync(join(tmpdir(), 'molis-auth-production-'))
 try {
-  const build = join(staging, 'rust-build')
+  const build = join(staging, 'rust/build')
+  const runtime = join(staging, 'rust/src/runtime')
+  mkdirSync(runtime, { recursive: true })
+  for (const file of ['entrypoint.js', 'billing-transport.js'])
+    copyFileSync(join(root, 'worker/rust/src/runtime', file), join(runtime, file))
   const productionWasm = join(build, 'index_bg.wasm')
   execFileSync(
     'npm',
@@ -109,7 +121,7 @@ try {
     config,
     JSON.stringify({
       name: 'molis-auth-production-dry-run',
-      main: join(build, 'index.js'),
+      main: join(runtime, 'entrypoint.js'),
       compatibility_date: compatibilityDate,
       workers_dev: false,
       preview_urls: false,

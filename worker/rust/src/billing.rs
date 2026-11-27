@@ -1,5 +1,6 @@
 //! AUTH-08/09 catalog, subscriptions, seat management and commercial audit.
 
+pub(crate) mod bridge;
 pub(crate) mod catalog;
 pub(crate) mod entitlements;
 pub(crate) mod seats;
@@ -9,9 +10,8 @@ use crate::{
     auth::login_sessions,
     http::*,
     identity::Auth,
-    security::uuid,
-    tenants::protocol::{self, Access, Lookup, Read},
-    tenants::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
+    management_protocol::{self as protocol, Access, Lookup},
+    management_protocol::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
@@ -28,13 +28,12 @@ pub fn matches(path: &str) -> bool {
         "/api/v2/catalog",
         "/api/v2/platform/catalog",
         "/api/v2/platform/subscriptions",
-        "/api/v2/platform/audit-events",
         "/api/v2/users/me/subscriptions",
     ]
     .iter()
     .any(|p| path == *p || path.starts_with(&format!("{p}/")))
         || (path.starts_with("/api/v2/tenants/")
-            && ["/subscriptions", "/seat-pools", "/audit-events"]
+            && ["/subscriptions", "/seat-pools"]
                 .iter()
                 .any(|s| path.ends_with(s)))
 }
@@ -99,11 +98,6 @@ fn action(path: &str, method: Method) -> Result<Action> {
             id = a.to_string();
             ("seat.reassign", Some("SeatReassignRequest"))
         }
-        (["tenants", t, "audit-events"], Method::Get) => {
-            tenant_id = t.to_string();
-            ("billing.tenant-audit", None)
-        }
-        (["platform", "audit-events"], Method::Get) => ("billing.platform-audit", None),
         _ => {
             return Err(Failure {
                 status: 501,
@@ -118,18 +112,6 @@ fn action(path: &str, method: Method) -> Result<Action> {
         id,
         schema,
     })
-}
-fn audit_view(r: &Value) -> Result<Value> {
-    let changes = if r["change_summary"].is_null() {
-        Value::Null
-    } else {
-        let summary: Value = stored_json(r, "change_summary")?;
-        ensure(summary.is_object(), 503, "AUTH_UNAVAILABLE")?;
-        summary["changes"].clone()
-    };
-    Ok(
-        json!({"auditEventId":r["id"],"actorUserId":r["actor_user_id"],"operation":r["operation"],"target":{"kind":r["target_type"],"id":r["target_id"]},"tenantId":r["tenant_id"],"occurredAt":iso(&r["occurred_at"]),"result":if r["outcome"]=="SUCCESS"{"SUCCEEDED"}else{"DENIED"},"changes":changes}),
-    )
 }
 impl Service<'_> {
     async fn billing_context(&self, action: &Action) -> Result<Context> {
@@ -216,7 +198,15 @@ impl Service<'_> {
             };
             changes.push(json!({"field":"seatQuantities","before":brief(before_quantities)?,"after":brief(q)?}));
         }
-        self.a.s.statement("INSERT INTO auth_management_audit(id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,reason,change_summary,request_id,occurred_at) VALUES (?,?,?,?,?,?,?,'SUCCESS',?,?,?,?)",vec![uuid().into(),self.user(),self.s["client_id"].clone(),tenant,action.op.into(),kind.into(),id,b["reason"].clone(),json!({"before":before,"after":after,"beforeSeatQuantities":before_quantities,"requestedSeatQuantities":b["seatQuantities"],"changes":changes}).to_string().into(),self.a.request_id.clone().into(),now().into()])
+        crate::management_audit::success(
+            self,
+            action,
+            tenant,
+            kind,
+            &id,
+            &b["reason"],
+            json!({"before":before,"after":after,"beforeSeatQuantities":before_quantities,"requestedSeatQuantities":b["seatQuantities"],"changes":changes}),
+        )
     }
 }
 async fn read(a: &Auth, action: &Action) -> Result<Value> {
@@ -224,9 +214,8 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "subscription.list" | "subscription.get" | "pool.platform" => {
             Access::Permission("SUBSCRIPTION_READ")
         }
-        "billing.platform-audit" => Access::Permission("AUDIT_READ"),
         "subscription.tenant" | "seat.list" => Access::Member(ALL_ROLES),
-        "pool.list" | "billing.tenant-audit" => Access::Member(MANAGER_ROLES),
+        "pool.list" => Access::Member(MANAGER_ROLES),
         "catalog.features" | "catalog.plans" | "subscription.mine" => Access::Session,
         _ => unreachable!("only billing reads reach this owner"),
     };
@@ -235,16 +224,9 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         id: action.id.clone(),
         guard: Some(|service, row| service.subscription_guard(row)),
     });
-    let sql = "SELECT * FROM auth_management_audit";
     let plan = match action.op {
         "seat.list" => seats::list(a, action),
         "catalog.features" | "catalog.plans" => Ok(catalog::read(action)),
-        "billing.tenant-audit" => Ok(Read::page(
-            format!("{sql} WHERE tenant_id=?"),
-            vec![action.tenant_id.clone().into()],
-            audit_view,
-        )),
-        "billing.platform-audit" => Ok(Read::page(sql, vec![], audit_view)),
         _ => Ok(subscriptions::read(action)),
     };
     protocol::read(a, action, access, lookup, plan).await

@@ -173,6 +173,8 @@ AUTH-06 的资料及绑定管理共用 UserView.version；资料更新只推进�
 
 密码更新、保留会话集合与撤销版本必须原子提交。请求不能提交任意 `exceptSessionId`；保留对象只取可信当前会话。被撤销会话的刷新、正在完成的旧授权码和重新绑定结果不得在提交后恢复它；当前保留会话仍沿原 30/90 天期限，不借改密延长登录。
 
+Auth 控制台的登录密码页通过本人资料读取 `passwordEnabled`。修改已设置的密码时，控制台在同源 `POST /api/account/reauthentications` 提交 `currentPassword`，由 BFF 按当前已登录账号校验后签发本次操作所需的授权。首次设置密码使用现有的会话授权。
+
 ## 5 API-04 会话 活动与退出
 
 | 方法与路径 | 请求 | 返回与规则 |
@@ -194,6 +196,8 @@ AUTH-06 的资料及绑定管理共用 UserView.version；资料更新只推进�
 撤销端点支持有效 access，或提交仅用于撤销的 refresh 证明（当前 access 已过期时）；后者校验摘要、客户端、所属登录和期限，不签发新 Token。当前登录已结束时，只允许凭保留的摘要返回该登录 ALREADY_ENDED，不借已失效证明执行全局撤销。logout-all 要求仍有效的登录；响应丢失时可凭相同幂等键和原请求证明查询短期保留的同次撤销结果，已撤销证明仅能读取该最小结果，不能发起新的撤销或访问账号接口。无可验证结果时返回未确认，不能假报成功。
 
 离线普通退出可返回 `{localCleared:true,remoteRevocation:UNCONFIRMED}`，不能显示已退出全部设备。全局退出须得到中央成功才可确认；连接失败显示未完成的远端结果。本地缓存身份只用于提示，不证明云会话、成员或权益有效。
+
+Auth 控制台专用 `GET /api/account/login-sessions` 使用同源登录 Cookie 读取当前账号在同一环境的有效会话。返回 `{items,hasMore}`，每项含 `productName,clientType,lastActiveAt,current`，当前会话置顶，其余按最近活跃时间排序，最多返回 100 条。读取不更新活跃时间，也不返回会话 ID、凭据或位置。
 
 ## 6 API-05 租户与成员
 
@@ -228,7 +232,7 @@ Invitation 含 `invitationId,tenantId,targetSummary,status:PENDING/ACCEPTED/DECL
 
 AUTH-07 与 AUTH-10 已开放本节接口，返回形状以可执行合同为准。成员列表仅含 ACTIVE 成员；本人邀请列表仅含当前身份匹配、未过期且租户启用的 PENDING 邀请。管理员的租户邀请列表保留历史状态，交接列表按仍有效的参与成员关系查询。列表使用服务端保存的随机游标，有效 15 分钟，绑定用户、客户端、路由、页大小及当前管理权限/成员版本；每次请求及最终返回前复核权限。
 
-邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。EMAIL/SMS 在 LOCAL/TEST 的显式 MOCK 模式中写入独立通知 outbox，USER 邀请从本人邀请列表读取，不触发外部发送。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
+邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。Auth 网页默认按邮箱创建邀请，受邀者使用匹配的已验证邮箱登录后，从本人邀请列表接受。EMAIL 在 LOCAL/TEST 显式 MOCK 模式中写入模拟通知 outbox，其余环境直接创建站内邀请。手机号邀请目前只支持 Mock 通知。USER 目标继续供已有 API 调用方使用，不出现在 Auth 网页邀请表单。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 本人已成功 leave 的同键、同请求重试，可在仍有效的原用户/客户端会话下取回本人旧成员的 LEFT 结果；仍须租户启用、该旧成员确为对应版本的 LEFT。它不要求已离开的成员仍 ACTIVE，不返回其他租户数据，也不会退出后来重新加入的成员。移除他人的回执仍要求操作者当前具备对应管理权限。新的幂等键按当前成员和版本处理，不复用历史操作。
 

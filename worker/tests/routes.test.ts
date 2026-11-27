@@ -33,7 +33,7 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
       assert.equal(r.status, 200)
       assert.equal(
         await r.text(),
-        '<head><meta name="molis-tenant-invite-channels" content="USER"></head>/index.html',
+        '<head><meta name="molis-tenant-invite-channels" content="EMAIL"></head>/index.html',
       )
       assert.equal(r.headers.get('Cache-Control'), 'no-store')
       assert.equal(r.headers.get('X-Frame-Options'), 'DENY')
@@ -91,7 +91,7 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
         }),
       })
       const r = await p.fetch(new Request(origin + '/console'))
-      const channels = deliveryMode === 'MOCK' ? 'EMAIL PHONE USER' : 'USER'
+      const channels = deliveryMode === 'MOCK' ? 'EMAIL PHONE' : 'EMAIL'
       assert.ok(
         (await r.text()).includes(`name="molis-tenant-invite-channels" content="${channels}"`),
       )
@@ -210,7 +210,7 @@ test('the real Assets router preserves hashed asset responses and the Worker met
       if (method === 'HEAD') assert.equal(body, '', label)
       else if (entity !== null) assert.equal(body, entity, label)
       if (method === 'GET' && path === '/login') {
-        assert.match(body, /<meta name="molis-tenant-invite-channels" content="USER">/, label)
+        assert.match(body, /<meta name="molis-tenant-invite-channels" content="EMAIL">/, label)
         assert.match(body, /<meta name="molis-environment" content="DEV · 本地数据">/, label)
       }
       t.diagnostic(`${label} ${response.status}; Worker called`)

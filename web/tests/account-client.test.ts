@@ -187,7 +187,7 @@ test("logout and close cancel in-flight login capability reads", async () => {
   }
 });
 
-test("P1-4 tenant overview starts four first-page GETs together after CSRF bootstrap", { timeout: 1500 }, async () => {
+test("P1-4 team and pending page reads can run together after CSRF bootstrap", { timeout: 1500 }, async () => {
   const paths = [
     "/tenant-creation-policy",
     "/tenants?limit=20",
@@ -227,7 +227,7 @@ test("P1-4 tenant overview starts four first-page GETs together after CSRF boots
   }
 });
 
-test("tenant members start when tenants completes while invitations and transfers are still pending", async () => {
+test("tenant member reads are not blocked by slow invitation and transfer reads", async () => {
   const tenants = Promise.withResolvers<Response>();
   const slow = Promise.withResolvers<void>();
   const calls: string[] = [];
@@ -268,8 +268,14 @@ test("new console collections retry only marked conflicts on their first pages",
   const resources = [
     "/tenants/t-1/members", "/tenants/t-1/invitations", "/subscriptions", "/platform/applications",
     "/platform/applications/app-1/clients", "/platform/users", "/platform/users/user-1/permissions",
+    "/platform/tenants/t-1/members", "/platform/tenants", "/platform/audit-events",
   ];
-  const paths = resources.map((path, index) => index % 2 === 0 ? path : `${path}?limit=100`);
+  const filtered = [
+    "/platform/users?status=ACTIVE&q=owner+name%2Falias&limit=20",
+    "/platform/tenants?status=DISABLED&q=team&limit=100",
+    "/platform/audit-events?tenantId=t-1&category=tenant&limit=10",
+  ];
+  const paths = [...resources.map((path, index) => index % 2 === 0 ? path : `${path}?limit=100`), ...filtered];
   const calls = new Map<string, number>();
   const client = new AccountClient({
     origin,
@@ -300,7 +306,51 @@ test("new console collections retry only marked conflicts on their first pages",
         assert.equal(calls.get(path), 1);
       }
     }
+    for (const path of filtered) {
+      const cursorPath = path + "&cursor=opaque";
+      await assert.rejects(client.request(cursorPath), conflict);
+      assert.equal(calls.get(cursorPath), 1);
+    }
   } finally {
+    client.close();
+  }
+});
+
+test("leaving a Billing subject cancels its reads and releases the existing console queue", async () => {
+  const scope = new AbortController();
+  const held = Promise.withResolvers<Response>();
+  const started = Promise.withResolvers<AbortSignal>();
+  const balance = "/billing/credits/balance?ownerKind=TENANT&ownerId=team-a";
+  const catalog = "/billing/catalog/plans?ownerKind=TENANT&ownerId=team-a";
+  const paths: string[] = [];
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      const path = accountPath(url);
+      paths.push(path);
+      if (path === balance) {
+        started.resolve(init!.signal!);
+        return held.promise;
+      }
+      return reply();
+    },
+  });
+  try {
+    await client.session();
+    const pending = client.request(balance, undefined, "GET", undefined, scope.signal);
+    const cancelled = assert.rejects(pending, /CANCELLED/);
+    const fetchSignal = await started.promise;
+    await client.request(catalog, undefined, "GET", undefined, scope.signal);
+    const profile = client.request("/profile", {}, "PATCH");
+    scope.abort();
+    await cancelled;
+    assert.equal(fetchSignal.aborted, true);
+    await profile;
+    held.resolve(reply("stale-csrf"));
+    await assert.rejects(client.request(catalog, undefined, "GET", undefined, scope.signal), /CANCELLED/);
+    assert.deepEqual(paths, ["/session", balance, catalog, "/profile"]);
+  } finally {
+    held.resolve(reply());
     client.close();
   }
 });

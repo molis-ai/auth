@@ -21,9 +21,11 @@ test("V2U-03 browser presentation uses the shared BFF client and keeps secrets o
     "邮箱注册",
     "找回密码",
     "账号安全",
-    "租户",
+    "团队",
     "应用管理",
     "用户与权限",
+    "团队管理",
+    "审计日志",
     "退出所有产品和设备",
   ])
     assert.ok(source.includes(label), label);

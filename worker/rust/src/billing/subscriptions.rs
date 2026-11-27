@@ -1,9 +1,9 @@
 //! Subscription lifecycle and capacity transitions. Seat assignment is owned by AUTH-09.
 use crate::{
     http::*,
+    management_protocol::{ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected},
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;

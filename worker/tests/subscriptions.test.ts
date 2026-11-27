@@ -951,10 +951,11 @@ test('AUTH-08 real catalog and subscription lifecycle with isolated identity moc
           (await call('/tenants/' + alpha.tenantId + '/audit-events', undefined, member)).status,
           403,
         )
-        assert.equal(
-          ok(await call('/tenants/' + beta.tenantId + '/audit-events', undefined, other)).items
-            .length,
-          0,
+        assert.deepEqual(
+          ok(await call('/tenants/' + beta.tenantId + '/audit-events', undefined, other)).items.map(
+            (item: any) => item.operation,
+          ),
+          ['tenant.create'],
         )
         assert.equal((await call('/platform/audit-events', undefined, owner)).status, 403)
         const raw = JSON.stringify(
