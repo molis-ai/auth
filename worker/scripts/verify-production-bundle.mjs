@@ -83,7 +83,7 @@ try {
   const build = join(staging, 'rust/build')
   const runtime = join(staging, 'rust/src/runtime')
   mkdirSync(runtime, { recursive: true })
-  for (const file of ['entrypoint.js', 'billing-transport.js'])
+  for (const file of ['entrypoint.js', 'internal-transport.js'])
     copyFileSync(join(root, 'worker/rust/src/runtime', file), join(runtime, file))
   const productionWasm = join(build, 'index_bg.wasm')
   execFileSync(

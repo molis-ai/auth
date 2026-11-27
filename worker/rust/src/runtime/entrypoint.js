@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import AuthWorker, { AuthBillingIdentity, PasswordKdf } from '../../build/index.js'
-import { authBridgeTransport, isLocalBillingTransport } from './billing-transport.js'
+import AuthWorker, { AuthInternalIdentity, PasswordKdf } from '../../build/index.js'
+import { authBridgeTransport, isLocalInternalTransport } from './internal-transport.js'
 
 export { PasswordKdf }
 
@@ -9,17 +9,17 @@ export default class extends AuthWorker {
     const { origin, pathname } = new URL(request.url)
     // The dev runner listens only on the loopback interface.
     if (
-      isLocalBillingTransport(this.env) &&
+      isLocalInternalTransport(this.env) &&
       origin === this.env.AUTH_ORIGIN &&
       pathname.startsWith('/internal/v1/')
     )
-      return authBridgeTransport(request, this.env, AuthBillingIdentity.authorize)
+      return authBridgeTransport(request, this.env, AuthInternalIdentity.authorize)
     return super.fetch(request)
   }
 }
 
 export class AuthInternal extends WorkerEntrypoint {
   fetch(request) {
-    return authBridgeTransport(request, this.env, AuthBillingIdentity.authorize)
+    return authBridgeTransport(request, this.env, AuthInternalIdentity.authorize)
   }
 }

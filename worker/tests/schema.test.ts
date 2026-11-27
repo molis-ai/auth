@@ -46,7 +46,7 @@ test('the fresh Auth baseline reproduces the historical schema and empty content
   }
 })
 
-test('0021–0023 add the same indexes to a new database and a populated 0020 database', () => {
+test('0021–0024 produce the same Auth schema on fresh and populated databases', () => {
   const fresh = database()
   const upgraded = new DatabaseSync(':memory:')
   try {
@@ -70,6 +70,8 @@ test('0021–0023 add the same indexes to a new database and a populated 0020 da
       readFileSync(new URL('0024_drop_legacy_billing_tables.sql', migrationDirectory), 'utf8'),
     )
     assert.deepEqual(rows(), before)
+    const objects = 'SELECT type, name, sql FROM sqlite_schema ORDER BY type, name'
+    assert.deepEqual(fresh.prepare(objects).all(), upgraded.prepare(objects).all())
     assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), [])
     for (const db of [fresh, upgraded]) {
       assert.deepEqual(

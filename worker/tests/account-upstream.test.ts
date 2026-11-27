@@ -22,6 +22,22 @@ export class BillingInternal extends WorkerEntrypoint {
         headers.has('Origin') || headers.has('Cookie') || headers.has('X-CSRF-Token')) {
       return new Response('Unexpected private request', { status: 500 })
     }
+    const path = url.pathname
+    const error = (status, code, message = shared) =>
+      Response.json({ error: { code, message } }, { status })
+    if (path === '/api/v1/future-resource' && request.method === 'PATCH') {
+      return Response.json({ data: { query: url.search.slice(1), body: await request.text() } })
+    }
+    const allowedPaths = /^[/]api[/]v1[/](credits[/](balance|ledger)|catalog[/]plans|subscriptions|entitlements[/]check|orders([/][A-Za-z0-9.-]+([/](mock-pay|refund))?)?)$/
+    if (!allowedPaths.test(path)) return error(404, 'NOT_FOUND')
+    const keys = [...url.searchParams.keys()]
+    const page = request.method === 'GET' &&
+      (path === '/api/v1/orders' || path === '/api/v1/credits/ledger')
+    if (new Set(keys).size !== keys.length || keys.some(key =>
+      !['product', 'ownerKind', 'ownerId'].includes(key) && !(page && ['limit', 'cursor'].includes(key))
+    ) || (url.searchParams.get('ownerKind') === 'TENANT' && !url.searchParams.get('ownerId'))) {
+      return error(400, 'INVALID_REQUEST')
+    }
     const subject = {
       product: url.searchParams.get('product') ?? 'WORK',
       owner: { kind: url.searchParams.get('ownerKind') ?? 'USER' },
@@ -51,14 +67,13 @@ export class BillingInternal extends WorkerEntrypoint {
         'X-Request-Id': 'untrusted-response-header',
       },
     })
-    const error = (status, code) => Response.json({ error: { code, message: shared } }, { status })
-    const path = url.pathname
     if (path.startsWith('/api/v1/orders') && role === 'MEMBER') return error(403, 'FORBIDDEN')
     if (path === '/api/v1/orders/order.expired/mock-pay') return error(409, 'ORDER_EXPIRED')
     if (path === '/api/v1/orders/order.started/refund') return error(409, 'ORDER_NOT_REFUNDABLE')
     if (path === '/api/v1/orders/down') throw Error('Fixture Billing unavailable')
     if (path === '/api/v1/orders/auth-down') return error(503, 'AUTH_UNAVAILABLE')
-    if (path === '/api/v1/orders/unknown') return error(500, 'UNDECLARED_CODE')
+    if (path === '/api/v1/orders/unknown') return error(500, 'UNDECLARED_CODE', 'A new upstream error')
+    if (path === '/api/v1/orders/invalid-code') return error(500, 'invalid code')
     if (path === '/api/v1/orders/malformed') {
       return new Response('{', { headers: { 'Content-Type': 'application/json' } })
     }
@@ -69,6 +84,9 @@ export class BillingInternal extends WorkerEntrypoint {
     }
     if (path === '/api/v1/orders' && request.method === 'POST') {
       const body = await request.json()
+      if (!headers.has('Idempotency-Key') || Object.keys(body).some(key =>
+        !['planId', 'interval', 'billingTimeZone'].includes(key)
+      )) return error(400, 'INVALID_REQUEST')
       if (body.billingTimeZone === 'Invalid/Zone') return error(400, 'INVALID_TIMEZONE')
       return reply({ ...ownerFields, ...body, id: headers.get('Idempotency-Key'), requestId }, 201)
     }
@@ -94,7 +112,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     modulesRoot: modulePath('.'),
     modules: [
       { type: 'ESModule' as const, path: modulePath('src/runtime/entrypoint.js') },
-      { type: 'ESModule' as const, path: modulePath('src/runtime/billing-transport.js') },
+      { type: 'ESModule' as const, path: modulePath('src/runtime/internal-transport.js') },
       { type: 'ESModule' as const, path: modulePath('build/index.js') },
       { type: 'CompiledWasm' as const, path: modulePath('build/index_bg.wasm') },
     ],
@@ -159,10 +177,12 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     {
       body,
       method,
+      rawBody,
       headers,
       upstream = direct,
     }: {
       body?: unknown
+      rawBody?: string
       method?: string
       headers?: Record<string, string>
       upstream?: typeof direct
@@ -175,10 +195,12 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
         'Sec-Fetch-Site': 'same-origin',
         ...(browser.cookie ? { Cookie: browser.cookie } : {}),
         ...(browser.csrf ? { 'X-CSRF-Token': browser.csrf } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body !== undefined || rawBody !== undefined
+          ? { 'Content-Type': 'application/json' }
+          : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
     })
     const raw = await response.text()
     const reply = JSON.parse(raw)
@@ -327,6 +349,14 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   await expectError(call(other.browser, balance + teamOne), 404, 'NOT_FOUND')
   await expectError(call(browser, balance + '?ownerId=' + other.user), 403, 'FORBIDDEN')
 
+  const rawBody = '{"value": 1, "value": 2}'
+  const rawQuery = 'future=a%2Fb&future=two'
+  assert.deepEqual(
+    (await call(browser, '/billing/future-resource?' + rawQuery, { method: 'PATCH', rawBody }))
+      .data,
+    { query: rawQuery, body: rawBody },
+  )
+
   const body = { planId: 'work-team-test', interval: 'YEAR', billingTimeZone: 'Asia/Shanghai' }
   const purchase = {
     body,
@@ -432,10 +462,13 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   assert.equal((await call(browser, balance)).status, 200)
 
   await expectError(call(browser, balance, { upstream: unavailable }), 503, 'BILLING_UNAVAILABLE')
-  for (const id of ['down', 'malformed', 'unknown']) {
+  for (const id of ['down', 'malformed', 'invalid-code']) {
     await expectError(call(browser, orders + '/' + id), 503, 'BILLING_UNAVAILABLE')
   }
   await expectError(call(browser, orders + '/auth-down'), 503, 'AUTH_UNAVAILABLE')
+  const customError = await call(browser, orders + '/unknown')
+  assert.equal(customError.status, 500)
+  assert.deepEqual(customError.error, { code: 'UNDECLARED_CODE', message: 'A new upstream error' })
   assert.equal(
     (await call(browser, '/session', { upstream: unavailable })).data.state,
     'AUTHENTICATED',

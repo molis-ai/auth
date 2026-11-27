@@ -1,4 +1,4 @@
-//! Private identity assertions for the Work billing service.
+//! Private identity assertions for trusted internal services.
 use crate::{
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
     auth::management_access::{
@@ -46,10 +46,10 @@ enum Owner {
 // worker-build places free Wasm functions on the default Worker prototype.
 // Keep the bridge on a module class that the runtime adapter does not re-export.
 #[wasm_bindgen]
-pub struct AuthBillingIdentity;
+pub struct AuthInternalIdentity;
 
 #[wasm_bindgen]
-impl AuthBillingIdentity {
+impl AuthInternalIdentity {
     pub async fn authorize(
         request: web_sys::Request,
         env: Env,
@@ -62,7 +62,7 @@ impl AuthBillingIdentity {
 }
 
 async fn respond(request: Request, env: &Env) -> worker::Result<Response> {
-    let id = billing_request_id(&request);
+    let id = internal_request_id(&request);
     let path = match request.path().as_str() {
         INTROSPECT => INTROSPECT,
         VERIFY => VERIFY,

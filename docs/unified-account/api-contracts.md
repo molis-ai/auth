@@ -1,6 +1,6 @@
 # Molis 统一账号接口合同
 
-状态：2026-11-04，AUTH-01 已生成可执行合同，AUTH-02 已实现存储与策略边界，AUTH-03 已实现换码、会话、刷新及退出接口；AUTH-04 已实现邮箱/手机认证事务与 mock 投递；AUTH-05 已实现 Google/GitHub mock 授权、浏览器绑定与回调；AUTH-06 已实现资料、登录方式及密码管理；AUTH-07 已实现租户、邀请、角色、交接与平台启停；AUTH-08 已实现目录发布、订阅生命周期、容量维护及商业审计；AUTH-09 已实现席位分配、回收、换绑和历史查询；AUTH-10 已实现退出/移除与席位释放原子联动及在线权益判定。产品规则以[需求文档](requirements.md)的 C-01 至 C-40 为准；本文件给出技术方案，供三个仓库按[开发任务](../history/unified-account/development-tasks.md)实现和评审。路径、字段和工程默认值已在 [AUTH-01 合同包](../../contracts/unified-account/README.md)固化为 OpenAPI、JSON Schema 与合同夹具；实际交付与未完成项见开发任务实施记录。
+本文件说明 Auth 账号服务及产品接入。身份、会话、资料、租户、成员和平台管理接口以 [Auth 可执行合同](../../contracts/unified-account/README.md) 为准。
 
 AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](../history/unified-account/delivery.md)是合同 1.1.0 的历史交付。2026-11-08 当前合同开发版为 1.2.0，Auth 自身页面、SDK 与 Work 安装会话均改用 V2，新增创建策略及 API-10；现行边界见 [Host/BFF 接入说明](integration-guide.md)及 [V2 整合方案](v2-consolidation.md)。运行证据不由合同中的 CONTRACT_ONLY 标记推导。
 
@@ -46,7 +46,7 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 
 ## 1 边界与版本
 
-中央接口使用 `/api/v2`。Auth 拥有身份、登录会话、资料、租户和成员；商业模块拥有套餐、订阅、席位和权益。首期商业模块已与 Auth 同仓库、同 D1，通过领域函数和事务协作，不跨模块散写表。Club BFF 和 Work Host 只持有本产品会话、短期事务与展示缓存，不拥有第二套商业事实。
+中央接口使用 `/api/v2`。Auth 拥有身份、登录会话、资料、租户和成员。套餐、订阅、订单、Credit、权益及计费审计归独立 Billing 服务，账号中心通过[同源挂载](../account-billing-bff.md)访问。Club BFF 和 Work Host 持有本产品会话、短期事务与展示缓存。
 
 | 合同组 | 内容 | 实现 owner |
 | --- | --- | --- |
@@ -55,8 +55,6 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 | API-03 | 资料、再次验证、登录方式及密码 | Auth |
 | API-04 | 独立登录会话、活动、刷新和退出 | Auth；两端持久化 |
 | API-05 | 租户、成员、邀请、所有权和平台权限 | Auth |
-| API-06 | 套餐、订阅、库存与席位分配 | Auth 商业模块 |
-| API-07 | 当前用户的权益查询与判定 | Auth 商业模块 |
 | API-08 | 产品页面到 BFF/Host 的安全适配 | Auth 页面、Work；Club 接入另行核对 |
 | API-09 | 外部适配、mock 与环境 | Auth 主导；消费端协作 |
 | API-10 | 应用/客户端、用户状态、平台能力管理 | Auth |
@@ -101,11 +99,11 @@ V2 客户端由平台登记 `policyProfile=unified-account-v2`，不能由请求
 | 401 | `LOGIN_REQUIRED`、`SESSION_EXPIRED`、`SESSION_REVOKED`、`INVALID_CREDENTIALS`、`INVALID_GRANT` | 区分登录表单错误与已登录失效；后者清除恢复凭据并引导登录 |
 | 403 | `FORBIDDEN`、`POLICY_MISMATCH`、`TENANT_DISABLED`、`REAUTH_REQUIRED` | 展示权限、停用或再次验证状态，不自动换账号/租户 |
 | 404 | `NOT_FOUND` | 不暴露无权查看对象是否存在 |
-| 409 | `VERSION_CONFLICT`、`CAPACITY_CONFLICT`、`IDENTITY_IN_USE`、`LAST_LOGIN_METHOD`、`OWNER_TRANSFER_REQUIRED`、`PROOF_CONSUMED`、`TRANSACTION_EXPIRED`、`IDEMPOTENCY_CONFLICT` | 重新读取或重新开始对应操作；不自动回收席位、合并账号或重放凭据 |
+| 409 | `VERSION_CONFLICT`、`IDENTITY_IN_USE`、`LAST_LOGIN_METHOD`、`OWNER_TRANSFER_REQUIRED`、`PROOF_CONSUMED`、`TRANSACTION_EXPIRED`、`IDEMPOTENCY_CONFLICT` | 重新读取或重新开始对应操作；不自动合并账号或重放凭据 |
 | 429 | `RATE_LIMITED`，附重试等待信息 | 等待后由用户重试；两端一致显示 |
 | 503 | `UPSTREAM_UNAVAILABLE`、`AUTH_UNAVAILABLE` | 标记暂不可确认，不显示为无权益，不回退为 mock |
 
-无付费权益是 API-07 的成功判定 `allowed:false`，不是登录失败。Work 将上游错误转换为本仓库 owner 错误合同，不把 Auth 的错误实现或 HTTP 状态判断复制进插件。
+Work 将上游错误转换为本仓库 owner 错误合同，不把 Auth 的错误实现或 HTTP 状态判断复制进插件。
 
 ## 3 API-02 产品内认证事务
 
@@ -226,113 +224,15 @@ Auth 控制台专用 `GET /api/account/login-sessions` 使用同源登录 Cookie
 
 Invitation 含 `invitationId,tenantId,targetSummary,status:PENDING/ACCEPTED/DECLINED/REVOKED/EXPIRED,expiresAt,version`。Transfer 含 `transferId,tenantId,fromMembershipId,toMembershipId,status:PENDING/ACCEPTED/CANCELLED/EXPIRED,expiresAt,version`。建议邀请默认 7 天、交接默认 24 小时，作为 AUTH-01 的工程配置；过期和撤销不能建立成员或变更所有者。
 
-交接接受必须原子把目标变 OWNER、原 OWNER 变 MEMBER，按 C-40 保留原所有者已有席位；后续晋升 ADMIN 由新 OWNER 执行。租户始终恰好一个 OWNER；过期、失效、重复确认或接受时已离开的目标不能接管。
+交接接受必须原子把目标变 OWNER、原 OWNER 变 MEMBER；后续晋升 ADMIN 由新 OWNER 执行。租户始终恰好一个 OWNER；过期、失效、重复确认或接受时已离开的目标不能接管。
 
-离开/移除原子结束成员关系、释放其在该租户全部当前席位分配、推进权益版本并审计；不能让前端先删除成员再单独调用回收。释放包括到期/停用订阅仍保留的 ASSIGNED 分配，结束原因为 MEMBER_LEFT/MEMBER_REMOVED，个人订阅和其他租户不变。退出后再次加入创建新的 membershipId，历史分配关联旧 membership，不自动恢复；新成员版本从同一用户在该租户的历史最大版本加一继续，拒绝旧页面带旧 expectedVersion 的退出请求。租户停用会拒绝所有成员业务及管理操作，平台恢复入口仍可用；保留记录但没有永久删除接口。
+离开或移除原子结束成员关系、推进版本并写入管理审计。再次加入创建新的 membershipId，旧页面的 expectedVersion 不能用于新关系。租户停用会拒绝成员业务及管理操作，平台恢复入口仍可用。
 
 AUTH-07 与 AUTH-10 已开放本节接口，返回形状以可执行合同为准。成员列表仅含 ACTIVE 成员；本人邀请列表仅含当前身份匹配、未过期且租户启用的 PENDING 邀请。管理员的租户邀请列表保留历史状态，交接列表按仍有效的参与成员关系查询。列表使用服务端保存的随机游标，有效 15 分钟，绑定用户、客户端、路由、页大小及当前管理权限/成员版本；每次请求及最终返回前复核权限。
 
 邀请匹配当前已验证邮箱、手机号或稳定 userId；通知不是入租户凭据。Auth 网页默认按邮箱创建邀请，受邀者使用匹配的已验证邮箱登录后，从本人邀请列表接受。EMAIL 在 LOCAL/TEST 显式 MOCK 模式中写入模拟通知 outbox，其余环境直接创建站内邀请。手机号邀请目前只支持 Mock 通知。USER 目标继续供已有 API 调用方使用，不出现在 Auth 网页邀请表单。已有 ACTIVE 成员接受邀请时沿用原 membershipId 和角色；历史成员重新加入时建立新 membershipId。写操作的业务变化、审计、24 小时幂等回执及 mock 通知在同一事务中提交，读取回执前仍检查当前权限。OWNER 退出/被移除返回 OWNER_TRANSFER_REQUIRED；ADMIN 仅可移除普通 MEMBER，OWNER 可移除非 OWNER 成员。成员结束时同时取消涉及该成员的待确认交接。实现与验证见[AUTH-07 实施记录](../history/unified-account/development-tasks.md#12-auth-07-实施记录)及[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 本人已成功 leave 的同键、同请求重试，可在仍有效的原用户/客户端会话下取回本人旧成员的 LEFT 结果；仍须租户启用、该旧成员确为对应版本的 LEFT。它不要求已离开的成员仍 ACTIVE，不返回其他租户数据，也不会退出后来重新加入的成员。移除他人的回执仍要求操作者当前具备对应管理权限。新的幂等键按当前成员和版本处理，不复用历史操作。
-
-## 7 API-06 订阅与席位
-
-### 结构与状态
-
-| 结构 | 字段 |
-| --- | --- |
-| Feature | `featureId,product:WORK/CLUB/SHARED,name`；稳定标识，首期隔离环境使用明确标注的测试功能项 |
-| PlanVersion | `planId,planVersion,name,personalFeatureIds[],seatTypes:[{seatTypeId,name,featureIds[]}]`；版本发布后不可原地修改权益集合 |
-| Subscription | `subscriptionId,owner:{kind:USER/TENANT,id},planId,planVersion,enabled,startsAt,endsAt,version`；个人订阅没有席位数量 |
-| SeatPool | `subscriptionId,tenantId,seatTypeId,quantity,assignedCount,availableCount,version`；按订阅和类型独立计量 |
-| Assignment | `assignmentId,subscriptionId,seatTypeId,membershipId,userId,status:ASSIGNED/ENDED,assignedAt,endedAt:null或时间,endReason:null或RELEASED/REASSIGNED/MEMBER_LEFT/MEMBER_REMOVED,version` |
-
-订阅显示状态由 enabled 与时间计算为 SCHEDULED/ACTIVE/EXPIRED/DISABLED，不能把“EXPIRED”当删除指令。`ASSIGNED` 表示保留当前分配，不表示当前享有权益；订阅到期/停用时仍占容量。历史 ENDED 不占容量。`availableCount=quantity-assignedCount`，到期库存也不能因未提供权益而被重复分配。
-
-个人订阅及租户分配的全部有效来源按功能并集判定，不按套餐名猜升级/降级关系。套餐变更显式选择版本，不自动改变旧订阅内容；未接支付，不创建订单、金额或付款状态。
-
-### 中央接口
-
-所有商业写入使用 API-01 的版本和幂等约定；平台写入必须有 reason，操作者和时间由服务器记录。
-
-| 方法与路径 | 请求或返回 | 权限 |
-| --- | --- | --- |
-| GET `/catalog/plans`、GET `/catalog/features` | 可用套餐版本/功能定义 | 当前用户；展示不代表开通权益 |
-| POST `/platform/catalog/features`、POST `/platform/catalog/plans/{planId}/versions` | Feature/PlanVersion 定义 | 平台；引用合法，版本不可覆盖；测试功能配置与正式清单分开 |
-| GET `/users/me/subscriptions` | 本人个人订阅列表 | 本人 |
-| GET `/tenants/{id}/subscriptions` | 租户订阅及类型摘要 | 当前有效成员；管理权限另判 |
-| GET `/tenants/{id}/seat-pools` | SeatPool 列表 | OWNER/ADMIN；普通成员只读本人分配及权益 |
-| GET `/tenants/{id}/seat-assignments?state=current或history` | Assignment 列表 | OWNER/ADMIN 可读租户范围，MEMBER 只读本人；服务端固定范围，不能前端加 userId 绕过 |
-| POST `/platform/subscriptions` | `owner,planId,planVersion,startsAt,endsAt,seatQuantities?,reason` | 平台开通；租户需已存在；起止时间有效，各类型引用合法 |
-| GET `/platform/subscriptions`、GET `/platform/subscriptions/{id}` | 平台查询及停用租户内的记录 | 平台 |
-| PATCH `/platform/subscriptions/{id}` | `plan?:{planId,planVersion},startsAt?,endsAt?,enabled?,seatQuantities?,expectedVersion,reason` | 平台变更；plan 成对指定可跨套餐；未提交字段保持不变，不自动延期或换绑 |
-| POST `/platform/subscriptions/{id}/renew` | `endsAt,expectedVersion,reason` | 延长原订阅到期时间；类型/数量不变时沿用保留分配，不恢复 ENDED；停用状态不因续期自动启用 |
-| POST `/tenants/{id}/seat-assignments` | `subscriptionId,seatTypeId,membershipId,expectedVersion`（池） | OWNER/ADMIN 分配；目标是有效成员；相同池不重复给同一 membership 占多个席位 |
-| POST `/tenants/{id}/seat-assignments/{assignmentId}/release` | `expectedVersion,reason?` | OWNER/ADMIN；结束当前分配，释放库存 |
-| POST `/tenants/{id}/seat-assignments/{assignmentId}/reassign` | `targetMembershipId,expectedVersion,reason?` | OWNER/ADMIN；原子结束旧分配并创建新分配，数量不短暂超额 |
-| GET `/tenants/{id}/audit-events`、GET `/platform/audit-events` | 操作、目标、时间、结果及允许披露的前后状态 | 租户 OWNER/ADMIN 仅本租户；平台按平台权限；不含凭据 |
-
-首期建议只在有效且启用的订阅下新分配或换绑；到期/停用订阅允许管理者回收保留分配，便于减量和类型调整。该工程限制写入 AUTH-01 合同夹具；不影响续期沿用规则。停用租户仍拒绝租户成员管理操作；确需回收时先由平台恢复租户，不新增平台代替成员随意分配的权限。
-
-`seatQuantities` 为该订阅完整的目标 `{seatTypeId:quantity}` 映射；PATCH 不提供则不变，提供后未保留的旧类型视为删除并执行回收前置检查。跨套餐变更也按稳定 seatTypeId 判断类型是否相同，不按显示名自动匹配；plan、容量及版本原子更新。
-
-### 原子约束
-
-| 操作 | 提交前必须满足 | 提交结果 |
-| --- | --- | --- |
-| 分配/换绑 | 租户启用、管理员权限仍有效、目标成员有效、池容量足够、版本一致 | 新分配与旧分配结束（若有）同事务，推进用户/租户权益版本 |
-| 减量 | 各类型新数量不低于全部 ASSIGNED 数，含到期保留 | 不替管理者挑人回收；失败时所有池和订阅不变 |
-| 删除/替换类型 | 受影响类型的 ASSIGNED 已全部回收 | 未变类型沿用，结束的历史不映射到新类型 |
-| 改套餐/期限/启停 | 平台权限、版本和目标合法 | 显式修改字段，保留审计，按新有效来源重新计算 |
-| 成员离开/移除 | 当前成员版本和管理权限仍有效 | 结束该租户所有当前分配，个人订阅不变 |
-| 续期 | 新到期时间有效且更晚，类型/数量不变 | 保留有效成员的当前分配；已结束历史不恢复 |
-
-同一 D1 内以事务/受控原子 batch 维护这些约束；并发请求的胜者成功，另一方返回版本/容量冲突并重读。前端串行执行多个请求、事后补库存或定时清理都不能替代一致性保证。所有订阅、成员、租户状态变化均推进判定所依赖的版本。
-
-AUTH-08 已实现功能和套餐目录发布/查询、本人及租户订阅查询、平台开通/查询/变更/续期、席位池查询及本模块商业审计。单份订阅的停用和恢复通过 PATCH 的 `enabled:false/true`，没有额外启停路径。目录只追加发布，旧版本不能覆盖；新版本可以为同一稳定席位类型使用新的名称，名称随套餐版本留存。个人订阅拒绝 `seatQuantities`；租户开通必须提供完整目标映射，允许空映射或零容量。
-
-更换套餐时，未提交 `seatQuantities` 会保留原映射；如果旧类型不在新套餐中，应明确提交目标映射，否则拒绝请求。移除类型将池标记 RETIRED，保留历史；重新增加同类型只恢复库存，不恢复 ENDED 分配。容量检查在最终事务中再次执行；AUTH-09 已接入分配/回收/换绑并与容量变更联合验证，AUTH-10 已完成成员退出时的全量释放及权益判断。
-
-订阅状态依服务端当前时间计算，区间为 `startsAt <= now < endsAt`，disabled 优先显示 DISABLED。平台可以在停用租户下开通及维护订阅，但不会恢复租户访问或自动顺延。商业审计接口当前返回 `auth_management_audit` 中的目录、订阅和席位事件，旧身份/租户审计仍在原有审计存储中。公开 changes 是受长度限制的摘要，完整目录定义、订阅前后值、容量映射与操作原因保存在审计记录中。实施与验证见[AUTH-08 实施记录](../history/unified-account/development-tasks.md#13-auth-08-实施记录)。
-
-AUTH-09 的分配/回收返回 `SeatMutationResult {assignment,pool,entitlementRevision}`，换绑返回 `SeatReassignResult {endedAssignment,assignment,pool,entitlementRevision}`。新分配请求的 expectedVersion 是池版本，回收/换绑的是原分配版本；每次成功操作都推进池和相关权益版本。重复操作需沿用原 Idempotency-Key，不能把“原分配已 ENDED”误认为同键重试失败；权限和租户状态仍按当前事实检查。
-
-当前列表默认 `state=current` 仅含 ASSIGNED；`state=history` 仅含 ENDED。普通成员按本人 userId 查询，仍须是该租户当前有效成员；游标绑定 state，不能从当前列表切换过滤条件继续翻页。新分配/换绑最终提交复核数据库时间、订阅版本、当前池、目标有效成员/账号及容量；回收允许原受益成员或账号失效。停用租户一律禁止成员操作。实施及容量联合验证见[AUTH-09 实施记录](../history/unified-account/development-tasks.md#14-auth-09-实施记录)。
-
-## 8 API-07 权益判定
-
-`POST /api/v2/entitlements/check` 请求：`{scope,featureIds:[...]}`，建议最多 100 项。主体、产品与客户端来自可信会话，不接受 `subjectUserId` 或“已购买”字段。功能 ID 必须在服务端目录存在，并符合调用产品的范围。
-
-成功返回：
-
-```json
-{
-  "data": {
-    "scope": { "kind": "TENANT", "tenantId": "tenant_example" },
-    "evaluatedAt": "2026-11-04T08:00:00Z",
-    "revision": "opaque-entitlement-revision",
-    "decisions": [{
-      "featureId": "demo.shared-feature",
-      "allowed": true,
-      "reason": "GRANTED",
-      "validUntil": "2026-12-01T00:00:00Z",
-      "sources": [{ "kind": "PERSONAL_SUBSCRIPTION", "subscriptionId": "sub_example" }]
-    }]
-  },
-  "requestId": "request_example"
-}
-```
-
-`reason` 为 GRANTED/FEATURE_NOT_GRANTED；允许的 sources 为 PERSONAL_SUBSCRIPTION 或 TENANT_SEAT（含订阅、类型和 assignmentId）。来源只表达当前用户自己的授权，不暴露其他租户或用户数据。订阅失效、未分配等细节由本人订阅/席位页面解释。用户未登录返回 401，非成员隐藏租户存在性，停用租户返回 403 TENANT_DISABLED；这些不是“缺少某项付费权益”。
-
-计算顺序：校验会话及产品 → 校验 Scope 和成员/租户状态 → 读取有效个人订阅 → 在租户范围追加本人当前有效分配 → 按功能取并集。个人范围不计任何租户席位；租户甲的席位不能流入乙。管理角色本身不增加付费功能。
-
-`validUntil` 是此次结果的最早已知时间边界（保守取相关来源的下一到期/生效点以及会话截止），不是可离线持有的许可证。成员撤销或配置变更可以更早使结果失效；重新查询读取最新事实，断网只显示“暂不可确认”。首期不把本结果接到 Work 动作付费拦截，也不拿它授权共享内容；后续内容权限仍由资源 owner 核对。
-
-AUTH-10 实现使用服务端 `auth_client_product` 明确登记当前客户端的 WORK/CLUB 产品，只允许该产品或 SHARED 的目录项；未登记客户端返回 403 POLICY_MISMATCH，未知或其他产品功能返回 400 FEATURE_UNKNOWN。不从客户端名称、前端参数或套餐名推断产品。0011 迁移仅建表，不自动登记旧客户端；本地可选 seed 显式登记隔离客户端，不覆盖已有登记。
-
-`revision` 是当前用户、客户端、产品、Scope、所请求功能列表、来源及相关版本的不可解读摘要；不同功能批次的摘要不能互相比较或拼成一份全局版本。同样的事实和会话读取保持稳定，跨生效/到期边界即使没有数据库写入也会改变。返回前原子复核当前会话、客户端登记、成员、租户及商业版本和时间边界，竞争变化返回 409 VERSION_CONFLICT，调用方重新查询。`validUntil` 同时不超过本次 access、会话最长/闲置截止；没有有效来源的否定结果也受未来订阅生效时间约束。完整来源超过合同或查询上限时返回 503 AUTH_UNAVAILABLE，不截断来源后给出部分判断。验证见[AUTH-10 实施记录](../history/unified-account/development-tasks.md#15-auth-10-实施记录)。
 
 ## 9 API-08 两产品适配合同
 
@@ -351,8 +251,7 @@ AUTH-10 实现使用服务端 `auth_client_product` 明确登记当前客户端�
 | POST `/api/account/logout` | `scope:CURRENT_LOGIN/ALL_MOLIS_PRODUCTS`，返回本端清除及中央撤销结果，不伪报远端成功 |
 | `/api/account/profile`、`/login-methods/*`、`/password/*` | 固定映射 API-03；页面通过本地 reauth handle，不能自行提供 operationProof/userId |
 | `/api/account/tenants/*`、`/invitations/*`、`/ownership-transfers/*` | 固定映射 API-05，Scope 显式随请求传递 |
-| `/api/account/subscriptions`、`/tenants/{id}/seat-*`、`/entitlements/check` | 固定映射 API-06/07；版本、幂等键和结构化错误保留，禁止本地计算最终授权 |
-| `/api/account/platform/tenants/*`、`/platform/subscriptions/*` | 在产品内为平台人员提供固定操作入口，中央验证平台权限；不因租户 OWNER 而开放 |
+| `/api/account/platform/tenants/*` | 在产品内为平台人员提供固定操作入口，中央验证平台权限；不因租户 OWNER 而开放 |
 
 产品 SDK/适配层只把字段映射到已登记操作。未列出的批量、删除、代登录、账号合并、付款和数据共享接口不属于本期。两个页面的 Scope 不应通过一个全局“当前租户”可变值相互覆盖；页面偏好不构成权限事实。
 
@@ -378,7 +277,7 @@ BFF 使用同源、HttpOnly、HTTPS 下 Secure、SameSite=Lax、Path=/ 且不设
 
 ### Work
 
-建议新增 `horizontal/account` 作为 Auth 客户端与会话协调 owner，合同归 `packages/contracts`；Host 装配服务并注入公开 SecretStore。工作台内提供页面，桌面只承担系统浏览器/回跳桥。凭据型协议使用窄认证入口，不登记为可被 Agent/MCP 调用的普通动作，也不进入动作记录；非凭据的成员/商业管理能力按现有动作目录注册一次，页面和其他获授权入口复用同一合同，不额外开放自动调用权限。
+建议新增 `horizontal/account` 作为 Auth 客户端与会话协调 owner，合同归 `packages/contracts`；Host 装配服务并注入公开 SecretStore。工作台内提供页面，桌面只承担系统浏览器/回跳桥。凭据型协议使用窄认证入口，不登记为可被 Agent/MCP 调用的普通动作，也不进入动作记录；非凭据的成员管理能力按现有动作目录注册一次，页面和其他获授权入口复用同一合同，不额外开放自动调用权限。
 
 Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回调是单独受约束的协议入口，不豁免整个账号 API。PKCE、发起方证明和恢复凭据按环境、issuer、client 和 Home 隔离保存，浏览器与桌面共享同一个 Host 登录。当前登录用户来自 Host 会话，而本地 `LOCAL_PERSON_ACTOR_ID` 保持原义。
 
@@ -396,7 +295,7 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 按 C-36 至 C-38 先使用本地/隔离测试地址。配置清单包括 `authOrigin,productOrigin,clientId,policyProfile,redirectAllowlist,providerMode,deliveryMode,environmentId`；实际密钥只以环境绑定/密钥引用注入。开发中的固定回调和原生 loopback 规则仍须校验，不使用任意通配符。真实域名、短信签名模板、发信域名、OAuth 应用和精确回调在后续真实联调前落实。
 
-模拟账号、成员、订阅和席位通过受控测试夹具及正式管理服务建立，不能用“测试入口直接写已付费”绕过商业规则。对外部 mock 的验证与对中央真实服务的验证分别标记，真实发送和官方授权证据后补。
+模拟账号和成员通过受控测试夹具及正式管理服务建立。对外部 mock 的验证与对中央真实服务的验证分别标记，真实发送和官方授权证据后补。
 
 ## 11 切换与合同交付
 
@@ -404,7 +303,7 @@ Host 校验 loopback、Host/Origin、本机控制令牌及一次性写键；回�
 
 合同交付包含 OpenAPI 3.1、请求/响应与错误 JSON Schema、上文 purpose/method 联合类型、平台能力与租户角色、版本与幂等约定、脱敏夹具和变更记录。Rust 与消费端 TypeScript 使用同一合同样本校验，禁止分别维护可漂移的账号枚举。Auth 的接口升级不自动要求 Work 将内部 HTTP 合同原样导出给外部插件。
 
-合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需证明拒绝、失败和竞态，而不只是页面成功；商业链路需用实际持久化数据证明权限与功能并集。实现拆分及完整覆盖见[开发任务](../history/unified-account/development-tasks.md)。
+合同验收对应[需求验收表](requirements.md#10-验收标准)。认证链路需验证认证成功、拒绝、失败和竞态。实现拆分及完整覆盖见[开发任务](../history/unified-account/development-tasks.md)。
 
 ## 12 API-10 当前平台管理
 
