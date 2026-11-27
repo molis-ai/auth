@@ -4,7 +4,7 @@ use crate::{
     auth::management_access::{Action, Change, Context, Service, expected},
     core::http::*,
     core::security::uuid,
-    tenants::member_view,
+    team::member_view,
 };
 use serde_json::{Value, json};
 fn target(user: &str) -> String {

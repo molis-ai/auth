@@ -3,7 +3,7 @@ use crate::{
     auth::management_access as protocol,
     auth::management_access::{Action, Context, Service, expected},
     core::http::*,
-    tenants::member_view,
+    team::member_view,
 };
 use serde_json::Value;
 use worker::D1PreparedStatement;

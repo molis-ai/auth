@@ -6,7 +6,7 @@ use crate::{
     },
     core::http::*,
     core::identity::Auth,
-    tenants::TENANTS,
+    team::TENANTS,
     web::web_session::setting,
 };
 use serde::Deserialize;

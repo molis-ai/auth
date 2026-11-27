@@ -8,7 +8,7 @@ import ts from "typescript";
 const source = fileURLToPath(new URL("../src/", import.meta.url));
 const allowedFeatureImports = new Set([
   "account -> auth-entry/index.ts",
-  "tenants -> billing/index.ts",
+  "team -> billing/index.ts",
 ]);
 
 function sourceFiles(directory: string): string[] {

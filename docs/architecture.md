@@ -21,7 +21,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `auth/management_access.rs` | 管理请求的会话、平台权限及团队成员资格检查，绑定授权快照、游标和幂等写入 |
 | `auth/{sync_read_proof,test_admission}.rs` | 依赖当前中央会话的同步读证明，以及依赖已验证身份的测试环境准入 |
 | `account/` | 个人资料、登录方式、密码及账号会话管理 |
-| `tenants/` | 团队、角色、创建策略、成员、邀请和所有权交接 |
+| `team/` | 团队、角色、创建策略、成员、邀请和所有权交接 |
 | `internal/` | 私有服务入口的中央会话、团队成员和平台审计权限核验 |
 | `platform/` | 平台用户和权限、团队治理、应用及登录客户端管理 |
 | `audit/` | 统一管理审计写入与平台、团队审计查询 |
@@ -36,7 +36,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 
 `core/` 不引用入口或业务域。 浏览器会话用 `app::handle_internal` 在同一 Worker 调用 V2 API，并传递会话访问约束和原请求 ID。业务域的通用请求体和响应头处理使用 `core/http.rs`。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
 
-中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因租户 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、独立 Team 与权限矩阵实现已删除。
+中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因团队 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、V1 团队 API 与权限矩阵实现已删除。
 
 ## 会话与安全
 
@@ -64,7 +64,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `shared/` | 同源 API 客户端、游标集合、幂等提交、共享组件和基础样式 |
 | `features/auth-entry/` | 登录、注册、找回密码、语言偏好及认证流程 |
 | `features/account/` | 个人资料、账号安全、登录方式、密码及登录会话 |
-| `features/tenants/` | 我的团队、成员与待处理 |
+| `features/team/` | 我的团队、成员与待处理 |
 | `features/billing/` | 订阅与账单、账本详情及账单类型 |
 | `features/platform/` | 平台用户与权限、团队、应用与客户端、审计 |
 

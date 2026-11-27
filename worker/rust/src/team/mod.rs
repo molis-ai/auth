@@ -236,7 +236,7 @@ impl Service<'_> {
             }
             "tenant.self-create" => {
                 ensure(
-                    crate::tenants::creation::policy(&self.a.env)? == "SELF_SERVICE",
+                    crate::team::creation::policy(&self.a.env)? == "SELF_SERVICE",
                     403,
                     "FORBIDDEN",
                 )?;
@@ -385,7 +385,7 @@ impl Service<'_> {
                 })
             }
             "member.leave" | "member.remove" => {
-                let plan = crate::tenants::membership::prepare_exit(self, action, ctx, b)?;
+                let plan = crate::team::membership::prepare_exit(self, action, ctx, b)?;
                 let mut writes = plan.guards;
                 writes.extend(plan.writes);
                 Ok(Change {
@@ -693,7 +693,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             }
             if action.op == "member.leave"
                 && let Some(result) =
-                    crate::tenants::membership::replay_leave(&service, &action, &b, &key).await?
+                    crate::team::membership::replay_leave(&service, &action, &b, &key).await?
             {
                 output = Some(result);
                 break;
@@ -704,8 +704,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     // Another same-key leave can finish between the receipt read and
                     // membership lookup. Re-read only its committed result.
                     if let Some(result) =
-                        crate::tenants::membership::replay_leave(&service, &action, &b, &key)
-                            .await?
+                        crate::team::membership::replay_leave(&service, &action, &b, &key).await?
                     {
                         output = Some(result);
                         break;

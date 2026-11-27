@@ -4,7 +4,7 @@ use crate::{
     auth::management_access::{Action, Change, Context, Service, expected},
     core::http::*,
     core::security::uuid,
-    tenants::member_view,
+    team::member_view,
 };
 use serde_json::{Value, json};
 pub(super) fn view(r: &Value) -> Value {
