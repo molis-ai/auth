@@ -167,6 +167,7 @@ pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Value> {
         tenant_id: tenant_id.into(),
         id: String::new(),
         schema: None,
+        capability: None,
     };
     management_access::read(a, &action, access, None, audit_page(a, &action)).await
 }

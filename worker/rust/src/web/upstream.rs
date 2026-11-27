@@ -113,10 +113,10 @@ impl<'a> Target<'a> {
     }
 
     pub(super) async fn body(a: &mut Auth) -> Result<Option<String>> {
-        if a.request.inner().body().is_none() {
+        if a.http()?.inner().body().is_none() {
             return Ok(None);
         }
-        let body = bounded(&mut a.request, 16 * 1024).await?;
+        let body = bounded(a.http_mut()?, 16 * 1024).await?;
         if body.is_empty() {
             return Ok(None);
         }
@@ -127,14 +127,14 @@ impl<'a> Target<'a> {
     }
 
     pub(super) async fn call(&self, a: &Auth, access: &str, body: Option<&str>) -> Result<Reply> {
-        let key = a.request.headers().get("Idempotency-Key")?;
+        let key = a.http()?.headers().get("Idempotency-Key")?;
         ensure(key.as_deref().is_none_or(valid_id), 400, "INVALID_REQUEST")?;
         ensure(token(access), 401, "SESSION_EXPIRED")?;
         let mut input = json!({
             "service": self.mount.service, "path": format!("/api/v1{}", self.suffix),
             "method": self.method, "requestId": a.request_id, "accessToken": access,
         });
-        if let Some(query) = a.request.url()?.query() {
+        if let Some(query) = a.http()?.url()?.query() {
             input["query"] = json!(query);
         }
         if let Some(body) = body {

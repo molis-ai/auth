@@ -1,7 +1,11 @@
 //! AUTH-06 account views and atomic, proof-bound mutations.
 use crate::{
-    auth::login_sessions as sessions, auth::registration,
-    auth::sensitive_transactions as sensitive, core::http::*, core::identity::Auth,
+    auth::login_sessions as sessions,
+    auth::management_access::{MutationRunner, PreparedMutation},
+    auth::registration,
+    auth::sensitive_transactions as sensitive,
+    core::http::*,
+    core::identity::Auth,
     core::security::*,
 };
 use serde_json::{Value, json};
@@ -500,65 +504,60 @@ async fn replay(
     key: &str,
 ) -> Result<Option<Value>> {
     let row=a.s.one("SELECT * FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at>?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.into(),now().into()]).await?;
-    if row.is_null() {
-        return Ok(None);
-    }
-    ensure(
-        row["request_hash"] == hash(&b.to_string()),
-        409,
-        "IDEMPOTENCY_CONFLICT",
-    )?;
-    let response = parsed(&row, "response_json")?;
-    ensure(response["loginSessionId"] == s["id"], 403, "FORBIDDEN")?;
-    Ok(Some(response["data"].clone()))
+    account_receipt(&row, s, b)
 }
-async fn manage(
-    a: &Auth,
-    s: &Value,
-    c: &Value,
-    b: &Value,
-    op: &str,
-    target: &str,
-) -> Result<Value> {
-    let raw = a.header("Idempotency-Key");
-    ensure(
-        (16..=128).contains(&raw.chars().count()),
-        400,
-        "INVALID_REQUEST",
+fn account_receipt(row: &Value, s: &Value, b: &Value) -> Result<Option<Value>> {
+    let Some(mut response) = MutationRunner::replay_data(row, b)? else {
+        return Ok(None);
+    };
+    ensure(response["loginSessionId"] == s["id"], 403, "FORBIDDEN")?;
+    Ok(Some(response["data"].take()))
+}
+async fn manage(a: &Auth, b: &Value, op: &str, target: &str) -> Result<Value> {
+    let runner = MutationRunner::new(a)?;
+    let raw = a.header("Authorization");
+    let digest = hash(sessions::bearer(&raw));
+    let current_account = target.is_empty();
+    let security = a.s.statement(
+        &format!(
+            "SELECT account_version,identity_version,session_epoch FROM auth_user WHERE id={}",
+            sessions::ACCESS_USER_ID
+        ),
+        vec![digest.into()],
     )?;
-    let key = hash(&raw);
-    if let Some(result) = replay(a, s, b, op, target, &key).await? {
+    let (service, receipt, rows) = runner
+        .load(op, target, current_account, vec![security])
+        .await?;
+    let s = service.s;
+    let c = service.c;
+    let target = if current_account {
+        s["user_id"].as_str().ok_or_else(Failure::unavailable)?
+    } else {
+        target
+    };
+    if let Some(result) = account_receipt(&receipt, &s, b)? {
         return Ok(result);
     }
-    let us = security(a, &text(s, "user_id")).await?;
-    let built = mutation(a, s, c, b, &us, op, target).await;
-    let attempt: Result<Value>=async {
-        let (result,mut writes)=built?;
-        writes.insert(0,version_guard(a,&text(s,"user_id"),&us)?);
-        writes.insert(0,sessions::client_guard(a,c)?);
-        writes.insert(0,sessions::active_guard(a,s)?);
-        writes.push(crate::audit::account(a, &format!("account.{op}"), s["user_id"].clone(), &s["client_id"], Value::Null)?);
-        writes.push(a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),now().into()])?);
-        writes.push(a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?);
-        a.s.batch(writes,"VERSION_CONFLICT").await?;Ok(result)
-    }.await;
-    match attempt {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            let (current, _) = sessions::active(a).await?;
-            if let Some(result) = replay(a, &current, b, op, target, &key).await? {
-                return Ok(result);
-            }
-            Err(if e.code == "ALREADY_EXISTS" {
-                Failure {
-                    status: 409,
-                    code: "IDENTITY_IN_USE",
-                }
-            } else {
-                e
-            })
-        }
-    }
+    let us = rows
+        .into_iter()
+        .next()
+        .and_then(|rows| rows.into_iter().next())
+        .ok_or_else(Failure::unavailable)?;
+    runner.run(async {
+        let (result,mut writes) = mutation(a, &s, &c, b, &us, op, target).await?;
+        writes.insert(0,version_guard(a,&text(&s,"user_id"),&us)?);
+        writes.insert(0,sessions::client_guard(a,&c)?);
+        writes.insert(0,sessions::active_guard(a,&s)?);
+        let audit = crate::audit::account(a, &format!("account.{op}"), s["user_id"].clone(), &s["client_id"], Value::Null)?;
+        let receipt = vec![
+            a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),runner.key.clone().into(),now().into()])?,
+            a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["user_id"].clone(),s["client_id"].clone(),op.into(),target.into(),runner.key.clone().into(),hash(&b.to_string()).into(),json!({"loginSessionId":s["id"],"data":result}).to_string().into(),now().into(),(now()+86400000).into()])?
+        ];
+        Ok(PreparedMutation { result, writes, audit, receipt })
+    }, async || {
+        let (current, _) = sessions::active(a).await?;
+        replay(a, &current, b, op, target, &runner.key).await
+    }, "IDENTITY_IN_USE").await
 }
 async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     shape("PasswordResetRequest", b)?;
@@ -595,23 +594,7 @@ async fn reset(a: &Auth, b: &Value) -> Result<Value> {
     a.s.batch(w, "VERSION_CONFLICT").await?;
     Ok(json!({"passwordChanged":true,"nextStep":"LOGIN_REQUIRED"}))
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
-    let b = if method == Method::Post || method == Method::Patch {
-        ensure(is_json_content_type(a), 415, "INVALID_REQUEST")?;
-        serde_json::from_str(
-            &bounded(
-                &mut a.request,
-                if path.ends_with("/profile") {
-                    200000
-                } else {
-                    16384
-                },
-            )
-            .await?,
-        )?
-    } else {
-        json!({})
-    };
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
     let result = if path == "/api/v1/auth/password-reset/complete" && method == Method::Post {
         reset(a, &b).await?
     } else if path == "/api/v1/users/me" && method == Method::Get {
@@ -625,8 +608,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     } else if path == "/api/v1/users/me/login-methods" && method == Method::Get {
         login_methods_view(a).await?
     } else {
-        let (s, c) = sessions::active(a).await?;
-        let user = text(&s, "user_id");
         match (path, method) {
             ("/api/v1/users/me/reauthentications", Method::Post) => {
                 shape("ReauthenticationRequest", &b)?;
@@ -636,15 +617,15 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
             }
             ("/api/v1/users/me/profile", Method::Patch) => {
                 shape("ProfileUpdateRequest", &b)?;
-                manage(a, &s, &c, &b, "profile", &user).await?
+                manage(a, &b, "profile", "").await?
             }
             ("/api/v1/users/me/password/change", Method::Post) => {
                 shape("PasswordChangeRequest", &b)?;
-                manage(a, &s, &c, &b, "password", &user).await?
+                manage(a, &b, "password", "").await?
             }
             ("/api/v1/users/me/login-methods/bind", Method::Post) => {
                 shape("BindMethodRequest", &b)?;
-                manage(a, &s, &c, &b, "bind", &user).await?
+                manage(a, &b, "bind", "").await?
             }
             (_, Method::Post) => {
                 let parts: Vec<_> = path.trim_matches('/').split('/').collect();
@@ -663,7 +644,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
                     },
                     &b,
                 )?;
-                manage(a, &s, &c, &b, parts[6], parts[5]).await?
+                manage(a, &b, parts[6], parts[5]).await?
             }
             _ => {
                 return Err(Failure {

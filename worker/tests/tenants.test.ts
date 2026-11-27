@@ -1902,8 +1902,8 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           'd1-trace',
         )
         const transferred = ok(response, 'PlatformTenantView')
-        // Session, permission, tenant, receipt and one batch for all three owner lookups.
-        assert.deepEqual(response.d1Calls, { read: 5, write: 1 })
+        // Session and receipt share a read. Permission, tenant and all owner lookups use the other three.
+        assert.deepEqual(response.d1Calls, { read: 4, write: 1 })
         assert.deepEqual(
           transferred,
           ok(await call(path, undefined, tenantReader), 'PlatformTenantView'),

@@ -40,7 +40,7 @@ pub struct PageFilters {
 }
 impl PageFilters {
     pub fn parse(a: &Auth, keys: &[&str]) -> Result<Self> {
-        let mut values = form(a.request.url()?.query().unwrap_or_default())?;
+        let mut values = form(&a.query()?)?;
         let mut allowed = vec!["limit", "cursor"];
         allowed.extend_from_slice(keys);
         fields(&values, &[], &allowed)?;
@@ -126,7 +126,7 @@ pub(crate) struct PageRequest {
 }
 impl PageRequest {
     pub(crate) fn parse(a: &Auth, filters: &Value) -> Result<Self> {
-        let q = form(a.request.url()?.query().unwrap_or_default())?;
+        let q = form(&a.query()?)?;
         let mut allowed = vec!["limit", "cursor"];
         allowed.extend(
             filters

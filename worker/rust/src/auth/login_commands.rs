@@ -23,11 +23,9 @@ impl Completion {
     }
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
+pub async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<Value> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
-    ensure(is_json_content_type(a), 415, "INVALID_REQUEST")?;
-    let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-    execute(a, path, &b, Completion::Code).await
+    execute(a, path, &body, Completion::Code).await
 }
 
 pub(crate) async fn browser_password(

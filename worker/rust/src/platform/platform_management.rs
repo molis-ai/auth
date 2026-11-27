@@ -74,6 +74,7 @@ fn action(path: &str, method: Method) -> Result<Action> {
         path: path.into(),
         tenant_id: String::new(),
         id,
+        capability: None,
     })
 }
 impl Service<'_> {
@@ -246,7 +247,7 @@ fn audit(
             )
         }
         "permission.set" => {
-            let before = json!({"capability":ctx.from["permission"],"status":ctx.from["status"]});
+            let before = json!({"capability":ctx.target_permission["permission"],"status":ctx.target_permission["status"]});
             ("USER", "userId", before, &["capability", "status"])
         }
         "user.status" => ("USER", "userId", ctx.record.clone(), &["status"]),
@@ -355,17 +356,12 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     protocol::read(a, action, Access::Permission(permission), lookup, Ok(plan)).await
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
+pub async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<Value> {
     let action = action(path, method)?;
-    let body = if let Some(schema) = action.schema {
-        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
-        let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-        shape(schema, &b)?;
-        b
-    } else {
-        json!({})
-    };
-    let q = form(a.request.url()?.query().unwrap_or_default())?;
+    if let Some(schema) = action.schema {
+        shape(schema, &body)?;
+    }
+    let q = form(&a.query()?)?;
     fields(
         &q,
         &[],
@@ -378,46 +374,50 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     if action.schema.is_none() {
         return read(a, &action).await;
     }
-    let key = protocol::key(a)?;
-    let mut output = None;
-    let mut last = Failure {
-        status: 409,
-        code: "VERSION_CONFLICT",
-    };
-    for attempt in 0..2 {
-        let (s, c) = login_sessions::active(a).await?;
-        let service = Service { a, s, c };
-        let ctx = service.administration_context(&action).await?;
-        if let Some(result) = protocol::replay(&service, &action, &body, &key).await? {
-            let mut w = protocol::base(&service)?;
-            w.extend(ctx.guards);
-            a.s.batch(w, "VERSION_CONFLICT").await?;
-            output = Some(result);
-            break;
-        }
-        if attempt > 0 {
-            break;
-        }
-        let change = service.administration_change(&action, &ctx, &body).await?;
-        let mut w = protocol::base(&service)?;
-        let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
-        w.extend(ctx.guards);
-        w.extend(change.writes);
-        w.push(management_event);
-        w.extend(protocol::receipt(
-            &service,
-            &action,
-            &body,
-            &key,
-            &change.result,
-        )?);
-        match a.s.batch(w, "VERSION_CONFLICT").await {
-            Ok(()) => {
-                output = Some(change.result);
-                break;
-            }
-            Err(e) => last = e,
-        }
+    let runner = protocol::MutationRunner::new(a)?;
+    let (service, receipt, _) = runner.load(action.op, &action.path, false, vec![]).await?;
+    let ctx = service.administration_context(&action).await?;
+    if let Some(result) =
+        protocol::MutationRunner::replay_data(&receipt, &body)?.map(|mut data| data["data"].take())
+    {
+        let mut guards = protocol::base(&service)?;
+        guards.extend(ctx.guards);
+        a.s.batch(guards, "VERSION_CONFLICT").await?;
+        return Ok(result);
     }
-    output.ok_or(last)
+    runner
+        .run(
+            async {
+                let change = service.administration_change(&action, &ctx, &body).await?;
+                let management_event = audit(&service, &action, &ctx, &body, &change.result)?;
+                let mut writes = protocol::base(&service)?;
+                writes.extend(ctx.guards);
+                writes.extend(change.writes);
+                let receipt =
+                    protocol::receipt(&service, &action, &body, &runner.key, &change.result)?;
+                Ok(protocol::PreparedMutation {
+                    result: change.result,
+                    writes,
+                    audit: management_event,
+                    receipt,
+                })
+            },
+            async || {
+                let (s, c) = login_sessions::active(a).await?;
+                let service = Service { a, s, c };
+                let ctx = service.administration_context(&action).await?;
+                if let Some(result) =
+                    protocol::replay(&service, &action, &body, &runner.key).await?
+                {
+                    let mut guards = protocol::base(&service)?;
+                    guards.extend(ctx.guards);
+                    a.s.batch(guards, "VERSION_CONFLICT").await?;
+                    Ok(Some(result))
+                } else {
+                    Ok(None)
+                }
+            },
+            "VERSION_CONFLICT",
+        )
+        .await
 }

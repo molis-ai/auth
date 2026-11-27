@@ -66,11 +66,11 @@ pub(crate) fn matches(path: &str) -> bool {
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     if path.starts_with("/api/v1/") {
         ensure(
-            method == Method::Post && a.request.url()?.query().is_none(),
+            method == Method::Post && a.http()?.url()?.query().is_none(),
             400,
             "INVALID_REQUEST",
         )?;
-        let b: Value = serde_json::from_str(&bounded(&mut a.request, 8192).await?)?;
+        let b: Value = serde_json::from_str(&bounded(a.http_mut()?, 8192).await?)?;
         let (s, c) = sessions::active(a).await?;
         a.rate("management-handoff", &text(&s, "id"), 20, 60_000)
             .await?;
@@ -137,11 +137,11 @@ async fn browser(a: &Auth, path: &str, method: Method) -> Result<Response> {
         "FORBIDDEN",
     )?;
     ensure(
-        a.request.url()?.origin().ascii_serialization() == a.origin,
+        a.http()?.url()?.origin().ascii_serialization() == a.origin,
         403,
         "FORBIDDEN",
     )?;
-    let q = form(a.request.url()?.query().unwrap_or_default())?;
+    let q = form(a.http()?.url()?.query().unwrap_or_default())?;
     let t = pending(a, &text(&q, "id")).await?;
     let source = sessions::session(a, &text(&t, "source_session")).await?;
     ensure(

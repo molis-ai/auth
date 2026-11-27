@@ -627,7 +627,7 @@ async fn activity(a: &Auth, b: &Value) -> Result<Value> {
     s["last_active_at"] = row["last_active_at"].clone();
     Ok(view(&s))
 }
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
     let implemented = matches!(
         (path, method.clone()),
         ("/api/v1/auth/token", Method::Post)
@@ -637,12 +637,6 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
             | ("/api/v1/sessions/logout-all", Method::Post)
     );
     ensure(implemented, 501, "UNIFIED_ACCOUNT_NOT_IMPLEMENTED")?;
-    let b = if method == Method::Post {
-        ensure(is_json_content_type(a), 415, "INVALID_REQUEST")?;
-        serde_json::from_str(&bounded(&mut a.request, 16384).await?)?
-    } else {
-        json!({})
-    };
     let result = if path.ends_with("/auth/token") {
         exchange(a, &b).await?
     } else if path.ends_with("logout-all") || path.ends_with("/logout") {

@@ -3,13 +3,13 @@ use super::{browser_transactions::BrowserTransactions, upstream};
 use crate::{
     auth::{login_capabilities, login_sessions},
     core::http::*,
-    core::identity::Auth,
+    core::identity::{Auth, OperationInput},
     core::security::{hash, secret},
     core::store::CommitFence,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
-use worker::{Method, Request, RequestInit, Response};
+use worker::{Method, Response};
 
 static PRODUCT_ROUTES: &[(Method, &str)] = include!(concat!(env!("OUT_DIR"), "/product_routes.rs"));
 const SESSION_MAX_AGE_MS: i64 = 7_776_000_000;
@@ -216,30 +216,29 @@ impl WebSession<'_> {
             400,
             "INVALID_REQUEST",
         )?;
-        let mut init = RequestInit::new();
-        init.with_method(method);
-        if let Some(body) = body {
-            init.with_body(Some(body.to_string().into()));
-        }
-        let mut request = Request::new_with_init(&(self.a.origin.clone() + path), &init)?;
-        let h = request.headers_mut()?;
-        h.set("Content-Type", "application/json")?;
-        if let Some(token) = self.data["tokens"]["accessToken"].as_str() {
-            h.set("Authorization", &format!("Bearer {token}"))?;
-        }
-        if let Some(proof) = proof {
-            h.set("X-Auth-Initiator-Proof", proof)?;
-        }
-        if let Some(key) = key {
-            h.set("Idempotency-Key", key)?;
-        }
-        let url = request.url()?;
-        let path = url.path();
-        let method = request.method();
+        let (path, query) = path.split_once('?').unwrap_or((path, ""));
         let log = self.command_log(path, &method);
-        let mut command = self.command(request, &log)?;
-        let method = command.request.method();
-        let result = super::v1::execute(&mut command, path, method).await;
+        let command = self.command(
+            OperationInput {
+                query: query.to_owned(),
+                authorization: self.data["tokens"]["accessToken"]
+                    .as_str()
+                    .map_or_else(String::new, |token| format!("Bearer {token}")),
+                initiator_proof: proof.unwrap_or_default().to_owned(),
+                idempotency_key: key.unwrap_or_default().to_owned(),
+                ..OperationInput::default()
+            },
+            &log,
+        );
+        let result = super::v1::execute(
+            &command,
+            super::v1::CallInput {
+                path,
+                method: method.clone(),
+                body: body.unwrap_or_else(|| json!({})),
+            },
+        )
+        .await;
         self.command_result(&command, &log, result)
     }
 
@@ -253,24 +252,12 @@ impl WebSession<'_> {
         }
     }
 
-    fn command(&self, request: Request, log: &RequestLog<'_>) -> Result<Auth> {
-        let mut command = Auth::new(request, &self.a.env, log, Some(self.a.client_ip.clone()))
-            .map_err(|failure| {
-                log_failure(
-                    log.env,
-                    log.id,
-                    log.route,
-                    "initialize",
-                    &failure,
-                    log.started,
-                );
-                central_failure(failure.status, failure.code)
-            })?;
-        command.s.commit_fence = self.fence_bindings().map(|bindings| CommitFence {
+    fn command(&self, input: OperationInput, log: &RequestLog<'_>) -> Auth {
+        let fence = self.fence_bindings().map(|bindings| CommitFence {
             condition: CURRENT_BROWSER_SESSION,
             bindings,
         });
-        Ok(command)
+        self.a.for_operation(input, log.route, fence)
     }
 
     fn command_result<T>(
@@ -289,12 +276,14 @@ impl WebSession<'_> {
     }
 
     pub(crate) async fn login(&self, path: &str, body: &Value, proof: &str) -> Result<Value> {
-        let mut request = Request::new(&format!("{}{}", self.a.origin, path), Method::Post)?;
-        request
-            .headers_mut()?
-            .set("X-Auth-Initiator-Proof", proof)?;
         let log = self.command_log(path, &Method::Post);
-        let command = self.command(request, &log)?;
+        let command = self.command(
+            OperationInput {
+                initiator_proof: proof.to_owned(),
+                ..OperationInput::default()
+            },
+            &log,
+        );
         let result = crate::auth::login_commands::execute(
             &command,
             path,
@@ -412,8 +401,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         400,
         "INVALID_REQUEST",
     )?;
-    let upstream = upstream::Target::parse(path, || a.request.inner().method())?;
-    let request_url = a.request.url()?;
+    let raw_method = a.http()?.inner().method();
+    let upstream = upstream::Target::parse(path, || raw_method.clone())?;
+    let request_url = a.http()?.url()?;
     if path != "/account/callback"
         && (path == "/api/account/session"
             || path.starts_with("/api/account/auth/")
@@ -425,7 +415,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     }
     if path == "/api/account/login-sessions" {
         ensure(
-            a.request.inner().method() == "GET",
+            a.http()?.inner().method() == "GET",
             405,
             "METHOD_NOT_ALLOWED",
         )?;
@@ -450,7 +440,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     )?;
     if path == "/api/account/auth/capabilities" {
         ensure(
-            a.request.inner().method() == "GET",
+            a.http()?.inner().method() == "GET",
             405,
             "METHOD_NOT_ALLOWED",
         )?;
@@ -762,7 +752,7 @@ async fn write_input(
             .map_or(Value::Null, Value::String));
     }
     ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
-    let body = serde_json::from_str(&bounded(&mut a.request, 220000).await?)?;
+    let body = serde_json::from_str(&bounded(a.http_mut()?, 220000).await?)?;
     if logout {
         shape("ProductLogoutRequest", &body)?;
         ensure(
@@ -872,7 +862,7 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
             .await;
     }
     // Only declared noncredential product operations are forwarded. No user-selected URL or headers.
-    let url = s.a.request.url()?;
+    let url = s.a.http()?.url()?;
     if is_product_route(path, &method) {
         let target = product_target(path, url.query());
         let key = s.a.header("Idempotency-Key");

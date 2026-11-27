@@ -33,7 +33,7 @@ pub(crate) fn available(a: &Auth, c: &Value) -> Vec<&'static str> {
 }
 pub async fn route(a: &Auth, method: Method) -> Result<Value> {
     ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
-    let query = form(a.request.url()?.query().unwrap_or_default())?;
+    let query = form(&a.query()?)?;
     shape("LoginCapabilitiesQuery", &query)?;
     let c = client(a, &text(&query, "clientId")).await?;
     describe(a, &c)

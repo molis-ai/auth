@@ -68,7 +68,12 @@ CREATE TABLE auth_client (
  UNIQUE(client_id,environment_id)
 );
 
-CREATE TABLE auth_write_guard (id TEXT PRIMARY KEY, ok INTEGER NOT NULL CHECK(ok=1));
+CREATE TABLE auth_write_guard (
+ id TEXT PRIMARY KEY,
+ ok INTEGER NOT NULL,
+ CONSTRAINT auth_write_authorized CHECK(ok<>-1),
+ CHECK(ok=1)
+);
 
 CREATE TABLE auth_environment (
  id TEXT PRIMARY KEY NOT NULL,

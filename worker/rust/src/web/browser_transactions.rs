@@ -35,7 +35,7 @@ impl BrowserTransactions {
             handles.push(handle.to_owned());
         }
         if path == "/account/callback" {
-            let query = form(a.request.url()?.query().unwrap_or_default())?;
+            let query = form(a.http()?.url()?.query().unwrap_or_default())?;
             if let Some(handle) = query["transactionId"].as_str().filter(|id| uuid_shape(id)) {
                 handles.push(handle.to_owned());
             }

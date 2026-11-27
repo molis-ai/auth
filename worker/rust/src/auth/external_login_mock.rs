@@ -71,7 +71,7 @@ pub(super) async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<R
             415,
             "INVALID_REQUEST",
         )?;
-        form(&bounded(&mut a.request, 4096).await?)?
+        form(&bounded(a.http_mut()?, 4096).await?)?
     };
     fields(
         &b,

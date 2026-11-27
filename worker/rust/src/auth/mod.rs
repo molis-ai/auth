@@ -21,7 +21,7 @@ pub(crate) fn external_route(path: &str) -> bool {
         || (cfg!(feature = "mock-provider") && path.starts_with("/api/v1/auth/mock/"))
 }
 
-pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
+pub(crate) async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<Value> {
     if path == "/api/v1/auth/capabilities" {
         return login_capabilities::route(a, method).await;
     }
@@ -31,10 +31,10 @@ pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Va
             | "/api/v1/auth/login/code"
             | "/api/v1/auth/verification-codes"
     ) {
-        return login_commands::route(a, path, method).await;
+        return login_commands::route(a, path, method, body).await;
     }
     if path == "/api/v1/auth/transactions" || path.starts_with("/api/v1/auth/transactions/") {
-        return registration::route(a, path, method).await;
+        return registration::route(a, path, method, body).await;
     }
-    login_sessions::route(a, path, method).await
+    login_sessions::route(a, path, method, body).await
 }

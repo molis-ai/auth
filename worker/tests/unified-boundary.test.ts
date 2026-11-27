@@ -33,8 +33,27 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
       '/api/v1/platform/audit-events',
     ]) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+        const declaredWrite =
+          method === 'POST' && ['/api/v1/tenants', '/api/v1/platform/tenants'].includes(path)
         const response = await proxy.fetch(new Request(origin + path, { method }))
-        assert.equal(response.status, 401, method + ' ' + path)
+        assert.equal(response.status, declaredWrite ? 400 : 401, method + ' ' + path)
+        if (declaredWrite) {
+          const valid = await proxy.fetch(
+            new Request(origin + path, {
+              method,
+              headers: {
+                'Content-Type': 'Application/JSON; charset=utf-8',
+                'Idempotency-Key': crypto.randomUUID(),
+              },
+              body: JSON.stringify(
+                path.startsWith('/api/v1/platform/')
+                  ? { name: 'Test', ownerUserId: crypto.randomUUID(), reason: 'test' }
+                  : { name: 'Test' },
+              ),
+            }),
+          )
+          assert.equal(valid.status, 401, method + ' ' + path)
+        }
       }
     }
     for (const path of [

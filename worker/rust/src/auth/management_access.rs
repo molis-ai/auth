@@ -17,6 +17,7 @@ pub(crate) struct Context {
     pub member: Value,
     pub record: Value,
     pub from: Value,
+    pub target_permission: Value,
     pub to: Value,
     pub permission: Value,
     pub guards: Vec<D1PreparedStatement>,
@@ -28,6 +29,7 @@ impl Context {
             member: Value::Null,
             record: Value::Null,
             from: Value::Null,
+            target_permission: Value::Null,
             to: Value::Null,
             permission: Value::Null,
             guards: vec![],
@@ -38,6 +40,7 @@ pub(crate) struct Action {
     pub op: &'static str,
     pub path: String,
     pub tenant_id: String,
+    pub capability: Option<String>,
     pub id: String,
     pub schema: Option<&'static str>,
 }
@@ -139,15 +142,7 @@ pub async fn replay(
     key: &str,
 ) -> Result<Option<Value>> {
     let row=s.a.s.one("SELECT * FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at>?",vec![s.s["user_id"].clone(),s.s["client_id"].clone(),action.op.into(),action.path.clone().into(),key.into(),now().into()]).await?;
-    if row.is_null() {
-        return Ok(None);
-    }
-    ensure(
-        row["request_hash"] == hash(&b.to_string()),
-        409,
-        "IDEMPOTENCY_CONFLICT",
-    )?;
-    Ok(Some(parsed(&row, "response_json")?["data"].clone()))
+    Ok(MutationRunner::replay_data(&row, b)?.map(|mut data| data["data"].take()))
 }
 pub fn receipt(
     s: &Service<'_>,
@@ -167,6 +162,112 @@ pub fn receipt(
     ];
     Ok(vec![s.a.s.statement("DELETE FROM auth_management_result WHERE actor_user_id=? AND client_id=? AND operation=? AND target=? AND idempotency_key_hash=? AND expires_at<=?",args)?,
         s.a.s.statement("INSERT INTO auth_management_result(actor_user_id,client_id,operation,target,idempotency_key_hash,request_hash,response_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s.s["user_id"].clone(),s.s["client_id"].clone(),action.op.into(),action.path.clone().into(),key.into(),hash(&b.to_string()).into(),json!({"data":result}).to_string().into(),n.into(),(n+ttl("idempotencyTtlSeconds")).into()])?])
+}
+pub(crate) struct PreparedMutation {
+    pub result: Value,
+    pub writes: Vec<D1PreparedStatement>,
+    pub audit: D1PreparedStatement,
+    pub receipt: Vec<D1PreparedStatement>,
+}
+
+pub(crate) struct MutationRunner<'a> {
+    a: &'a Auth,
+    pub key: String,
+}
+
+impl<'a> MutationRunner<'a> {
+    pub(crate) fn new(a: &'a Auth) -> Result<Self> {
+        Ok(Self { a, key: key(a)? })
+    }
+
+    pub(crate) async fn load(
+        &self,
+        op: &str,
+        target: &str,
+        current_account: bool,
+        additional: Vec<D1PreparedStatement>,
+    ) -> Result<(Service<'a>, Value, Vec<Vec<Value>>)> {
+        let raw = self.a.header("Authorization");
+        let (digest, credential) =
+            login_sessions::active_lookup(self.a, login_sessions::bearer(&raw))?;
+        let receipt = self.a.s.statement(
+            "SELECT r.* FROM auth_management_result r
+             JOIN auth_login_session s ON s.user_id=r.actor_user_id AND s.client_id=r.client_id
+             JOIN auth_login_access_token t ON t.login_session_id=s.id
+             WHERE t.token_hash=? AND r.operation=?
+               AND r.target=CASE WHEN ? THEN s.user_id ELSE ? END
+               AND r.idempotency_key_hash=? AND r.expires_at>?",
+            vec![
+                digest.clone().into(),
+                op.into(),
+                current_account.into(),
+                target.into(),
+                self.key.clone().into(),
+                now().into(),
+            ],
+        )?;
+        let mut statements = vec![credential, receipt];
+        statements.extend(additional);
+        let mut rows = self.a.s.batch_read(statements).await?.into_iter();
+        let credentials = first(&mut rows)?;
+        let (s, c) =
+            login_sessions::active_result(self.a, credentials, digest, &self.a.header("Origin"))?;
+        Ok((
+            Service { a: self.a, s, c },
+            first(&mut rows)?,
+            rows.collect(),
+        ))
+    }
+
+    pub(crate) fn replay_data(row: &Value, body: &Value) -> Result<Option<Value>> {
+        if row.is_null() {
+            return Ok(None);
+        }
+        ensure(
+            row["request_hash"] == hash(&body.to_string()),
+            409,
+            "IDEMPOTENCY_CONFLICT",
+        )?;
+        Ok(Some(parsed(row, "response_json")?))
+    }
+
+    pub(crate) async fn run(
+        &self,
+        prepare: impl Future<Output = Result<PreparedMutation>>,
+        replay_conflict: impl AsyncFnOnce() -> Result<Option<Value>>,
+        duplicate_code: &'static str,
+    ) -> Result<Value> {
+        let result: Result<Value> = async {
+            let PreparedMutation {
+                result,
+                mut writes,
+                audit,
+                receipt,
+            } = prepare.await?;
+            writes.push(audit);
+            writes.extend(receipt);
+            self.a.s.batch(writes, "VERSION_CONFLICT").await?;
+            Ok(result)
+        }
+        .await;
+        match result {
+            Err(failure) if matches!(failure.code, "VERSION_CONFLICT" | "ALREADY_EXISTS") => {
+                if let Some(replayed) = replay_conflict().await? {
+                    Ok(replayed)
+                } else {
+                    Err(Failure {
+                        status: 409,
+                        code: if failure.code == "ALREADY_EXISTS" {
+                            duplicate_code
+                        } else {
+                            failure.code
+                        },
+                    })
+                }
+            }
+            result => result,
+        }
+    }
 }
 pub const ACTOR: &str = "(SELECT user_id FROM actor)";
 

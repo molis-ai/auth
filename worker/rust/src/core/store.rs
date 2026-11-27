@@ -1,5 +1,6 @@
 use crate::{core::http::*, core::security::uuid};
 use serde_json::Value;
+use std::rc::Rc;
 use wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, D1Result};
 
@@ -9,7 +10,7 @@ pub(crate) struct CommitFence {
 }
 
 pub struct Store {
-    pub db: D1Database,
+    db: Rc<D1Database>,
     pub(crate) commit_fence: Option<CommitFence>,
     log_env: &'static str,
     request_id: String,
@@ -18,11 +19,24 @@ pub struct Store {
 impl Store {
     pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
-            db,
+            db: Rc::new(db),
             commit_fence: None,
             log_env: log.env,
             request_id: log.id.to_owned(),
             route: log.route,
+        }
+    }
+    pub(crate) fn for_operation(
+        &self,
+        route: &'static str,
+        commit_fence: Option<CommitFence>,
+    ) -> Self {
+        Self {
+            db: Rc::clone(&self.db),
+            commit_fence,
+            log_env: self.log_env,
+            request_id: self.request_id.clone(),
+            route,
         }
     }
     pub(crate) fn log_failure(&self, phase: &'static str, failure: &Failure, started: i64) {
@@ -92,9 +106,27 @@ impl Store {
             .map(|_| ())
             .map_err(|error| self.database_failure(error, "d1.run", started))
     }
-    pub fn guard(&self, condition: &str, mut values: Vec<Value>) -> Result<D1PreparedStatement> {
+    pub fn guard(&self, condition: &str, values: Vec<Value>) -> Result<D1PreparedStatement> {
+        self.require(condition, values, 0)
+    }
+    pub(crate) fn authorization_guard(
+        &self,
+        condition: &str,
+        values: Vec<Value>,
+    ) -> Result<D1PreparedStatement> {
+        self.require(condition, values, -1)
+    }
+    fn require(
+        &self,
+        condition: &str,
+        mut values: Vec<Value>,
+        denied: i32,
+    ) -> Result<D1PreparedStatement> {
         values.insert(0, Value::String(uuid()));
-        self.statement(&format!("INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN ({condition}) THEN 1 ELSE 0 END)"),values)
+        self.statement(
+            &format!("INSERT INTO auth_write_guard(id,ok) VALUES (?,CASE WHEN ({condition}) THEN 1 ELSE {denied} END)"),
+            values,
+        )
     }
     pub async fn batch(
         &self,
@@ -181,19 +213,26 @@ impl Store {
             Ok(results) => Ok(results),
             Err(e) => {
                 let msg = e.to_string();
-                Err(if msg.contains("CHECK constraint failed") {
-                    Failure {
-                        status: 409,
-                        code: conflict,
-                    }
-                } else if msg.contains("UNIQUE constraint failed") {
-                    Failure {
-                        status: 409,
-                        code: "ALREADY_EXISTS",
-                    }
-                } else {
-                    self.database_failure(e, "d1.batch", started)
-                })
+                Err(
+                    if msg.contains("CHECK constraint failed: auth_write_authorized") {
+                        Failure {
+                            status: 403,
+                            code: "FORBIDDEN",
+                        }
+                    } else if msg.contains("CHECK constraint failed") {
+                        Failure {
+                            status: 409,
+                            code: conflict,
+                        }
+                    } else if msg.contains("UNIQUE constraint failed") {
+                        Failure {
+                            status: 409,
+                            code: "ALREADY_EXISTS",
+                        }
+                    } else {
+                        self.database_failure(e, "d1.batch", started)
+                    },
+                )
             }
         }
     }

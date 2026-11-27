@@ -282,7 +282,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
           'PATCH',
         )
       ).status,
-      409,
+      403,
     )
     const stopped = ok(
       await call(

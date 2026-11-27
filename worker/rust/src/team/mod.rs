@@ -524,6 +524,7 @@ fn action(path: &str, method: Method) -> Result<Action> {
         tenant_id: tenant,
         id,
         schema,
+        capability: None,
     })
 }
 fn platform_tenant_page(a: &Auth) -> Result<Read> {
@@ -647,7 +648,7 @@ pub(crate) fn matches(path: &str) -> bool {
     })
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
+pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Value> {
     let action = match action(path, method) {
         Ok(action) => action,
         Err(error) => {
@@ -658,106 +659,80 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Value> {
     let Some(schema) = action.schema else {
         return read(a, &action).await;
     };
-    let (s, c) = login_sessions::active(a).await?;
-    let b = {
-        ensure(is_json_content_type(a), 400, "INVALID_REQUEST")?;
-        let b = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-        shape(schema, &b)?;
-        if b.get("reason").is_some() {
-            ensure(
-                !text(&b, "reason").trim().is_empty(),
-                400,
-                "INVALID_REQUEST",
-            )?;
+    shape(schema, &b)?;
+    if b.get("reason").is_some() {
+        ensure(
+            !text(&b, "reason").trim().is_empty(),
+            400,
+            "INVALID_REQUEST",
+        )?;
+    }
+    let runner = protocol::MutationRunner::new(a)?;
+    let (service, receipt, _) = runner.load(action.op, &action.path, false, vec![]).await?;
+    let leave = action.op == "member.leave";
+    if leave
+        && let Some(result) = membership::replay_leave(&service, &action, &b, &runner.key).await?
+    {
+        return Ok(result);
+    }
+    let ctx = match service.authorize(&action).await {
+        Ok(ctx) => ctx,
+        Err(failure) if leave && failure.status == 404 => {
+            return membership::replay_leave(&service, &action, &b, &runner.key)
+                .await?
+                .ok_or(failure);
         }
-        b
+        Err(failure) => return Err(failure),
     };
-    let mut service = Service { a, s, c };
-    let result = {
-        let key = protocol::key(a)?;
-        let mut last = Failure {
-            status: 409,
-            code: "VERSION_CONFLICT",
-        };
-        let mut output = None;
-        for attempt in 0..2 {
-            if attempt > 0 {
-                let (s, c) = login_sessions::active(a).await?;
-                service = Service { a, s, c };
-            }
-            if action.op == "member.leave"
-                && let Some(result) =
-                    crate::team::membership::replay_leave(&service, &action, &b, &key).await?
-            {
-                output = Some(result);
-                break;
-            }
-            let ctx = match service.authorize(&action).await {
-                Ok(ctx) => ctx,
-                Err(e) if action.op == "member.leave" && e.status == 404 => {
-                    // Another same-key leave can finish between the receipt read and
-                    // membership lookup. Re-read only its committed result.
-                    if let Some(result) =
-                        crate::team::membership::replay_leave(&service, &action, &b, &key).await?
-                    {
-                        output = Some(result);
-                        break;
-                    }
-                    return Err(e);
-                }
-                Err(e) => return Err(e),
-            };
-            let replay = if action.op == "member.leave" {
-                None
-            } else {
-                protocol::replay(&service, &action, &b, &key).await?
-            };
-            if let Some(result) = replay {
-                let mut w = protocol::base(&service)?;
-                w.extend(ctx.guards);
-                a.s.batch(w, "VERSION_CONFLICT").await?;
-                output = Some(result);
-                break;
-            }
-            if attempt > 0 {
-                break;
-            }
-            let attempt: Result<Value> = async {
+    if !leave
+        && let Some(result) =
+            protocol::MutationRunner::replay_data(&receipt, &b)?.map(|mut data| data["data"].take())
+    {
+        let mut guards = protocol::base(&service)?;
+        guards.extend(ctx.guards);
+        a.s.batch(guards, "VERSION_CONFLICT").await?;
+        return Ok(result);
+    }
+    runner
+        .run(
+            async {
                 let change = service.change(&action, &ctx, &b).await?;
-                let mut w = protocol::base(&service)?;
                 let management_event = audit(&service, &action, &ctx, &b, &change)?;
-                w.extend(ctx.guards);
-                w.extend(change.writes);
-                w.push(management_event);
-                w.extend(protocol::receipt(
-                    &service,
-                    &action,
-                    &b,
-                    &key,
-                    &change.result,
-                )?);
-                a.s.batch(w, "VERSION_CONFLICT").await?;
-                Ok(change.result)
-            }
-            .await;
-            match attempt {
-                Ok(v) => {
-                    output = Some(v);
-                    break;
+                let mut writes = protocol::base(&service)?;
+                writes.extend(ctx.guards);
+                writes.extend(change.writes);
+                let receipt =
+                    protocol::receipt(&service, &action, &b, &runner.key, &change.result)?;
+                Ok(protocol::PreparedMutation {
+                    result: change.result,
+                    writes,
+                    audit: management_event,
+                    receipt,
+                })
+            },
+            async || {
+                let (s, c) = login_sessions::active(a).await?;
+                let service = Service { a, s, c };
+                if leave {
+                    return crate::team::membership::replay_leave(
+                        &service,
+                        &action,
+                        &b,
+                        &runner.key,
+                    )
+                    .await;
                 }
-                Err(e) => {
-                    last = if e.code == "ALREADY_EXISTS" {
-                        Failure {
-                            status: 409,
-                            code: "VERSION_CONFLICT",
-                        }
-                    } else {
-                        e
-                    }
+                let ctx = service.authorize(&action).await?;
+                if let Some(result) = protocol::replay(&service, &action, &b, &runner.key).await? {
+                    let mut guards = protocol::base(&service)?;
+                    guards.extend(ctx.guards);
+                    a.s.batch(guards, "VERSION_CONFLICT").await?;
+                    Ok(Some(result))
+                } else {
+                    Ok(None)
                 }
-            }
-        }
-        output.ok_or(last)?
-    };
-    Ok(result)
+            },
+            "VERSION_CONFLICT",
+        )
+        .await
 }

@@ -100,7 +100,7 @@ fn redirect(url: &str) -> Result<Response> {
     Ok(r)
 }
 fn q(a: &Auth) -> Result<Value> {
-    form(a.request.url()?.query().unwrap_or_default())
+    form(a.http()?.url()?.query().unwrap_or_default())
 }
 fn target(t: &Value, result: &str) -> Result<String> {
     let mut u = Url::parse(&text(t, "redirect_uri")).map_err(|_| Failure {

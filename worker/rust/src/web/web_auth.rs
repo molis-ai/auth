@@ -71,7 +71,7 @@ pub async fn route(
     }
     if path == "/account/callback" {
         ensure(method == Method::Get, 400, "INVALID_REQUEST")?;
-        let url = s.a.request.url()?;
+        let url = s.a.http()?.url()?;
         let query = form(url.query().unwrap_or_default())?;
         shape("ProductCallbackQuery", &query)?;
         let id = text(&query, "transactionId");

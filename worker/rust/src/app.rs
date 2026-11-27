@@ -85,7 +85,10 @@ async fn handle_response(
         Err(e) => {
             log_failure(log.env, id, log.route, "dispatch", &e, log.started);
             let code = e.code;
-            let rate_limit = retry_after.map(|seconds| (&a.request, seconds));
+            let request = a
+                .http()
+                .map_err(|_| worker::Error::RustError("HTTP request missing".into()))?;
+            let rate_limit = retry_after.map(|seconds| (request, seconds));
             (
                 web::http::render_error(e, id, upstream, rate_limit)?,
                 Some(code),
@@ -98,9 +101,9 @@ async fn handle_response(
 
 async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     let path = url.path();
-    let method = a.request.method();
+    let method = a.http()?.method();
     if method == Method::Get
-        && a.request.inner().method() != "GET"
+        && a.http()?.inner().method() != "GET"
         && (path == "/api/v1"
             || path.starts_with("/api/v1/")
             || auth::sync_read_proof::matches(path)

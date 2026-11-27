@@ -121,11 +121,11 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
     let raw = bearer(&authorization);
     ensure(token(raw), 401, "UNAUTHENTICATED")?;
     ensure(
-        a.request.inner().method() == "POST",
+        a.http()?.inner().method() == "POST",
         405,
         "METHOD_NOT_ALLOWED",
     )?;
-    let body = bounded(&mut a.request, 2048).await?;
+    let body = bounded(a.http_mut()?, 2048).await?;
     ensure(body.trim_start().starts_with('{'), 400, "INVALID_REQUEST")?;
     let owner = if path == VERIFY {
         let Verify {

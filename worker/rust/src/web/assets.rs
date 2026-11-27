@@ -12,7 +12,7 @@ pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Resu
     )?;
     ensure(
         // The SDK maps unrecognized HTTP methods to GET.
-        matches!(a.request.inner().method().as_str(), "GET" | "HEAD"),
+        matches!(a.http()?.inner().method().as_str(), "GET" | "HEAD"),
         405,
         "METHOD_NOT_ALLOWED",
     )?;
