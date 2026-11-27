@@ -1,0 +1,124 @@
+.applications-layout { display:grid; grid-template-columns:248px minmax(0,1fr); min-height:100svh; }
+.applications-rail {
+  position:sticky; top:0; height:100svh; overflow-y:auto;
+  display:flex; flex-direction:column; gap:16px;
+  padding:22px 12px 24px; background:#f9f9fb; border-right:1px solid var(--line);
+}
+.apps-rail-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 10px; }
+.v2-console .applications-rail h1 { margin:0; font-size:16px; font-weight:650; color:var(--ink); }
+.apps-rail-count {
+  display:inline-flex; align-items:center; justify-content:center; height:23px; padding:0 9px; border-radius:999px;
+  background:#efeff2; border:1px solid #e2e2e7; color:var(--muted);
+  font-size:11.5px; font-weight:500; font-variant-numeric:tabular-nums;
+}
+.applications-page .app-search,
+.applications-page .app-field :is(input,select,textarea) {
+  width:100%; min-width:0; margin:0; border:1px solid #d5d5db; border-radius:8px;
+  background:var(--surface); color:var(--ink); font-size:13.5px;
+}
+.applications-page .app-search { height:34px; padding:0 10px; font-size:12.5px; }
+.applications-page .app-field :is(input,select) { height:38px; padding:0 11px; }
+.applications-page .app-field textarea {
+  min-height:82px; padding:9px 11px; resize:vertical;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:12px;
+}
+.applications-page .app-search:focus,
+.applications-page .app-field :is(input,select,textarea):focus { outline:2px solid rgba(80,104,183,.25); outline-offset:0; border-color:var(--accent); }
+.v2-console .applications-rail button.app-create-trigger {
+  width:100%; height:34px; min-height:34px; padding:0 12px; border:1px dashed #c8c8d4; border-radius:8px;
+  background:var(--surface); color:var(--ink); font-size:12.5px; font-weight:550;
+}
+.v2-console .applications-rail button.app-create-trigger:enabled:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.apps-rail-list { display:grid; gap:4px; }
+.v2-console .applications-rail button.app-rail-item {
+  display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:44px; padding:8px 10px;
+  border:1px solid transparent; border-radius:10px; background:transparent; text-align:left;
+}
+.v2-console .applications-rail button.app-rail-item:enabled:hover { background:#efeff4; }
+.v2-console .applications-rail button.app-rail-item[aria-current] {
+  background:var(--surface); border-color:var(--line); box-shadow:0 1px 2px rgba(25,25,27,.04);
+}
+.app-avatar-sm,.app-avatar-lg {
+  width:28px; height:28px; border-radius:8px; flex-shrink:0; display:grid; place-items:center;
+  background:#e6f4ee; color:#216b46; font-size:12px; font-weight:650;
+}
+.app-avatar-lg { width:42px; height:42px; border-radius:10px; font-size:17px; }
+.app-rail-body { min-width:0; flex:1; display:grid; gap:2px; }
+.app-rail-top { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
+.app-rail-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--ink); font-size:13px; font-weight:600; }
+.app-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; background:#c5c5cf; }
+.app-dot.is-on { background:#26925c; }
+.app-rail-sub { font-size:11.5px; color:var(--muted); }
+.app-list-hint { margin:0; padding:6px 10px; font-size:12.5px; color:var(--muted); }
+
+.applications-detail { min-width:0; padding:28px 36px 76px; }
+.applications-detail-inner { max-width:940px; margin:0 auto; display:grid; gap:16px; }
+.app-page-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 16px; }
+.app-head-left,.app-head-row { display:flex; align-items:center; gap:12px; min-width:0; }
+.app-head-copy { min-width:0; overflow-wrap:anywhere; }
+.app-head-row { flex-wrap:wrap; gap:8px; }
+.app-page-head h2 { margin:0; font-size:22px; font-weight:650; line-height:1.3; letter-spacing:-0.02em; }
+.app-status-pill {
+  display:inline-flex; align-items:center; gap:5px; height:23px; padding:0 9px;
+  border-radius:999px; font-size:11.5px; font-weight:500; border:1px solid transparent;
+}
+.app-status-dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.app-status-pill.is-active { background:#ecf7f0; color:#216b46; border-color:#cbe8d7; }
+.app-status-pill.is-disabled { background:#efeff2; color:var(--muted); border-color:#e2e2e7; }
+.app-head-meta {
+  margin:3px 0 0; font-size:12.5px; color:var(--muted);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+.app-settings-card {
+  min-width:0; padding:20px 22px; border:1px solid var(--line); border-radius:14px;
+  background:var(--surface); box-shadow:0 1px 2px rgba(25,25,27,.04);
+}
+.app-card-head { margin-bottom:14px; }
+.app-card-head h3 { margin:0; font-size:15px; font-weight:600; color:var(--ink); }
+.app-card-head p { margin:2px 0 0; font-size:12.5px; color:var(--muted); }
+.app-edit-card { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin:0; }
+.app-field { min-width:0; display:grid; gap:5px; margin:0; font-size:12.5px; font-weight:500; color:#3f3f46; }
+.app-name-field { flex:1 1 200px; }
+.app-status-field { flex:0 1 160px; }
+
+.v2-console .applications-page button.app-button {
+  display:inline-flex; align-items:center; justify-content:center; white-space:nowrap;
+  height:36px; min-height:36px; padding:0 14px; border:1px solid #d5d5db; border-radius:8px;
+  background:var(--surface); color:var(--ink); font-size:13px; font-weight:500;
+}
+.v2-console .applications-page button.app-button:enabled:hover { background:#fafafb; border-color:#c2c2cb; }
+.v2-console .applications-page button.app-button.is-primary { color:#fff; background:var(--primary); border-color:var(--primary); }
+.v2-console .applications-page button.app-button.is-primary:enabled:hover { background:#343439; border-color:#343439; }
+.v2-console .applications-page button.app-button.is-small { height:30px; min-height:30px; padding:0 11px; border-radius:7px; font-size:12px; }
+
+.app-operation-dialog {
+  width:min(465px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0;
+  border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--ink);
+  box-shadow:0 24px 60px rgba(25,25,27,.18);
+}
+.app-operation-dialog::backdrop { background:rgba(25,25,27,.42); backdrop-filter:blur(2px); }
+.app-operation-dialog form { margin:0; }
+.app-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:18px 22px 14px; border-bottom:1px solid var(--line); }
+.app-dialog-head h3 { margin:0; font-size:16px; font-weight:650; }
+.v2-console .applications-page button.app-dialog-close { width:30px; min-height:30px; padding:0; border:0; background:transparent; color:var(--muted); font-size:18px; }
+.v2-console .applications-page button.app-dialog-close:enabled:hover { background:#f2f2f5; color:var(--ink); }
+.app-dialog-body { display:grid; gap:14px; padding:18px 22px; }
+.app-dialog-error { margin:0; color:#a62b33; font-size:13px; overflow-wrap:anywhere; }
+.v2-console .applications-page .app-dialog-foot {
+  display:flex; justify-content:flex-end; gap:10px; margin:0; padding:14px 22px 18px;
+  border-top:1px solid var(--line); background:#fafafb;
+}
+
+@media(max-width:1080px) {
+ .applications-layout { grid-template-columns:1fr; min-height:0; }
+ .applications-rail { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:16px 20px; }
+ .apps-rail-list { grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr)); gap:6px; max-height:260px; overflow-y:auto; }
+ .applications-detail { padding:20px 20px 68px; }
+}
+@media(max-width:640px) {
+ .app-settings-card { padding:16px; }
+ .applications-page .app-search,.applications-page .app-field :is(input,select,textarea) { min-height:44px; font-size:16px; }
+ .v2-console .applications-page button.app-button,.v2-console .applications-page button.app-button.is-small,
+ .v2-console .applications-page button.app-dialog-close,.v2-console .applications-rail button.app-create-trigger { min-height:44px; }
+ .v2-console .applications-page button.app-dialog-close { width:44px; }
+}
