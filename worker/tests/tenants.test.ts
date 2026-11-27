@@ -1759,10 +1759,364 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.ok(
           (
             await walk('/tenants/' + focus.tenantId + '/audit-events', owner, [
-              'ix_management_audit_tenant_id',
+              'ix_management_audit_tenant',
             ])
           ).length >= 2,
         )
+      },
+    )
+    await suite.test(
+      'platform team governance projects verified users, commits audited changes and scopes time cursors',
+      async () => {
+        for (const scope of [
+          'AUDIT_READ',
+          'USER_READ',
+          'USER_STATUS',
+          'USER_EMAIL_WRITE',
+          'PLATFORM_PERMISSION_WRITE',
+          'APPLICATION_WRITE',
+          'CLIENT_WRITE',
+        ])
+          await permission(platform, scope)
+        const initialOwner = await signup('qa-governance-owner@example.test', true, true)
+        const tenantReader = await signup('+8613800000111')
+        const newOwner = await signup('+8613800000112')
+        const accountSubject = await signup('+8613800000113')
+        await permission(tenantReader, 'TENANT_READ')
+        const created = await call(
+          '/platform/tenants',
+          {
+            name: 'Platform Governance',
+            ownerUserId: initialOwner.userId,
+            reason: '  Governance test: existing owner  ',
+          },
+          platform,
+        )
+        const team = ok(created, 'PlatformTenantView')
+        const path = '/platform/tenants/' + team.tenantId
+        const auditPath = '/platform/audit-events'
+        const tenantAuditPath = '/tenants/' + team.tenantId + '/audit-events'
+        const filters = new URLSearchParams({
+          tenantId: team.tenantId,
+          category: 'tenant',
+          result: 'SUCCEEDED',
+          q: 'governance',
+          limit: '2',
+        })
+        const logs = async (query: URLSearchParams, cursor?: string) => {
+          const params = new URLSearchParams(query)
+          if (cursor) params.set('cursor', cursor)
+          return call(auditPath + '?' + params, undefined, platform)
+        }
+
+        const detail = ok(await call(path, undefined, tenantReader), 'PlatformTenantView')
+        assert.equal(detail.memberCount, 1)
+        assert.equal(detail.ownerUserId, initialOwner.userId)
+        assert.equal(detail.ownerEmail, 'qa-governance-owner@example.test')
+        assert.ok(detail.ownerDisplayName)
+        assert.match(detail.createdAt, /Z$/)
+        assert.equal(detail.updatedAt, detail.createdAt)
+        assert.equal(
+          ok(
+            await call(
+              '/platform/tenants?limit=100&status=ACTIVE&q=GOVERNANCE',
+              undefined,
+              tenantReader,
+            ),
+            'PlatformTenantViewPage',
+          ).items[0].tenantId,
+          team.tenantId,
+        )
+        assert.deepEqual(
+          ok(await call('/platform/tenants?status=DISABLED&q=GOVERNANCE', undefined, tenantReader))
+            .items,
+          [],
+        )
+        assert.equal(
+          (await call('/platform/users?status=ACTIVE&q=governance-owner', undefined, tenantReader))
+            .status,
+          403,
+        )
+        assert.deepEqual(
+          ok(
+            await call('/platform/users?status=ACTIVE&q=GOVERNANCE-OWNER', undefined, platform),
+            'PlatformUserPage',
+          ).items.map((row: any) => row.userId),
+          [initialOwner.userId],
+        )
+        assert.equal((await call(path + '/members', undefined, initialOwner)).status, 403)
+        const directory = ok(
+          await call(path + '/members', undefined, tenantReader),
+          'MembershipPage',
+        ).items
+        assert.equal(directory.length, 1)
+        assert.equal(directory[0].email, detail.ownerEmail)
+
+        const disabled = ok(
+          await call(
+            path + '/disable',
+            { expectedVersion: 0, reason: 'Governance freeze' },
+            platform,
+          ),
+        )
+        const enabled = ok(
+          await call(
+            path + '/enable',
+            { expectedVersion: disabled.version, reason: 'Governance restore' },
+            platform,
+          ),
+        )
+        const transfer = {
+          newOwnerUserId: newOwner.userId,
+          expectedVersion: enabled.version,
+          reason: 'Governance recovery',
+        }
+        assert.equal((await call(path + '/transfer-owner', transfer, tenantReader)).status, 403)
+        assert.equal((await call(path + '/transfer-owner', transfer, platform, '')).status, 400)
+        const key = secret()
+        await db
+          .prepare(
+            "CREATE TRIGGER fail_team_audit BEFORE INSERT ON auth_management_audit WHEN NEW.operation='tenant.platform-transfer-owner' BEGIN SELECT RAISE(ABORT,'Injected audit failure'); END",
+          )
+          .run()
+        try {
+          assert.equal((await call(path + '/transfer-owner', transfer, platform, key)).status, 503)
+          assert.equal(
+            ok(await call(path, undefined, tenantReader)).ownerUserId,
+            initialOwner.userId,
+          )
+          assert.deepEqual(
+            ok(await call(path + '/members', undefined, tenantReader)).items,
+            directory,
+          )
+        } finally {
+          await db.prepare('DROP TRIGGER fail_team_audit').run()
+        }
+        const transferred = ok(
+          await call(path + '/transfer-owner', transfer, platform, key),
+          'PlatformTenantView',
+        )
+        assert.equal(transferred.ownerUserId, newOwner.userId)
+        assert.equal(transferred.version, enabled.version + 1)
+        assert.deepEqual(
+          ok(await call(path + '/transfer-owner', transfer, platform, key)),
+          transferred,
+        )
+        assert.equal(
+          (await call(path + '/transfer-owner', transfer, platform)).error.code,
+          'VERSION_CONFLICT',
+        )
+        const after = ok(
+          await call(path + '/members', undefined, tenantReader),
+          'MembershipPage',
+        ).items
+        assert.equal(after.find((row: any) => row.userId === initialOwner.userId).role, 'ADMIN')
+        assert.equal(after.find((row: any) => row.userId === newOwner.userId).role, 'OWNER')
+
+        const pending = ok(
+          await call(
+            '/tenants/' + team.tenantId + '/ownership-transfers',
+            {
+              targetMembershipId: directory[0].membershipId,
+              expectedVersion: transferred.version,
+            },
+            newOwner,
+          ),
+          'OwnershipTransfer',
+        )
+        const recovered = ok(
+          await call(
+            path + '/transfer-owner',
+            {
+              newOwnerUserId: initialOwner.userId,
+              expectedVersion: transferred.version,
+              reason: 'Governance restored owner',
+            },
+            platform,
+          ),
+        )
+        assert.equal(recovered.version, enabled.version + 2)
+        assert.equal(ok(await call(path, undefined, tenantReader)).memberCount, 2)
+        assert.equal(
+          (
+            await db
+              .prepare('SELECT status FROM auth_ownership_transfer WHERE id=?')
+              .bind(pending.transferId)
+              .first()
+          ).status,
+          'CANCELLED',
+        )
+        assert.equal(
+          (
+            await db
+              .prepare('SELECT entitlement_revision FROM auth_managed_tenant WHERE space_id=?')
+              .bind(team.tenantId)
+              .first()
+          ).entitlement_revision,
+          4,
+        )
+
+        const stamped = Date.now() - 10_000
+        await db
+          .prepare(
+            "UPDATE auth_management_audit SET occurred_at=? WHERE tenant_id=? AND operation='tenant.platform-transfer-owner'",
+          )
+          .bind(stamped, team.tenantId)
+          .run()
+        const expected = (
+          await db
+            .prepare(
+              "SELECT id FROM auth_management_audit WHERE tenant_id=? AND lower(reason) LIKE '%governance%' ORDER BY occurred_at DESC,id DESC",
+            )
+            .bind(team.tenantId)
+            .all()
+        ).results.map((row) => row.id)
+        const first = ok(await logs(filters), 'AuditEventPage')
+        assert.equal(first.items.length, 2)
+        const mismatch = new URLSearchParams(filters)
+        mismatch.set('q', 'other')
+        assert.equal((await logs(mismatch, first.nextCursor)).error.code, 'INVALID_REQUEST')
+        assert.equal((await logs(filters, secret())).error.code, 'INVALID_REQUEST')
+        const second = ok(await logs(filters, first.nextCursor), 'AuditEventPage')
+        const third = ok(await logs(filters, second.nextCursor), 'AuditEventPage')
+        assert.equal(third.nextCursor, null)
+        const items = [...first.items, ...second.items, ...third.items]
+        assert.equal(items.length, 5)
+        assert.deepEqual(
+          items.map((item) => item.auditEventId),
+          expected,
+        )
+        const firstWrite = items.find((item) => item.operation === 'tenant.create')
+        assert.equal(firstWrite.reason, '  Governance test: existing owner  ')
+        assert.equal(firstWrite.requestId, created.requestId)
+        assert.deepEqual(firstWrite.changes, [
+          { field: 'name', before: null, after: 'Platform Governance' },
+          { field: 'ownerUserId', before: null, after: initialOwner.userId },
+          { field: 'status', before: null, after: 'ACTIVE' },
+        ])
+        assert.ok(
+          items
+            .find((item) => item.operation === 'tenant.disable')
+            .changes.some(
+              (change: any) =>
+                change.field === 'status' &&
+                change.before === 'ACTIVE' &&
+                change.after === 'DISABLED',
+            ),
+        )
+        const dated = new URLSearchParams(filters)
+        dated.set('from', new Date(stamped).toISOString().replace('Z', '+00:00'))
+        dated.set('to', new Date(stamped).toISOString())
+        assert.ok(
+          ok(await logs(dated)).items.every(
+            (item: any) => item.occurredAt === new Date(stamped).toISOString(),
+          ),
+        )
+        assert.equal(ok(await logs(dated)).items.length, 2)
+        dated.set('from', '2026-02-31T00:00:00Z')
+        assert.equal((await logs(dated)).error.code, 'INVALID_REQUEST')
+        assert.ok(
+          ok(await call(tenantAuditPath, undefined, initialOwner)).items.every(
+            (item: any) => item.tenantId === team.tenantId,
+          ),
+        )
+
+        const patch = (path: string, body: unknown) => call(path, body, platform, secret(), 'PATCH')
+        const userPath = '/platform/users/' + accountSubject.userId
+        const user = ok(await call(userPath, undefined, platform))
+        const updated = ok(
+          await patch(userPath + '/email', {
+            email: 'governance-subject@example.test',
+            expectedVersion: user.version,
+            reason: 'Governance verified email',
+          }),
+        )
+        const status = ok(
+          await patch(userPath + '/status', {
+            status: 'DISABLED',
+            expectedVersion: updated.version,
+            reason: 'Governance user freeze',
+          }),
+        )
+        ok(
+          await patch(userPath + '/status', {
+            status: 'ACTIVE',
+            expectedVersion: status.version,
+            reason: 'Governance user restore',
+          }),
+        )
+        ok(
+          await patch(userPath + '/permissions/USER_READ', {
+            enabled: true,
+            expectedVersion: null,
+            reason: 'Governance grant',
+          }),
+        )
+        const app = ok(await call('/platform/applications', { name: 'Governance app' }, platform))
+        const client = ok(
+          await call(
+            '/platform/applications/' + app.applicationId + '/clients',
+            {
+              clientId: 'governance-audit-client',
+              clientType: 'WEB',
+              environmentId: 'unified-local',
+              allowedOrigins: [origin],
+              redirectAllowlist: [origin + '/account/callback'],
+            },
+            platform,
+          ),
+        )
+        const account = ok(
+          await call(auditPath + '?category=account&q=Governance&limit=20', undefined, platform),
+          'AuditEventPage',
+        ).items
+        assert.equal(account.length, 4)
+        assert.deepEqual(account.find((item: any) => item.operation === 'user.email').changes, [
+          { field: 'email', before: null, after: 'governance-subject@example.test' },
+        ])
+        assert.ok(
+          account
+            .find((item: any) => item.operation === 'permission.set')
+            .changes.some(
+              (change: any) => change.field === 'capability' && change.after === 'USER_READ',
+            ),
+        )
+        const applicationEvents = ok(
+          await call(
+            auditPath + '?category=app&actorUserId=' + platform.userId,
+            undefined,
+            platform,
+          ),
+        ).items
+        assert.ok(
+          applicationEvents.some(
+            (item: any) =>
+              item.operation === 'application.create' && item.target.id === app.applicationId,
+          ),
+        )
+        const clientEvent = applicationEvents.find(
+          (item: any) => item.operation === 'client.create' && item.target.id === client.clientId,
+        )
+        assert.ok(clientEvent)
+        assert.deepEqual(
+          clientEvent.changes.map((change: any) => change.field).sort(),
+          [
+            'allowedOrigins',
+            'applicationId',
+            'clientType',
+            'environmentId',
+            'redirectAllowlist',
+            'status',
+          ].sort(),
+        )
+        const newest = ok(
+          await call(
+            auditPath + '?limit=1&targetId=' + client.clientId + '&operation=client.create',
+            undefined,
+            platform,
+          ),
+        ).items
+        assert.equal(newest[0].auditEventId, clientEvent.auditEventId)
       },
     )
     await suite.test(

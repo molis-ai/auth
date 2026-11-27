@@ -707,6 +707,7 @@ fn read_without_lease(path: &str) -> bool {
         "/api/account/tenants/{tenantId}",
         "/api/account/platform/tenants",
         "/api/account/platform/tenants/{tenantId}",
+        "/api/account/platform/tenants/{tenantId}/members",
         "/api/account/tenants/{tenantId}/members",
         "/api/account/tenants/{tenantId}/invitations",
         "/api/account/invitations",

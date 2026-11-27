@@ -54,12 +54,17 @@ function isConcurrentFirstPage(path: string): boolean {
   // First pages can issue a separate cursor. Only a conflict before dispatch
   // warrants retrying one.
   const query = path.indexOf("?");
-  if (query !== -1 && !/^\?limit=([1-9][0-9]?|100)$/.test(path.slice(query))) return false;
   const resource = query === -1 ? path : path.slice(0, query);
+  if (query !== -1) {
+    const params = new URLSearchParams(path.slice(query));
+    if (params.has("cursor")) return false;
+    if (!/^\/platform\/(audit-events|tenants|users)$/.test(resource) &&
+        !/^\?limit=([1-9][0-9]?|100)$/.test(path.slice(query))) return false;
+  }
   // These console collections also use web_session::read_without_lease.
   return /^\/(tenants|invitations|ownership-transfers|subscriptions|platform\/(applications|users|tenants|audit-events))$/.test(resource) ||
     /^\/tenants\/[A-Za-z0-9_-]+\/(members|invitations)$/.test(resource) ||
-    /^\/platform\/(applications\/[A-Za-z0-9_-]+\/clients|users\/[A-Za-z0-9_-]+\/permissions)$/.test(resource);
+    /^\/platform\/(applications\/[A-Za-z0-9_-]+\/clients|users\/[A-Za-z0-9_-]+\/permissions|tenants\/[A-Za-z0-9_-]+\/members)$/.test(resource);
 }
 
 function isBillingRead(path: string): boolean {

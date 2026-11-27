@@ -27,6 +27,7 @@ pub fn list(a: &Auth, action: &Action) -> Result<Read> {
         "ENDED"
     };
     Ok(Read::Page {
+        order: crate::tenants::protocol::PageOrder::Id,
         sql: format!("SELECT a.* FROM billing_seat_assignment a
                       WHERE a.tenant_id=? AND a.status=? AND (a.user_id={ACTOR} OR EXISTS(
                           SELECT 1 FROM auth_tenant_membership m WHERE m.tenant_id=a.tenant_id

@@ -268,8 +268,14 @@ test("new console collections retry only marked conflicts on their first pages",
   const resources = [
     "/tenants/t-1/members", "/tenants/t-1/invitations", "/subscriptions", "/platform/applications",
     "/platform/applications/app-1/clients", "/platform/users", "/platform/users/user-1/permissions",
+    "/platform/tenants/t-1/members", "/platform/tenants", "/platform/audit-events",
   ];
-  const paths = resources.map((path, index) => index % 2 === 0 ? path : `${path}?limit=100`);
+  const filtered = [
+    "/platform/users?status=ACTIVE&q=owner&limit=20",
+    "/platform/tenants?status=DISABLED&q=team&limit=100",
+    "/platform/audit-events?tenantId=t-1&category=tenant&limit=10",
+  ];
+  const paths = [...resources.map((path, index) => index % 2 === 0 ? path : `${path}?limit=100`), ...filtered];
   const calls = new Map<string, number>();
   const client = new AccountClient({
     origin,
@@ -299,6 +305,11 @@ test("new console collections retry only marked conflicts on their first pages",
         await assert.rejects(client.request(path), conflict);
         assert.equal(calls.get(path), 1);
       }
+    }
+    for (const path of filtered) {
+      const cursorPath = path + "&cursor=opaque";
+      await assert.rejects(client.request(cursorPath), conflict);
+      assert.equal(calls.get(cursorPath), 1);
     }
   } finally {
     client.close();

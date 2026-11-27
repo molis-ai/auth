@@ -11,6 +11,7 @@ mod contract_structure;
 mod delivery;
 mod http;
 mod identity;
+mod management_audit;
 mod password_kdf;
 mod platform;
 mod security;

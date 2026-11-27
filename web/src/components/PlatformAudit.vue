@@ -7,6 +7,7 @@ import {
   auditOperationMeta,
   formatAuditTimestamp,
   formatRelativeAuditTime,
+  platformAuditPath,
   resolveDirectoryUser,
   targetKindTone,
   type AuditCategory,
@@ -43,7 +44,9 @@ const resultFilter = ref<"ALL" | "SUCCEEDED" | "DENIED">("ALL");
 const query = ref("");
 const tenantScope = ref<string | null>(props.initialTenantScope ?? null);
 const selectedEvent = ref<AuditEvent | null>(null);
-const busy = ref(false);
+const busy = auditCollection.loading;
+const appliedQuery = ref("");
+let searchTimer: ReturnType<typeof setTimeout>;
 const message = ref("");
 
 let active = true;
@@ -51,38 +54,11 @@ let active = true;
 const usersById = computed(() => new Map(users.value.map(u => [u.userId, u])));
 const tenantNamesById = computed(() => new Map(tenants.value.map(t => [t.tenantId, t.name])));
 
-const scopedBase = computed(() => {
-  if (!tenantScope.value) return allEvents.value;
-  return allEvents.value.filter(
-    ev => ev.tenantId === tenantScope.value || ev.target?.id === tenantScope.value,
-  );
-});
-
-const filteredEvents = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  return scopedBase.value.filter(ev => {
-    const info = auditOperationMeta(ev.operation);
-    if (category.value !== "all" && info.category !== category.value) return false;
-    if (resultFilter.value !== "ALL" && ev.result !== resultFilter.value) return false;
-    if (!q) return true;
-    const actor = resolveDirectoryUser(ev.actorUserId, usersById.value, hasUserRead.value);
-    const tenantName = ev.tenantId ? (tenantNamesById.value.get(ev.tenantId) ?? "") : "";
-    return (
-      ev.auditEventId.toLowerCase().includes(q) ||
-      ev.operation.toLowerCase().includes(q) ||
-      info.label.toLowerCase().includes(q) ||
-      ev.actorUserId.toLowerCase().includes(q) ||
-      actor.primary.toLowerCase().includes(q) ||
-      ev.target.id.toLowerCase().includes(q) ||
-      ev.target.kind.toLowerCase().includes(q) ||
-      (ev.tenantId?.toLowerCase().includes(q) ?? false) ||
-      tenantName.toLowerCase().includes(q)
-    );
-  });
-});
-
-const succeededCount = computed(() => filteredEvents.value.filter(e => e.result === "SUCCEEDED").length);
-const deniedCount = computed(() => filteredEvents.value.filter(e => e.result === "DENIED").length);
+const isFiltered = computed(() => Boolean(
+  tenantScope.value || category.value !== "all" || resultFilter.value !== "ALL" || appliedQuery.value,
+));
+const succeededCount = computed(() => allEvents.value.filter(e => e.result === "SUCCEEDED").length);
+const deniedCount = computed(() => allEvents.value.filter(e => e.result === "DENIED").length);
 
 const categories: ReadonlyArray<{ id: AuditCategory; label: string }> = [
   { id: "all", label: "全部事件" },
@@ -91,11 +67,6 @@ const categories: ReadonlyArray<{ id: AuditCategory; label: string }> = [
   { id: "app", label: "应用与客户端" },
   { id: "billing", label: "订阅与目录" },
 ];
-
-function categoryCount(cat: AuditCategory): number {
-  if (cat === "all") return scopedBase.value.length;
-  return scopedBase.value.filter(ev => auditOperationMeta(ev.operation).category === cat).length;
-}
 
 function tenantLabel(tenantId: string): string {
   return tenantNamesById.value.get(tenantId) ?? tenantId;
@@ -109,6 +80,7 @@ watch(
       category.value = "all";
       resultFilter.value = "ALL";
       query.value = "";
+      appliedQuery.value = "";
     }
   },
 );
@@ -130,43 +102,19 @@ async function listAll<T>(path: string): Promise<T[]> {
 }
 
 async function load(showFeedback = false) {
-  if (busy.value) return;
-  busy.value = true;
   message.value = "";
   try {
-    await auditCollection.first("/platform/audit-events", 50);
-    if (!active) return;
-    const aux: Promise<void>[] = [];
-    if (hasUserRead.value) {
-      aux.push(
-        listAll<PlatformDirectoryUser>("/platform/users")
-          .then(list => {
-            if (active) users.value = list;
-          })
-          .catch(error => {
-            if (active) emit("expired", error);
-          }),
-      );
-    }
-    if (hasTenantRead.value) {
-      aux.push(
-        listAll<PlatformTenant>("/platform/tenants")
-          .then(list => {
-            if (active) tenants.value = list;
-          })
-          .catch(error => {
-            if (active) emit("expired", error);
-          }),
-      );
-    }
-    await Promise.all(aux);
-    if (showFeedback && active) emit("notify", "已刷新平台审计日志");
+    const loaded = await auditCollection.first(platformAuditPath({
+      category: category.value,
+      result: resultFilter.value,
+      tenantId: tenantScope.value,
+      q: appliedQuery.value,
+    }), 50);
+    if (showFeedback && loaded && active) emit("notify", "已刷新平台审计日志");
   } catch (error) {
     if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
     message.value = accountErrorMessage(error);
     emit("expired", error);
-  } finally {
-    if (active) busy.value = false;
   }
 }
 
@@ -191,11 +139,35 @@ function resetFilters() {
   resultFilter.value = "ALL";
   query.value = "";
   tenantScope.value = null;
+  appliedQuery.value = "";
 }
 
-onMounted(() => void load(false));
+watch(query, value => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { appliedQuery.value = value.trim(); }, 250);
+});
+watch([category, resultFilter, tenantScope, appliedQuery], () => {
+  auditCollection.clear();
+  selectedEvent.value = null;
+  void load();
+});
+onMounted(() => {
+  void load();
+  if (hasUserRead.value) {
+    void listAll<PlatformDirectoryUser>("/platform/users").then(list => {
+      if (active) users.value = list;
+    }).catch(error => { if (active) emit("expired", error); });
+  }
+  if (hasTenantRead.value) {
+    void listAll<PlatformTenant>("/platform/tenants").then(list => {
+      if (active) tenants.value = list;
+    }).catch(error => { if (active) emit("expired", error); });
+  }
+});
 onBeforeUnmount(() => {
   active = false;
+  clearTimeout(searchTimer);
+  auditCollection.clear();
 });
 </script>
 
@@ -207,7 +179,7 @@ onBeforeUnmount(() => {
         <div class="pa-rail-head">
           <div class="pa-rail-title-wrap">
             <h1>审计日志</h1>
-            <span class="pa-pill-count pa-num">{{ scopedBase.length }}</span>
+            <span class="pa-pill-count pa-num">{{ allEvents.length }}</span>
           </div>
         </div>
 
@@ -243,7 +215,6 @@ onBeforeUnmount(() => {
               </svg>
               <span class="pa-truncate">{{ cat.label }}</span>
             </span>
-            <span class="pa-cat-count pa-num">{{ categoryCount(cat.id) }}</span>
           </button>
         </div>
 
@@ -334,8 +305,7 @@ onBeforeUnmount(() => {
             <div class="pa-kpi-card">
               <span class="pa-kpi-label">当前匹配事件</span>
               <div class="pa-kpi-value pa-num">
-                {{ filteredEvents.length }}
-                <span class="pa-kpi-denom">/ 已加载 {{ scopedBase.length }} 条</span>
+                {{ allEvents.length }}
               </div>
               <span class="pa-kpi-sub">支持游标分页继续加载更早记录</span>
             </div>
@@ -361,10 +331,11 @@ onBeforeUnmount(() => {
                 </svg>
                 <input
                   v-model="query"
+                  maxlength="128"
                   type="search"
                   class="pa-search-input"
                   aria-label="搜索审计日志"
-                  placeholder="搜索操作类型、操作人、目标 ID、团队 ID 或事件 ID…"
+                  placeholder="搜索操作类型、操作原因或相关 ID…"
                 />
               </div>
               <div class="pa-filter-pills">
@@ -399,7 +370,7 @@ onBeforeUnmount(() => {
               <div class="pa-empty-title">正在读取平台审计日志…</div>
             </div>
 
-            <template v-else-if="filteredEvents.length">
+            <template v-else-if="allEvents.length">
               <div class="pa-table-wrap">
                 <table class="pa-table">
                   <thead>
@@ -414,7 +385,7 @@ onBeforeUnmount(() => {
                   </thead>
                   <tbody>
                     <tr
-                      v-for="ev in filteredEvents"
+                      v-for="ev in allEvents"
                       :key="ev.auditEventId"
                       :class="{ 'is-selected': selectedEvent?.auditEventId === ev.auditEventId }"
                       tabindex="0"
@@ -461,7 +432,7 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="pa-table-foot">
-                <span class="pa-num">显示 {{ filteredEvents.length }} 条记录（共加载 {{ allEvents.length }} 条）</span>
+                <span class="pa-num">已加载 {{ allEvents.length }} 条记录</span>
                 <button
                   v-if="nextCursor"
                   type="button"
@@ -469,7 +440,7 @@ onBeforeUnmount(() => {
                   :disabled="loadingMore || busy"
                   @click="loadMore"
                 >
-                  {{ loadingMore ? "正在加载…" : "加载更早日志 (cursor)" }}
+                  {{ loadingMore ? "正在加载…" : "加载更早日志" }}
                 </button>
                 <span v-else>已加载全部可用日志</span>
               </div>
@@ -482,14 +453,14 @@ onBeforeUnmount(() => {
                   <path d="M14 2v6h6" />
                 </svg>
               </div>
-              <div class="pa-empty-title">{{ allEvents.length ? "没有匹配的审计事件" : "暂无平台审计记录" }}</div>
+              <div class="pa-empty-title">{{ isFiltered ? "没有匹配的审计事件" : "暂无平台审计记录" }}</div>
               <div class="pa-empty-desc">
-                {{ allEvents.length
+                {{ isFiltered
                   ? "请调整左侧分类、结果过滤或搜索关键词。"
                   : "当管理员执行用户权限、团队生命周期、应用或订阅写操作时，日志将自动归档于此。" }}
               </div>
               <button
-                v-if="allEvents.length"
+                v-if="isFiltered"
                 type="button"
                 class="pa-btn pa-btn-secondary"
                 @click="resetFilters"
@@ -555,11 +526,6 @@ onBeforeUnmount(() => {
   font-weight: 600; box-shadow: 0 1px 2px rgba(25, 25, 27, 0.04);
 }
 .pa-cat-btn.is-active svg { opacity: 1; color: var(--accent); }
-.pa-cat-count {
-  font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
-  background: #ececf0; color: var(--muted);
-}
-.pa-cat-btn.is-active .pa-cat-count { background: var(--accent-soft); color: var(--accent); }
 
 .pa-filter-pills { display: flex; gap: 5px; flex-wrap: wrap; }
 .platform-audit-page button.pa-filter-pill {
@@ -636,7 +602,6 @@ onBeforeUnmount(() => {
 .pa-kpi-value { font-size: 19px; font-weight: 650; color: var(--ink); letter-spacing: -0.015em; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .pa-kpi-value.is-success { color: #216b46; }
 .pa-kpi-value.is-danger { color: #a62b33; }
-.pa-kpi-denom { font-size: 13px; font-weight: 500; color: #8e8e98; }
 .pa-kpi-sub { font-size: 12px; color: #8e8e98; }
 
 /* Unified Audit Table Card */

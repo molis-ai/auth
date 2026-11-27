@@ -89,6 +89,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
                 </div>
               </div>
 
+              <div v-if="event.reason" class="ad-meta-box is-full">
+                <div class="ad-meta-label">操作原因</div>
+                <div class="ad-meta-val">{{ event.reason }}</div>
+              </div>
+
+              <div v-if="event.requestId" class="ad-meta-box is-full">
+                <div class="ad-meta-label">请求追踪 ID</div>
+                <div class="ad-meta-row">
+                  <span class="ad-mono ad-meta-ink">{{ event.requestId }}</span>
+                  <button type="button" class="ad-link-btn" @click="copyId(event.requestId, '请求追踪 ID')">复制</button>
+                </div>
+              </div>
+
               <div class="ad-meta-box">
                 <div class="ad-meta-label">发生时间 (occurredAt)</div>
                 <div class="ad-meta-val ad-num">{{ formatAuditTimestamp(event.occurredAt) }}</div>

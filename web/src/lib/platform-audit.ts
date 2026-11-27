@@ -4,6 +4,21 @@ export interface PlatformTenant {
   status: string;
   ownerUserId: string;
   version: number;
+  createdAt?: string;
+  updatedAt?: string;
+  memberCount?: number;
+  ownerDisplayName?: string | null;
+  ownerEmail?: string | null;
+}
+
+export interface PlatformTenantMember {
+  membershipId: string;
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: "OWNER" | "ADMIN" | "MEMBER";
+  status: "ACTIVE";
+  version: number;
 }
 
 export interface PlatformDirectoryUser {
@@ -32,10 +47,38 @@ export interface AuditEvent {
   occurredAt: string;
   result: string;
   changes: AuditChange[] | null;
+  reason?: string | null;
+  requestId?: string;
 }
 
 export type AuditCategory = "all" | "account" | "tenant" | "app" | "billing";
 export type ResolvedAuditCategory = Exclude<AuditCategory, "all">;
+
+export function platformAuditPath(options: {
+  category?: AuditCategory;
+  result?: "ALL" | "SUCCEEDED" | "DENIED";
+  tenantId?: string | null;
+  q?: string;
+  limit?: number;
+} = {}): string {
+  const query = new URLSearchParams();
+  if (options.category && options.category !== "all") query.set("category", options.category);
+  if (options.result && options.result !== "ALL") query.set("result", options.result);
+  if (options.tenantId) query.set("tenantId", options.tenantId);
+  const keyword = options.q?.trim();
+  if (keyword) query.set("q", keyword);
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  const suffix = query.toString();
+  return suffix ? `/platform/audit-events?${suffix}` : "/platform/audit-events";
+}
+
+export function tenantOwner(tenant: PlatformTenant): ResolvedUserIdentity {
+  return {
+    primary: tenant.ownerDisplayName || tenant.ownerEmail || tenant.ownerUserId,
+    secondary: tenant.ownerEmail ?? "未绑定邮箱",
+    resolved: Boolean(tenant.ownerDisplayName || tenant.ownerEmail),
+  };
+}
 
 export interface AuditOperationMeta {
   label: string;
@@ -53,6 +96,7 @@ const OPERATION_META: Record<string, AuditOperationMeta> = {
   "tenant.self-create": { label: "自助创建团队", category: "tenant" },
   "tenant.update": { label: "更新团队信息", category: "tenant" },
   "tenant.disable": { label: "停用团队", category: "tenant" },
+  "tenant.platform-transfer-owner": { label: "强制移交所有权", category: "tenant" },
   "tenant.enable": { label: "恢复启用团队", category: "tenant" },
   "member.role": { label: "变更成员角色", category: "tenant" },
   "member.remove": { label: "移除团队成员", category: "tenant" },
@@ -61,6 +105,7 @@ const OPERATION_META: Record<string, AuditOperationMeta> = {
   "invitation.accept": { label: "接受团队邀请", category: "tenant" },
   "invitation.decline": { label: "拒绝团队邀请", category: "tenant" },
   "invitation.revoke": { label: "撤销团队邀请", category: "tenant" },
+  "transfer.create": { label: "发起所有权移交", category: "tenant" },
   "transfer.initiate": { label: "发起所有权移交", category: "tenant" },
   "transfer.accept": { label: "确认所有权移交", category: "tenant" },
   "transfer.cancel": { label: "取消所有权移交", category: "tenant" },

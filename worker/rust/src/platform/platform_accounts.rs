@@ -1,8 +1,9 @@
 //! V2 user availability and explicit platform grants.
 use crate::{
     http::*,
+    identity::Auth,
     security::uuid,
-    tenants::protocol::{Lookup, Read},
+    tenants::protocol::{Lookup, PageFilters, PageOrder, Read},
     tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
@@ -101,6 +102,12 @@ fn user_guard(s: &Service<'_>, row: &Value) -> Result<worker::D1PreparedStatemen
     )
 }
 
+pub fn user_page(a: &Auth) -> Result<Read> {
+    let mut filters = PageFilters::parse(a, &["status", "q"])?;
+    filters.status()?;
+    filters.search(&["display_name", "email", "id"])?;
+    Ok(filters.page(USERS, |row| Ok(user_view(row)), PageOrder::Id))
+}
 pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
     let user = || Lookup {
         sql: format!("{USERS} WHERE u.id=?"),
@@ -108,7 +115,6 @@ pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
         guard: Some(user_guard),
     };
     let (lookup, plan) = match action.op {
-        "user.list" => (None, Read::page(USERS, vec![], |row| Ok(user_view(row)))),
         "user.get" => (Some(user()), Read::Detail(|ctx| Ok(user_view(&ctx.record)))),
         "permission.list" => (
             Some(user()),

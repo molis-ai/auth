@@ -9,12 +9,15 @@ import {
   copyToClipboard,
   formatAuditTimestamp,
   formatRelativeAuditTime,
+  platformAuditPath,
+  tenantOwner,
   resolveDirectoryUser,
   type AuditEvent,
-  type PlatformDirectoryUser,
   type PlatformTenant,
+  type PlatformTenantMember,
 } from "../lib/platform-audit.ts";
 import AuditEventDrawer from "./AuditEventDrawer.vue";
+import PlatformOwnerPicker from "./PlatformOwnerPicker.vue";
 
 const props = defineProps<{
   client: AccountClient;
@@ -39,7 +42,18 @@ const tenants = tenantCollection.items;
 const nextCursor = tenantCollection.nextCursor;
 const loadingMore = computed(() => tenantCollection.loading.value && tenants.value.length > 0);
 
-const users = ref<PlatformDirectoryUser[]>([]);
+const memberCollection = cursorCollection<PlatformTenantMember>(props.client);
+const members = memberCollection.items;
+const membersLoading = memberCollection.loading;
+const memberCursor = memberCollection.nextCursor;
+const detail = ref<PlatformTenant>();
+const detailRequested = ref(Boolean(props.initialTenantId));
+const directoryLoading = tenantCollection.loading;
+const appliedSearch = ref("");
+let searchTimer: ReturnType<typeof setTimeout>;
+let detailGeneration = 0;
+let scopedGeneration = 0;
+let scopeRequest = Promise.resolve();
 const auditEvents = ref<AuditEvent[]>([]);
 const selectedTenantId = ref(props.initialTenantId ?? "");
 const search = ref("");
@@ -51,9 +65,8 @@ const activeAuditEvent = ref<AuditEvent | null>(null);
 // Create Team modal state
 const createDialog = ref<HTMLDialogElement>();
 const createName = ref("");
-const createOwnerSelect = ref("");
-const createOwnerManual = ref("");
-const ownerManualMode = ref(false);
+const createOwner = ref("");
+const createOpen = ref(false);
 const createReason = ref("");
 const createError = ref("");
 
@@ -63,62 +76,50 @@ const statusMode = ref<"disable" | "enable">("disable");
 const statusTarget = ref<PlatformTenant>();
 const statusReason = ref("");
 const statusError = ref("");
+const transferDialog = ref<HTMLDialogElement>();
+const transferTarget = ref<PlatformTenant>();
+const transferOwner = ref("");
+const transferReason = ref("");
+const transferError = ref("");
 
 let active = true;
 
-const usersById = computed(() => new Map(users.value.map(user => [user.userId, user])));
-const activeDirectoryUsers = computed(() => users.value.filter(user => user.status === "ACTIVE"));
-const tenantNamesById = computed(() => new Map(tenants.value.map(t => [t.tenantId, t.name])));
-
-const activeCount = computed(() => tenants.value.filter(t => t.status === "ACTIVE").length);
-const disabledCount = computed(() => tenants.value.filter(t => t.status === "DISABLED").length);
-
-const filteredTenants = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  return tenants.value.filter(t => {
-    if (statusFilter.value !== "ALL" && t.status !== statusFilter.value) return false;
-    if (!q) return true;
-    const owner = resolveDirectoryUser(t.ownerUserId, usersById.value, hasUserRead.value);
-    return (
-      t.name.toLowerCase().includes(q) ||
-      t.tenantId.toLowerCase().includes(q) ||
-      t.ownerUserId.toLowerCase().includes(q) ||
-      owner.primary.toLowerCase().includes(q) ||
-      owner.secondary.toLowerCase().includes(q)
-    );
-  });
+const usersById = computed(() => new Map(members.value.map(member => [member.userId, member])));
+const tenantNamesById = computed(() => {
+  const names = new Map(tenants.value.map(team => [team.tenantId, team.name]));
+  if (detail.value) names.set(detail.value.tenantId, detail.value.name);
+  return names;
 });
-
-const selectedTenant = computed<PlatformTenant | null>(() => {
-  const inFiltered = filteredTenants.value.find(t => t.tenantId === selectedTenantId.value);
-  if (inFiltered) return inFiltered;
-  const inAll = tenants.value.find(t => t.tenantId === selectedTenantId.value);
-  if (inAll && statusFilter.value === "ALL" && !search.value.trim()) return inAll;
-  return filteredTenants.value[0] ?? null;
-});
-
-const selectedOwner = computed(() =>
-  selectedTenant.value
-    ? resolveDirectoryUser(selectedTenant.value.ownerUserId, usersById.value, hasUserRead.value)
-    : null,
+const hasFilters = computed(() => statusFilter.value !== "ALL" || Boolean(appliedSearch.value));
+const selectedTenant = computed(() =>
+  tenants.value.find(team => team.tenantId === selectedTenantId.value)
+    ?? (detail.value?.tenantId === selectedTenantId.value ? detail.value : undefined)
+    ?? (detailRequested.value ? null : tenants.value[0] ?? null),
 );
-
-const relatedAudits = computed(() => {
-  const current = selectedTenant.value;
-  if (!current || !hasAuditRead.value) return [];
-  return auditEvents.value.filter(
-    ev => ev.tenantId === current.tenantId || ev.target?.id === current.tenantId,
-  );
-});
-
+const selectedOwner = computed(() => selectedTenant.value ? tenantOwner(selectedTenant.value) : null);
+const relatedAudits = auditEvents;
 const latestRelatedAudit = computed(() => relatedAudits.value[0] ?? null);
+const roleLabel: Record<PlatformTenantMember["role"], string> = {
+  OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员",
+};
 
-watch(
-  () => props.initialTenantId,
-  tenantId => {
-    if (tenantId) selectedTenantId.value = tenantId;
-  },
-);
+function teamPath(tenantId: string): string {
+  return `/platform/tenants/${encodeURIComponent(tenantId)}`;
+}
+
+async function loadDetail(tenantId: string) {
+  const generation = ++detailGeneration;
+  const team = await props.client.request<PlatformTenant>(teamPath(tenantId));
+  if (active && generation === detailGeneration && selectedTenantId.value === tenantId) detail.value = team;
+}
+
+watch(() => props.initialTenantId, tenantId => {
+  if (!tenantId) return;
+  detailRequested.value = true;
+  selectedTenantId.value = tenantId;
+  detail.value = undefined;
+  void loadDetail(tenantId).catch(reportError);
+});
 
 async function run(task: () => Promise<void>, errorTarget = message) {
   if (busy.value) return;
@@ -135,79 +136,66 @@ async function run(task: () => Promise<void>, errorTarget = message) {
   }
 }
 
-async function listAll<T>(path: string): Promise<T[]> {
-  const values: T[] = [];
-  let cursor: string | null = null;
-  const seen = new Set<string>();
-  do {
-    const page: { items: T[]; nextCursor: string | null } = await props.client.request(
-      path + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
-    );
-    values.push(...page.items);
-    cursor = page.nextCursor;
-    if (cursor && seen.has(cursor)) break;
-    if (cursor) seen.add(cursor);
-  } while (cursor && active);
-  return values;
+function reportError(error: unknown) {
+  if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
+  message.value = accountErrorMessage(error);
+  emit("expired", error);
 }
 
-async function refreshAuxiliary() {
-  const tasks: Promise<void>[] = [];
-  if (hasUserRead.value) {
-    tasks.push(
-      listAll<PlatformDirectoryUser>("/platform/users")
-        .then(list => {
-          if (active) users.value = list;
-        })
-        .catch(error => {
-          if (active) emit("expired", error);
-        }),
-    );
+async function loadScope(tenantId: string | undefined, keepMembers = false) {
+  const generation = ++scopedGeneration;
+  if (!keepMembers) {
+    auditEvents.value = [];
+    memberCollection.clear();
   }
+  if (!tenantId) return;
+  const requests: Promise<unknown>[] = [memberCollection.first(`${teamPath(tenantId)}/members`)];
   if (hasAuditRead.value) {
-    tasks.push(
-      props.client
-        .request<{ items: AuditEvent[]; nextCursor: string | null }>("/platform/audit-events?limit=50")
-        .then(page => {
-          if (active) auditEvents.value = page.items;
-        })
-        .catch(error => {
-          if (active) emit("expired", error);
-        }),
-    );
+    requests.push(props.client.request<{ items: AuditEvent[] }>(platformAuditPath({ tenantId, limit: 10 })).then(page => {
+      if (active && generation === scopedGeneration) auditEvents.value = page.items;
+    }));
   }
-  await Promise.all(tasks);
+  const outcomes = await Promise.allSettled(requests);
+  if (generation === scopedGeneration) {
+    for (const outcome of outcomes) if (outcome.status === "rejected") reportError(outcome.reason);
+  }
 }
 
 async function load(showFeedback = false) {
-  await tenantCollection.first("/platform/tenants", 100);
-  if (!active) return;
-  if (props.initialTenantId && tenants.value.some(t => t.tenantId === props.initialTenantId)) {
-    selectedTenantId.value = props.initialTenantId;
-  } else if (!tenants.value.some(t => t.tenantId === selectedTenantId.value)) {
-    selectedTenantId.value = tenants.value[0]?.tenantId ?? "";
+  const params = new URLSearchParams();
+  if (statusFilter.value !== "ALL") params.set("status", statusFilter.value);
+  if (appliedSearch.value) params.set("q", appliedSearch.value);
+  const path = params.size ? `/platform/tenants?${params}` : "/platform/tenants";
+  const loaded = await tenantCollection.first(path, 100);
+  if (loaded && showFeedback && active) {
+    if (detailRequested.value && selectedTenantId.value && !tenants.value.some(team => team.tenantId === selectedTenantId.value)) {
+      await loadDetail(selectedTenantId.value);
+    }
+    const tenantId = selectedTenant.value?.tenantId;
+    await loadScope(tenantId, true);
+    emit("notify", "已同步最新平台团队列表");
   }
-  await refreshAuxiliary();
-  if (showFeedback && active) emit("notify", "已同步最新平台团队列表");
 }
 
-async function loadMoreTenants() {
-  if (!nextCursor.value) return;
-  try {
-    await tenantCollection.more();
-  } catch (error) {
-    if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
-    message.value = accountErrorMessage(error);
-    emit("expired", error);
-  }
+async function refreshTeam(tenantId: string) {
+  const previous = selectedTenant.value?.tenantId;
+  selectedTenantId.value = tenantId;
+  detailRequested.value = true;
+  await Promise.all([load(), loadDetail(tenantId)]);
+  if (previous === tenantId) await loadScope(tenantId, true);
+  else await scopeRequest;
 }
 
 function selectTenant(tenantId: string) {
+  detailGeneration++;
+  detail.value = undefined;
+  detailRequested.value = false;
   selectedTenantId.value = tenantId;
 }
 
 function resetFilters() {
   search.value = "";
+  appliedSearch.value = "";
   statusFilter.value = "ALL";
 }
 
@@ -222,15 +210,15 @@ async function openCreateModal() {
   createName.value = "";
   createReason.value = "";
   createError.value = "";
-  ownerManualMode.value = !hasUserRead.value || activeDirectoryUsers.value.length === 0;
-  createOwnerSelect.value = activeDirectoryUsers.value[0]?.userId ?? "";
-  createOwnerManual.value = "";
+  createOwner.value = "";
+  createOpen.value = true;
   await nextTick();
   if (active) createDialog.value?.showModal();
 }
 
 function closeCreateModal() {
   createDialog.value?.close();
+  createOpen.value = false;
   createError.value = "";
 }
 
@@ -240,9 +228,7 @@ function cancelCreateModal() {
 
 function submitCreateTeam() {
   const name = createName.value.trim();
-  const ownerUserId = ownerManualMode.value
-    ? createOwnerManual.value.trim()
-    : createOwnerSelect.value.trim();
+  const ownerUserId = createOwner.value.trim();
   const reason = createReason.value.trim();
 
   if (!name) {
@@ -269,15 +255,11 @@ function submitCreateTeam() {
         committed: created => {
           if (!active) return;
           selectedTenantId.value = created.tenantId;
-          search.value = "";
-          statusFilter.value = "ALL";
           closeCreateModal();
         },
         after: async created => {
           if (!active) return;
-          await tenantCollection.first("/platform/tenants", 100);
-          selectedTenantId.value = created.tenantId;
-          await refreshAuxiliary();
+          await refreshTeam(created.tenantId);
         },
       },
     );
@@ -338,20 +320,89 @@ function submitStatusChange() {
         },
         after: async updated => {
           if (!active) return;
-          await tenantCollection.first("/platform/tenants", 100);
-          selectedTenantId.value = updated.tenantId;
-          await refreshAuxiliary();
+          await refreshTeam(updated.tenantId);
         },
       },
     );
   }, statusError);
 }
 
-onMounted(() => void run(() => load(false)));
+async function openTransferModal() {
+  if (busy.value || !selectedTenant.value) return;
+  transferTarget.value = selectedTenant.value;
+  transferOwner.value = "";
+  transferReason.value = "";
+  transferError.value = "";
+  await nextTick();
+  if (active) transferDialog.value?.showModal();
+}
+
+function closeTransferModal() {
+  transferDialog.value?.close();
+  transferTarget.value = undefined;
+}
+
+function cancelTransferModal() {
+  if (!busy.value) closeTransferModal();
+}
+
+function submitTransfer() {
+  const target = transferTarget.value;
+  const newOwnerUserId = transferOwner.value.trim();
+  const reason = transferReason.value.trim();
+  if (!target || !newOwnerUserId || !reason) return;
+  if (newOwnerUserId === target.ownerUserId) {
+    transferError.value = "请选择另一位活跃用户作为新所有者";
+    return;
+  }
+  return run(() => props.submitWrite<PlatformTenant>(
+    `${teamPath(target.tenantId)}/transfer-owner`,
+    { newOwnerUserId, expectedVersion: target.version, reason },
+    {
+      action: `transfer-platform-tenant-${target.tenantId}`,
+      success: `已移交「${target.name}」的所有权`,
+      refreshMessage: "所有权已移交，团队信息暂未刷新。",
+      committed: closeTransferModal,
+      after: async updated => {
+        if (active) await refreshTeam(updated.tenantId);
+      },
+    },
+  ), transferError);
+}
+
+watch(search, value => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { appliedSearch.value = value.trim(); }, 250);
+});
+watch([appliedSearch, statusFilter], () => {
+  message.value = "";
+  selectTenant("");
+  tenantCollection.clear();
+  void load().catch(reportError);
+});
+watch(() => selectedTenant.value?.tenantId, tenantId => {
+  activeAuditEvent.value = null;
+  scopeRequest = loadScope(tenantId);
+});
+onMounted(() => {
+  void run(async () => {
+    try {
+      await Promise.all([load(), selectedTenantId.value ? loadDetail(selectedTenantId.value) : undefined]);
+    } catch (error) {
+      if (!selectedTenant.value) detailRequested.value = false;
+      throw error;
+    }
+  });
+});
 onBeforeUnmount(() => {
   active = false;
+  scopedGeneration++;
+  clearTimeout(searchTimer);
+  tenantCollection.clear();
+  memberCollection.clear();
   createDialog.value?.close();
   statusDialog.value?.close();
+  transferDialog.value?.close();
 });
 </script>
 
@@ -387,6 +438,7 @@ onBeforeUnmount(() => {
           </svg>
           <input
             v-model="search"
+            maxlength="128"
             type="search"
             class="pt-search-input"
             aria-label="搜索平台团队"
@@ -401,7 +453,7 @@ onBeforeUnmount(() => {
             :class="{ 'is-active': statusFilter === 'ALL' }"
             @click="statusFilter = 'ALL'"
           >
-            全部 <span class="pt-num">{{ tenants.length }}</span>
+            全部
           </button>
           <button
             type="button"
@@ -409,7 +461,7 @@ onBeforeUnmount(() => {
             :class="{ 'is-active': statusFilter === 'ACTIVE' }"
             @click="statusFilter = 'ACTIVE'"
           >
-            正常 <span class="pt-num">{{ activeCount }}</span>
+            正常
           </button>
           <button
             type="button"
@@ -417,7 +469,7 @@ onBeforeUnmount(() => {
             :class="{ 'is-active': statusFilter === 'DISABLED' }"
             @click="statusFilter = 'DISABLED'"
           >
-            已停用 <span class="pt-num">{{ disabledCount }}</span>
+            已停用
           </button>
         </div>
 
@@ -438,7 +490,7 @@ onBeforeUnmount(() => {
 
         <div class="pt-rail-list">
           <button
-            v-for="tenant in filteredTenants"
+            v-for="tenant in tenants"
             :key="tenant.tenantId"
             type="button"
             class="pt-tenant-item"
@@ -459,16 +511,16 @@ onBeforeUnmount(() => {
                 />
               </span>
               <span class="pt-item-sub">
-                <span class="pt-truncate">{{ resolveDirectoryUser(tenant.ownerUserId, usersById, hasUserRead).primary }}</span>
+                <span class="pt-truncate">{{ tenantOwner(tenant).primary }}</span>
                 <span>·</span>
                 <span class="pt-num">v{{ tenant.version }}</span>
               </span>
             </span>
           </button>
 
-          <p v-if="busy && !tenants.length" class="pt-list-hint" role="status">正在读取团队目录…</p>
-          <p v-else-if="!filteredTenants.length" class="pt-list-hint">
-            {{ tenants.length ? "未找到匹配的团队" : "当前平台尚未创建任何团队" }}
+          <p v-if="(busy || directoryLoading) && !tenants.length" class="pt-list-hint" role="status">正在读取团队目录…</p>
+          <p v-else-if="!tenants.length" class="pt-list-hint">
+            {{ hasFilters ? "未找到匹配的团队" : "当前平台尚未创建任何团队" }}
           </p>
 
           <button
@@ -476,7 +528,7 @@ onBeforeUnmount(() => {
             type="button"
             class="pt-btn pt-btn-secondary pt-btn-sm pt-load-more"
             :disabled="loadingMore || busy"
-            @click="loadMoreTenants"
+            @click="tenantCollection.more().catch(reportError)"
           >
             {{ loadingMore ? "正在加载…" : "加载更多团队" }}
           </button>
@@ -650,8 +702,20 @@ onBeforeUnmount(() => {
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
                       </button>
+                      <button v-if="canSetStatus" type="button" class="pt-btn pt-btn-danger-soft pt-btn-sm"
+                        :disabled="busy" @click="openTransferModal">
+                        强制移交所有权
+                      </button>
                     </div>
                   </div>
+                </div>
+                <div v-if="selectedTenant.createdAt" class="pt-kv-row">
+                  <div class="pt-kv-key">创建时间</div>
+                  <div class="pt-kv-val">{{ formatAuditTimestamp(selectedTenant.createdAt) }}</div>
+                </div>
+                <div v-if="selectedTenant.updatedAt" class="pt-kv-row">
+                  <div class="pt-kv-key">更新时间</div>
+                  <div class="pt-kv-val">{{ formatAuditTimestamp(selectedTenant.updatedAt) }}</div>
                 </div>
                 <div class="pt-kv-row">
                   <div class="pt-kv-key">乐观锁版本 (version)</div>
@@ -660,6 +724,32 @@ onBeforeUnmount(() => {
                     <span class="pt-kv-hint">状态变更提交 <span class="pt-mono">expectedVersion: {{ selectedTenant.version }}</span> 防并发覆盖</span>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section class="pt-card" aria-labelledby="pt-member-heading">
+              <header class="pt-card-head">
+                <div>
+                  <h3 id="pt-member-heading">团队成员<span v-if="selectedTenant.memberCount !== undefined"> · {{ selectedTenant.memberCount }} 人</span></h3>
+                  <p>查看当前成员与角色</p>
+                </div>
+                <span class="pt-pill is-neutral">只读</span>
+              </header>
+              <div v-if="members.length" class="pt-kv-list">
+                <div v-for="member in members" :key="member.membershipId" class="pt-kv-row pt-member-row">
+                  <div class="pt-member-identity">
+                    <strong class="pt-kv-strong">{{ member.displayName || member.userId }}</strong>
+                    <span v-if="member.email" class="pt-kv-sub">{{ member.email }}</span>
+                  </div>
+                  <div class="pt-kv-val"><span class="pt-pill is-neutral">{{ roleLabel[member.role] }}</span></div>
+                </div>
+              </div>
+              <div v-else class="pt-empty-state is-compact" role="status">
+                {{ membersLoading ? "正在加载成员…" : "暂无可显示的成员" }}
+              </div>
+              <div v-if="memberCursor" class="pt-card-head">
+                <button type="button" class="pt-btn pt-btn-secondary pt-btn-sm" :disabled="membersLoading"
+                  @click="memberCollection.more().catch(reportError)">加载更多成员</button>
               </div>
             </section>
 
@@ -684,7 +774,7 @@ onBeforeUnmount(() => {
 
               <div v-if="relatedAudits.length">
                 <button
-                  v-for="ev in relatedAudits.slice(0, 4)"
+                  v-for="ev in relatedAudits"
                   :key="ev.auditEventId"
                   type="button"
                   class="pt-mini-audit-row"
@@ -715,7 +805,7 @@ onBeforeUnmount(() => {
             </section>
           </template>
 
-          <section v-else-if="!busy" class="pt-card">
+          <section v-else-if="!busy && !directoryLoading && !detailRequested" class="pt-card">
             <div class="pt-empty-state">
               <div class="pt-empty-icon" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -723,14 +813,14 @@ onBeforeUnmount(() => {
                   <rect x="14" y="8" width="7" height="12" rx="1.5" />
                 </svg>
               </div>
-              <div class="pt-empty-title">{{ tenants.length === 0 ? "平台尚未创建任何团队" : "没有符合筛选条件的团队" }}</div>
+              <div class="pt-empty-title">{{ hasFilters ? "没有符合筛选条件的团队" : "平台尚未创建任何团队" }}</div>
               <div class="pt-empty-desc">
-                {{ tenants.length === 0
-                  ? "当平台开启受控建团策略或需要为企业客户代建工作空间时，可在此创建团队并指定初始所有者。"
-                  : "请尝试清空搜索关键词或切换状态筛选条件。" }}
+                {{ hasFilters
+                  ? "请尝试清空搜索关键词或切换状态筛选条件。"
+                  : "可在此创建团队并指定初始所有者。" }}
               </div>
               <button
-                v-if="tenants.length === 0 && canCreate"
+                v-if="!hasFilters && canCreate"
                 type="button"
                 class="pt-btn pt-btn-primary"
                 @click="openCreateModal"
@@ -738,7 +828,7 @@ onBeforeUnmount(() => {
                 ＋ 平台创建团队
               </button>
               <button
-                v-else-if="tenants.length > 0"
+                v-else-if="hasFilters"
                 type="button"
                 class="pt-btn pt-btn-secondary"
                 @click="resetFilters"
@@ -779,41 +869,8 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <div class="pt-field">
-            <div class="pt-field-label">
-              <label :for="ownerManualMode ? 'pt-owner-manual' : 'pt-owner-select'">
-                初始所有者<span class="pt-req">*</span>
-              </label>
-              <button
-                v-if="hasUserRead && activeDirectoryUsers.length > 0"
-                type="button"
-                class="pt-link-btn"
-                @click="ownerManualMode = !ownerManualMode"
-              >
-                {{ ownerManualMode ? "改为从用户目录选择" : "改为手动输入 User ID" }}
-              </button>
-            </div>
-            <template v-if="!ownerManualMode && activeDirectoryUsers.length > 0">
-              <select id="pt-owner-select" v-model="createOwnerSelect" class="pt-select" :disabled="busy">
-                <option v-for="u in activeDirectoryUsers" :key="u.userId" :value="u.userId">
-                  {{ u.displayName }}（{{ u.email ?? "未绑定邮箱" }} · {{ u.userId }}）
-                </option>
-              </select>
-              <div class="pt-field-hint">仅展示状态为 ACTIVE 的账号（基于 <span class="pt-mono">USER_READ</span> 目录）</div>
-            </template>
-            <template v-else>
-              <input
-                id="pt-owner-manual"
-                v-model="createOwnerManual"
-                type="text"
-                class="pt-input pt-mono-input"
-                required
-                :disabled="busy"
-                placeholder="例如：usr_01j8k2m4p6q8"
-              />
-              <div class="pt-field-hint">后端要求该 <span class="pt-mono">ownerUserId</span> 对应账号处于 ACTIVE 状态</div>
-            </template>
-          </div>
+          <PlatformOwnerPicker v-if="createOpen" v-model="createOwner" :client="client" label="初始所有者"
+            :can-search="hasUserRead" :disabled="busy" @expired="emit('expired', $event)" />
 
           <div class="pt-field">
             <label class="pt-field-label" for="pt-create-reason">
@@ -849,7 +906,7 @@ onBeforeUnmount(() => {
           <button
             type="submit"
             class="pt-btn pt-btn-primary"
-            :disabled="busy || !createName.trim() || !createReason.trim()"
+            :disabled="busy || !createName.trim() || !createOwner.trim() || !createReason.trim()"
           >
             {{ busy ? "正在提交…" : "确认创建团队" }}
           </button>
@@ -926,6 +983,33 @@ onBeforeUnmount(() => {
             :disabled="busy || !statusReason.trim()"
           >
             {{ busy ? "正在提交…" : statusMode === "disable" ? "确认停用团队" : "确认恢复启用" }}
+          </button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog ref="transferDialog" class="pt-dialog" aria-labelledby="pt-transfer-title" @cancel.prevent="cancelTransferModal">
+      <form @submit.prevent="submitTransfer">
+        <header class="pt-dialog-head">
+          <h3 id="pt-transfer-title">强制移交所有权</h3>
+          <button type="button" class="pt-dialog-close" aria-label="关闭" :disabled="busy" @click="cancelTransferModal">×</button>
+        </header>
+        <div v-if="transferTarget" class="pt-dialog-body">
+          <p>「{{ transferTarget.name }}」的原所有者将变为管理员，未完成的所有权交接将取消。</p>
+          <PlatformOwnerPicker v-model="transferOwner" :client="client" label="新所有者"
+            :can-search="hasUserRead" :exclude="transferTarget.ownerUserId" :disabled="busy"
+            @expired="emit('expired', $event)" />
+          <div class="pt-field">
+            <label class="pt-field-label" for="pt-transfer-reason">操作原因</label>
+            <textarea id="pt-transfer-reason" v-model="transferReason" class="pt-textarea" maxlength="500"
+              required :disabled="busy" />
+          </div>
+          <p v-if="transferError" class="pt-dialog-error" role="alert">{{ transferError }}</p>
+        </div>
+        <footer class="pt-dialog-foot">
+          <button type="button" class="pt-btn pt-btn-secondary" :disabled="busy" @click="cancelTransferModal">取消</button>
+          <button type="submit" class="pt-btn pt-btn-danger" :disabled="busy || !transferOwner.trim() || !transferReason.trim()">
+            {{ busy ? "正在提交…" : "确认移交" }}
           </button>
         </footer>
       </form>
@@ -1135,6 +1219,8 @@ onBeforeUnmount(() => {
 .pt-kv-val-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .pt-kv-strong { font-weight: 600; color: var(--ink); }
 .pt-kv-sub { font-size: 12.5px; color: var(--muted); }
+.pt-kv-row.pt-member-row { grid-template-columns: minmax(0, 1fr) auto; }
+.pt-member-identity { display: grid; gap: 2px; overflow-wrap: anywhere; }
 .pt-kv-hint { font-size: 12px; color: #8e8e98; }
 .pt-kv-ink { color: var(--ink); }
 

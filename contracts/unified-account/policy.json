@@ -466,6 +466,20 @@
       "outputSchema": "PlatformTenantView"
     },
     {
+      "operationId": "listPlatformTenantMembers",
+      "authority": "platform:TENANT_READ",
+      "idempotency": "NOT_APPLICABLE",
+      "inputSchema": null,
+      "outputSchema": "MembershipPage"
+    },
+    {
+      "operationId": "transferPlatformTenantOwner",
+      "authority": "platform:TENANT_STATUS",
+      "idempotency": "REQUIRED",
+      "inputSchema": "PlatformTenantTransferRequest",
+      "outputSchema": "PlatformTenantView"
+    },
+    {
       "operationId": "listMembers",
       "authority": "session",
       "idempotency": "NOT_APPLICABLE",
@@ -1023,6 +1037,20 @@
       "authority": "product",
       "idempotency": "REQUIRED",
       "inputSchema": "PlatformVersionRequest",
+      "outputSchema": "PlatformTenantView"
+    },
+    {
+      "operationId": "product_listPlatformTenantMembers",
+      "authority": "product",
+      "idempotency": "NOT_APPLICABLE",
+      "inputSchema": null,
+      "outputSchema": "MembershipPage"
+    },
+    {
+      "operationId": "product_transferPlatformTenantOwner",
+      "authority": "product",
+      "idempotency": "REQUIRED",
+      "inputSchema": "PlatformTenantTransferRequest",
       "outputSchema": "PlatformTenantView"
     },
     {

@@ -78,6 +78,29 @@ pub struct Lookup {
     pub guard: Option<fn(&Service<'_>, &Value) -> Result<D1PreparedStatement>>,
 }
 
+#[derive(Clone, Copy)]
+pub enum PageOrder {
+    Id,
+    AuditTime,
+    TenantTime,
+}
+impl PageOrder {
+    fn time_column(self) -> Option<&'static str> {
+        match self {
+            Self::Id => None,
+            Self::AuditTime => Some("occurred_at"),
+            Self::TenantTime => Some("managed_at"),
+        }
+    }
+
+    fn anchor(self, row: &Value) -> Value {
+        match self.time_column() {
+            Some(column) => json!({"id":row["id"],"time":row[column]}),
+            None => json!({"after":row["id"]}),
+        }
+    }
+}
+
 pub enum Read {
     Detail(fn(&Context) -> Result<Value>),
     Page {
@@ -85,6 +108,7 @@ pub enum Read {
         args: Vec<Value>,
         view: fn(&Value) -> Result<Value>,
         filters: Value,
+        order: PageOrder,
     },
 }
 impl Read {
@@ -98,6 +122,83 @@ impl Read {
             args,
             view,
             filters: json!({}),
+            order: PageOrder::Id,
+        }
+    }
+}
+
+/// Only accepted query values enter the cursor scope. Keep the SQL predicates
+/// and bound values alongside that scope so they describe the same page.
+pub struct PageFilters {
+    pub values: Value,
+    pub conditions: Vec<String>,
+    pub args: Vec<Value>,
+}
+impl PageFilters {
+    pub fn parse(a: &Auth, keys: &[&str]) -> Result<Self> {
+        let mut values = form(a.request.url()?.query().unwrap_or_default())?;
+        let mut allowed = vec!["limit", "cursor"];
+        allowed.extend_from_slice(keys);
+        fields(&values, &[], &allowed)?;
+        let filters = values.as_object_mut().ok_or_else(Failure::unavailable)?;
+        filters.remove("limit");
+        filters.remove("cursor");
+        Ok(Self {
+            values,
+            conditions: vec![],
+            args: vec![],
+        })
+    }
+
+    pub fn bind(&mut self, condition: impl Into<String>, args: impl IntoIterator<Item = Value>) {
+        self.conditions.push(condition.into());
+        self.args.extend(args);
+    }
+
+    pub fn status(&mut self) -> Result<()> {
+        if let Some(status) = self.values["status"].as_str() {
+            ensure(
+                matches!(status, "ACTIVE" | "DISABLED"),
+                400,
+                "INVALID_REQUEST",
+            )?;
+            self.bind("status=?", [json!(status)]);
+        }
+        Ok(())
+    }
+
+    pub fn search(&mut self, columns: &[&str]) -> Result<()> {
+        if let Some(q) = self.values["q"].as_str() {
+            ensure(q.chars().count() <= 128, 400, "INVALID_REQUEST")?;
+            let q = q.trim();
+            if !q.is_empty() {
+                let matches = columns
+                    .iter()
+                    .map(|column| format!("instr(lower({column}),lower(?))>0"))
+                    .collect::<Vec<_>>()
+                    .join(" OR ");
+                let args = vec![json!(q); columns.len()];
+                self.bind(format!("({matches})"), args);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn page(self, sql: &str, view: fn(&Value) -> Result<Value>, order: PageOrder) -> Read {
+        let sql = if self.conditions.is_empty() {
+            sql.to_owned()
+        } else {
+            format!(
+                "SELECT * FROM ({sql}) WHERE {}",
+                self.conditions.join(" AND ")
+            )
+        };
+        Read::Page {
+            sql,
+            args: self.args,
+            view,
+            filters: self.values,
+            order,
         }
     }
 }
@@ -151,27 +252,38 @@ struct Snapshot<'a> {
     ctx: Context,
 }
 impl Snapshot<'_> {
-    fn scope(&self, action: &Action, page: &PageRequest, filters: &Value) -> String {
+    fn scope(
+        &self,
+        action: &Action,
+        page: &PageRequest,
+        filters: &Value,
+        order: PageOrder,
+    ) -> String {
         let Snapshot { service, ctx } = self;
-        hash(&json!({"user":service.s["user_id"],"client":service.s["client_id"],"environment":service.c["environment_id"],"path":action.path,"limit":page.limit,"membership":ctx.member,"permission":ctx.permission,"tenantVersion":ctx.tenant["version"],"filters":filters}).to_string())
+        let mut binding = json!({"user":service.s["user_id"],"client":service.s["client_id"],"environment":service.c["environment_id"],"path":action.path,"limit":page.limit,"membership":ctx.member,"permission":ctx.permission,"tenantVersion":ctx.tenant["version"],"filters":filters});
+        if let Some(column) = order.time_column() {
+            binding["order"] = json!(column);
+        }
+        hash(&binding.to_string())
     }
 }
 
-fn validate_cursor(row: &Value, scope: &str) -> Result<String> {
+fn validate_cursor(row: &Value, scope: &str) -> Result<Value> {
     ensure(row["binding_hash"] == scope, 400, "INVALID_REQUEST")?;
-    Ok(text(&parsed(row, "payload")?, "after"))
+    parsed(row, "payload")
 }
 
 struct Cursor<'a> {
     page: &'a PageRequest,
     filters: &'a Value,
     hash: &'a str,
+    order: PageOrder,
 }
 struct CursorSnapshot<'a> {
     snapshot: Snapshot<'a>,
     binding: String,
     payload: Value,
-    after: String,
+    after: Value,
 }
 struct ReadQuery<'a> {
     a: &'a Auth,
@@ -326,15 +438,31 @@ impl<'a> ReadQuery<'a> {
         size: usize,
         sql: &str,
         args: &[Value],
+        order: PageOrder,
         cursor: Option<(&Cursor<'_>, &CursorSnapshot<'_>, i64)>,
     ) -> Result<D1PreparedStatement> {
         let (actor, mut values) = self.actor(cursor.map(|(_, saved, _)| &saved.snapshot));
         values.extend_from_slice(args);
-        values.push(
-            cursor
-                .map_or("", |(_, saved, _)| saved.after.as_str())
-                .into(),
-        );
+        let (anchor, sort) = if let Some(column) = order.time_column() {
+            let sort = format!("{column} DESC, id DESC");
+            let anchor = if let Some((_, saved, _)) = cursor {
+                ensure(
+                    saved.after["time"].is_i64() && saved.after["id"].is_string(),
+                    400,
+                    "INVALID_REQUEST",
+                )?;
+                values.extend([saved.after["time"].clone(), saved.after["id"].clone()]);
+                format!(" WHERE ({column},id)<(?,?)")
+            } else {
+                String::new()
+            };
+            (anchor, sort)
+        } else {
+            values.push(
+                cursor.map_or_else(|| json!(""), |(_, saved, _)| saved.after["after"].clone()),
+            );
+            (" WHERE id>?".into(), "id".into())
+        };
         let mut gate = "EXISTS(SELECT 1 FROM actor)".to_owned();
         if let Some(target) = self.lookup {
             gate.push_str(&format!(" AND EXISTS(SELECT 1 FROM ({}))", target.sql));
@@ -355,7 +483,7 @@ impl<'a> ReadQuery<'a> {
         // SQLite evaluates LIMIT first. A zero limit skips the protected
         // SELECT, even when its row projection or WHERE expression can fail.
         self.a.s.statement(
-            &format!("{actor} SELECT * FROM ({sql}) WHERE id>? ORDER BY id LIMIT CASE WHEN {gate} THEN ? ELSE 0 END"),
+            &format!("{actor} SELECT * FROM ({sql}){anchor} ORDER BY {sort} LIMIT CASE WHEN {gate} THEN ? ELSE 0 END"),
             values,
         )
     }
@@ -398,7 +526,8 @@ impl<'a> ReadQuery<'a> {
         cursor
             .map(|cursor| {
                 let row = first(&mut rows)?;
-                let binding = snapshot.scope(self.action, cursor.page, cursor.filters);
+                let binding =
+                    snapshot.scope(self.action, cursor.page, cursor.filters, cursor.order);
                 let after = validate_cursor(&row, &binding)?;
                 Ok(CursorSnapshot {
                     snapshot,
@@ -435,11 +564,12 @@ pub async fn read(
         _ => None,
     };
     let cursor = match (&plan, &page) {
-        (Ok(Read::Page { filters, .. }), Some(Ok(page))) => {
+        (Ok(Read::Page { filters, order, .. }), Some(Ok(page))) => {
             page.cursor_hash.as_deref().map(|hash| Cursor {
                 page,
                 filters,
                 hash,
+                order: *order,
             })
         }
         _ => None,
@@ -454,7 +584,13 @@ pub async fn read(
     };
     let mut statements = query.prerequisites(credential)?;
     statements.extend(query.lookup_statement()?);
-    if let (Ok(Read::Page { sql, args, .. }), Some(Ok(page))) = (&plan, &page) {
+    if let (
+        Ok(Read::Page {
+            sql, args, order, ..
+        }),
+        Some(Ok(page)),
+    ) = (&plan, &page)
+    {
         let time = now();
         let bound = cursor.as_ref().zip(saved.as_ref());
         if let Some((cursor, _)) = bound {
@@ -464,6 +600,7 @@ pub async fn read(
             page.limit + 1,
             sql,
             args,
+            *order,
             bound.map(|(cursor, saved)| (cursor, saved, time)),
         )?);
     }
@@ -477,9 +614,14 @@ pub async fn read(
     let snapshot = query.context(&mut results, true)?;
     let result = match plan? {
         Read::Detail(view) => return view(&snapshot.ctx),
-        Read::Page { view, filters, .. } => {
+        Read::Page {
+            view,
+            filters,
+            order,
+            ..
+        } => {
             let page = page.ok_or_else(Failure::unavailable)??;
-            let scope = snapshot.scope(action, &page, &filters);
+            let scope = snapshot.scope(action, &page, &filters, order);
             if let Some(saved) = saved {
                 let cursor = first(&mut results)?;
                 validate_cursor(&cursor, &scope)?;
@@ -513,7 +655,7 @@ pub async fn read(
                     vec![
                         hash(&raw).into(),
                         scope.into(),
-                        json!({"after":rows[page.limit - 1]["id"]}).to_string().into(),
+                        order.anchor(&rows[page.limit - 1]).to_string().into(),
                         (now() + 900000).into(),
                     ],
                 )?);

@@ -152,3 +152,85 @@ impl Service<'_> {
         })
     }
 }
+
+impl Service<'_> {
+    pub(super) async fn platform_transfer_owner(
+        &self,
+        ctx: &Context,
+        body: &Value,
+    ) -> Result<Change> {
+        expected(body, &ctx.tenant)?;
+        let tenant = &ctx.tenant["id"];
+        let previous = &ctx.tenant["owner_user_id"];
+        let target = &body["newOwnerUserId"];
+        ensure(target != previous, 409, "VERSION_CONFLICT")?;
+
+        let member = |user: &Value| {
+            self.a.s.one(
+                "SELECT * FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE'",
+                vec![tenant.clone(), user.clone()],
+            )
+        };
+        let owner = member(previous).await?;
+        ensure(owner["role"] == "OWNER", 409, "VERSION_CONFLICT")?;
+        let new_user = self
+            .a
+            .s
+            .one(
+                "SELECT id FROM auth_user WHERE id=? AND status='ACTIVE'",
+                vec![target.clone()],
+            )
+            .await?;
+        ensure(!new_user.is_null(), 404, "NOT_FOUND")?;
+        let new_member = member(target).await?;
+        let n = now();
+        let mut writes = vec![
+            self.member_guard(&owner)?,
+            self.a.s.guard(
+                "EXISTS(SELECT 1 FROM auth_user WHERE id=? AND status='ACTIVE')",
+                vec![target.clone()],
+            )?,
+        ];
+        if new_member.is_null() {
+            writes.push(self.a.s.guard(
+                "NOT EXISTS(SELECT 1 FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE')",
+                vec![tenant.clone(), target.clone()],
+            )?);
+        } else {
+            writes.push(self.member_guard(&new_member)?);
+        }
+        writes.push(self.a.s.statement(
+            "UPDATE auth_tenant_membership SET role='ADMIN',version=version+1 WHERE id=?",
+            vec![owner["id"].clone()],
+        )?);
+        writes.push(if new_member.is_null() {
+            self.a.s.statement(
+                "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",
+                vec![uuid().into(), tenant.clone(), target.clone(), n.into()],
+            )?
+        } else {
+            self.a.s.statement(
+                "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
+                vec![new_member["id"].clone()],
+            )?
+        });
+        writes.push(self.a.s.statement(
+            "UPDATE auth_ownership_transfer
+             SET status=CASE WHEN expires_at<=? THEN 'EXPIRED' ELSE 'CANCELLED' END,
+                 version=version+1,resolved_at=? WHERE tenant_id=? AND status='PENDING'",
+            vec![n.into(), n.into(), tenant.clone()],
+        )?);
+        writes.push(self.a.s.statement(
+            "UPDATE auth_managed_tenant SET version=version+1,entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",
+            vec![n.into(), tenant.clone()],
+        )?);
+        let mut updated = ctx.tenant.clone();
+        updated["owner_user_id"] = target.clone();
+        updated["version"] = (number(&updated, "version") + 1).into();
+        Ok(Change {
+            result: super::platform_view(&updated),
+            writes,
+            target_user: target.clone(),
+        })
+    }
+}

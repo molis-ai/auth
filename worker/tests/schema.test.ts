@@ -46,7 +46,7 @@ test('the fresh Auth baseline reproduces the historical schema and empty content
   }
 })
 
-test('0021 adds the same indexes to a new database and a populated 0020 database', () => {
+test('0021 and 0022 add the same indexes to a new database and a populated 0020 database', () => {
   const fresh = database()
   const upgraded = new DatabaseSync(':memory:')
   try {
@@ -60,6 +60,9 @@ test('0021 adds the same indexes to a new database and a populated 0020 database
     const rows = () => upgraded.prepare('SELECT * FROM auth_client').all()
     const before = rows()
     upgraded.exec(readFileSync(new URL('0021_perf_indexes.sql', migrationDirectory), 'utf8'))
+    upgraded.exec(
+      readFileSync(new URL('0022_platform_audit_indexes.sql', migrationDirectory), 'utf8'),
+    )
     assert.deepEqual(rows(), before)
     assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), [])
     const indexes = {
@@ -68,6 +71,8 @@ test('0021 adds the same indexes to a new database and a populated 0020 database
       ix_tenant_membership_tenant_status_id: ['tenant_id', 'status', 'id'],
       ix_client_application_id: ['application_id', 'id'],
       ix_management_audit_tenant_id: ['tenant_id', 'id'],
+      ix_management_audit_time: ['occurred_at', 'id'],
+      ix_managed_tenant_time: ['managed_at', 'space_id'],
     }
     for (const [index, columns] of Object.entries(indexes)) {
       for (const db of [fresh, upgraded]) {

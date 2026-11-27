@@ -2209,6 +2209,22 @@
       "value": null
     },
     {
+      "name": "PlatformTenantTransferRequest:minimal-valid",
+      "schema": "PlatformTenantTransferRequest",
+      "valid": true,
+      "value": {
+        "newOwnerUserId": "xxxxxxxx",
+        "expectedVersion": 1,
+        "reason": "xxxxxxxx"
+      }
+    },
+    {
+      "name": "PlatformTenantTransferRequest:wrong-root-type",
+      "schema": "PlatformTenantTransferRequest",
+      "valid": false,
+      "value": null
+    },
+    {
       "name": "PlatformApplication:minimal-valid",
       "schema": "PlatformApplication",
       "valid": true,

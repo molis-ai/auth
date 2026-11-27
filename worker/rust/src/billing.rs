@@ -11,7 +11,7 @@ use crate::{
     http::*,
     identity::Auth,
     security::uuid,
-    tenants::protocol::{self, Access, Lookup, Read},
+    tenants::protocol::{self, Access, Lookup, PageFilters, PageOrder, Read},
     tenants::{ALL_ROLES, Action, Context, MANAGER_ROLES, Service},
 };
 use serde_json::{Value, json};
@@ -129,9 +129,128 @@ fn audit_view(r: &Value) -> Result<Value> {
         summary["changes"].clone()
     };
     Ok(
-        json!({"auditEventId":r["id"],"actorUserId":r["actor_user_id"],"operation":r["operation"],"target":{"kind":r["target_type"],"id":r["target_id"]},"tenantId":r["tenant_id"],"occurredAt":iso(&r["occurred_at"]),"result":if r["outcome"]=="SUCCESS"{"SUCCEEDED"}else{"DENIED"},"changes":changes}),
+        json!({"auditEventId":r["id"],"actorUserId":r["actor_user_id"],"operation":r["operation"],"target":{"kind":r["target_type"],"id":r["target_id"]},"tenantId":r["tenant_id"],"occurredAt":iso(&r["occurred_at"]),"result":if r["outcome"]=="SUCCESS"{"SUCCEEDED"}else{"DENIED"},"changes":changes,"reason":r["reason"],"requestId":r["request_id"]}),
     )
 }
+fn audit_timestamp(value: &str) -> Result<i64> {
+    use std::sync::LazyLock;
+    static RFC3339: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$")
+            .expect("audit timestamp pattern")
+    });
+    let captures = RFC3339
+        .captures(value)
+        .ok_or_else(Failure::invalid_request)?;
+    shape(
+        "Timestamp",
+        &json!(format!("{}Z", captures[1].to_ascii_uppercase())),
+    )?;
+    let timestamp = js_sys::Date::parse(value);
+    ensure(timestamp.is_finite(), 400, "INVALID_REQUEST")?;
+    Ok(timestamp as i64)
+}
+
+fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
+    let platform = action.op == "billing.platform-audit";
+    let keys: &[&str] = if platform {
+        &[
+            "tenantId",
+            "category",
+            "operation",
+            "actorUserId",
+            "targetId",
+            "result",
+            "from",
+            "to",
+            "q",
+        ]
+    } else {
+        &[]
+    };
+    let mut filters = PageFilters::parse(a, keys)?;
+    if !platform {
+        filters.bind("tenant_id=?", [json!(action.tenant_id)]);
+    }
+    if let Some(tenant) = filters.values["tenantId"].as_str() {
+        let tenant = json!(tenant);
+        shape("Id", &tenant)?;
+        filters.bind(
+            "(tenant_id=? OR (target_type='TENANT' AND target_id=?))",
+            [tenant.clone(), tenant],
+        );
+    }
+    for (key, column) in [
+        ("operation", "operation"),
+        ("actorUserId", "actor_user_id"),
+        ("targetId", "target_id"),
+    ] {
+        if let Some(value) = filters
+            .values
+            .get(key)
+            .filter(|value| !value.is_null())
+            .cloned()
+        {
+            shape("Id", &value)?;
+            filters.bind(format!("{column}=?"), [value]);
+        }
+    }
+    if let Some(category) = filters.values["category"].as_str() {
+        let prefixes = match category {
+            "account" => &["user.*", "permission.*"][..],
+            "tenant" => &["tenant.*", "member.*", "invitation.*", "transfer.*"],
+            "app" => &["application.*", "client.*"],
+            "billing" => &[
+                "catalog.*",
+                "subscription.*",
+                "pool.*",
+                "seat.*",
+                "billing.*",
+            ],
+            _ => return Err(Failure::invalid_request()),
+        };
+        let predicate = vec!["operation GLOB ?"; prefixes.len()].join(" OR ");
+        filters.bind(
+            format!("({predicate})"),
+            prefixes.iter().map(|prefix| json!(prefix)),
+        );
+    }
+    if let Some(result) = filters.values["result"].as_str() {
+        let outcome = match result {
+            "SUCCEEDED" => "SUCCESS",
+            "DENIED" => "DENIED",
+            _ => return Err(Failure::invalid_request()),
+        };
+        filters.bind("outcome=?", [json!(outcome)]);
+    }
+    let date = |key| {
+        filters.values[key]
+            .as_str()
+            .map(audit_timestamp)
+            .transpose()
+    };
+    let (from, to) = (date("from")?, date("to")?);
+    if let Some(from) = from {
+        ensure(to.is_none_or(|to| from <= to), 400, "INVALID_REQUEST")?;
+        filters.bind("occurred_at>=?", [json!(from)]);
+    }
+    if let Some(to) = to {
+        filters.bind("occurred_at<=?", [json!(to)]);
+    }
+    filters.search(&[
+        "id",
+        "operation",
+        "actor_user_id",
+        "target_id",
+        "tenant_id",
+        "reason",
+    ])?;
+    Ok(filters.page(
+        "SELECT * FROM auth_management_audit",
+        audit_view,
+        PageOrder::AuditTime,
+    ))
+}
+
 impl Service<'_> {
     async fn billing_context(&self, action: &Action) -> Result<Context> {
         let mut ctx = Context::new();
@@ -236,16 +355,10 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         id: action.id.clone(),
         guard: Some(|service, row| service.subscription_guard(row)),
     });
-    let sql = "SELECT * FROM auth_management_audit";
     let plan = match action.op {
         "seat.list" => seats::list(a, action),
         "catalog.features" | "catalog.plans" => Ok(catalog::read(action)),
-        "billing.tenant-audit" => Ok(Read::page(
-            format!("{sql} WHERE tenant_id=?"),
-            vec![action.tenant_id.clone().into()],
-            audit_view,
-        )),
-        "billing.platform-audit" => Ok(Read::page(sql, vec![], audit_view)),
+        "billing.tenant-audit" | "billing.platform-audit" => audit_page(a, action),
         _ => Ok(subscriptions::read(action)),
     };
     protocol::read(a, action, access, lookup, plan).await

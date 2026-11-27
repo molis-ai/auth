@@ -5,7 +5,9 @@ import {
   formatAuditTimestamp,
   formatDiffValue,
   formatRelativeAuditTime,
+  platformAuditPath,
   resolveDirectoryUser,
+  tenantOwner,
   targetKindTone,
   type PlatformDirectoryUser,
 } from "../src/lib/platform-audit.ts";
@@ -67,4 +69,23 @@ test("timestamp formatting produces stable output for valid and invalid inputs",
   assert.equal(formatRelativeAuditTime("2026-11-26T14:40:00Z", base), "20 分钟前");
   assert.equal(formatRelativeAuditTime("2026-11-26T12:00:00Z", base), "3 小时前");
   assert.equal(formatRelativeAuditTime("2026-11-24T15:00:00Z", base), "2 天前");
+});
+
+test("audit filters encode the team scope, category, result and keyword for server pagination", () => {
+  assert.equal(platformAuditPath({ category: "all", result: "ALL", q: " " }), "/platform/audit-events");
+  const scoped = new URL(platformAuditPath({
+    tenantId: "team:1", category: "tenant", result: "SUCCEEDED", q: " 修复+权限 ", limit: 10,
+  }), "https://auth.example.test");
+  assert.equal(scoped.pathname, "/platform/audit-events");
+  assert.deepEqual(Object.fromEntries(scoped.searchParams), {
+    tenantId: "team:1", category: "tenant", result: "SUCCEEDED", q: "修复+权限", limit: "10",
+  });
+});
+
+test("team owner details use the team projection without a platform user directory", () => {
+  const team = { tenantId: "team", name: "测试团队", status: "ACTIVE", version: 0, ownerUserId: "owner" };
+  assert.deepEqual(tenantOwner({
+    ...team, ownerDisplayName: "成员甲", ownerEmail: "owner@example.test",
+  }), { primary: "成员甲", secondary: "owner@example.test", resolved: true });
+  assert.deepEqual(tenantOwner(team), { primary: "owner", secondary: "未绑定邮箱", resolved: false });
 });
