@@ -1,43 +1,24 @@
 use crate::{
-    core::http::*,
-    core::identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
-    core::security::uuid,
-    core::store::WebSessionAccess,
+    account, audit, auth, billing,
+    core::{http::*, identity::Auth, store::WebSessionAccess},
+    platform, tenants, web,
 };
-use serde_json::{Value, json};
-use worker::{Env, Method, Request, Response};
+use worker::{Env, Method, Request, Response, Url};
 
-fn failure_route(path: &str) -> &'static str {
-    static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
-    match path {
-        "/api/v2/health" => "/api/v2/health",
-        "/api/v2/readiness" => "/api/v2/readiness",
-        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
-        "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
-        "/account/handoff/start" => "/account/handoff/start",
-        "/account/handoff/finish" => "/account/handoff/finish",
-        "/api/account/login-sessions" => "/api/account/login-sessions",
-        "/account/callback" => "/account/callback",
-        _ if crate::web::billing::matches(path) => "/api/account/billing/*",
-        "/" | "/login" | "/console" => "/",
-        _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
-        _ => ROUTES
-            .iter()
-            .copied()
-            .find(|template| matches_route_template(path, template))
-            .unwrap_or("unmatched"),
-    }
+enum CallMode {
+    External,
+    Internal {
+        access: WebSessionAccess,
+        client_ip: String,
+    },
 }
 
 pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
-    let id = if crate::web::billing::matches(&req.path()) {
-        billing_request_id(&req)
-    } else {
-        uuid()
-    };
-    let (response, _) = handle_inner(req, env, None, None, id).await?;
+    let id = web::http::request_id(&req);
+    let (response, _) = handle_inner(req, env, CallMode::External, id).await?;
     Ok(response)
 }
+
 pub(crate) async fn handle_internal(
     req: Request,
     env: Env,
@@ -48,17 +29,16 @@ pub(crate) async fn handle_internal(
     Box::pin(handle_inner(
         req,
         env,
-        Some(access),
-        Some(client_ip),
+        CallMode::Internal { access, client_ip },
         request_id,
     ))
     .await
 }
+
 async fn handle_inner(
     req: Request,
     env: Env,
-    access: Option<WebSessionAccess>,
-    client_ip: Option<String>,
+    mode: CallMode,
     id: String,
 ) -> worker::Result<(Response, Option<i64>)> {
     let method = req.method();
@@ -66,7 +46,7 @@ async fn handle_inner(
         started: now(),
         env: log_env(&env),
         id: &id,
-        route: failure_route(&req.path()),
+        route: web::http::log_route(&req.path()),
         // The SDK maps unknown methods to GET. Keep the actual outcome label bounded.
         method: if method == Method::Get && req.inner().method() != "GET" {
             "OTHER"
@@ -74,11 +54,11 @@ async fn handle_inner(
             method.as_ref()
         },
     };
-    let external = access.is_none();
+    let external = matches!(mode, CallMode::External);
     let url = req.url();
     let https = url.as_ref().is_ok_and(|url| url.scheme() == "https");
     let result = match url {
-        Ok(url) => handle_response(req, &env, url, access, client_ip, &log).await,
+        Ok(url) => handle_response(req, &env, url, mode, &log).await,
         Err(error) => Err(error),
     };
     let (response, retry_after_at, error_code) = match result {
@@ -101,372 +81,99 @@ async fn handle_inner(
 async fn handle_response(
     req: Request,
     env: &Env,
-    url: worker::Url,
-    access: Option<WebSessionAccess>,
-    client_ip: Option<String>,
+    url: Url,
+    mode: CallMode,
     log: &RequestLog<'_>,
 ) -> worker::Result<(Response, Option<i64>, Option<&'static str>)> {
     let id = log.id;
-    if url.path() == "/internal/v1" || url.path().starts_with("/internal/v1/") {
-        let response = with_security_headers(
-            error_response(
-                Failure {
-                    status: 404,
-                    code: "NOT_FOUND",
-                },
-                id,
-            )?,
-            id,
-            url.scheme() == "https",
-        )?;
+    let path = url.path();
+    let https = url.scheme() == "https";
+    if path == "/internal/v1" || path.starts_with("/internal/v1/") {
+        let failure = Failure {
+            status: 404,
+            code: "NOT_FOUND",
+        };
+        let response = with_security_headers(error_response(failure, id)?, id, https)?;
         return Ok((response, None, Some("NOT_FOUND")));
     }
-    if req.method() == Method::Get && url.path() == "/api/v2/health" {
-        let response = with_security_headers(health_response(id)?, id, url.scheme() == "https")?;
+    if req.method() == Method::Get && path == "/api/v2/health" {
+        let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
         return Ok((response, None, None));
     }
-    let external = access.is_none();
-    let is_billing = crate::web::billing::matches(url.path());
+    let (external, access, client_ip) = match mode {
+        CallMode::External => (true, None, None),
+        CallMode::Internal { access, client_ip } => (false, Some(access), Some(client_ip)),
+    };
+    let is_billing = web::billing::matches(path);
     let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
             log_failure(log.env, id, log.route, "initialize", &e, log.started);
             let code = e.code;
-            let response = if is_billing {
-                crate::web::billing::error_response(e, id)?
-            } else {
-                error_response(e, id)?
-            };
-            let response = with_security_headers(response, id, url.scheme() == "https")?;
+            let response = web::http::render_error(e, id, is_billing, None)?;
+            let response = with_security_headers(response, id, https)?;
             return Ok((response, None, Some(code)));
         }
     };
     a.s.web_session_access = access;
     let result = dispatch(&mut a, env, url).await;
+    // BFF requests pass the deadline through to the public response.
     let retry_after_at = a.retry_after_at.get();
     let status = result
         .as_ref()
         .map_or_else(|e| e.status, Response::status_code);
-    let error_code = result.as_ref().err().map(|e| e.code);
-    // Internal calls carry the deadline through BFF session cleanup to the public response.
-    let retry_after = (external && status == 429).then(|| {
-        retry_after_at
-            .map(|expires_at| retry_after_seconds(expires_at, now()))
-            .unwrap_or(DEFAULT_RETRY_AFTER)
-    });
-    let mut response = match result {
-        Ok(r) => r,
+    let retry_after = web::http::retry_after(external, status, retry_after_at);
+    let (response, error_code) = match result {
+        Ok(response) => (response, None),
         Err(e) => {
             let phase = if external { "dispatch" } else { "internal" };
             log_failure(log.env, id, log.route, phase, &e, log.started);
-            if let Some(retry_after) = retry_after.filter(|_| {
-                let path = a.request.path();
-                path.starts_with("/api/v2/") || path.starts_with("/api/account/")
-            }) {
-                json_response(
-                    json!({"error":{"code":e.code,"retryAfterSeconds":retry_after},"requestId":id}),
-                    429,
-                )?
-            } else if is_billing {
-                crate::web::billing::error_response(e, id)?
-            } else {
-                error_response(e, id)?
-            }
+            let code = e.code;
+            let rate_limit = retry_after.map(|seconds| (&a.request, seconds));
+            (
+                web::http::render_error(e, id, is_billing, rate_limit)?,
+                Some(code),
+            )
         }
     };
-    if response.status_code() < 400 {
-        for c in &a.cookies {
-            response.headers_mut().append("Set-Cookie", c)?;
-        }
-    }
-    if let Some(retry_after) = retry_after {
-        response
-            .headers_mut()
-            .set("Retry-After", &retry_after.to_string())?;
-    } else if external && status == 409 && a.retry_browser_read {
-        response.headers_mut().set("Retry-After", "0")?;
-    }
-    let response = with_security_headers(response, id, a.origin.starts_with("https:"))?;
+    let response = web::http::finalize_response(response, &a, id, external, status, retry_after)?;
     Ok((response, retry_after_at, error_code))
 }
 
-fn health_response(id: &str) -> worker::Result<Response> {
-    json_response(
-        json!({"data":{"status":"UP","runtime":"cloudflare","backend":"rust"},"requestId":id}),
-        200,
-    )
-}
-
-pub(crate) fn with_security_headers(
-    mut response: Response,
-    id: &str,
-    https: bool,
-) -> worker::Result<Response> {
-    for (k, v) in [
-        ("X-Request-ID", id),
-        ("X-Content-Type-Options", "nosniff"),
-        ("Referrer-Policy", "no-referrer"),
-        ("X-Frame-Options", "DENY"),
-        (
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com https://avatars.githubusercontent.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-        ),
-    ] {
-        if (k == "Content-Security-Policy" || k == "Referrer-Policy")
-            && response.headers().get(k)?.is_some()
-        {
-            continue;
-        }
-        response.headers_mut().set(k, v)?;
-    }
-    if https {
-        response
-            .headers_mut()
-            .set("Strict-Transport-Security", "max-age=31536000")?;
-    }
-    Ok(response)
-}
-async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response> {
+async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     let path = url.path();
     let method = a.request.method();
 
-    if matches!(
-        path,
-        "/.well-known/molis-sync-jwks.json" | "/api/v2/auth/sync-read-proof"
-    ) {
-        return crate::auth::sync_read_proof::route(a, path, method).await;
+    if auth::sync_read_proof::matches(path) {
+        return auth::sync_read_proof::route(a, path, method).await;
     }
-
-    if path.starts_with("/api/v2/auth/management-handoffs")
-        || path == "/account/handoff/start"
-        || path == "/account/handoff/finish"
-    {
-        return crate::auth::management_handoff::route(a, path, method).await;
+    if auth::management_handoff::matches(path) {
+        return auth::management_handoff::route(a, path, method).await;
     }
-    if path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback" {
-        return crate::web::web_session::route(a, path, method).await;
+    if web::web_session::matches(path) {
+        return web::web_session::route(a, path, method).await;
     }
     if path == "/api/v2/readiness" && method == Method::Get {
-        ensure(env.var("MOLIS_LOCAL_GENERATION").is_ok(), 404, "NOT_FOUND")?;
-        for query in include_str!("core/schema-readiness.sql")
-            .split(';')
-            .map(str::trim)
-            .filter(|statement| !statement.is_empty())
-        {
-            a.s.all(query, vec![]).await?;
-        }
-        if env.var("MOLIS_ENVIRONMENT").is_ok() {
-            let client = crate::web::web_session::setting(a, "AUTH_WEB_CLIENT_ID")?;
-            let registration = crate::auth::login_sessions::registered_client(a, &client).await?;
-            ensure(
-                contains(
-                    &parsed(&registration, "redirects")?,
-                    &json!(format!("{}/account/callback", a.origin)),
-                ) && contains(&parsed(&registration, "allowed_origins")?, &json!(a.origin)),
-                503,
-                "UNIFIED_CONFIGURATION_INVALID",
-            )?;
-            crate::auth::test_admission::Admission::load(a)?;
-            ensure(
-                crate::auth::login_capabilities::available(a, &registration).len() == 5
-                    && token(&crate::web::web_session::setting(
-                        a,
-                        "AUTH_WEB_SESSION_KEY",
-                    )?),
-                503,
-                "UNIFIED_CONFIGURATION_INVALID",
-            )?;
-        }
-        return Ok(health_response(&a.request_id)?);
+        return web::readiness::check(a, env).await;
     }
-    // Every account entry uses the same current protocol.
     if path == "/api/v2" || path.starts_with("/api/v2/") {
-        if crate::platform::platform_management::matches(path) {
-            return crate::platform::platform_management::route(a, path, method).await;
-        }
-        if path == "/api/v2/entitlements/check" {
-            return crate::billing::entitlements::route(a, method).await;
-        }
-        if crate::audit::matches(path) {
-            return crate::audit::route(a, path, method).await;
-        }
-        if crate::billing::matches(path) {
-            return crate::billing::route(a, path, method).await;
-        }
-        if [
-            "/api/v2/tenant-creation-policy",
-            "/api/v2/tenants",
-            "/api/v2/platform/tenants",
-            "/api/v2/invitations",
-            "/api/v2/ownership-transfers",
-        ]
-        .iter()
-        .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
-        {
-            return crate::tenants::route(a, path, method).await;
-        }
-        if path == "/api/v2/users/me"
-            || path.starts_with("/api/v2/users/me/")
-            || path == "/api/v2/auth/password-reset/complete"
-        {
-            return crate::account::management::route(a, path, method).await;
-        }
-        if path.starts_with("/api/v2/auth/external/") {
-            return crate::auth::external_login::browser(a, path, method).await;
-        }
-        #[cfg(feature = "mock-provider")]
-        if path.starts_with("/api/v2/auth/mock/") {
-            return crate::auth::external_login::browser(a, path, method).await;
-        }
-        if path == "/api/v2/auth/capabilities" {
-            return crate::auth::login_capabilities::route(a, method).await;
-        }
-        if matches!(
-            path,
-            "/api/v2/auth/login/password"
-                | "/api/v2/auth/login/code"
-                | "/api/v2/auth/verification-codes"
-        ) {
-            return crate::auth::login_commands::route(a, path, method).await;
-        }
-        if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
-            return crate::auth::registration::route(a, path, method).await;
-        }
-        return crate::auth::login_sessions::route(a, path, method).await;
+        return dispatch_v2(a, path, method).await;
     }
-    ensure(
-        !path.starts_with("/api/")
-            && !path.starts_with("/oauth2/")
-            && !path.starts_with("/.well-known/"),
-        404,
-        "NOT_FOUND",
-    )?;
-    ensure(
-        // The SDK maps unrecognized HTTP methods to GET.
-        matches!(a.request.inner().method().as_str(), "GET" | "HEAD"),
-        405,
-        "METHOD_NOT_ALLOWED",
-    )?;
-    let pages = ["/", "/login", "/console"];
-    let page = pages.contains(&path);
-    ensure(page || path.starts_with("/auth-ui/"), 404, "NOT_FOUND")?;
-    // Documents use the configured origin before cookies or login forms are created.
-    // API writes retain their strict Origin and CSRF checks.
-    if page && url.origin().ascii_serialization() != a.origin {
-        let mut canonical = Request::new(&a.origin, Method::Get)?.url()?;
-        canonical.set_path(path);
-        canonical.set_query(url.query());
-        let mut response = Response::empty()?.with_status(302);
-        response.headers_mut().set("Location", canonical.as_str())?;
-        response.headers_mut().set("Cache-Control", "no-store")?;
-        return Ok(response);
-    }
-    let mut target = url.clone();
-    let asset = path.strip_prefix("/auth-ui/assets/");
-    if page {
-        target.set_path("/index.html");
-    } else if asset.is_none() {
-        target.set_path(&path[8..]);
-    }
-    target.set_query(None);
-    let mut r = env
-        .assets("ASSETS")?
-        .fetch_request(Request::new(target.as_str(), method.clone())?)
-        .await?;
-    let content_type = r.headers().get("Content-Type")?.unwrap_or_default();
-    let media_type = content_type.split(';').next().unwrap_or_default().trim();
-    // An assets binding configured with SPA fallback can return HTML for a missing asset.
-    ensure(
-        asset.is_none() || !media_type.eq_ignore_ascii_case("text/html"),
-        404,
-        "NOT_FOUND",
-    )?;
-    // Asset responses have immutable headers; copy them before adding our security policy.
-    let headers = worker::Headers::new();
-    for (key, value) in r.headers().entries() {
-        headers.set(&key, &value)?;
-    }
-    let environment = env
-        .var("MOLIS_ENVIRONMENT")
-        .map(|value| value.to_string())
-        .unwrap_or_default();
-    let label = match environment.as_str() {
-        "dev" => "DEV · 本地数据",
-        "test" => "TEST · 远程测试数据",
-        _ => "",
-    };
-    let mut r = if page && method == Method::Get && r.status_code() == 200 {
-        let config = a.unified_config.as_deref().unwrap_or(&Value::Null);
-        let channels = if crate::delivery::supports_invitation_notifications(
-            &config["kind"],
-            &config["deliveryMode"],
-        ) {
-            "EMAIL PHONE"
-        } else {
-            "EMAIL"
-        };
-        let mut metadata =
-            format!("<meta name=\"molis-tenant-invite-channels\" content=\"{channels}\">");
-        if !label.is_empty() {
-            metadata.push_str(&format!(
-                "<meta name=\"molis-environment\" content=\"{label}\">"
-            ));
-        }
-        let body = r
-            .text()
-            .await?
-            .replacen("</head>", &format!("{metadata}</head>"), 1);
-        headers.delete("Content-Length")?;
-        headers.delete("Content-Encoding")?;
-        headers.delete("ETag")?;
-        Response::from_html(body)?.with_headers(headers)
+    web::assets::serve(a, env, url, method).await
+}
+
+async fn dispatch_v2(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+    if platform::matches(path) {
+        platform::route(a, path, method).await
+    } else if audit::matches(path) {
+        audit::route(a, path, method).await
+    } else if billing::matches(path) {
+        billing::route(a, path, method).await
+    } else if tenants::matches(path) {
+        tenants::route(a, path, method).await
+    } else if account::matches(path) {
+        account::route(a, path, method).await
     } else {
-        r.with_headers(headers)
-    };
-    if page || (asset.is_some() && r.status_code() >= 400) {
-        r.headers_mut().set("Cache-Control", "no-store")?;
-    } else if r.status_code() == 200 && asset.is_some_and(|name| hashed_web_asset(name, media_type))
-    {
-        r.headers_mut()
-            .set("Cache-Control", "public, max-age=31536000, immutable")?;
+        auth::route(a, path, method).await
     }
-    Ok(r)
-}
-fn hashed_web_asset(name: &str, media_type: &str) -> bool {
-    let Some((base, extension)) = name.rsplit_once('.') else {
-        return false;
-    };
-    // Only Vite's generated output from web/vite.config.ts is published under auth-ui/assets/.
-    let Some((prefix, hash)) = base.split_at_checked(base.len().saturating_sub(8)) else {
-        return false;
-    };
-    if !prefix.ends_with('-')
-        || prefix.len() == 1
-        || prefix.contains('/')
-        || !hash
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        return false;
-    }
-    match extension {
-        "js" => media_type == "text/javascript" || media_type == "application/javascript",
-        "css" => media_type == "text/css",
-        "png" => media_type == "image/png",
-        _ => false,
-    }
-}
-pub(crate) async fn bounded(a: &mut Auth, max: usize) -> Result<String> {
-    use futures_util::StreamExt;
-    let mut stream = a.request.stream()?;
-    let mut bytes = Vec::new();
-    while let Some(part) = stream.next().await {
-        let part = part?;
-        ensure(bytes.len() + part.len() <= max, 413, "INVALID_REQUEST")?;
-        bytes.extend(part);
-    }
-    String::from_utf8(bytes).map_err(|_| Failure {
-        status: 400,
-        code: "INVALID_REQUEST",
-    })
 }

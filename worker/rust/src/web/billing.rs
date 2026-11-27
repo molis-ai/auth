@@ -74,7 +74,7 @@ impl<'a> Route<'a> {
 
     pub(super) async fn body(&self, a: &mut Auth) -> Result<Value> {
         let body = if a.request.inner().body().is_some() {
-            crate::app::bounded(a, 4096).await?
+            bounded(&mut a.request, 4096).await?
         } else {
             String::new()
         };

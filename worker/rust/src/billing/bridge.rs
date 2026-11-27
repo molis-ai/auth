@@ -1,6 +1,5 @@
 //! Private identity assertions for the Work billing service.
 use crate::{
-    app::{bounded, with_security_headers},
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
     auth::management_access::{
         ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, require_member,
@@ -126,7 +125,7 @@ async fn authorize(a: &mut Auth, path: &str) -> Result<Value> {
         405,
         "METHOD_NOT_ALLOWED",
     )?;
-    let body = bounded(a, 2048).await?;
+    let body = bounded(&mut a.request, 2048).await?;
     ensure(body.trim_start().starts_with('{'), 400, "INVALID_REQUEST")?;
     let owner = if path == VERIFY {
         let Verify {

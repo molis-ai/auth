@@ -97,7 +97,7 @@ async fn check_request(a: &mut Auth, method: Method) -> Result<Value> {
         400,
         "INVALID_REQUEST",
     )?;
-    let b: Value = serde_json::from_str(&crate::app::bounded(a, 32768).await?)?;
+    let b: Value = serde_json::from_str(&bounded(&mut a.request, 32768).await?)?;
     shape("EntitlementCheckRequest", &b)?;
     Ok(b)
 }

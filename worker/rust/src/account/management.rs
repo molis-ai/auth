@@ -595,8 +595,8 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             "INVALID_REQUEST",
         )?;
         serde_json::from_str(
-            &crate::app::bounded(
-                a,
+            &bounded(
+                &mut a.request,
                 if path.ends_with("/profile") {
                     200000
                 } else {

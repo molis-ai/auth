@@ -630,6 +630,21 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
     Ok(result)
 }
 
+pub(crate) fn matches(path: &str) -> bool {
+    [
+        "/api/v2/tenant-creation-policy",
+        "/api/v2/tenants",
+        "/api/v2/platform/tenants",
+        "/api/v2/invitations",
+        "/api/v2/ownership-transfers",
+    ]
+    .iter()
+    .any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     let action = match action(path, method) {
         Ok(action) => action,
@@ -652,7 +667,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             400,
             "INVALID_REQUEST",
         )?;
-        let b = serde_json::from_str(&crate::app::bounded(a, 16384).await?)?;
+        let b = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
         shape(schema, &b)?;
         if b.get("reason").is_some() {
             ensure(
