@@ -593,6 +593,8 @@ add(
   obj({
     auditEventId: id,
     actorUserId: id,
+    actorDisplayName: nullable(str(0, 120)),
+    tenantName: nullable(name),
     operation: id,
     target: obj({ kind: id, id }),
     tenantId: nullable(id),

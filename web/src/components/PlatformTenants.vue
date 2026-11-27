@@ -5,19 +5,19 @@ import { cursorCollection } from "../lib/cursor-collection.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
 import type { WriteOptions } from "../lib/idempotent-submit.ts";
 import {
+  auditActorLabel,
   auditOperationMeta,
   copyToClipboard,
   formatAuditTimestamp,
   formatRelativeAuditTime,
   platformAuditPath,
-  tenantOwner,
-  resolveDirectoryUser,
   type AuditEvent,
-  type PlatformTenant,
-  type PlatformTenantMember,
 } from "../lib/platform-audit.ts";
 import AuditEventDrawer from "./AuditEventDrawer.vue";
-import PlatformOwnerPicker from "./PlatformOwnerPicker.vue";
+import { platformTenantPath as teamPath, tenantOwner, type PlatformTenant, type PlatformTenantMember } from "../lib/platform-tenants.ts";
+import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
+import PlatformTenantDialogs from "./PlatformTenantDialogs.vue";
+import PlatformTenantMembers from "./PlatformTenantMembers.vue";
 
 const props = defineProps<{
   client: AccountClient;
@@ -49,47 +49,22 @@ const memberCursor = memberCollection.nextCursor;
 const detail = ref<PlatformTenant>();
 const detailRequested = ref(Boolean(props.initialTenantId));
 const directoryLoading = tenantCollection.loading;
-const appliedSearch = ref("");
-let searchTimer: ReturnType<typeof setTimeout>;
+
 let detailGeneration = 0;
-let scopedGeneration = 0;
+let scopeRead: AbortController | undefined;
 let scopeRequest = Promise.resolve();
 const auditEvents = ref<AuditEvent[]>([]);
 const selectedTenantId = ref(props.initialTenantId ?? "");
 const search = ref("");
+const { applied: appliedSearch, reset: resetSearch } = useDebouncedSearch(search);
 const statusFilter = ref<"ALL" | "ACTIVE" | "DISABLED">("ALL");
 const busy = ref(false);
 const message = ref("");
 const activeAuditEvent = ref<AuditEvent | null>(null);
 
-// Create Team modal state
-const createDialog = ref<HTMLDialogElement>();
-const createName = ref("");
-const createOwner = ref("");
-const createOpen = ref(false);
-const createReason = ref("");
-const createError = ref("");
-
-// Disable / Enable Team modal state
-const statusDialog = ref<HTMLDialogElement>();
-const statusMode = ref<"disable" | "enable">("disable");
-const statusTarget = ref<PlatformTenant>();
-const statusReason = ref("");
-const statusError = ref("");
-const transferDialog = ref<HTMLDialogElement>();
-const transferTarget = ref<PlatformTenant>();
-const transferOwner = ref("");
-const transferReason = ref("");
-const transferError = ref("");
-
+const dialogs = ref<InstanceType<typeof PlatformTenantDialogs>>();
 let active = true;
 
-const usersById = computed(() => new Map(members.value.map(member => [member.userId, member])));
-const tenantNamesById = computed(() => {
-  const names = new Map(tenants.value.map(team => [team.tenantId, team.name]));
-  if (detail.value) names.set(detail.value.tenantId, detail.value.name);
-  return names;
-});
 const hasFilters = computed(() => statusFilter.value !== "ALL" || Boolean(appliedSearch.value));
 const selectedTenant = computed(() =>
   tenants.value.find(team => team.tenantId === selectedTenantId.value)
@@ -99,14 +74,6 @@ const selectedTenant = computed(() =>
 const selectedOwner = computed(() => selectedTenant.value ? tenantOwner(selectedTenant.value) : null);
 const relatedAudits = auditEvents;
 const latestRelatedAudit = computed(() => relatedAudits.value[0] ?? null);
-const roleLabel: Record<PlatformTenantMember["role"], string> = {
-  OWNER: "所有者", ADMIN: "管理员", MEMBER: "成员",
-};
-
-function teamPath(tenantId: string): string {
-  return `/platform/tenants/${encodeURIComponent(tenantId)}`;
-}
-
 async function loadDetail(tenantId: string) {
   const generation = ++detailGeneration;
   const team = await props.client.request<PlatformTenant>(teamPath(tenantId));
@@ -118,18 +85,20 @@ watch(() => props.initialTenantId, tenantId => {
   detailRequested.value = true;
   selectedTenantId.value = tenantId;
   detail.value = undefined;
-  void loadDetail(tenantId).catch(reportError);
+  if (!tenants.value.some(team => team.tenantId === tenantId)) {
+    void loadDetail(tenantId).catch(reportError);
+  }
 });
 
-async function run(task: () => Promise<void>, errorTarget = message) {
+async function run(task: () => Promise<void>) {
   if (busy.value) return;
   busy.value = true;
-  errorTarget.value = "";
+  message.value = "";
   try {
     await task();
   } catch (error) {
     if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
-    errorTarget.value = accountErrorMessage(error);
+    message.value = accountErrorMessage(error);
     emit("expired", error);
   } finally {
     if (active) busy.value = false;
@@ -143,20 +112,24 @@ function reportError(error: unknown) {
 }
 
 async function loadScope(tenantId: string | undefined, keepMembers = false) {
-  const generation = ++scopedGeneration;
+  scopeRead?.abort();
   if (!keepMembers) {
     auditEvents.value = [];
     memberCollection.clear();
   }
   if (!tenantId) return;
+  const request = new AbortController();
+  scopeRead = request;
   const requests: Promise<unknown>[] = [memberCollection.first(`${teamPath(tenantId)}/members`)];
   if (hasAuditRead.value) {
-    requests.push(props.client.request<{ items: AuditEvent[] }>(platformAuditPath({ tenantId, limit: 10 })).then(page => {
-      if (active && generation === scopedGeneration) auditEvents.value = page.items;
+    requests.push(props.client.request<{ items: AuditEvent[] }>(
+      platformAuditPath({ tenantId, limit: 10 }), undefined, "GET", undefined, request.signal,
+    ).then(page => {
+      if (!request.signal.aborted) auditEvents.value = page.items;
     }));
   }
   const outcomes = await Promise.allSettled(requests);
-  if (generation === scopedGeneration) {
+  if (!request.signal.aborted) {
     for (const outcome of outcomes) if (outcome.status === "rejected") reportError(outcome.reason);
   }
 }
@@ -166,7 +139,7 @@ async function load(showFeedback = false) {
   if (statusFilter.value !== "ALL") params.set("status", statusFilter.value);
   if (appliedSearch.value) params.set("q", appliedSearch.value);
   const path = params.size ? `/platform/tenants?${params}` : "/platform/tenants";
-  const loaded = await tenantCollection.first(path, 100);
+  const loaded = await tenantCollection.first(path, 30);
   if (loaded && showFeedback && active) {
     if (detailRequested.value && selectedTenantId.value && !tenants.value.some(team => team.tenantId === selectedTenantId.value)) {
       await loadDetail(selectedTenantId.value);
@@ -177,13 +150,36 @@ async function load(showFeedback = false) {
   }
 }
 
-async function refreshTeam(tenantId: string) {
-  const previous = selectedTenant.value?.tenantId;
-  selectedTenantId.value = tenantId;
+function applyCommitted(team: PlatformTenant) {
+  const previous = selectedTenant.value;
+  const matchesId = (row: PlatformTenant) => row.tenantId === team.tenantId;
+  const updated = { ...(previous && matchesId(previous) ? previous : undefined), ...team };
+  detailGeneration++;
+  selectedTenantId.value = team.tenantId;
   detailRequested.value = true;
-  await Promise.all([load(), loadDetail(tenantId)]);
-  if (previous === tenantId) await loadScope(tenantId, true);
-  else await scopeRequest;
+  detail.value = updated;
+  if (statusFilter.value === "ALL" || statusFilter.value === team.status) {
+    tenantCollection.replace(matchesId, updated);
+  } else {
+    tenantCollection.remove(matchesId);
+  }
+  if (previous?.tenantId === team.tenantId) scopeRequest = loadScope(team.tenantId, true);
+}
+
+async function refreshCommitted(team: PlatformTenant, created: boolean) {
+  await nextTick();
+  if (!active) return;
+  if (created || hasFilters.value) await load();
+  // Exact idempotent responses recorded before the new projection can still
+  // be replayed. Refresh their missing metadata using the ordinary detail read.
+  if (team.memberCount === undefined && selectedTenantId.value === team.tenantId) {
+    await loadDetail(team.tenantId);
+    const snapshot = detail.value;
+    if (snapshot?.tenantId === team.tenantId) {
+      tenantCollection.replace(row => row.tenantId === team.tenantId, snapshot);
+    }
+  }
+  await scopeRequest;
 }
 
 function selectTenant(tenantId: string) {
@@ -194,8 +190,7 @@ function selectTenant(tenantId: string) {
 }
 
 function resetFilters() {
-  search.value = "";
-  appliedSearch.value = "";
+  resetSearch();
   statusFilter.value = "ALL";
 }
 
@@ -204,176 +199,6 @@ async function copyField(value: string, label: string) {
   emit("notify", ok ? `已复制${label}` : `${label}：${value}`);
 }
 
-// Create Team modal handlers
-async function openCreateModal() {
-  if (busy.value) return;
-  createName.value = "";
-  createReason.value = "";
-  createError.value = "";
-  createOwner.value = "";
-  createOpen.value = true;
-  await nextTick();
-  if (active) createDialog.value?.showModal();
-}
-
-function closeCreateModal() {
-  createDialog.value?.close();
-  createOpen.value = false;
-  createError.value = "";
-}
-
-function cancelCreateModal() {
-  if (!busy.value) closeCreateModal();
-}
-
-function submitCreateTeam() {
-  const name = createName.value.trim();
-  const ownerUserId = createOwner.value.trim();
-  const reason = createReason.value.trim();
-
-  if (!name) {
-    createError.value = "请输入有效的团队名称";
-    return;
-  }
-  if (!ownerUserId) {
-    createError.value = "请选择或输入初始所有者 User ID";
-    return;
-  }
-  if (!reason) {
-    createError.value = "平台写操作必须填写非空操作原因";
-    return;
-  }
-
-  return run(async () => {
-    await props.submitWrite<PlatformTenant>(
-      "/platform/tenants",
-      { name, ownerUserId, reason },
-      {
-        action: "create-platform-tenant",
-        success: `已创建团队「${name}」`,
-        refreshMessage: "团队已创建，但团队列表暂未刷新。",
-        committed: created => {
-          if (!active) return;
-          selectedTenantId.value = created.tenantId;
-          closeCreateModal();
-        },
-        after: async created => {
-          if (!active) return;
-          await refreshTeam(created.tenantId);
-        },
-      },
-    );
-  }, createError);
-}
-
-// Disable / Enable Team modal handlers
-async function openStatusModal(mode: "disable" | "enable") {
-  if (busy.value || !selectedTenant.value) return;
-  statusMode.value = mode;
-  statusTarget.value = selectedTenant.value;
-  statusReason.value = "";
-  statusError.value = "";
-  await nextTick();
-  if (active) statusDialog.value?.showModal();
-}
-
-function closeStatusModal() {
-  statusDialog.value?.close();
-  statusTarget.value = undefined;
-  statusError.value = "";
-}
-
-function cancelStatusModal() {
-  if (!busy.value) closeStatusModal();
-}
-
-const statusQuickReasons = computed(() =>
-  statusMode.value === "disable"
-    ? ["安全风控临时冻结", "客户订阅到期暂停服务", "合规复核中暂挂空间"]
-    : ["风控复核通过，恢复使用", "客户续约完成，重新启用"],
-);
-
-function submitStatusChange() {
-  const target = statusTarget.value;
-  const reason = statusReason.value.trim();
-  if (!target) return;
-  if (!reason) {
-    statusError.value = "请填写非空操作原因";
-    return;
-  }
-
-  const isDisable = statusMode.value === "disable";
-  const endpoint = `/platform/tenants/${encodeURIComponent(target.tenantId)}/${isDisable ? "disable" : "enable"}`;
-
-  return run(async () => {
-    await props.submitWrite<PlatformTenant>(
-      endpoint,
-      { expectedVersion: target.version, reason },
-      {
-        action: `status-platform-tenant-${target.tenantId}`,
-        success: isDisable ? `已停用「${target.name}」` : `已恢复启用「${target.name}」`,
-        refreshMessage: "团队状态已变更，但列表暂未刷新。",
-        committed: updated => {
-          if (!active) return;
-          selectedTenantId.value = updated.tenantId;
-          closeStatusModal();
-        },
-        after: async updated => {
-          if (!active) return;
-          await refreshTeam(updated.tenantId);
-        },
-      },
-    );
-  }, statusError);
-}
-
-async function openTransferModal() {
-  if (busy.value || !selectedTenant.value) return;
-  transferTarget.value = selectedTenant.value;
-  transferOwner.value = "";
-  transferReason.value = "";
-  transferError.value = "";
-  await nextTick();
-  if (active) transferDialog.value?.showModal();
-}
-
-function closeTransferModal() {
-  transferDialog.value?.close();
-  transferTarget.value = undefined;
-}
-
-function cancelTransferModal() {
-  if (!busy.value) closeTransferModal();
-}
-
-function submitTransfer() {
-  const target = transferTarget.value;
-  const newOwnerUserId = transferOwner.value.trim();
-  const reason = transferReason.value.trim();
-  if (!target || !newOwnerUserId || !reason) return;
-  if (newOwnerUserId === target.ownerUserId) {
-    transferError.value = "请选择另一位活跃用户作为新所有者";
-    return;
-  }
-  return run(() => props.submitWrite<PlatformTenant>(
-    `${teamPath(target.tenantId)}/transfer-owner`,
-    { newOwnerUserId, expectedVersion: target.version, reason },
-    {
-      action: `transfer-platform-tenant-${target.tenantId}`,
-      success: `已移交「${target.name}」的所有权`,
-      refreshMessage: "所有权已移交，团队信息暂未刷新。",
-      committed: closeTransferModal,
-      after: async updated => {
-        if (active) await refreshTeam(updated.tenantId);
-      },
-    },
-  ), transferError);
-}
-
-watch(search, value => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { appliedSearch.value = value.trim(); }, 250);
-});
 watch([appliedSearch, statusFilter], () => {
   message.value = "";
   selectTenant("");
@@ -387,7 +212,9 @@ watch(() => selectedTenant.value?.tenantId, tenantId => {
 onMounted(() => {
   void run(async () => {
     try {
-      await Promise.all([load(), selectedTenantId.value ? loadDetail(selectedTenantId.value) : undefined]);
+      await load();
+      const id = selectedTenantId.value;
+      if (id && !tenants.value.some(team => team.tenantId === id)) await loadDetail(id);
     } catch (error) {
       if (!selectedTenant.value) detailRequested.value = false;
       throw error;
@@ -396,13 +223,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   active = false;
-  scopedGeneration++;
-  clearTimeout(searchTimer);
+  scopeRead?.abort();
   tenantCollection.clear();
   memberCollection.clear();
-  createDialog.value?.close();
-  statusDialog.value?.close();
-  transferDialog.value?.close();
 });
 </script>
 
@@ -478,7 +301,7 @@ onBeforeUnmount(() => {
           type="button"
           class="pt-dashed-btn"
           :disabled="busy"
-          @click="openCreateModal"
+          @click="dialogs?.openCreateModal()"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
@@ -584,7 +407,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="pt-btn pt-btn-danger-soft"
                     :disabled="busy"
-                    @click="openStatusModal('disable')"
+                    @click="dialogs?.openStatusModal('disable', selectedTenant)"
                   >
                     停用团队
                   </button>
@@ -593,7 +416,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="pt-btn pt-btn-primary"
                     :disabled="busy"
-                    @click="openStatusModal('enable')"
+                    @click="dialogs?.openStatusModal('enable', selectedTenant)"
                   >
                     恢复启用团队
                   </button>
@@ -613,7 +436,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="pt-btn pt-btn-primary pt-btn-sm"
                 :disabled="busy"
-                @click="openStatusModal('enable')"
+                @click="dialogs?.openStatusModal('enable', selectedTenant)"
               >
                 立即恢复
               </button>
@@ -703,7 +526,7 @@ onBeforeUnmount(() => {
                         </svg>
                       </button>
                       <button v-if="canSetStatus" type="button" class="pt-btn pt-btn-danger-soft pt-btn-sm"
-                        :disabled="busy" @click="openTransferModal">
+                        :disabled="busy" @click="dialogs?.openTransferModal(selectedTenant)">
                         强制移交所有权
                       </button>
                     </div>
@@ -727,31 +550,10 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="pt-card" aria-labelledby="pt-member-heading">
-              <header class="pt-card-head">
-                <div>
-                  <h3 id="pt-member-heading">团队成员<span v-if="selectedTenant.memberCount !== undefined"> · {{ selectedTenant.memberCount }} 人</span></h3>
-                  <p>查看当前成员与角色</p>
-                </div>
-                <span class="pt-pill is-neutral">只读</span>
-              </header>
-              <div v-if="members.length" class="pt-kv-list">
-                <div v-for="member in members" :key="member.membershipId" class="pt-kv-row pt-member-row">
-                  <div class="pt-member-identity">
-                    <strong class="pt-kv-strong">{{ member.displayName || member.userId }}</strong>
-                    <span v-if="member.email" class="pt-kv-sub">{{ member.email }}</span>
-                  </div>
-                  <div class="pt-kv-val"><span class="pt-pill is-neutral">{{ roleLabel[member.role] }}</span></div>
-                </div>
-              </div>
-              <div v-else class="pt-empty-state is-compact" role="status">
-                {{ membersLoading ? "正在加载成员…" : "暂无可显示的成员" }}
-              </div>
-              <div v-if="memberCursor" class="pt-card-head">
-                <button type="button" class="pt-btn pt-btn-secondary pt-btn-sm" :disabled="membersLoading"
-                  @click="memberCollection.more().catch(reportError)">加载更多成员</button>
-              </div>
-            </section>
+            <PlatformTenantMembers
+              :members="members" :count="selectedTenant.memberCount" :loading="membersLoading"
+              :can-load-more="Boolean(memberCursor)" @more="memberCollection.more().catch(reportError)"
+            />
 
             <!-- Card 2: Related Audit Events Preview -->
             <section v-if="hasAuditRead" class="pt-card">
@@ -788,7 +590,7 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="pt-mini-col">
                     <span class="pt-actor-name pt-truncate">
-                      {{ resolveDirectoryUser(ev.actorUserId, usersById, hasUserRead).primary }}
+                      {{ auditActorLabel(ev) }}
                     </span>
                     <span class="pt-time-rel pt-num">{{ formatAuditTimestamp(ev.occurredAt) }}</span>
                   </span>
@@ -823,7 +625,7 @@ onBeforeUnmount(() => {
                 v-if="!hasFilters && canCreate"
                 type="button"
                 class="pt-btn pt-btn-primary"
-                @click="openCreateModal"
+                @click="dialogs?.openCreateModal()"
               >
                 ＋ 平台创建团队
               </button>
@@ -841,186 +643,15 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Modal 1: Platform Create Team -->
-    <dialog ref="createDialog" class="pt-dialog" aria-labelledby="pt-create-title" @cancel.prevent="cancelCreateModal">
-      <form @submit.prevent="submitCreateTeam">
-        <header class="pt-dialog-head">
-          <h3 id="pt-create-title">平台创建团队</h3>
-          <button type="button" class="pt-dialog-close" aria-label="关闭" :disabled="busy" @click="cancelCreateModal">
-            ×
-          </button>
-        </header>
-        <div class="pt-dialog-body">
-          <div class="pt-field">
-            <label class="pt-field-label" for="pt-create-name">
-              <span>团队名称<span class="pt-req">*</span></span>
-              <span class="pt-mono">name</span>
-            </label>
-            <input
-              id="pt-create-name"
-              v-model="createName"
-              type="text"
-              class="pt-input"
-              maxlength="64"
-              required
-              autofocus
-              :disabled="busy"
-              placeholder="例如：华东企业研发部"
-            />
-          </div>
-
-          <PlatformOwnerPicker v-if="createOpen" v-model="createOwner" :client="client" label="初始所有者"
-            :can-search="hasUserRead" :disabled="busy" @expired="emit('expired', $event)" />
-
-          <div class="pt-field">
-            <label class="pt-field-label" for="pt-create-reason">
-              <span>操作原因<span class="pt-req">*</span></span>
-              <span class="pt-mono">reason</span>
-            </label>
-            <textarea
-              id="pt-create-reason"
-              v-model="createReason"
-              class="pt-textarea"
-              maxlength="500"
-              required
-              :disabled="busy"
-              placeholder="填写审计原因，例如：企业客户签约后由平台代建初始工作空间"
-            />
-            <div class="pt-quick-chips">
-              <button type="button" class="pt-quick-chip" @click="createReason = '企业客户签约，平台代建团队'">
-                企业客户签约代建
-              </button>
-              <button type="button" class="pt-quick-chip" @click="createReason = '受控建团策略下，审批通过代建'">
-                受控策略审批建团
-              </button>
-              <button type="button" class="pt-quick-chip" @click="createReason = '内部新业务线立项初始化'">
-                内部业务线立项
-              </button>
-            </div>
-          </div>
-
-          <p v-if="createError" class="pt-dialog-error" role="alert">{{ createError }}</p>
-        </div>
-        <footer class="pt-dialog-foot">
-          <button type="button" class="pt-btn pt-btn-secondary" :disabled="busy" @click="cancelCreateModal">取消</button>
-          <button
-            type="submit"
-            class="pt-btn pt-btn-primary"
-            :disabled="busy || !createName.trim() || !createOwner.trim() || !createReason.trim()"
-          >
-            {{ busy ? "正在提交…" : "确认创建团队" }}
-          </button>
-        </footer>
-      </form>
-    </dialog>
-
-    <!-- Modal 2: Disable / Enable Team -->
-    <dialog ref="statusDialog" class="pt-dialog" aria-labelledby="pt-status-title" @cancel.prevent="cancelStatusModal">
-      <form v-if="statusTarget" @submit.prevent="submitStatusChange">
-        <header class="pt-dialog-head">
-          <h3 id="pt-status-title">{{ statusMode === "disable" ? "停用团队" : "恢复启用团队" }}</h3>
-          <button type="button" class="pt-dialog-close" aria-label="关闭" :disabled="busy" @click="cancelStatusModal">
-            ×
-          </button>
-        </header>
-        <div class="pt-dialog-body">
-          <div :class="statusMode === 'disable' ? 'pt-callout-warn' : 'pt-callout-info'">
-            <template v-if="statusMode === 'disable'">
-              <strong>高影响操作：</strong>停用后，该团队所有成员将立即失去团队上下文访问与席位管理权限。可随时通过「恢复启用」解除冻结。
-            </template>
-            <template v-else>
-              <strong>恢复说明：</strong>恢复启用后，团队状态将变为 ACTIVE，原成员角色与历史配置将立即恢复生效。
-            </template>
-          </div>
-
-          <div class="pt-meta-grid">
-            <div class="pt-meta-box">
-              <div class="pt-meta-label">目标团队</div>
-              <div class="pt-meta-val pt-meta-strong">{{ statusTarget.name }}</div>
-            </div>
-            <div class="pt-meta-box">
-              <div class="pt-meta-label">乐观锁版本 (expectedVersion)</div>
-              <div class="pt-meta-val pt-mono pt-kv-ink">v{{ statusTarget.version }} → v{{ statusTarget.version + 1 }}</div>
-            </div>
-          </div>
-
-          <div class="pt-field">
-            <label class="pt-field-label" for="pt-status-reason">
-              <span>操作原因<span class="pt-req">*</span></span>
-              <span class="pt-mono">reason</span>
-            </label>
-            <textarea
-              id="pt-status-reason"
-              v-model="statusReason"
-              class="pt-textarea"
-              maxlength="500"
-              required
-              autofocus
-              :disabled="busy"
-              placeholder="请输入状态变更原因，该操作将写入不可篡改审计日志"
-            />
-            <div class="pt-quick-chips">
-              <button
-                v-for="chip in statusQuickReasons"
-                :key="chip"
-                type="button"
-                class="pt-quick-chip"
-                @click="statusReason = chip"
-              >
-                {{ chip }}
-              </button>
-            </div>
-          </div>
-
-          <p v-if="statusError" class="pt-dialog-error" role="alert">{{ statusError }}</p>
-        </div>
-        <footer class="pt-dialog-foot">
-          <button type="button" class="pt-btn pt-btn-secondary" :disabled="busy" @click="cancelStatusModal">取消</button>
-          <button
-            type="submit"
-            class="pt-btn"
-            :class="statusMode === 'disable' ? 'pt-btn-danger' : 'pt-btn-primary'"
-            :disabled="busy || !statusReason.trim()"
-          >
-            {{ busy ? "正在提交…" : statusMode === "disable" ? "确认停用团队" : "确认恢复启用" }}
-          </button>
-        </footer>
-      </form>
-    </dialog>
-
-    <dialog ref="transferDialog" class="pt-dialog" aria-labelledby="pt-transfer-title" @cancel.prevent="cancelTransferModal">
-      <form @submit.prevent="submitTransfer">
-        <header class="pt-dialog-head">
-          <h3 id="pt-transfer-title">强制移交所有权</h3>
-          <button type="button" class="pt-dialog-close" aria-label="关闭" :disabled="busy" @click="cancelTransferModal">×</button>
-        </header>
-        <div v-if="transferTarget" class="pt-dialog-body">
-          <p>「{{ transferTarget.name }}」的原所有者将变为管理员，未完成的所有权交接将取消。</p>
-          <PlatformOwnerPicker v-model="transferOwner" :client="client" label="新所有者"
-            :can-search="hasUserRead" :exclude="transferTarget.ownerUserId" :disabled="busy"
-            @expired="emit('expired', $event)" />
-          <div class="pt-field">
-            <label class="pt-field-label" for="pt-transfer-reason">操作原因</label>
-            <textarea id="pt-transfer-reason" v-model="transferReason" class="pt-textarea" maxlength="500"
-              required :disabled="busy" />
-          </div>
-          <p v-if="transferError" class="pt-dialog-error" role="alert">{{ transferError }}</p>
-        </div>
-        <footer class="pt-dialog-foot">
-          <button type="button" class="pt-btn pt-btn-secondary" :disabled="busy" @click="cancelTransferModal">取消</button>
-          <button type="submit" class="pt-btn pt-btn-danger" :disabled="busy || !transferOwner.trim() || !transferReason.trim()">
-            {{ busy ? "正在提交…" : "确认移交" }}
-          </button>
-        </footer>
-      </form>
-    </dialog>
+    <PlatformTenantDialogs
+      ref="dialogs" v-model:busy="busy" :client="client" :has-user-read="hasUserRead"
+      :submit-write="submitWrite" :refresh="refreshCommitted"
+      @expired="emit('expired', $event)" @committed="applyCommitted"
+    />
 
     <!-- Shared Audit Event Detail Drawer -->
     <AuditEventDrawer
       :event="activeAuditEvent"
-      :users-by-id="usersById"
-      :tenant-names-by-id="tenantNamesById"
-      :has-user-read="hasUserRead"
       :can-open-tenant="false"
       @close="activeAuditEvent = null"
       @notify="emit('notify', $event)"
@@ -1170,14 +801,6 @@ onBeforeUnmount(() => {
 .platform-tenants-page button.pt-btn-secondary:enabled:hover { background: #fafafb; border-color: #c2c2cb; }
 .platform-tenants-page button.pt-btn-danger-soft { background: #fdf1f2; border-color: #f4d3d6; color: #a62b33; }
 .platform-tenants-page button.pt-btn-danger-soft:enabled:hover { background: #fbe3e5; border-color: #ebb7bc; }
-.platform-tenants-page button.pt-btn-danger { background: #a62b33; border-color: #a62b33; color: #fff; }
-.platform-tenants-page button.pt-btn-danger:enabled:hover { background: #8f222a; border-color: #8f222a; }
-.platform-tenants-page button.pt-link-btn {
-  border: 0; background: transparent; padding: 0; min-height: 0; color: var(--accent);
-  font-size: 12.5px; font-weight: 600;
-}
-.platform-tenants-page button.pt-link-btn:enabled:hover { color: #3f55a0; text-decoration: underline; }
-
 /* KPI Strip */
 .pt-kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .pt-kpi-card {
@@ -1219,8 +842,6 @@ onBeforeUnmount(() => {
 .pt-kv-val-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .pt-kv-strong { font-weight: 600; color: var(--ink); }
 .pt-kv-sub { font-size: 12.5px; color: var(--muted); }
-.pt-kv-row.pt-member-row { grid-template-columns: minmax(0, 1fr) auto; }
-.pt-member-identity { display: grid; gap: 2px; overflow-wrap: anywhere; }
 .pt-kv-hint { font-size: 12px; color: #8e8e98; }
 .pt-kv-ink { color: var(--ink); }
 
@@ -1259,71 +880,6 @@ onBeforeUnmount(() => {
 .pt-empty-desc { font-size: 13px; color: var(--muted); max-width: 380px; margin: 0 auto 14px; }
 .pt-empty-state.is-compact .pt-empty-desc { margin-bottom: 0; }
 
-/* Dialog Modals */
-.pt-dialog {
-  width: min(490px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
-  border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink);
-  box-shadow: 0 24px 60px rgba(25, 25, 27, 0.18); overflow: auto;
-}
-.pt-dialog::backdrop { background: rgba(25, 25, 27, 0.38); backdrop-filter: blur(3px); }
-.pt-dialog form { margin: 0; }
-.pt-dialog-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 18px 22px 14px; border-bottom: 1px solid var(--line);
-}
-.pt-dialog-head h3 { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); }
-.platform-tenants-page button.pt-dialog-close {
-  flex: none; width: 30px; height: 30px; min-height: 30px; padding: 0;
-  border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 18px;
-}
-.platform-tenants-page button.pt-dialog-close:enabled:hover { background: #f2f2f5; color: var(--ink); }
-.pt-dialog-body { padding: 18px 22px; display: flex; flex-direction: column; gap: 15px; }
-.pt-dialog-foot {
-  padding: 14px 22px; border-top: 1px solid var(--line); background: #fafafb;
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-}
-.pt-field { display: flex; flex-direction: column; gap: 6px; }
-.pt-field-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
-.pt-req { color: #a62b33; margin-left: 2px; }
-.pt-field-hint { font-size: 12px; color: var(--muted); }
-.platform-tenants-page .pt-input,
-.platform-tenants-page .pt-select,
-.platform-tenants-page .pt-textarea {
-  width: 100%; margin: 0; border-radius: 9px; border: 1px solid #d5d5db;
-  background: var(--surface); color: var(--ink); font-size: 13.5px;
-}
-.platform-tenants-page .pt-input,
-.platform-tenants-page .pt-select { height: 38px; padding: 0 12px; }
-.platform-tenants-page .pt-mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; }
-.platform-tenants-page .pt-textarea { padding: 10px 12px; min-height: 78px; resize: vertical; }
-.platform-tenants-page .pt-input:focus,
-.platform-tenants-page .pt-select:focus,
-.platform-tenants-page .pt-textarea:focus {
-  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(80, 104, 183, 0.14);
-}
-.pt-quick-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.platform-tenants-page button.pt-quick-chip {
-  min-height: 24px; padding: 3px 9px; border-radius: 999px;
-  border: 1px solid var(--line); background: #fafafb; color: var(--muted); font-size: 11.5px; font-weight: 500;
-}
-.platform-tenants-page button.pt-quick-chip:enabled:hover {
-  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
-}
-.pt-callout-warn {
-  padding: 12px 14px; border-radius: 10px;
-  background: #fdf1f2; border: 1px solid #f4d3d6; color: #a62b33; font-size: 12.5px; line-height: 1.55;
-}
-.pt-callout-info {
-  padding: 12px 14px; border-radius: 10px;
-  background: #ecf7f0; border: 1px solid #cbe8d7; color: #216b46; font-size: 12.5px; line-height: 1.55;
-}
-.pt-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.pt-meta-box { padding: 10px 12px; border-radius: 10px; background: #fafafb; border: 1px solid var(--line); min-width: 0; }
-.pt-meta-label { font-size: 11px; color: #8e8e98; margin-bottom: 3px; }
-.pt-meta-val { font-size: 12.5px; color: var(--ink); word-break: break-all; }
-.pt-meta-strong { font-weight: 600; }
-.pt-dialog-error { margin: 0; font-size: 12.5px; color: #a62b33; }
-
 @media (max-width: 1080px) {
   .pt-shell { grid-template-columns: 1fr; min-height: 0; }
   .pt-rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -1334,6 +890,5 @@ onBeforeUnmount(() => {
   .pt-kpi-grid { grid-template-columns: 1fr; }
   .pt-kv-row { grid-template-columns: 1fr; gap: 4px; }
   .platform-tenants-page button.pt-mini-audit-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .pt-meta-grid { grid-template-columns: 1fr; }
 }
 </style>

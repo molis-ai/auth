@@ -271,7 +271,7 @@ test("new console collections retry only marked conflicts on their first pages",
     "/platform/tenants/t-1/members", "/platform/tenants", "/platform/audit-events",
   ];
   const filtered = [
-    "/platform/users?status=ACTIVE&q=owner&limit=20",
+    "/platform/users?status=ACTIVE&q=owner+name%2Falias&limit=20",
     "/platform/tenants?status=DISABLED&q=team&limit=100",
     "/platform/audit-events?tenantId=t-1&category=tenant&limit=10",
   ];

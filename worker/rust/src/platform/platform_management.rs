@@ -3,9 +3,9 @@ use crate::{
     auth::login_sessions,
     http::*,
     identity::Auth,
+    management_protocol::{self as protocol, Access, Lookup, Read},
+    management_protocol::{Action, Change, Context, Service},
     security::uuid,
-    tenants::protocol::{self, Access, Lookup, Read},
-    tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
 use worker::{Method, Response};
@@ -274,7 +274,7 @@ fn audit(
         kind,
         &after[key],
         &body["reason"],
-        changes,
+        json!({"changes": changes}),
     )
 }
 

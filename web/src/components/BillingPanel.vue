@@ -32,7 +32,9 @@ submissions.setAccount(props.viewerId);
 let readScope = new AbortController();
 const lifetime = new AbortController();
 const readClient: Pick<AccountClient, "request"> = {
-  request: <T,>(resource: string) => props.client.request<T>(resource, undefined, "GET", undefined, readScope.signal),
+  request: <T,>(resource: string, _body?: unknown, _method?: string, _key?: string, signal?: AbortSignal) =>
+    props.client.request<T>(resource, undefined, "GET", undefined,
+      signal ? AbortSignal.any([readScope.signal, signal]) : readScope.signal),
 };
 const orders = cursorCollection<BillingOrder>(readClient);
 const ledger = cursorCollection<BillingLedgerEntry>(readClient);

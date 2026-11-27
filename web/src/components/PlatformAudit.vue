@@ -4,17 +4,17 @@ import { AuthError, type AccountClient } from "../lib/account-client.ts";
 import { cursorCollection } from "../lib/cursor-collection.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
 import {
+  auditActorLabel,
   auditOperationMeta,
   formatAuditTimestamp,
   formatRelativeAuditTime,
   platformAuditPath,
-  resolveDirectoryUser,
   targetKindTone,
   type AuditCategory,
   type AuditEvent,
-  type PlatformDirectoryUser,
-  type PlatformTenant,
 } from "../lib/platform-audit.ts";
+import { platformTenantPath, type PlatformTenant } from "../lib/platform-tenants.ts";
+import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
 import AuditEventDrawer from "./AuditEventDrawer.vue";
 
 const props = defineProps<{
@@ -29,7 +29,6 @@ const emit = defineEmits<{
   openTenant: [tenantId: string];
 }>();
 
-const hasUserRead = computed(() => props.capabilities.includes("USER_READ"));
 const hasTenantRead = computed(() => props.capabilities.includes("TENANT_READ"));
 
 const auditCollection = cursorCollection<AuditEvent>(props.client);
@@ -37,22 +36,24 @@ const allEvents = auditCollection.items;
 const nextCursor = auditCollection.nextCursor;
 const loadingMore = computed(() => auditCollection.loading.value && allEvents.value.length > 0);
 
-const users = ref<PlatformDirectoryUser[]>([]);
-const tenants = ref<PlatformTenant[]>([]);
 const category = ref<AuditCategory>("all");
 const resultFilter = ref<"ALL" | "SUCCEEDED" | "DENIED">("ALL");
 const query = ref("");
 const tenantScope = ref<string | null>(props.initialTenantScope ?? null);
 const selectedEvent = ref<AuditEvent | null>(null);
 const busy = auditCollection.loading;
-const appliedQuery = ref("");
-let searchTimer: ReturnType<typeof setTimeout>;
+const { applied: appliedQuery, reset: resetSearch } = useDebouncedSearch(query);
 const message = ref("");
 
 let active = true;
 
-const usersById = computed(() => new Map(users.value.map(u => [u.userId, u])));
-const tenantNamesById = computed(() => new Map(tenants.value.map(t => [t.tenantId, t.name])));
+const scopedNames = ref(new Map<string, string>());
+const requestedNames = new Set<string>();
+let nameRequest: AbortController | undefined;
+const scopedName = computed(() => {
+  const id = tenantScope.value;
+  return id ? allEvents.value.find(event => event.tenantId === id)?.tenantName ?? scopedNames.value.get(id) ?? id : "";
+});
 
 const isFiltered = computed(() => Boolean(
   tenantScope.value || category.value !== "all" || resultFilter.value !== "ALL" || appliedQuery.value,
@@ -68,10 +69,6 @@ const categories: ReadonlyArray<{ id: AuditCategory; label: string }> = [
   { id: "billing", label: "订阅与目录" },
 ];
 
-function tenantLabel(tenantId: string): string {
-  return tenantNamesById.value.get(tenantId) ?? tenantId;
-}
-
 watch(
   () => props.initialTenantScope,
   scope => {
@@ -79,38 +76,46 @@ watch(
     if (scope) {
       category.value = "all";
       resultFilter.value = "ALL";
-      query.value = "";
-      appliedQuery.value = "";
+      resetSearch();
     }
   },
 );
 
-async function listAll<T>(path: string): Promise<T[]> {
-  const values: T[] = [];
-  let cursor: string | null = null;
-  const seen = new Set<string>();
-  do {
-    const page: { items: T[]; nextCursor: string | null } = await props.client.request(
-      path + "?limit=100" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+async function loadScopedName(id: string) {
+  if (!hasTenantRead.value || scopedNames.value.has(id) || requestedNames.has(id)) return;
+  requestedNames.add(id);
+  const request = new AbortController();
+  nameRequest = request;
+  try {
+    const team = await props.client.request<PlatformTenant>(
+      platformTenantPath(id), undefined, "GET", undefined, request.signal,
     );
-    values.push(...page.items);
-    cursor = page.nextCursor;
-    if (cursor && seen.has(cursor)) break;
-    if (cursor) seen.add(cursor);
-  } while (cursor && active);
-  return values;
+    if (!request.signal.aborted) scopedNames.value.set(id, team.name);
+  } catch (error) {
+    if (request.signal.aborted) requestedNames.delete(id);
+    else if (active) emit("expired", error);
+  } finally {
+    if (nameRequest === request) nameRequest = undefined;
+  }
 }
 
 async function load(showFeedback = false) {
   message.value = "";
   try {
+    const scope = tenantScope.value;
     const loaded = await auditCollection.first(platformAuditPath({
       category: category.value,
       result: resultFilter.value,
-      tenantId: tenantScope.value,
+      tenantId: scope,
       q: appliedQuery.value,
     }), 50);
-    if (showFeedback && loaded && active) emit("notify", "已刷新平台审计日志");
+    if (!loaded || !active) return;
+    if (scope && scope === tenantScope.value) {
+      const name = allEvents.value.find(event => event.tenantId === scope)?.tenantName;
+      if (name) scopedNames.value.set(scope, name);
+      else if (!allEvents.value.length) void loadScopedName(scope);
+    }
+    if (showFeedback) emit("notify", "已刷新平台审计日志");
   } catch (error) {
     if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
     message.value = accountErrorMessage(error);
@@ -137,36 +142,20 @@ async function loadMore() {
 function resetFilters() {
   category.value = "all";
   resultFilter.value = "ALL";
-  query.value = "";
   tenantScope.value = null;
-  appliedQuery.value = "";
+  resetSearch();
 }
 
-watch(query, value => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { appliedQuery.value = value.trim(); }, 250);
-});
+watch(tenantScope, () => nameRequest?.abort());
 watch([category, resultFilter, tenantScope, appliedQuery], () => {
   auditCollection.clear();
   selectedEvent.value = null;
   void load();
 });
-onMounted(() => {
-  void load();
-  if (hasUserRead.value) {
-    void listAll<PlatformDirectoryUser>("/platform/users").then(list => {
-      if (active) users.value = list;
-    }).catch(error => { if (active) emit("expired", error); });
-  }
-  if (hasTenantRead.value) {
-    void listAll<PlatformTenant>("/platform/tenants").then(list => {
-      if (active) tenants.value = list;
-    }).catch(error => { if (active) emit("expired", error); });
-  }
-});
+onMounted(() => void load());
 onBeforeUnmount(() => {
   active = false;
-  clearTimeout(searchTimer);
+  nameRequest?.abort();
   auditCollection.clear();
 });
 </script>
@@ -282,7 +271,7 @@ onBeforeUnmount(() => {
             <div class="pa-context-left">
               <span class="pa-pill is-team">团队上下文筛选</span>
               <span>
-                当前仅显示团队 <strong>{{ tenantLabel(tenantScope) }}</strong>（<span class="pa-mono">{{ tenantScope }}</span>）相关事件
+                当前仅显示团队 <strong>{{ scopedName }}</strong>（<span class="pa-mono">{{ tenantScope }}</span>）相关事件
               </span>
             </div>
             <div class="pa-context-actions">
@@ -401,8 +390,8 @@ onBeforeUnmount(() => {
                         <div class="pa-op-code">{{ ev.operation }}</div>
                       </td>
                       <td>
-                        <div class="pa-actor-name">{{ resolveDirectoryUser(ev.actorUserId, usersById, hasUserRead).primary }}</div>
-                        <div class="pa-op-code">{{ ev.actorUserId }}</div>
+                        <div class="pa-actor-name">{{ auditActorLabel(ev) }}</div>
+                        <div v-if="ev.actorDisplayName" class="pa-op-code">{{ ev.actorUserId }}</div>
                       </td>
                       <td>
                         <div class="pa-target-cell">
@@ -411,8 +400,8 @@ onBeforeUnmount(() => {
                           </span>
                           <span class="pa-mono">{{ ev.target.id }}</span>
                         </div>
-                        <div v-if="ev.tenantId && ev.tenantId !== ev.target.id" class="pa-time-rel pa-tenant-hint">
-                          所属团队：{{ tenantLabel(ev.tenantId) }}
+                        <div v-if="ev.tenantName || (ev.tenantId && ev.tenantId !== ev.target.id)" class="pa-time-rel pa-tenant-hint">
+                          所属团队：{{ ev.tenantName ?? ev.tenantId }}
                         </div>
                       </td>
                       <td>
@@ -475,9 +464,6 @@ onBeforeUnmount(() => {
 
     <AuditEventDrawer
       :event="selectedEvent"
-      :users-by-id="usersById"
-      :tenant-names-by-id="tenantNamesById"
-      :has-user-read="hasUserRead"
       :can-open-tenant="hasTenantRead"
       @close="selectedEvent = null"
       @notify="emit('notify', $event)"

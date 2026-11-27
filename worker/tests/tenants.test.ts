@@ -1491,7 +1491,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       },
     )
     await suite.test(
-      '0021 ranges and recipient indexes serve actual first and cursor pages',
+      'management range and recipient indexes serve actual first and cursor pages',
       async (t) => {
         const focus = await create('Pagination fixture tenant', owner.userId)
         const disabled = await create('Disabled fixture tenant', owner.userId)
@@ -1503,6 +1503,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const expiry = Date.now() + 3_600_000
         const workApp = 'molis-work-unified-local-app'
         await permission(platform, 'CLIENT_READ')
+        await permission(platform, 'AUDIT_READ')
         await db.batch([
           db
             .prepare("UPDATE auth_managed_tenant SET status='DISABLED' WHERE space_id=?")
@@ -1591,7 +1592,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
           SELECT 'fixture-audit-'||n,'fixture-user-'||(1+(n-1)%256),'molis-work-unified-local',
                  'fixture-space-'||(1+(n-1)%256),'fixture','TENANT','fixture-space-'||(1+(n-1)%256),
-                 'SUCCESS','fixture-request',0 FROM fixture`),
+                 CASE WHEN n%64=0 THEN 'DENIED' ELSE 'SUCCESS' END,'fixture-request',0 FROM fixture`),
         ])
 
         const inviteIds = Array.from({ length: 8 }, () => randomUUID())
@@ -1743,7 +1744,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           (
             await walk('/tenants/' + focus.tenantId + '/members', owner, [
               'ix_tenant_membership_tenant_status_id',
-              'ix_user_email_user',
+              'ix_user_email_verified_order',
             ])
           ).length,
           2,
@@ -1763,6 +1764,61 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             ])
           ).length >= 2,
         )
+
+        for (const [path, index, indexedAccess] of [
+          ['/platform/audit-events?limit=50', 'ix_management_audit_time', 'SCAN'],
+          [
+            `/platform/audit-events?tenantId=${focus.tenantId}&limit=2`,
+            'ix_management_audit_tenant',
+            'SEARCH',
+          ],
+          [
+            '/platform/audit-events?result=DENIED&limit=10',
+            'ix_management_audit_outcome_time',
+            'SEARCH',
+          ],
+          [
+            '/platform/audit-events?operation=tenant.create&limit=2',
+            'ix_management_audit_operation_time',
+            'SEARCH',
+          ],
+          ['/platform/tenants?status=ACTIVE&limit=10', 'ix_managed_tenant_status_time', 'SEARCH'],
+        ]) {
+          const queryPlan = async (url: string, access: string) => {
+            const response = await call(
+              url,
+              undefined,
+              platform,
+              secret(),
+              'GET',
+              undefined,
+              'managed-list-explain',
+            )
+            const page = ok(response)
+            assert.equal(response.plans?.length, 1)
+            const statements = response.plans![0]
+            assert.ok(
+              statements.some((line) => line.startsWith(access + ' ') && line.includes(index)),
+              url + '\n' + statements.join('\n'),
+            )
+            assert.doesNotMatch(statements.join('\n'), /^SCAN (a|t) (?!USING INDEX)/m)
+            assert.doesNotMatch(statements.join('\n'), /USE TEMP B-TREE FOR ORDER BY/)
+            return page
+          }
+          const first = await queryPlan(path, indexedAccess)
+          assert.ok(first.nextCursor)
+          const second = await queryPlan(
+            path + '&cursor=' + encodeURIComponent(first.nextCursor),
+            'SEARCH',
+          )
+          const key = path.includes('/audit-events') ? 'auditEventId' : 'tenantId'
+          assert.ok(second.items.length)
+          assert.ok(
+            second.items.every(
+              (item: any) => !first.items.some((before: any) => before[key] === item[key]),
+            ),
+          )
+        }
       },
     )
     await suite.test(
@@ -1852,6 +1908,19 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.equal(directory.length, 1)
         assert.equal(directory[0].email, detail.ownerEmail)
 
+        assert.deepEqual(team, detail)
+        await db
+          .prepare(
+            "INSERT INTO auth_user_email VALUES ('fixture-owner-alias',?,'owner-alias@example.test',1,?)",
+          )
+          .bind(initialOwner.userId, Date.now() + 60_000)
+          .run()
+        const aliasMatch = ok(
+          await call('/platform/tenants?status=ACTIVE&q=owner-alias', undefined, tenantReader),
+        ).items
+        assert.equal(aliasMatch[0]?.tenantId, team.tenantId)
+        assert.equal(aliasMatch[0]?.ownerEmail, detail.ownerEmail)
+
         const disabled = ok(
           await call(
             path + '/disable',
@@ -1866,6 +1935,12 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             platform,
           ),
         )
+        assert.deepEqual(
+          enabled,
+          ok(await call(path, undefined, tenantReader), 'PlatformTenantView'),
+        )
+        assert.equal(disabled.ownerEmail, detail.ownerEmail)
+        assert.equal(disabled.memberCount, 1)
         const transfer = {
           newOwnerUserId: newOwner.userId,
           expectedVersion: enabled.version,
@@ -1892,10 +1967,23 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         } finally {
           await db.prepare('DROP TRIGGER fail_team_audit').run()
         }
-        const transferred = ok(
-          await call(path + '/transfer-owner', transfer, platform, key),
-          'PlatformTenantView',
+        const response = await call(
+          path + '/transfer-owner',
+          transfer,
+          platform,
+          key,
+          'POST',
+          undefined,
+          'd1-trace',
         )
+        const transferred = ok(response, 'PlatformTenantView')
+        // Session, permission, tenant, receipt and one batch for all three owner lookups.
+        assert.deepEqual(response.d1Calls, { read: 5, write: 1 })
+        assert.deepEqual(
+          transferred,
+          ok(await call(path, undefined, tenantReader), 'PlatformTenantView'),
+        )
+        assert.equal(transferred.memberCount, 2)
         assert.equal(transferred.ownerUserId, newOwner.userId)
         assert.equal(transferred.version, enabled.version + 1)
         assert.deepEqual(
@@ -1989,6 +2077,16 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         const firstWrite = items.find((item) => item.operation === 'tenant.create')
         assert.equal(firstWrite.reason, '  Governance test: existing owner  ')
         assert.equal(firstWrite.requestId, created.requestId)
+        assert.equal(firstWrite.tenantName, team.name)
+        assert.equal(
+          firstWrite.actorDisplayName,
+          (
+            await db
+              .prepare('SELECT display_name FROM auth_user WHERE id=?')
+              .bind(platform.userId)
+              .first()
+          ).display_name,
+        )
         assert.deepEqual(firstWrite.changes, [
           { field: 'name', before: null, after: 'Platform Governance' },
           { field: 'ownerUserId', before: null, after: initialOwner.userId },

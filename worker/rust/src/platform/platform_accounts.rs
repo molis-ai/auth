@@ -2,9 +2,9 @@
 use crate::{
     http::*,
     identity::Auth,
+    management_protocol::{Action, Change, Context, Service},
+    management_protocol::{Lookup, PageFilters, PageOrder, Read},
     security::uuid,
-    tenants::protocol::{Lookup, PageFilters, PageOrder, Read},
-    tenants::{Action, Change, Context, Service},
 };
 use serde_json::{Value, json};
 use worker::Method;
@@ -106,7 +106,7 @@ pub fn user_page(a: &Auth) -> Result<Read> {
     let mut filters = PageFilters::parse(a, &["status", "q"])?;
     filters.status()?;
     filters.search(&["display_name", "email", "id"])?;
-    Ok(filters.page(USERS, |row| Ok(user_view(row)), PageOrder::Id))
+    Ok(filters.page(USERS, |row| Ok(user_view(row)), PageOrder::IdAsc))
 }
 pub fn read(action: &Action) -> (&'static str, Option<Lookup>, Read) {
     let user = || Lookup {

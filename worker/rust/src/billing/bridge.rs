@@ -4,7 +4,8 @@ use crate::{
     auth::login_sessions::{self, ACCESS_USER_ID, bearer},
     http::*,
     identity::Auth,
-    tenants::{ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, TENANTS, require_member},
+    management_protocol::{ACTIVE_MEMBER, ACTIVE_PERMISSION, ALL_ROLES, Context, require_member},
+    tenants::TENANTS,
     web::web_session::setting,
 };
 use serde::Deserialize;

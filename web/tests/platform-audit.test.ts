@@ -6,11 +6,10 @@ import {
   formatDiffValue,
   formatRelativeAuditTime,
   platformAuditPath,
-  resolveDirectoryUser,
-  tenantOwner,
+  auditActorLabel,
   targetKindTone,
-  type PlatformDirectoryUser,
 } from "../src/lib/platform-audit.ts";
+import { tenantOwner } from "../src/lib/platform-tenants.ts";
 
 test("auditOperationMeta maps known operations and classifies unknown operations by prefix", () => {
   assert.deepEqual(auditOperationMeta("tenant.create"), { label: "平台创建团队", category: "tenant" });
@@ -24,25 +23,10 @@ test("auditOperationMeta maps known operations and classifies unknown operations
   assert.deepEqual(auditOperationMeta("other.event"), { label: "other.event", category: "account" });
 });
 
-test("resolveDirectoryUser resolves displayName when present and falls back cleanly without USER_READ", () => {
-  const users = new Map<string, PlatformDirectoryUser>([
-    ["usr_1", { userId: "usr_1", displayName: "李思远", email: "li@example.test", status: "ACTIVE", version: 1 }],
-  ]);
-  assert.deepEqual(resolveDirectoryUser("usr_1", users, true), {
-    primary: "李思远",
-    secondary: "li@example.test",
-    resolved: true,
-  });
-  assert.deepEqual(resolveDirectoryUser("usr_missing", users, true), {
-    primary: "usr_missing",
-    secondary: "未在当前目录找到该账号",
-    resolved: false,
-  });
-  assert.deepEqual(resolveDirectoryUser("usr_missing", new Map(), false), {
-    primary: "usr_missing",
-    secondary: "需 USER_READ 权限展开姓名",
-    resolved: false,
-  });
+test("audit labels use the projected actor name and support older responses", () => {
+  assert.equal(auditActorLabel({ actorUserId: "usr_1", actorDisplayName: "李思远" }), "李思远");
+  assert.equal(auditActorLabel({ actorUserId: "usr_1", actorDisplayName: null }), "usr_1");
+  assert.equal(auditActorLabel({ actorUserId: "usr_1" }), "usr_1");
 });
 
 test("formatDiffValue and targetKindTone normalize display payloads", () => {

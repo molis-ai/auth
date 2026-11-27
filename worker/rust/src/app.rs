@@ -265,6 +265,9 @@ async fn dispatch(a: &mut Auth, env: &Env, url: worker::Url) -> Result<Response>
         if path == "/api/v2/entitlements/check" {
             return crate::billing::entitlements::route(a, method).await;
         }
+        if crate::management_audit::matches(path) {
+            return crate::management_audit::route(a, path, method).await;
+        }
         if crate::billing::matches(path) {
             return crate::billing::route(a, path, method).await;
         }

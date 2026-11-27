@@ -1,34 +1,3 @@
-export interface PlatformTenant {
-  tenantId: string;
-  name: string;
-  status: string;
-  ownerUserId: string;
-  version: number;
-  createdAt?: string;
-  updatedAt?: string;
-  memberCount?: number;
-  ownerDisplayName?: string | null;
-  ownerEmail?: string | null;
-}
-
-export interface PlatformTenantMember {
-  membershipId: string;
-  userId: string;
-  displayName: string;
-  email: string | null;
-  role: "OWNER" | "ADMIN" | "MEMBER";
-  status: "ACTIVE";
-  version: number;
-}
-
-export interface PlatformDirectoryUser {
-  userId: string;
-  displayName: string;
-  email: string | null;
-  status: string;
-  version: number;
-}
-
 export interface AuditChange {
   field: string;
   before: unknown;
@@ -38,12 +7,14 @@ export interface AuditChange {
 export interface AuditEvent {
   auditEventId: string;
   actorUserId: string;
+  actorDisplayName?: string | null;
   operation: string;
   target: {
     kind: string;
     id: string;
   };
   tenantId: string | null;
+  tenantName?: string | null;
   occurredAt: string;
   result: string;
   changes: AuditChange[] | null;
@@ -72,23 +43,9 @@ export function platformAuditPath(options: {
   return suffix ? `/platform/audit-events?${suffix}` : "/platform/audit-events";
 }
 
-export function tenantOwner(tenant: PlatformTenant): ResolvedUserIdentity {
-  return {
-    primary: tenant.ownerDisplayName || tenant.ownerEmail || tenant.ownerUserId,
-    secondary: tenant.ownerEmail ?? "未绑定邮箱",
-    resolved: Boolean(tenant.ownerDisplayName || tenant.ownerEmail),
-  };
-}
-
 export interface AuditOperationMeta {
   label: string;
   category: ResolvedAuditCategory;
-}
-
-export interface ResolvedUserIdentity {
-  primary: string;
-  secondary: string;
-  resolved: boolean;
 }
 
 const OPERATION_META: Record<string, AuditOperationMeta> = {
@@ -143,25 +100,8 @@ export function auditOperationMeta(operation: string): AuditOperationMeta {
   return { label: operation, category: "account" };
 }
 
-export function resolveDirectoryUser(
-  userId: string | null | undefined,
-  usersById: ReadonlyMap<string, PlatformDirectoryUser>,
-  hasUserRead: boolean,
-): ResolvedUserIdentity {
-  if (!userId) return { primary: "—", secondary: "", resolved: false };
-  const found = usersById.get(userId);
-  if (found) {
-    return {
-      primary: found.displayName || userId,
-      secondary: found.email ?? "未绑定邮箱",
-      resolved: true,
-    };
-  }
-  return {
-    primary: userId,
-    secondary: hasUserRead ? "未在当前目录找到该账号" : "需 USER_READ 权限展开姓名",
-    resolved: false,
-  };
+export function auditActorLabel(event: Pick<AuditEvent, "actorDisplayName" | "actorUserId">): string {
+  return event.actorDisplayName ?? event.actorUserId;
 }
 
 export function formatAuditTimestamp(iso: string): string {

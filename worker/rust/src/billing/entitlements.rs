@@ -3,9 +3,10 @@ use crate::{
     auth::login_sessions,
     http::*,
     identity::Auth,
+    management_protocol as protocol,
+    management_protocol::{ACTIVE_MEMBER, ALL_ROLES, Context, require_member},
     security::hash,
-    tenants::protocol,
-    tenants::{ACTIVE_MEMBER, ALL_ROLES, Context, TENANTS, require_member},
+    tenants::TENANTS,
 };
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};

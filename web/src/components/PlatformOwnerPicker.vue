@@ -2,7 +2,8 @@
 import { ref, watch } from "vue";
 import { AuthError, type AccountClient } from "../lib/account-client.ts";
 import { accountErrorMessage } from "../lib/errors.ts";
-import type { PlatformDirectoryUser } from "../lib/platform-audit.ts";
+import type { PlatformDirectoryUser } from "../lib/platform-tenants.ts";
+import { useDebouncedSearch } from "../lib/use-debounced-search.ts";
 
 const props = defineProps<{
   client: AccountClient;
@@ -14,6 +15,7 @@ const props = defineProps<{
 const owner = defineModel<string>({ required: true });
 const emit = defineEmits<{ expired: [error: unknown] }>();
 const query = ref("");
+const { applied } = useDebouncedSearch(query);
 const manual = ref(!props.canSearch);
 const users = ref<PlatformDirectoryUser[]>([]);
 const loading = ref(false);
@@ -24,32 +26,31 @@ function setManual() {
   manual.value = !manual.value;
 }
 
-watch([query, manual], ([keyword, manualMode], previous, onCleanup) => {
+watch([applied, manual], async ([keyword, manualMode], _, onCleanup) => {
   users.value = [];
   error.value = "";
   loading.value = false;
   if (manualMode) return;
 
+  const request = new AbortController();
+  onCleanup(() => request.abort());
   loading.value = true;
-  let current = true;
-  const timer = setTimeout(async () => {
-    const params = new URLSearchParams({ status: "ACTIVE", limit: "20" });
-    if (keyword.trim()) params.set("q", keyword.trim());
-    try {
-      const page = await props.client.request<{ items: PlatformDirectoryUser[] }>(`/platform/users?${params}`);
-      if (current) users.value = page.items.filter(user => user.userId !== props.exclude);
-    } catch (cause) {
-      if (!current || (cause instanceof AuthError && cause.code === "CANCELLED")) return;
-      error.value = accountErrorMessage(cause);
-      emit("expired", cause);
-    } finally {
-      if (current) loading.value = false;
+  const params = new URLSearchParams({ status: "ACTIVE", limit: "20" });
+  if (keyword) params.set("q", keyword);
+  try {
+    const page = await props.client.request<{ items: PlatformDirectoryUser[] }>(
+      `/platform/users?${params}`, undefined, "GET", undefined, request.signal,
+    );
+    if (!request.signal.aborted && query.value.trim() === keyword) {
+      users.value = page.items.filter(user => user.userId !== props.exclude);
     }
-  }, previous.length ? 250 : 0);
-  onCleanup(() => {
-    current = false;
-    clearTimeout(timer);
-  });
+  } catch (cause) {
+    if (request.signal.aborted || (cause instanceof AuthError && cause.code === "CANCELLED")) return;
+    error.value = accountErrorMessage(cause);
+    emit("expired", cause);
+  } finally {
+    if (!request.signal.aborted) loading.value = false;
+  }
 }, { immediate: true });
 </script>
 
@@ -81,7 +82,7 @@ watch([query, manual], ([keyword, manualMode], previous, onCleanup) => {
         placeholder="按姓名、邮箱或用户 ID 搜索"
         @input="owner = ''"
       />
-      <select v-model="owner" :aria-label="label" :disabled="disabled || loading" required>
+      <select v-model="owner" :aria-label="label" :disabled="disabled || loading || query.trim() !== applied" required>
         <option value="" disabled>{{ loading ? "正在搜索…" : "选择活跃账号" }}</option>
         <option v-for="user in users" :key="user.userId" :value="user.userId">
           {{ user.displayName }}（{{ user.email ?? user.userId }}）

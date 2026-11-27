@@ -143,9 +143,10 @@ export class AccountClient {
     signal?: AbortSignal,
   ): Promise<T> {
     if (this.closed || signal?.aborted) return Promise.reject(new AuthError("CANCELLED"));
+    const pathname = path.split("?", 1)[0];
     if (
-      !/^\/[A-Za-z0-9/_?=&%.-]+$/.test(path) ||
-      /\.\.|%2e|%2f|%5c/i.test(path) ||
+      !/^\/[A-Za-z0-9/_%.-]+(?:\?[A-Za-z0-9/_?=&%+.-]*)?$/.test(path) ||
+      /\.\.|%2e|%2f|%5c/i.test(pathname) ||
       path.startsWith("//") ||
       !["GET", "POST", "PATCH"].includes(method)
     )

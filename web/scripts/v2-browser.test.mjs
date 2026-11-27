@@ -137,7 +137,7 @@ try {
     };
     window.fetch = async (url, options) => {
       const path = new URL(url, location.href).pathname.replace(/^\\/api\\/account/, '');
-      const entry = {path, method: options?.method ?? 'GET', started: performance.now()};
+      const entry = {path, query: new URL(url, location.href).search, method: options?.method ?? 'GET', started: performance.now()};
       trace.requests.push(entry);
       if (firstDocument && path === '/session' && trace.requests.length === 1) {
         await hold('startup', options?.signal);
@@ -850,6 +850,7 @@ try {
     await page.screenshot(join(evidence, "platform-" + width + ".png"));
   }
   console.log("PASS browser user status and explicit platform grant/revoke");
+  const teamListStart = await page.evaluate("window.__authPerformance.requests.length");
   await click("团队管理");
   await click("平台创建团队");
   await page.fill("#pt-create-name", "QA 平台治理团队");
@@ -861,33 +862,73 @@ try {
   };
   await chooseOwner("初始所有者", "qa-v2-target");
   await page.fill("#pt-create-reason", "浏览器验收平台建团");
+  const creationStart = await page.evaluate("window.__authPerformance.requests.length");
   await click("确认创建团队");
   await page.wait("document.querySelector('.pt-hero-head h2')?.textContent === 'QA 平台治理团队' && document.querySelector('[aria-labelledby=pt-member-heading]')?.textContent.includes('qa-admin-maintained@example.test')");
+  const governanceReads = start => page.evaluate(`window.__authPerformance.requests.slice(${start}).filter(entry => entry.method === 'GET')`);
+  const hasDetailRead = reads => reads.some(entry => /^\/platform\/tenants\/[^/]+$/.test(entry.path));
+  const teamFirstPage = (await governanceReads(teamListStart)).find(entry => entry.path === "/platform/tenants");
+  assert.equal(new URLSearchParams(teamFirstPage.query).get("limit"), "30");
+  assert.equal(hasDetailRead(await governanceReads(creationStart)), false, "create uses the returned team detail");
   for (const [button, submit, reason, status] of [
     ["停用团队", "确认停用团队", "浏览器验收停用团队", "DISABLED"],
     ["恢复启用团队", "确认恢复启用", "浏览器验收恢复团队", "ACTIVE"],
   ]) {
     await click(button);
     await page.fill("#pt-status-reason", reason);
+    const statusStart = await page.evaluate("window.__authPerformance.requests.length");
     await click(submit);
     await page.wait(`document.querySelector('.pt-mini-audit-row .pt-op-title')?.textContent === ${JSON.stringify(button)}`);
+    const statusReads = await governanceReads(statusStart);
+    assert.equal(hasDetailRead(statusReads), false, button + " uses the returned team detail");
+    assert.equal(statusReads.some(entry => entry.path === "/platform/tenants"), false);
+    assert.match(await page.evaluate("document.querySelector('.pt-hero-sub').textContent"), /QA 目标用户/);
+    assert.match(await page.evaluate("document.querySelector('#pt-member-heading').textContent"), /1 人/);
+    assert.ok(await page.evaluate("[...document.querySelectorAll('.pt-kv-key')].some(element => element.textContent === '更新时间')"));
     await page.click(".pt-mini-audit-row");
     await page.wait(`document.querySelector('.ad-drawer')?.textContent.includes(${JSON.stringify(reason)})`);
     assert.ok(await page.evaluate(`[...document.querySelectorAll('.ad-diff-table tbody tr')].some(row => row.children[0].textContent === 'status' && row.children[2].textContent.includes(${JSON.stringify(status)}))`));
     assert.ok(await page.evaluate("document.querySelector('.ad-drawer').textContent.includes('请求追踪 ID')"));
     await page.click("button[aria-label='关闭审计详情']");
   }
+  const auditStart = await page.evaluate("window.__authPerformance.requests.length");
   await click("在审计日志中查看全部 →");
   await page.wait("document.querySelector('.pa-context-banner')?.textContent.includes('QA 平台治理团队') && document.querySelector('.pa-table tbody tr .pa-op-title')?.textContent === '恢复启用团队'");
-  await page.fill("input[aria-label='搜索审计日志']", "浏览器验收停用团队");
+  assert.equal(await page.evaluate("document.querySelector('.pa-table tbody tr .pa-actor-name').textContent"), "QA 昵称");
+  assert.match(await page.evaluate("document.querySelector('.pa-table tbody tr .pa-tenant-hint').textContent"), /QA 平台治理团队/);
+  await page.evaluate("document.querySelector('.pa-table tbody tr').focus()");
+  await page.command("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await page.command("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await page.wait("document.querySelector('.ad-drawer .ad-actor-primary')?.textContent === 'QA 昵称'");
+  assert.match(await page.evaluate("document.querySelector('.ad-drawer').textContent"), /QA 平台治理团队/);
+  await page.click("button[aria-label='关闭审计详情']");
+  const auditFirstReads = await governanceReads(auditStart);
+  assert.equal(auditFirstReads.some(entry => ["/platform/users", "/platform/tenants"].includes(entry.path)), false);
+  assert.equal(hasDetailRead(auditFirstReads), false, "a scoped audit with rows gets the team name from those rows");
+
+  const auditSearch = "input[aria-label='搜索审计日志']";
+  await page.evaluate("window.__authPerformance.holdNext.push('/platform/audit-events')");
+  await page.fill(auditSearch, "过时搜索");
+  await page.wait("Boolean(window.__authPerformance.gates['/platform/audit-events'])");
+  await page.fill(auditSearch, "浏览器验收");
+  await page.fill(auditSearch, "浏览器验收停用团队");
   await page.wait("document.querySelectorAll('.pa-table tbody tr').length === 1 && document.querySelector('.pa-op-title')?.textContent === '停用团队'");
+  const searches = (await governanceReads(auditStart)).filter(entry =>
+    entry.path === "/platform/audit-events" && new URLSearchParams(entry.query).has("q"));
+  assert.deepEqual(searches.map(entry => new URLSearchParams(entry.query).get("q")), ["过时搜索", "浏览器验收停用团队"]);
+  assert.ok(searches[0].aborted, "the older search must abort through the FETCH signal");
   await click("返回该团队");
   await click("强制移交所有权");
   await page.fill("dialog[open] input[aria-label='搜索活跃用户']", operator.id);
   await chooseOwner("新所有者", operator.id);
   await page.fill("#pt-transfer-reason", "浏览器验收应急移交");
+  const transferStart = await page.evaluate("window.__authPerformance.requests.length");
   await click("确认移交");
   await page.wait("document.querySelector('.pt-hero-sub')?.textContent.includes('QA 昵称') && document.querySelector('.pt-mini-audit-row .pt-op-title')?.textContent === '强制移交所有权'");
+  const transferReads = await governanceReads(transferStart);
+  assert.equal(hasDetailRead(transferReads), false, "transfer uses the returned team detail");
+  assert.equal(transferReads.some(entry => entry.path === "/platform/tenants"), false);
+  assert.match(await page.evaluate("document.querySelector('#pt-member-heading').textContent"), /2 人/);
   const governedTeam = await db.prepare("SELECT id FROM auth_space WHERE name='QA 平台治理团队'").first();
   const governanceRoles = await db.prepare("SELECT user_id,role FROM auth_tenant_membership WHERE tenant_id=? ORDER BY role").bind(governedTeam.id).all();
   assert.deepEqual(governanceRoles.results, [
@@ -900,7 +941,11 @@ try {
     assert.ok(await page.evaluate("document.documentElement.scrollWidth <= innerWidth"));
     await page.screenshot(join(evidence, "platform-team-governance-" + width + ".png"));
   }
-  console.log("PASS browser platform team creation, status, filtered audit details and emergency ownership transfer");
+  const globalAuditStart = await page.evaluate("window.__authPerformance.requests.length");
+  await click("审计日志");
+  await page.wait("document.querySelector('.pa-table tbody tr .pa-op-title')?.textContent === '强制移交所有权'");
+  assert.equal((await governanceReads(globalAuditStart)).some(entry => entry.path === "/platform/users" || entry.path.startsWith("/platform/tenants")), false);
+  console.log("PASS platform writes reuse their team projection, audit avoids directory reads, and obsolete searches abort");
   assert.deepEqual(
     await page.evaluate(
       "({local:Object.keys(localStorage),session:sessionStorage.length})",

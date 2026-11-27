@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from "vue";
 import {
+  auditActorLabel,
   auditOperationMeta,
   copyToClipboard,
   formatAuditTimestamp,
   formatDiffValue,
-  resolveDirectoryUser,
   targetKindTone,
   type AuditEvent,
-  type PlatformDirectoryUser,
 } from "../lib/platform-audit.ts";
 
 const props = defineProps<{
   event: AuditEvent | null;
-  usersById: ReadonlyMap<string, PlatformDirectoryUser>;
-  tenantNamesById: ReadonlyMap<string, string>;
-  hasUserRead: boolean;
   canOpenTenant: boolean;
 }>();
 
@@ -28,15 +24,7 @@ const emit = defineEmits<{
 const operationInfo = computed(() =>
   props.event ? auditOperationMeta(props.event.operation) : null,
 );
-const actorIdentity = computed(() =>
-  props.event ? resolveDirectoryUser(props.event.actorUserId, props.usersById, props.hasUserRead) : null,
-);
 const isSucceeded = computed(() => props.event?.result === "SUCCEEDED");
-const tenantDisplayName = computed(() => {
-  const id = props.event?.tenantId;
-  if (!id) return "";
-  return props.tenantNamesById.get(id) ?? id;
-});
 const rawJson = computed(() => (props.event ? JSON.stringify(props.event, null, 2) : ""));
 
 async function copyId(value: string, label: string) {
@@ -55,7 +43,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
 <template>
   <Teleport to="body">
     <div
-      v-if="event && operationInfo && actorIdentity"
+      v-if="event && operationInfo"
       class="ad-backdrop"
       @click.self="emit('close')"
     >
@@ -110,8 +98,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
               <div class="ad-meta-box">
                 <div class="ad-meta-label">操作人 (actorUserId)</div>
                 <div class="ad-meta-val">
-                  <div class="ad-actor-primary">{{ actorIdentity.primary }}</div>
-                  <div class="ad-mono">{{ event.actorUserId }}</div>
+                  <div class="ad-actor-primary">{{ auditActorLabel(event) }}</div>
+                  <div v-if="event.actorDisplayName" class="ad-mono">{{ event.actorUserId }}</div>
                 </div>
               </div>
 
@@ -134,8 +122,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown));
                 <div class="ad-meta-row">
                   <template v-if="event.tenantId">
                     <span class="ad-meta-val">
-                      <strong>{{ tenantDisplayName }}</strong>
-                      <span v-if="tenantDisplayName !== event.tenantId" class="ad-mono"> ({{ event.tenantId }})</span>
+                      <strong>{{ event.tenantName ?? event.tenantId }}</strong>
+                      <span v-if="event.tenantName && event.tenantName !== event.tenantId" class="ad-mono"> ({{ event.tenantId }})</span>
                     </span>
                     <button
                       v-if="canOpenTenant"

@@ -3,61 +3,15 @@
 pub(crate) mod creation;
 pub(crate) mod invitations;
 pub(crate) mod membership;
-pub(crate) mod protocol;
 pub(crate) mod transfers;
 
+use crate::management_protocol::{
+    self as protocol, ACTIVE_MEMBER, ACTOR, ALL_ROLES, Access, Action, Change, Context, Lookup,
+    MANAGER_ROLES, PageFilters, PageOrder, Read, Service, expected, require_member,
+};
 use crate::{auth::login_sessions, http::*, identity::Auth, security::uuid};
-use protocol::{ACTOR, Access, Lookup, PageFilters, PageOrder, Read};
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
-pub(crate) struct Service<'a> {
-    pub a: &'a Auth,
-    pub s: Value,
-    pub c: Value,
-}
-pub(crate) struct Context {
-    pub tenant: Value,
-    pub member: Value,
-    pub record: Value,
-    pub from: Value,
-    pub to: Value,
-    pub permission: Value,
-    pub guards: Vec<D1PreparedStatement>,
-}
-impl Context {
-    pub(crate) fn new() -> Self {
-        Self {
-            tenant: Value::Null,
-            member: Value::Null,
-            record: Value::Null,
-            from: Value::Null,
-            to: Value::Null,
-            permission: Value::Null,
-            guards: vec![],
-        }
-    }
-}
-pub(crate) struct Action {
-    pub op: &'static str,
-    pub path: String,
-    pub tenant_id: String,
-    pub id: String,
-    pub schema: Option<&'static str>,
-}
-pub(crate) struct Change {
-    pub result: Value,
-    pub writes: Vec<D1PreparedStatement>,
-    pub target_user: Value,
-}
-impl Change {
-    pub fn new(result: Value, writes: Vec<D1PreparedStatement>) -> Self {
-        Self {
-            result,
-            writes,
-            target_user: Value::Null,
-        }
-    }
-}
 pub(crate) fn member_view(m: &Value) -> Value {
     json!({"membershipId":m["id"],"tenantId":m["tenant_id"],"userId":m["user_id"],"role":m["role"],"status":m["status"],"version":m["version"]})
 }
@@ -100,11 +54,11 @@ fn audit(
                 &["name", "ownerUserId", "status"],
             )
         }
-        "tenant.update" => ("TENANT", "tenantId", ctx.tenant.clone(), &["name"]),
+        "tenant.update" => ("TENANT", "tenantId", tenant_view(&ctx.tenant), &["name"]),
         "tenant.disable" | "tenant.enable" => (
             "TENANT",
             "tenantId",
-            ctx.tenant.clone(),
+            platform_view(&ctx.tenant),
             &["status", "version"],
         ),
         "tenant.platform-transfer-owner" => (
@@ -113,17 +67,22 @@ fn audit(
             platform_view(&ctx.tenant),
             &["ownerUserId", "version"],
         ),
-        "member.role" => ("MEMBERSHIP", "membershipId", ctx.record.clone(), &["role"]),
+        "member.role" => (
+            "MEMBERSHIP",
+            "membershipId",
+            member_view(&ctx.record),
+            &["role"],
+        ),
         "member.leave" => (
             "MEMBERSHIP",
             "membershipId",
-            ctx.member.clone(),
+            member_view(&ctx.member),
             &["status"],
         ),
         "member.remove" => (
             "MEMBERSHIP",
             "membershipId",
-            ctx.record.clone(),
+            member_view(&ctx.record),
             &["status"],
         ),
         op if op.starts_with("invitation.") => {
@@ -133,7 +92,11 @@ fn audit(
             (
                 "INVITATION",
                 "invitationId",
-                ctx.record.clone(),
+                if ctx.record.is_null() {
+                    Value::Null
+                } else {
+                    invitations::view(&ctx.record)
+                },
                 &["status"],
             )
         }
@@ -141,7 +104,16 @@ fn audit(
             if op == "transfer.accept" {
                 after = after["transfer"].clone();
             }
-            ("TRANSFER", "transferId", ctx.record.clone(), &["status"])
+            (
+                "TRANSFER",
+                "transferId",
+                if ctx.record.is_null() {
+                    Value::Null
+                } else {
+                    transfers::view(&ctx.record)
+                },
+                &["status"],
+            )
         }
         _ => return Err(Failure::unavailable()),
     };
@@ -157,18 +129,11 @@ fn audit(
         kind,
         &after[key],
         &body["reason"],
-        diff(&before, &after, fields),
-    )
-}
-pub(crate) fn expected(b: &Value, row: &Value) -> Result<()> {
-    ensure(
-        b["expectedVersion"] == row["version"],
-        409,
-        "VERSION_CONFLICT",
+        json!({"changes": diff(&before, &after, fields)}),
     )
 }
 pub(crate) const TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,(SELECT user_id FROM auth_tenant_membership m WHERE m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER') owner_user_id FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id";
-const PLATFORM_TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,
+const PLATFORM_TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,t.entitlement_revision,
     t.managed_at,s.created_at,t.updated_at,m.user_id owner_user_id,u.display_name owner_display_name,
     (SELECT count(*) FROM auth_tenant_membership active WHERE active.tenant_id=t.space_id AND active.status='ACTIVE') member_count,
     (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
@@ -176,29 +141,12 @@ const PLATFORM_TENANTS: &str = "SELECT t.space_id id,s.name,t.status,t.version,
     FROM auth_managed_tenant t JOIN auth_space s ON s.id=t.space_id
     JOIN auth_tenant_membership m ON m.tenant_id=t.space_id AND m.status='ACTIVE' AND m.role='OWNER'
     JOIN auth_user u ON u.id=m.user_id";
-pub(crate) const ACTIVE_MEMBER: &str = "tenant_id=? AND status='ACTIVE'";
-pub(crate) const ACTIVE_PERMISSION: &str = "permission=? AND status='ACTIVE'";
-pub(crate) const ALL_ROLES: &[&str] = &["OWNER", "ADMIN", "MEMBER"];
-pub(crate) const MANAGER_ROLES: &[&str] = &["OWNER", "ADMIN"];
-
-pub(crate) fn require_member(ctx: &Context, roles: &[&str]) -> Result<()> {
-    ensure(
-        !ctx.tenant.is_null() && !ctx.member.is_null(),
-        404,
-        "NOT_FOUND",
-    )?;
-    ensure(ctx.tenant["status"] == "ACTIVE", 403, "TENANT_DISABLED")?;
-    ensure(
-        roles.contains(&text(&ctx.member, "role").as_str()),
-        403,
-        "FORBIDDEN",
-    )
-}
+const ACTIVE_OWNER_PROFILE: &str = "SELECT u.id,u.display_name,
+    (SELECT canonical_email FROM auth_user_email e WHERE e.user_id=u.id AND e.verified_at IS NOT NULL
+     ORDER BY e.created_at,e.id LIMIT 1) email
+    FROM auth_user u WHERE u.id=? AND u.status='ACTIVE'";
 
 impl Service<'_> {
-    pub fn user(&self) -> Value {
-        self.s["user_id"].clone()
-    }
     pub async fn tenant(&self, id: &str) -> Result<Value> {
         let t = self
             .a
@@ -212,12 +160,6 @@ impl Service<'_> {
         let m=self.a.s.one("SELECT m.*,u.status user_status FROM auth_tenant_membership m JOIN auth_user u ON u.id=m.user_id WHERE m.id=? AND m.tenant_id=?",vec![id.into(),tenant.into()]).await?;
         ensure(!m.is_null(), 404, "NOT_FOUND")?;
         Ok(m)
-    }
-    pub fn tenant_guard(&self, t: &Value, active: bool) -> Result<D1PreparedStatement> {
-        self.a.s.guard("EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND (?=0 OR status='ACTIVE'))",vec![t["id"].clone(),t["version"].clone(),active.into()])
-    }
-    pub fn member_guard(&self, m: &Value) -> Result<D1PreparedStatement> {
-        self.a.s.guard("EXISTS(SELECT 1 FROM auth_tenant_membership WHERE id=? AND tenant_id=? AND user_id=? AND status='ACTIVE' AND role=? AND version=?)",vec![m["id"].clone(),m["tenant_id"].clone(),m["user_id"].clone(),m["role"].clone(),m["version"].clone()])
     }
     pub async fn member_context(&self, ctx: &mut Context, id: &str, roles: &[&str]) -> Result<()> {
         ctx.tenant = self.tenant(id).await?;
@@ -262,27 +204,6 @@ impl Service<'_> {
             },
         )
     }
-    pub async fn platform_permission(&self, ctx: &mut Context, permission: &str) -> Result<()> {
-        ctx.permission = self
-            .a
-            .s
-            .one(
-                &format!(
-                    "SELECT * FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION}"
-                ),
-                vec![self.user(), permission.into()],
-            )
-            .await?;
-        ensure(!ctx.permission.is_null(), 403, "FORBIDDEN")?;
-        ctx.guards.push(self.permission_guard(&ctx.permission)?);
-        Ok(())
-    }
-    pub fn permission_guard(&self, permission: &Value) -> Result<D1PreparedStatement> {
-        self.a.s.guard(
-            &format!("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION} AND version=?)"),
-            vec![self.user(), permission["permission"].clone(), permission["version"].clone()],
-        )
-    }
     pub async fn authorize(&self, action: &Action) -> Result<Context> {
         let mut ctx = Context::new();
         match action.op {
@@ -297,8 +218,19 @@ impl Service<'_> {
                 };
                 self.platform_permission(&mut ctx, permission).await?;
                 if !action.tenant_id.is_empty() {
-                    ctx.tenant = self.tenant(&action.tenant_id).await?;
-                    ctx.guards.push(self.tenant_guard(&ctx.tenant, false)?);
+                    ctx.tenant = self
+                        .a
+                        .s
+                        .one(
+                            &format!("{PLATFORM_TENANTS} WHERE t.space_id=?"),
+                            vec![action.tenant_id.clone().into()],
+                        )
+                        .await?;
+                    ensure(!ctx.tenant.is_null(), 404, "NOT_FOUND")?;
+                    ctx.guards.push(self.a.s.guard(
+                        "EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND entitlement_revision=?)",
+                        vec![ctx.tenant["id"].clone(), ctx.tenant["version"].clone(), ctx.tenant["entitlement_revision"].clone()],
+                    )?);
                 }
             }
             "tenant.self-create" => {
@@ -364,14 +296,7 @@ impl Service<'_> {
                 } else {
                     b["ownerUserId"].clone()
                 };
-                let owner = self
-                    .a
-                    .s
-                    .one(
-                        "SELECT id FROM auth_user WHERE id=? AND status='ACTIVE'",
-                        vec![owner_id],
-                    )
-                    .await?;
+                let owner = self.a.s.one(ACTIVE_OWNER_PROFILE, vec![owner_id]).await?;
                 ensure(!owner.is_null(), 404, "NOT_FOUND")?;
                 let id = uuid();
                 let member = uuid();
@@ -387,6 +312,11 @@ impl Service<'_> {
                     result["membership_id"] = member.into();
                     tenant_view(&result)
                 } else {
+                    result["created_at"] = n.into();
+                    result["updated_at"] = n.into();
+                    result["member_count"] = 1.into();
+                    result["owner_display_name"] = owner["display_name"].clone();
+                    result["owner_email"] = owner["email"].clone();
                     platform_view(&result)
                 };
                 Ok(Change {
@@ -400,6 +330,7 @@ impl Service<'_> {
                 let mut t = ctx.tenant.clone();
                 t["version"] = (number(&t, "version") + 1).into();
                 let n = now();
+                t["updated_at"] = n.into();
                 let mut w = vec![];
                 if action.op == "tenant.update" {
                     t["name"] = name(&b["name"])
@@ -591,18 +522,29 @@ fn action(path: &str, method: Method) -> Result<Action> {
 }
 fn platform_tenant_page(a: &Auth) -> Result<Read> {
     let mut filters = PageFilters::parse(a, &["status", "q"])?;
-    filters.status()?;
-    filters.search(&[
-        "name",
-        "id",
-        "owner_user_id",
-        "owner_display_name",
-        "owner_email",
-    ])?;
-    Ok(filters.page(
+    if let Some(status) = filters.values["status"].as_str() {
+        ensure(
+            matches!(status, "ACTIVE" | "DISABLED"),
+            400,
+            "INVALID_REQUEST",
+        )?;
+        filters.bind("t.status=?", [json!(status)]);
+    }
+    if let Some(q) = filters.keyword()? {
+        let args = vec![json!(q); 5];
+        filters.bind(
+            "(instr(lower(s.name),lower(?))>0 OR instr(lower(t.space_id),lower(?))>0
+              OR instr(lower(m.user_id),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0
+              OR EXISTS(SELECT 1 FROM auth_user_email e
+                        WHERE e.user_id=m.user_id AND e.verified_at IS NOT NULL
+                          AND instr(lower(e.canonical_email),lower(?))>0))",
+            args,
+        );
+    }
+    Ok(filters.source_page(
         PLATFORM_TENANTS,
         |row| Ok(platform_view(row)),
-        PageOrder::TenantTime,
+        PageOrder::TimeDesc("managed_at"),
     ))
 }
 

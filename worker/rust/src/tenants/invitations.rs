@@ -1,9 +1,10 @@
 //! Directed invitations: possession of an id is never proof of recipient identity.
 use crate::{
     http::*,
+    management_protocol::{self as protocol, ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{self, ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected, member_view},
+    tenants::member_view,
 };
 use serde_json::{Value, json};
 fn target(user: &str) -> String {
@@ -47,7 +48,7 @@ pub fn list(action: &Action) -> Read {
         )
     }
 }
-fn view(i: &Value) -> Value {
+pub(super) fn view(i: &Value) -> Value {
     let target = match text(i, "target_kind").as_str() {
         "EMAIL" => format!(
             "***@{}",

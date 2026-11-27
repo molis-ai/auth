@@ -1,12 +1,13 @@
 //! Ownership transfer swaps roles atomically and never changes seat assignments.
 use crate::{
     http::*,
+    management_protocol::{self as protocol, ACTOR, Read},
+    management_protocol::{Action, Change, Context, Service, expected},
     security::uuid,
-    tenants::protocol::{self, ACTOR, Read},
-    tenants::{Action, Change, Context, Service, expected, member_view},
+    tenants::member_view,
 };
 use serde_json::{Value, json};
-fn view(r: &Value) -> Value {
+pub(super) fn view(r: &Value) -> Value {
     json!({"transferId":r["id"],"tenantId":r["tenant_id"],"fromMembershipId":r["from_membership_id"],"toMembershipId":r["to_membership_id"],"status":if r["status"]=="PENDING"&&number(r,"expires_at")<=now(){json!("EXPIRED")}else{r["status"].clone()},"expiresAt":iso(&r["expires_at"]),"version":r["version"]})
 }
 pub fn list() -> Read {
@@ -166,23 +167,37 @@ impl Service<'_> {
         ensure(target != previous, 409, "VERSION_CONFLICT")?;
 
         let member = |user: &Value| {
-            self.a.s.one(
+            self.a.s.statement(
                 "SELECT * FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE'",
                 vec![tenant.clone(), user.clone()],
             )
         };
-        let owner = member(previous).await?;
-        ensure(owner["role"] == "OWNER", 409, "VERSION_CONFLICT")?;
-        let new_user = self
+        let [old_members, new_users, new_members]: [Vec<Value>; 3] = self
             .a
             .s
-            .one(
-                "SELECT id FROM auth_user WHERE id=? AND status='ACTIVE'",
-                vec![target.clone()],
-            )
-            .await?;
-        ensure(!new_user.is_null(), 404, "NOT_FOUND")?;
-        let new_member = member(target).await?;
+            .batch_read(vec![
+                member(previous)?,
+                self.a
+                    .s
+                    .statement(super::ACTIVE_OWNER_PROFILE, vec![target.clone()])?,
+                member(target)?,
+            ])
+            .await?
+            .try_into()
+            .map_err(|_| Failure::unavailable())?;
+        let owner = old_members
+            .into_iter()
+            .next()
+            .filter(|m| m["role"] == "OWNER")
+            .ok_or(Failure {
+                status: 409,
+                code: "VERSION_CONFLICT",
+            })?;
+        let new_user = new_users.into_iter().next().ok_or(Failure {
+            status: 404,
+            code: "NOT_FOUND",
+        })?;
+        let new_member = new_members.into_iter().next();
         let n = now();
         let mut writes = vec![
             self.member_guard(&owner)?,
@@ -191,27 +206,27 @@ impl Service<'_> {
                 vec![target.clone()],
             )?,
         ];
-        if new_member.is_null() {
-            writes.push(self.a.s.guard(
+        writes.push(if let Some(member) = &new_member {
+            self.member_guard(member)?
+        } else {
+            self.a.s.guard(
                 "NOT EXISTS(SELECT 1 FROM auth_tenant_membership WHERE tenant_id=? AND user_id=? AND status='ACTIVE')",
                 vec![tenant.clone(), target.clone()],
-            )?);
-        } else {
-            writes.push(self.member_guard(&new_member)?);
-        }
+            )?
+        });
         writes.push(self.a.s.statement(
             "UPDATE auth_tenant_membership SET role='ADMIN',version=version+1 WHERE id=?",
             vec![owner["id"].clone()],
         )?);
-        writes.push(if new_member.is_null() {
+        writes.push(if let Some(member) = &new_member {
             self.a.s.statement(
-                "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",
-                vec![uuid().into(), tenant.clone(), target.clone(), n.into()],
+                "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
+                vec![member["id"].clone()],
             )?
         } else {
             self.a.s.statement(
-                "UPDATE auth_tenant_membership SET role='OWNER',version=version+1 WHERE id=?",
-                vec![new_member["id"].clone()],
+                "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES (?,?,?,'OWNER','ACTIVE',?)",
+                vec![uuid().into(), tenant.clone(), target.clone(), n.into()],
             )?
         });
         writes.push(self.a.s.statement(
@@ -226,6 +241,11 @@ impl Service<'_> {
         )?);
         let mut updated = ctx.tenant.clone();
         updated["owner_user_id"] = target.clone();
+        updated["owner_display_name"] = new_user["display_name"].clone();
+        updated["owner_email"] = new_user["email"].clone();
+        updated["member_count"] =
+            (number(&updated, "member_count") + i64::from(new_member.is_none())).into();
+        updated["updated_at"] = n.into();
         updated["version"] = (number(&updated, "version") + 1).into();
         Ok(Change {
             result: super::platform_view(&updated),

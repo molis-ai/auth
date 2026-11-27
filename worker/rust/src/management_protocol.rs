@@ -1,13 +1,119 @@
-//! Tenant request protocol: current authorization, scoped pagination and atomic retry receipts.
+//! Management request protocol: current authorization, scoped pagination and atomic retry receipts.
 use crate::{
     auth::login_sessions,
     http::*,
     identity::Auth,
     security::{hash, secret},
-    tenants::{ACTIVE_MEMBER, ACTIVE_PERMISSION, Action, Context, Service, require_member},
 };
 use serde_json::{Value, json};
 use worker::D1PreparedStatement;
+
+pub(crate) struct Service<'a> {
+    pub a: &'a Auth,
+    pub s: Value,
+    pub c: Value,
+}
+pub(crate) struct Context {
+    pub tenant: Value,
+    pub member: Value,
+    pub record: Value,
+    pub from: Value,
+    pub to: Value,
+    pub permission: Value,
+    pub guards: Vec<D1PreparedStatement>,
+}
+impl Context {
+    pub(crate) fn new() -> Self {
+        Self {
+            tenant: Value::Null,
+            member: Value::Null,
+            record: Value::Null,
+            from: Value::Null,
+            to: Value::Null,
+            permission: Value::Null,
+            guards: vec![],
+        }
+    }
+}
+pub(crate) struct Action {
+    pub op: &'static str,
+    pub path: String,
+    pub tenant_id: String,
+    pub id: String,
+    pub schema: Option<&'static str>,
+}
+pub(crate) struct Change {
+    pub result: Value,
+    pub writes: Vec<D1PreparedStatement>,
+    pub target_user: Value,
+}
+impl Change {
+    pub fn new(result: Value, writes: Vec<D1PreparedStatement>) -> Self {
+        Self {
+            result,
+            writes,
+            target_user: Value::Null,
+        }
+    }
+}
+pub(crate) fn expected(b: &Value, row: &Value) -> Result<()> {
+    ensure(
+        b["expectedVersion"] == row["version"],
+        409,
+        "VERSION_CONFLICT",
+    )
+}
+pub(crate) const ACTIVE_MEMBER: &str = "tenant_id=? AND status='ACTIVE'";
+pub(crate) const ACTIVE_PERMISSION: &str = "permission=? AND status='ACTIVE'";
+pub(crate) const ALL_ROLES: &[&str] = &["OWNER", "ADMIN", "MEMBER"];
+pub(crate) const MANAGER_ROLES: &[&str] = &["OWNER", "ADMIN"];
+
+pub(crate) fn require_member(ctx: &Context, roles: &[&str]) -> Result<()> {
+    ensure(
+        !ctx.tenant.is_null() && !ctx.member.is_null(),
+        404,
+        "NOT_FOUND",
+    )?;
+    ensure(ctx.tenant["status"] == "ACTIVE", 403, "TENANT_DISABLED")?;
+    ensure(
+        roles.contains(&text(&ctx.member, "role").as_str()),
+        403,
+        "FORBIDDEN",
+    )
+}
+
+impl Service<'_> {
+    pub fn user(&self) -> Value {
+        self.s["user_id"].clone()
+    }
+    pub fn tenant_guard(&self, t: &Value, active: bool) -> Result<D1PreparedStatement> {
+        self.a.s.guard("EXISTS(SELECT 1 FROM auth_managed_tenant WHERE space_id=? AND version=? AND (?=0 OR status='ACTIVE'))",vec![t["id"].clone(),t["version"].clone(),active.into()])
+    }
+    pub fn member_guard(&self, m: &Value) -> Result<D1PreparedStatement> {
+        self.a.s.guard("EXISTS(SELECT 1 FROM auth_tenant_membership WHERE id=? AND tenant_id=? AND user_id=? AND status='ACTIVE' AND role=? AND version=?)",vec![m["id"].clone(),m["tenant_id"].clone(),m["user_id"].clone(),m["role"].clone(),m["version"].clone()])
+    }
+    pub async fn platform_permission(&self, ctx: &mut Context, permission: &str) -> Result<()> {
+        ctx.permission = self
+            .a
+            .s
+            .one(
+                &format!(
+                    "SELECT * FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION}"
+                ),
+                vec![self.user(), permission.into()],
+            )
+            .await?;
+        ensure(!ctx.permission.is_null(), 403, "FORBIDDEN")?;
+        ctx.guards.push(self.permission_guard(&ctx.permission)?);
+        Ok(())
+    }
+    pub fn permission_guard(&self, permission: &Value) -> Result<D1PreparedStatement> {
+        self.a.s.guard(
+            &format!("EXISTS(SELECT 1 FROM auth_platform_permission WHERE user_id=? AND {ACTIVE_PERMISSION} AND version=?)"),
+            vec![self.user(), permission["permission"].clone(), permission["version"].clone()],
+        )
+    }
+}
 
 pub fn ttl(name: &str) -> i64 {
     crate::unified_policy::default_integer(name) * 1000
@@ -80,16 +186,14 @@ pub struct Lookup {
 
 #[derive(Clone, Copy)]
 pub enum PageOrder {
-    Id,
-    AuditTime,
-    TenantTime,
+    IdAsc,
+    TimeDesc(&'static str),
 }
 impl PageOrder {
     fn time_column(self) -> Option<&'static str> {
         match self {
-            Self::Id => None,
-            Self::AuditTime => Some("occurred_at"),
-            Self::TenantTime => Some("managed_at"),
+            Self::IdAsc => None,
+            Self::TimeDesc(column) => Some(column),
         }
     }
 
@@ -122,7 +226,7 @@ impl Read {
             args,
             view,
             filters: json!({}),
-            order: PageOrder::Id,
+            order: PageOrder::IdAsc,
         }
     }
 }
@@ -167,31 +271,46 @@ impl PageFilters {
         Ok(())
     }
 
+    pub fn keyword(&self) -> Result<Option<&str>> {
+        let Some(q) = self.values["q"].as_str() else {
+            return Ok(None);
+        };
+        ensure(q.chars().count() <= 128, 400, "INVALID_REQUEST")?;
+        let q = q.trim();
+        Ok((!q.is_empty()).then_some(q))
+    }
+
     pub fn search(&mut self, columns: &[&str]) -> Result<()> {
-        if let Some(q) = self.values["q"].as_str() {
-            ensure(q.chars().count() <= 128, 400, "INVALID_REQUEST")?;
-            let q = q.trim();
-            if !q.is_empty() {
-                let matches = columns
-                    .iter()
-                    .map(|column| format!("instr(lower({column}),lower(?))>0"))
-                    .collect::<Vec<_>>()
-                    .join(" OR ");
-                let args = vec![json!(q); columns.len()];
-                self.bind(format!("({matches})"), args);
-            }
+        if let Some(q) = self.keyword()? {
+            let matches = columns
+                .iter()
+                .map(|column| format!("instr(lower({column}),lower(?))>0"))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            let args = vec![json!(q); columns.len()];
+            self.bind(format!("({matches})"), args);
         }
         Ok(())
     }
 
     pub fn page(self, sql: &str, view: fn(&Value) -> Result<Value>, order: PageOrder) -> Read {
+        if self.conditions.is_empty() {
+            self.source_page(sql, view, order)
+        } else {
+            self.source_page(&format!("SELECT * FROM ({sql})"), view, order)
+        }
+    }
+
+    pub fn source_page(
+        self,
+        sql: &str,
+        view: fn(&Value) -> Result<Value>,
+        order: PageOrder,
+    ) -> Read {
         let sql = if self.conditions.is_empty() {
             sql.to_owned()
         } else {
-            format!(
-                "SELECT * FROM ({sql}) WHERE {}",
-                self.conditions.join(" AND ")
-            )
+            format!("{sql} WHERE {}", self.conditions.join(" AND "))
         };
         Read::Page {
             sql,
