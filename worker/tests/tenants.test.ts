@@ -1504,11 +1504,13 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(expiry),
           db.prepare(`${series} INSERT INTO auth_application(id,name)
           SELECT 'fixture-app-'||n,'Fixture Application' FROM fixture WHERE n<=256`),
-          db.prepare(
-            `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
-          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'WEB','[]','unified-local','[]'
-          FROM fixture WHERE n<=512`,
-          ),
+          db
+            .prepare(
+              `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'CLI','[]','unified-local','[]'
+          FROM fixture UNION ALL SELECT 'fixture-work-client','fixture-work-client',?,'CLI','[]','unified-local','[]'`,
+            )
+            .bind(workApp),
           db.prepare(`${series} INSERT INTO auth_management_audit
           (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
           SELECT 'fixture-audit-'||n,'fixture-user-'||(1+(n-1)%256),'molis-work-unified-local',
