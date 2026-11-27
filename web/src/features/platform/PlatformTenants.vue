@@ -13,10 +13,11 @@ import {
   platformAuditPath,
   type AuditEvent,
 } from "./platform-audit.ts";
-import AuditEventDrawer from "./AuditEventDrawer.vue";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+const AuditEventDrawer = lazyComponent(() => import("./AuditEventDrawer.vue"));
 import { platformTenantPath as teamPath, tenantOwner, type PlatformTenant, type PlatformTenantMember } from "./platform-tenants.ts";
 import { useDebouncedSearch } from "../../shared/composables/use-debounced-search.ts";
-import PlatformTenantDialogs from "./PlatformTenantDialogs.vue";
+const PlatformTenantDialogs = lazyComponent(() => import("./PlatformTenantDialogs.vue"));
 import PlatformTenantMembers from "./PlatformTenantMembers.vue";
 
 const props = defineProps<{
@@ -300,7 +301,7 @@ onBeforeUnmount(() => {
           v-if="canCreate"
           type="button"
           class="pt-dashed-btn"
-          :disabled="busy"
+          :disabled="busy || !dialogs"
           @click="dialogs?.openCreateModal()"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
@@ -406,7 +407,7 @@ onBeforeUnmount(() => {
                     v-if="selectedTenant.status === 'ACTIVE'"
                     type="button"
                     class="pt-btn pt-btn-danger-soft"
-                    :disabled="busy"
+                    :disabled="busy || !dialogs"
                     @click="dialogs?.openStatusModal('disable', selectedTenant)"
                   >
                     停用团队
@@ -415,7 +416,7 @@ onBeforeUnmount(() => {
                     v-else
                     type="button"
                     class="pt-btn pt-btn-primary"
-                    :disabled="busy"
+                    :disabled="busy || !dialogs"
                     @click="dialogs?.openStatusModal('enable', selectedTenant)"
                   >
                     恢复启用团队
@@ -435,7 +436,7 @@ onBeforeUnmount(() => {
                 v-if="canSetStatus"
                 type="button"
                 class="pt-btn pt-btn-primary pt-btn-sm"
-                :disabled="busy"
+                :disabled="busy || !dialogs"
                 @click="dialogs?.openStatusModal('enable', selectedTenant)"
               >
                 立即恢复
@@ -526,7 +527,7 @@ onBeforeUnmount(() => {
                         </svg>
                       </button>
                       <button v-if="canSetStatus" type="button" class="pt-btn pt-btn-danger-soft pt-btn-sm"
-                        :disabled="busy" @click="dialogs?.openTransferModal(selectedTenant)">
+                        :disabled="busy || !dialogs" @click="dialogs?.openTransferModal(selectedTenant)">
                         强制移交所有权
                       </button>
                     </div>
@@ -625,7 +626,7 @@ onBeforeUnmount(() => {
                 v-if="!hasFilters && canCreate"
                 type="button"
                 class="pt-btn pt-btn-primary"
-                @click="dialogs?.openCreateModal()"
+                :disabled="!dialogs" @click="dialogs?.openCreateModal()"
               >
                 ＋ 平台创建团队
               </button>

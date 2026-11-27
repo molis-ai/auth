@@ -20,7 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   expired: [error: AuthError];
   orderAccessDenied: [];
-  summary: [value: { active: boolean | null; available: number | null }];
+  summary: [subject: string, value: { active: boolean | null; available: number | null }];
 }>();
 const ownerKind = props.tenantId === undefined ? "USER" : "TENANT";
 const ownerId = props.tenantId ?? props.viewerId;
@@ -114,7 +114,7 @@ const avatarText = computed(() => props.ownerName.trim().slice(0, 1) || "M");
 const subjectBadgeText = computed(() => (ownerKind === "USER" ? "个人账本" : "团队账本"));
 
 watch([subscription, balance], ([nextSub, nextBal]) => {
-  emit("summary", {
+  emit("summary", ownerKind === "USER" ? "personal" : ownerId, {
     active: nextSub ? Boolean(nextSub.currentPeriod) : null,
     available: nextBal ? nextBal.available : null,
   });
@@ -166,9 +166,15 @@ function localTime(timestamp: number) {
   const offset = parts.timeZoneName === "GMT" ? "UTC+00:00" : parts.timeZoneName.replace("GMT", "UTC");
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}（${viewerZone}，${offset}）`;
 }
+const currencies = new Map<string, { format: Intl.NumberFormat; minorUnits: number }>();
 function money(minor: number, currency: string) {
-  const format = new Intl.NumberFormat("zh-CN", { style: "currency", currency });
-  return format.format(minor / 10 ** format.resolvedOptions().maximumFractionDigits!);
+  let entry = currencies.get(currency);
+  if (!entry) {
+    const format = new Intl.NumberFormat("zh-CN", { style: "currency", currency });
+    entry = { format, minorUnits: 10 ** (format.resolvedOptions().maximumFractionDigits ?? 2) };
+    currencies.set(currency, entry);
+  }
+  return entry.format.format(minor / entry.minorUnits);
 }
 function intervalName(value: BillingInterval) {
   return value === "MONTH" ? "月付" : "年付";
@@ -304,15 +310,22 @@ async function refresh() {
 }
 
 let orderExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+const maxTimeoutMs = 2 ** 31 - 1;
+function scheduleOrderExpiry(deadline: number) {
+  const delay = deadline - Date.now();
+  if (delay <= 0) {
+    void loadOrders();
+    return;
+  }
+  orderExpiryTimer = setTimeout(() => scheduleOrderExpiry(deadline), Math.min(maxTimeoutMs, delay));
+}
 watch(orderRows, rows => {
   clearTimeout(orderExpiryTimer);
   const now = Date.now();
   const next = Math.min(...rows
     .filter(order => order.status === "PENDING_PAYMENT" && order.paymentExpiresAt > now)
     .map(order => order.paymentExpiresAt));
-  if (Number.isFinite(next)) {
-    orderExpiryTimer = setTimeout(() => void loadOrders(), next - now);
-  }
+  if (Number.isFinite(next)) scheduleOrderExpiry(next);
 });
 
 function closeConfirmation() {

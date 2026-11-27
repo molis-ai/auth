@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AccountClient, AccountView } from "../../shared/api/account-client.ts";
 import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 import type { LoginMethod } from "./login-method.ts";
 
-const AccountSecurityEditor = defineAsyncComponent(() => import("./AccountSecurityEditor.vue"));
-const AccountPassword = defineAsyncComponent(() => import("./AccountPassword.vue"));
-const AccountSessions = defineAsyncComponent(() => import("./AccountSessions.vue"));
+const AccountSecurityEditor = lazyComponent(() => import("./AccountSecurityEditor.vue"));
+const AccountPassword = lazyComponent(() => import("./AccountPassword.vue"));
+const AccountSessions = lazyComponent(() => import("./AccountSessions.vue"));
 
 const props = defineProps<{
   client: AccountClient;

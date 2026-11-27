@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, shallowReactive, shallowRef, watch, type Ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, shallowRef, watch, type Ref } from "vue";
 import { AccountClient, AuthError, type AccountView } from "../shared/api/account-client.ts";
 import { accountErrorMessage } from "../shared/api/errors.ts";
 import { IdempotentSubmit, refreshAfterWrite, type WriteOptions } from "../shared/api/idempotent-submit.ts";
@@ -23,11 +23,9 @@ export function useAccountSession(
   const onLoginEntry = location.pathname === '/login';
   const prefetchedCapabilities = shallowRef<ReturnType<AccountClient['loginCapabilities']>>();
   const SESSION_CHECK_COOLDOWN_MS = 30_000;
-  const OPEN_ACTIVITY_DELAY_MS = 150;
   let lastSessionCheckAt: number | undefined;
   const accountGeneration = ref(0);
   let openReported = false;
-  let openActivityTimer: ReturnType<typeof setTimeout> | undefined;
   let profileMethodsRequested = false;
   let methodsRequest = 0;
   const methods = ref<LoginMethod[]>([]);
@@ -89,7 +87,6 @@ export function useAccountSession(
   function confirmAccount(current: AccountView) {
     if (current.state !== account.value?.state || current.user?.userId !== account.value?.user?.userId) {
       accountGeneration.value++;
-      cancelOpenActivity();
       openReported = false;
     }
     lastSessionCheckAt = Date.now();
@@ -124,20 +121,16 @@ export function useAccountSession(
     }
     startup.value = 'ready';
   }
-  function cancelOpenActivity() {
-    clearTimeout(openActivityTimer);
-    openActivityTimer = undefined;
-  }
   function scheduleOpenActivity() {
-    if (openReported || openActivityTimer !== undefined) return;
+    if (openReported) return;
     const scope = accountGeneration.value;
-    // Let the account watcher queue the initial login-methods read before this write.
-    openActivityTimer = setTimeout(() => {
-      openActivityTimer = undefined;
-      if (scope !== accountGeneration.value || account.value?.state !== "AUTHENTICATED") return;
-      openReported = true;
-      void reportOpenActivity(scope);
-    }, OPEN_ACTIVITY_DELAY_MS);
+    openReported = true;
+    // Let the profile watcher enqueue its initial read before reporting activity.
+    void nextTick(() => {
+      if (scope === accountGeneration.value && account.value?.state === "AUTHENTICATED") {
+        return reportOpenActivity(scope);
+      }
+    });
   }
   async function reportOpenActivity(scope: number) {
     try {
@@ -239,7 +232,6 @@ export function useAccountSession(
   }
   async function logout(all = false) {
     await run(async () => {
-      cancelOpenActivity();
       endingSession.value = true;
       let result: Awaited<ReturnType<AccountClient["logout"]>>;
       try {
@@ -258,7 +250,6 @@ export function useAccountSession(
   }
   function clearAccount(next: AccountView = { state: "ANONYMOUS" }) {
     accountGeneration.value++;
-    cancelOpenActivity();
     prefetchedCapabilities.value = undefined;
     lastSessionCheckAt = undefined;
     openReported = false;
@@ -296,29 +287,25 @@ export function useAccountSession(
         ['SESSION_EXPIRED','SESSION_REVOKED','LOGIN_REQUIRED'].includes(error.code)) replaceSession();
     } finally { checking = false; }
   }
-  function pageRestored(event: PageTransitionEvent) { if (event.persisted) replaceSession(); }
-  function pageLeaving() {
-    client.close();
-    clearAccount();
-    const root = document.getElementById('app');
-    if (root) root.style.visibility = 'hidden';
+  function pageRestored(event: PageTransitionEvent) {
+    if (event.persisted) {
+      lastSessionCheckAt = undefined;
+      void checkSession();
+    }
   }
   onMounted(() => {
     void initializeSession();
     window.addEventListener('focus', checkSession);
     document.addEventListener('visibilitychange', checkSession);
     window.addEventListener('pageshow', pageRestored);
-    window.addEventListener('pagehide', pageLeaving);
   });
   onBeforeUnmount(() => {
     accountGeneration.value++;
-    cancelOpenActivity();
     clearToast();
     client.close(); sessionChanges?.close();
     window.removeEventListener('focus', checkSession);
     document.removeEventListener('visibilitychange', checkSession);
     window.removeEventListener('pageshow', pageRestored);
-    window.removeEventListener('pagehide', pageLeaving);
   });
 
   return {

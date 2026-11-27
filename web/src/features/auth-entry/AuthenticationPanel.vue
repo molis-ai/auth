@@ -72,10 +72,17 @@ watch(() => busy.value || providerPending.value, value => emit('busy', value));
 watch(remember, value => { if (!value && props.entry) rememberEmail(''); });
 async function chooseMethod(value: string) {
   if (busy.value || props.blocked || providerPending.value || method.value === value) return;
+  const oauth = ["GOOGLE", "GITHUB"].includes(value);
+  // Preserve the click gesture while the old server transaction is cancelled.
+  const reserved = oauth ? flow.reserve(props.authorizationPopup) : null;
+  if (oauth && !reserved) {
+    failure.value = "请允许打开授权窗口";
+    return;
+  }
   busy.value = true;
   try {
     await cancel();
-    if (!active) return;
+    if (!active) { reserved?.close(); return; }
     retryAt.value = 0;
     address.value = value === 'EMAIL_PASSWORD' ? rememberedEmail() : '';
     method.value = value; failure.value = ''; password.value = ''; confirm.value = ''; showPassword.value = false;
@@ -83,7 +90,8 @@ async function chooseMethod(value: string) {
     busy.value = false;
   }
   await nextTick();
-  if (active && ['GOOGLE', 'GITHUB'].includes(value)) void submit();
+  if (active && oauth) void submit(reserved);
+  else reserved?.close();
 }
 let active = true, finished = false;
 const flow = new AuthFlow();
@@ -138,7 +146,7 @@ async function progress(value: Transaction) {
     );
   else if (value.nextStep === "COMPLETE") await complete();
 }
-async function submit() {
+async function submit(reserved?: Window | null) {
   if (loginFlow && (capabilitiesState.value !== 'ready' || !available(method.value))) return;
   if (busy.value || props.blocked || providerPending.value) return;
   if (phoneBinding && !challenge.value && !/^1[3-9]\d{9}$/.test(address.value.trim())) {
@@ -148,7 +156,7 @@ async function submit() {
   }
   if (props.entry && method.value === 'EMAIL_PASSWORD') rememberEmail(remember.value ? address.value.trim() : '');
   if (["GOOGLE", "GITHUB"].includes(method.value) && !transaction.value) {
-    if (!flow.open(props.authorizationPopup)) {
+    if (!flow.open(reserved ?? props.authorizationPopup)) {
       failure.value = "请允许打开授权窗口";
       return;
     }
@@ -238,6 +246,7 @@ async function submit() {
       if (url.origin !== location.origin) throw Error("授权地址不匹配");
       flow.navigate(url.href);
       providerPending.value = true;
+      let pollDelay = 500;
       const poll = async () => {
         if (!active || !transaction.value) return;
         try {
@@ -265,7 +274,8 @@ async function submit() {
             failure.value = "第三方登录未完成，请重新发起。";
             return;
           }
-          flow.schedule(poll, 1000);
+          pollDelay = Math.min(4000, pollDelay * 2);
+          flow.schedule(poll, pollDelay);
         } catch (error) {
           if (error instanceof FlowCancelled) return;
           await cancel();
@@ -298,7 +308,7 @@ async function sendLoginVerification() {
   retryAt.value=Date.now()+result.retryAfterSeconds*1000;
 }
 async function resend() {
-  if (Date.now() < retryAt.value) return;
+  if (busy.value || props.blocked || Date.now() < retryAt.value) return;
   if (!props.operation && (props.purpose ?? 'LOGIN') === 'LOGIN' && challenge.value) {
     busy.value=true;
     try { await sendLoginVerification(); } catch(e) { failure.value=accountErrorMessage(e); } finally { busy.value=false; }
@@ -420,7 +430,7 @@ if (
         : "EMAIL_CODE";
 </script>
 <template>
-  <form :class="entry ? 'entry-auth-form account-form' : 'console-card account-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit">
+  <form :class="entry ? 'entry-auth-form account-form' : 'console-card account-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit()">
     <template v-if="entry">
       <div class="login-welcome"><p v-if="purpose === 'LOGIN'">{{ t('欢迎回来') }}</p><div v-else class="panel-heading"><h2>{{ t(purpose === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码') }}</h2><p>{{ t(purpose === 'EMAIL_SIGNUP' ? '输入邮箱，验证后设置密码。' : '验证邮箱后，重新设置你的密码。') }}</p></div></div>
     </template>

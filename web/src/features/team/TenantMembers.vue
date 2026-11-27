@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { AccountClient } from '../../shared/api/account-client.ts';
 import { accountErrorMessage } from '../../shared/api/errors.ts';
 import type { WriteOptions } from '../../shared/api/idempotent-submit.ts';
@@ -24,7 +25,7 @@ const props = defineProps<{
   submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
 }>();
 const tab = defineModel<'members' | 'billing'>('tab', { required: true });
-const BillingPanel = defineAsyncComponent(() => import('../billing/index.ts'));
+const BillingPanel = lazyComponent(() => import('../billing/index.ts'));
 const emit = defineEmits<{
   left: [tenantId: string];
   expired: [error: unknown];

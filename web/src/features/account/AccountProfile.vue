@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { defineAsyncComponent, nextTick, onBeforeUnmount, ref } from 'vue';
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { AccountClient, AuthError, type AccountView } from '../../shared/api/account-client.ts';
 import { accountErrorMessage } from '../../shared/api/errors.ts';
 import './profile.css';
 
-const AvatarCropper = defineAsyncComponent(() => import('./AvatarCropper.vue'));
+const AvatarCropper = lazyComponent(() => import('./AvatarCropper.vue'));
 const props = defineProps<{
   user: NonNullable<AccountView['user']>;
   githubAccount?: string;

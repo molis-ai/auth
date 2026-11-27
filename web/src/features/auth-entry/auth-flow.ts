@@ -33,12 +33,13 @@ export class AuthFlow {
     }
     return value;
   }
+  reserve(existing?: Window | null) {
+    const popup = existing && !existing.closed ? existing : window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
+    return popup;
+  }
   open(reserved?: Window | null) {
-    this.popup =
-      reserved && !reserved.closed
-        ? reserved
-        : window.open("about:blank", "_blank");
-    if (this.popup) this.popup.opener = null;
+    this.popup = this.reserve(reserved);
     return Boolean(this.popup);
   }
   navigate(url: string) {

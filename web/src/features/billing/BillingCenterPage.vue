@@ -35,12 +35,14 @@ const tenantDirectory = cursorCollection<TenantLedger>(props.client);
 const { items: tenants, loading: tenantsLoading, nextCursor: moreTenants } = tenantDirectory;
 const tenantsError = ref("");
 const summaries = reactive<Record<string, LedgerSummary>>({});
-let disposed = false;
+const lifetime = new AbortController();
+const focusedTenant = ref<TenantLedger>();
 
 const selectedTenant = computed(() =>
   selectedKey.value === "personal"
     ? undefined
-    : tenants.value.find(tenant => tenant.tenantId === selectedKey.value),
+    : tenants.value.find(tenant => tenant.tenantId === selectedKey.value) ??
+      (focusedTenant.value?.tenantId === selectedKey.value ? focusedTenant.value : undefined),
 );
 
 const billingScope = computed(() => {
@@ -56,17 +58,28 @@ const canManageSelected = computed(() => {
 });
 
 async function loadTenants(append = false) {
-  if (disposed) return;
+  if (lifetime.signal.aborted) return;
   tenantsError.value = "";
   try {
     if (append) await tenantDirectory.more();
     else await tenantDirectory.first("/tenants");
-    if (disposed) return;
-    if (selectedKey.value !== "personal" && !tenants.value.some(t => t.tenantId === selectedKey.value)) {
-      selectedKey.value = "personal";
+    if (lifetime.signal.aborted) return;
+    const key = selectedKey.value;
+    if (key !== "personal" && !tenants.value.some(t => t.tenantId === key)) {
+      try {
+        const tenant = await props.client.request<TenantLedger>(
+          "/tenants/" + encodeURIComponent(key), undefined, "GET", undefined, lifetime.signal,
+        );
+        if (!lifetime.signal.aborted && selectedKey.value === key) focusedTenant.value = tenant;
+      } catch (error) {
+        if (error instanceof AuthError && (error.status === 404 || error.code === "TENANT_DISABLED")) {
+          if (selectedKey.value === key) selectedKey.value = "personal";
+        } else throw error;
+      }
     }
+
   } catch (error) {
-    if (disposed || (error instanceof AuthError && error.code === "CANCELLED")) return;
+    if (lifetime.signal.aborted || (error instanceof AuthError && error.code === "CANCELLED")) return;
     if (error instanceof AuthError && error.status === 401) {
       emit("expired", new AuthError("SESSION_EXPIRED", error.status, error.requestId));
       return;
@@ -85,7 +98,8 @@ function selectLedger(key: string) {
 
 onMounted(() => void loadTenants(false));
 onBeforeUnmount(() => {
-  disposed = true;
+  lifetime.abort();
+  tenantDirectory.clear();
 });
 </script>
 
@@ -178,6 +192,7 @@ onBeforeUnmount(() => {
       <div class="billing-directory-detail">
         <div class="billing-directory-inner">
           <BillingPanel
+            v-if="selectedKey === 'personal' || selectedTenant"
             :key="billingScope"
             :client="client"
             :viewer-id="viewerId"
@@ -187,7 +202,7 @@ onBeforeUnmount(() => {
             :can-manage-orders="canManageSelected"
             @expired="emit('expired', $event)"
             @order-access-denied="loadTenants(false)"
-            @summary="updateSummary(selectedKey, $event)"
+            @summary="updateSummary"
           />
         </div>
       </div>

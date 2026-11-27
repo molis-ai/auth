@@ -324,7 +324,10 @@ export class AccountClient {
       );
       this.checkGeneration(generation);
       controller.signal.throwIfAborted();
-      const reply = await response.json();
+      const reply = await response.json().catch(() => {
+        throw new AuthError(response.ok ? "INVALID_RESPONSE" : "AUTH_UNAVAILABLE",
+          response.status, response.headers.get("X-Request-ID") ?? "");
+      });
       this.checkGeneration(generation);
       controller.signal.throwIfAborted();
       const csrf = response.headers.get("X-CSRF-Token");

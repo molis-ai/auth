@@ -15,7 +15,8 @@ import {
 } from "./platform-audit.ts";
 import { platformTenantPath, type PlatformTenant } from "./platform-tenants.ts";
 import { useDebouncedSearch } from "../../shared/composables/use-debounced-search.ts";
-import AuditEventDrawer from "./AuditEventDrawer.vue";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+const AuditEventDrawer = lazyComponent(() => import("./AuditEventDrawer.vue"));
 
 const props = defineProps<{
   client: AccountClient;
@@ -462,6 +463,7 @@ onBeforeUnmount(() => {
     </div>
 
     <AuditEventDrawer
+      v-if="selectedEvent"
       :event="selectedEvent"
       :can-open-tenant="hasTenantRead"
       @close="selectedEvent = null"

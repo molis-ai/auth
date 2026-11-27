@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onDeactivated, ref, watch } from "vue";
+import { lazyComponent } from "../../shared/components/lazy-component.ts";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
-const PlatformClients = defineAsyncComponent(() => import("./PlatformClients.vue"));
+const PlatformClients = lazyComponent(() => import("./PlatformClients.vue"));
 const props = defineProps<{
   client: AccountClient;
   capabilities: string[];
   busy: boolean;
-  visit: number;
   run: (task: () => Promise<void>) => Promise<void>;
   submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
   submitBusyWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
@@ -49,17 +49,16 @@ function can(capability: string) {
   return props.capabilities.includes(capability);
 }
 
-watch(() => props.visit, () => {
+onMounted(() => {
   selectedApplication.value = undefined;
   void props.run(async () => {
     applicationClientCounts.value.clear();
     applications.value = await list("/platform/applications");
     if (!selectedApplication.value && applications.value[0]) openApplication(applications.value[0]);
   });
-}, { immediate: true });
+});
 
-// Keep the list alive for global write-refresh retries while the page is hidden.
-onDeactivated(() => {
+onBeforeUnmount(() => {
   selectedApplication.value = undefined;
   createApplicationDialog.value?.close();
 });

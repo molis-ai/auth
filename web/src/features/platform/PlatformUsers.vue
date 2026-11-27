@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { AuthError, type AccountClient } from "../../shared/api/account-client.ts";
+import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
 import type { WriteOptions } from "../../shared/api/idempotent-submit.ts";
 
@@ -48,7 +49,10 @@ const capabilities = __AUTH_PLATFORM_CAPABILITIES__;
 const canSetStatus = computed(() => props.capabilities.includes("USER_STATUS"));
 const canEditEmail = computed(() => props.capabilities.includes("USER_EMAIL_WRITE"));
 const canManagePermissions = computed(() => props.capabilities.includes("PLATFORM_PERMISSION_WRITE"));
-const users = ref<User[]>([]);
+const directory = cursorCollection<User>(props.client);
+const { items: users, loading: usersLoading, nextCursor } = directory;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let selectionVersion = 0;
 const selected = ref<User>();
 const grants = ref<Grant[]>([]);
 const search = ref("");
@@ -61,11 +65,6 @@ const reason = ref("");
 const auditError = ref("");
 let active = true;
 
-const filteredUsers = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  return users.value.filter(user => [user.displayName, user.email ?? "", user.userId]
-    .some(text => text.toLowerCase().includes(q)));
-});
 const grantsByCapability = computed(() => new Map(grants.value.map(grant => [grant.capability, grant])));
 const grantedCount = computed(() => grants.value.filter(grant => grant.status === "ACTIVE").length);
 const auditTitle = computed(() => {
@@ -117,24 +116,44 @@ function userPath(user: User) {
 }
 
 async function select(user: User) {
+  const version = ++selectionVersion;
   const data = canManagePermissions.value ? await list<Grant>(userPath(user) + "/permissions") : [];
-  if (!active) return;
+  if (!active || version !== selectionVersion) return;
   selected.value = user;
   emailDraft.value = user.email ?? "";
   grants.value = data;
 }
 
-async function load() {
-  const data = await list<User>("/platform/users");
-  if (!active) return;
-  users.value = data;
-  const current = data.find(user => user.userId === selected.value?.userId) ?? data[0];
-  if (current) {
-    await select(current);
-  } else {
-    selected.value = undefined;
+async function load(append = false) {
+  message.value = "";
+  try {
+    if (append) {
+      await directory.more();
+      return;
+    }
+    const q = search.value.trim();
+    const query = q ? "?" + new URLSearchParams({q}) : "";
+    if (!(await directory.first("/platform/users" + query, 30)) || !active) return;
+    const current = users.value.find(user => user.userId === selected.value?.userId) ?? users.value[0];
+    if (current) {
+      await select(current);
+    } else {
+      selectionVersion++;
+      selected.value = undefined;
+      grants.value = [];
+    }
+  } catch (error) {
+    if (!active || (error instanceof AuthError && error.code === "CANCELLED")) return;
+    message.value = accountErrorMessage(error);
+    emit("expired", error);
   }
 }
+watch(search, () => {
+  clearTimeout(searchTimer);
+  directory.clear();
+  selectionVersion++;
+  searchTimer = setTimeout(() => void load(), 200);
+});
 
 async function openAudit(action: AuditAction) {
   if (busy.value || audit.value) return;
@@ -196,7 +215,7 @@ async function submitAudit() {
     success: action.kind === "email" ? "邮箱已更新，登录会话已撤销" : action.disabling ? "账号已停用" : "账号已恢复",
     after: async updated => {
       if (!active) return;
-      users.value = users.value.map(user => user.userId === updated.userId ? updated : user);
+      directory.replace(user => user.userId === updated.userId, updated);
       selected.value = updated;
       if (action.kind === "email") emailDraft.value = updated.email ?? "";
       closeAudit();
@@ -204,9 +223,11 @@ async function submitAudit() {
   });
 }
 
-onMounted(() => void run(load));
+onMounted(() => void load());
 onBeforeUnmount(() => {
   active = false;
+  clearTimeout(searchTimer);
+  directory.clear();
   auditDialog.value?.close();
 });
 </script>
@@ -224,7 +245,7 @@ onBeforeUnmount(() => {
 
         <div class="pu-list">
           <button
-            v-for="user in filteredUsers"
+            v-for="user in users"
             :key="user.userId"
             type="button"
             class="pu-user-item"
@@ -241,8 +262,9 @@ onBeforeUnmount(() => {
               <span class="pu-user-meta">{{ user.email ?? "未绑定邮箱" }}</span>
             </span>
           </button>
-          <p v-if="busy && !users.length" class="pu-list-hint" role="status">正在读取用户…</p>
-          <p v-else-if="search.trim() && !filteredUsers.length" class="pu-list-hint">没有匹配的用户</p>
+          <p v-if="usersLoading && !users.length" class="pu-list-hint" role="status">正在读取用户…</p>
+          <p v-else-if="search.trim() && !users.length" class="pu-list-hint">没有匹配的用户</p>
+          <button v-if="nextCursor" type="button" :disabled="usersLoading" @click="load(true)">加载更多用户</button>
         </div>
 
         <div v-if="canSetStatus || canEditEmail || canManagePermissions" class="pu-rail-note">
