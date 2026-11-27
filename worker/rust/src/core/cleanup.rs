@@ -13,7 +13,7 @@ const RETENTION_GRACE_MS: f64 = 86_400_000.0;
 
 // Dependent rows are cleaned first. A parent is still protected if a child
 // remains because of retention, the row limit, or an independent failure.
-const TABLES: [(&str, &str); 17] = [
+const TABLES: [(&str, &str); 18] = [
     ("auth_one_use", "token_hash"),
     ("auth_rate_bucket", "bucket_hash"),
     ("auth_login_access_token", "token_hash"),
@@ -29,10 +29,11 @@ const TABLES: [(&str, &str); 17] = [
     ("auth_login_activity", "rowid"),
     ("auth_tenant_invitation", "id"),
     ("auth_ownership_transfer", "id"),
+    ("auth_browser_transaction", "rowid"),
     ("auth_product_transaction", "id"),
     ("auth_login_session", "id"),
 ];
-const LAYERS: [(usize, usize); 3] = [(0, 15), (15, 16), (16, 17)];
+const LAYERS: [(usize, usize); 3] = [(0, 16), (16, 17), (17, 18)];
 
 fn statement(db: &D1Database, table: &str, key: &str, now: f64) -> Result<D1PreparedStatement> {
     let (source, expiry, cutoff, retain) = match table {

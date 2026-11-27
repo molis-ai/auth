@@ -336,60 +336,94 @@ async fn revoke_replayed_refresh(a: &Auth, session: &Value, digest: &str, n: i64
     )
     .await
 }
+pub(crate) async fn refresh_browser(
+    a: &Auth,
+    client_id: &str,
+    refresh_token: &str,
+    prepare: impl AsyncFnOnce(&Value) -> Result<Vec<D1PreparedStatement>>,
+) -> Result<Value> {
+    let c = registered_client(a, client_id).await?;
+    a.rate_ip("auth:token", 120).await?;
+    rotate_refresh(a, &c, refresh_token, now(), false, prepare).await
+}
+
+async fn rotate_refresh(
+    a: &Auth,
+    c: &Value,
+    refresh_token: &str,
+    n: i64,
+    revoke_replays: bool,
+    prepare: impl AsyncFnOnce(&Value) -> Result<Vec<D1PreparedStatement>>,
+) -> Result<Value> {
+    let digest = hash(refresh_token);
+    let s =
+        a.s.one(
+            &format!(
+                "SELECT {SESSION_COLUMNS},t.generation token_generation,
+                    t.session_revision token_session_revision,t.user_epoch token_user_epoch,
+                    t.expires_at token_expires_at,t.used_at token_used_at
+             FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id
+             {SESSION_JOINS} WHERE t.token_hash=?"
+            ),
+            vec![digest.clone().into()],
+        )
+        .await?;
+    ensure(
+        !s.is_null() && s["client_id"] == c["client_id"],
+        401,
+        "INVALID_GRANT",
+    )?;
+    if !s["token_used_at"].is_null() {
+        if !revoke_replays {
+            return Err(Failure {
+                status: 409,
+                code: "VERSION_CONFLICT",
+            });
+        }
+        revoke_replayed_refresh(a, &s, &digest, n).await?;
+        return Err(Failure {
+            status: 401,
+            code: "INVALID_GRANT",
+        });
+    }
+    ensure(
+        live(&s, n)
+            && number(&s, "token_expires_at") > n
+            && s["token_user_epoch"] == s["user_epoch"]
+            && s["token_session_revision"] == s["session_revision"],
+        401,
+        "SESSION_EXPIRED",
+    )?;
+    let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
+    let mut writes=vec![client_guard(a,c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.as_str().into()])?];
+    writes.extend(new_tokens);
+    writes.push(crate::audit::account(
+        a,
+        "account.token",
+        s["user_id"].clone(),
+        &s["client_id"],
+        json!({"loginSessionId":s["id"]}),
+    )?);
+    writes.extend(prepare(&result).await?);
+    if let Err(e) = a.s.batch(writes, "VERSION_CONFLICT").await {
+        if revoke_replays && e.status == 409 {
+            revoke_replayed_refresh(a, &s, &digest, n).await?;
+        }
+        return Err(e);
+    }
+    Ok(result)
+}
+
 async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     shape("TokenRequest", b)?;
     let c = client(a, &text(b, "clientId")).await?;
     let n = now();
     a.rate_ip("auth:token", 120).await?;
     if b["grantType"] == "refresh_token" {
-        let digest = hash(&text(b, "refreshToken"));
-        let s =
-            a.s.one(
-                &format!("SELECT {SESSION_COLUMNS},t.generation token_generation,
-                        t.session_revision token_session_revision,t.user_epoch token_user_epoch,
-                        t.expires_at token_expires_at,t.used_at token_used_at
-                 FROM auth_login_refresh_token t JOIN auth_login_session s ON s.id=t.login_session_id
-                 {SESSION_JOINS} WHERE t.token_hash=?"),
-                vec![digest.clone().into()],
-            )
-            .await?;
-        ensure(
-            !s.is_null() && s["client_id"] == c["client_id"],
-            401,
-            "INVALID_GRANT",
-        )?;
-        if !s["token_used_at"].is_null() {
-            revoke_replayed_refresh(a, &s, &digest, n).await?;
-            return Err(Failure {
-                status: 401,
-                code: "INVALID_GRANT",
-            });
-        }
-        ensure(
-            live(&s, n)
-                && number(&s, "token_expires_at") > n
-                && s["token_user_epoch"] == s["user_epoch"]
-                && s["token_session_revision"] == s["session_revision"],
-            401,
-            "SESSION_EXPIRED",
-        )?;
-        let (result, new_tokens) = tokens(a, &s, n, number(&s, "token_generation") + 1)?;
-        let mut writes=vec![client_guard(a,&c)?,session_guard(a,&s,n)?,a.s.guard("EXISTS(SELECT 1 FROM auth_login_refresh_token WHERE token_hash=? AND used_at IS NULL AND expires_at>?)",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_login_refresh_token SET used_at=? WHERE token_hash=?",vec![n.into(),digest.as_str().into()])?];
-        writes.extend(new_tokens);
-        writes.push(crate::audit::account(
-            a,
-            "account.token",
-            s["user_id"].clone(),
-            &s["client_id"],
-            json!({"loginSessionId":s["id"]}),
-        )?);
-        if let Err(e) = a.s.batch(writes, "VERSION_CONFLICT").await {
-            if e.status == 409 {
-                revoke_replayed_refresh(a, &s, &digest, n).await?;
-            }
-            return Err(e);
-        }
-        return Ok(result);
+        return rotate_refresh(a, &c, &text(b, "refreshToken"), n, true, async |_| {
+            Ok(vec![])
+        })
+        .await;
     }
     let digest = hash(&text(b, "code"));
     let p=a.s.one("SELECT p.*,t.client_id,t.redirect_uri,t.pkce_challenge,t.created_seq,t.status transaction_status,t.purpose,t.user_id transaction_user FROM auth_identity_proof p JOIN auth_product_transaction t ON t.id=p.transaction_id WHERE p.token_hash=? AND p.kind='LOGIN_CODE'",vec![digest.clone().into()]).await?;

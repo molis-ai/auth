@@ -3,14 +3,14 @@ use serde_json::Value;
 use wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, D1Result};
 
-pub(crate) enum WebSessionAccess {
-    Lease(String, i64),
-    ReadOnly(String, i64),
+pub(crate) struct CommitFence {
+    pub condition: &'static str,
+    pub bindings: Vec<Value>,
 }
 
 pub struct Store {
     pub db: D1Database,
-    pub(crate) web_session_access: Option<WebSessionAccess>,
+    pub(crate) commit_fence: Option<CommitFence>,
     log_env: &'static str,
     request_id: String,
     route: &'static str,
@@ -19,7 +19,7 @@ impl Store {
     pub fn new(db: D1Database, log: &RequestLog<'_>) -> Self {
         Self {
             db,
-            web_session_access: None,
+            commit_fence: None,
             log_env: log.env,
             request_id: log.id.to_owned(),
             route: log.route,
@@ -103,14 +103,16 @@ impl Store {
     ) -> Result<()> {
         self.write_batch(statements, conflict).await.map(|_| ())
     }
-    pub(crate) fn read_browser_session(&self) -> Result<Option<D1PreparedStatement>> {
-        match &self.web_session_access {
-            Some(WebSessionAccess::ReadOnly(id, revision)) => self.statement(
-                "SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='READY' AND expires_at>?",
-                vec![id.as_str().into(), (*revision).into(), now().into()],
-            ).map(Some),
-            _ => Ok(None),
-        }
+    pub(crate) fn read_fence(&self) -> Result<Option<D1PreparedStatement>> {
+        self.commit_fence
+            .as_ref()
+            .map(|fence| {
+                self.statement(
+                    &format!("SELECT 1 WHERE {}", fence.condition),
+                    fence.bindings.clone(),
+                )
+            })
+            .transpose()
     }
 
     pub(crate) async fn batch_returning(
@@ -119,7 +121,7 @@ impl Store {
         returning: D1PreparedStatement,
         conflict: &'static str,
     ) -> Result<Value> {
-        let index = statements.len() + usize::from(self.web_session_access.is_some());
+        let index = statements.len() + usize::from(self.commit_fence.is_some());
         statements.push(returning);
         let started = now();
         let results = self.write_batch(statements, conflict).await?;
@@ -170,12 +172,8 @@ impl Store {
         mut statements: Vec<D1PreparedStatement>,
         conflict: &'static str,
     ) -> Result<Vec<D1Result>> {
-        if let Some(access) = &self.web_session_access {
-            let (id, revision, status) = match access {
-                WebSessionAccess::Lease(id, revision) => (id, revision, "BUSY"),
-                WebSessionAccess::ReadOnly(..) => return Err(Failure::unavailable()),
-            };
-            statements.insert(0, self.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status=? AND expires_at>?)", vec![id.clone().into(),(*revision).into(),status.into(),now().into()])?);
+        if let Some(fence) = &self.commit_fence {
+            statements.insert(0, self.guard(fence.condition, fence.bindings.clone())?);
         }
         statements.push(self.statement("DELETE FROM auth_write_guard", vec![])?);
         let started = now();

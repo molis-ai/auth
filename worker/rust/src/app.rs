@@ -92,7 +92,7 @@ async fn handle_response(
             )
         }
     };
-    let response = web::http::finalize_response(response, &a, id, status, retry_after)?;
+    let response = web::http::finalize_response(response, &a, id, retry_after)?;
     Ok((response, error_code))
 }
 

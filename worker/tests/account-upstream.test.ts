@@ -426,11 +426,11 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
 
   const browserSession = () =>
     db
-      .prepare('SELECT revision,status FROM auth_web_session WHERE id_hash=?')
+      .prepare('SELECT revision,payload FROM auth_web_session WHERE id_hash=?')
       .bind(hash(browser.cookie.split('=')[1]))
       .first()
   const beforeBillingWrites = await browserSession()
-  assert.equal(beforeBillingWrites?.status, 'READY')
+  assert.ok(beforeBillingWrites)
   const action = { method: 'POST', headers: { 'Idempotency-Key': 'action.one' } }
   assert.equal(
     (await call(browser, orders + '/order.active/mock-pay' + teamOne, action)).data.hadBody,

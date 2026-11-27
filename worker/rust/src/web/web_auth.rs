@@ -1,4 +1,4 @@
-//! Product authentication orchestration. Central proofs remain in the encrypted BFF session.
+//! Browser authentication transactions and encrypted proof handling.
 use crate::{
     core::http::*,
     core::security::{challenge, secret},
@@ -137,7 +137,6 @@ pub async fn route(
             s.fresh().await?;
         } else {
             ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
-            s.data["transactions"] = json!({});
         }
         if let Some(password) = current_password {
             ensure(
@@ -194,34 +193,6 @@ pub async fn route(
             }
             t["parent"] = b["reauthHandle"].clone();
         }
-        let expired: Vec<String> = s.data["transactions"]
-            .as_object()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter(|(_, t)| {
-                        matches!(t["status"].as_str(), Some("CANCELLED" | "EXPIRED"))
-                            || t["expiresAt"]
-                                .as_str()
-                                .map(js_sys::Date::parse)
-                                .unwrap_or(0.0)
-                                <= now() as f64
-                    })
-                    .map(|(id, _)| id.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        for id in expired {
-            s.data["transactions"]
-                .as_object_mut()
-                .expect("transactions")
-                .remove(&id);
-        }
-        ensure(
-            s.data["transactions"].as_object().map_or(0, |v| v.len()) < 32,
-            409,
-            "VERSION_CONFLICT",
-        )?;
         let reply = s
             .call(
                 if reauth {
@@ -438,7 +409,7 @@ async fn login_command(
     ensure(s.data["tokens"].is_null(), 409, "VERSION_CONFLICT")?;
     if path.ends_with("/login/code") {
         shape("LoginCodeRequest", b)?;
-        let t = s.data["loginVerification"].clone();
+        let t = s.data["transactions"][text(b, "verificationId")].clone();
         ensure(
             t.is_object() && t["verificationId"] == b["verificationId"],
             403,
@@ -447,7 +418,7 @@ async fn login_command(
         let tokens = s
             .login("/api/v1/auth/login/code", b, &text(&t, "proof"))
             .await?;
-        s.data["loginVerification"] = Value::Null;
+        s.data["transactions"][text(b, "verificationId")] = Value::Null;
         return accept_tokens(s, tokens).await;
     }
     let sending = path.ends_with("/verification-codes");
@@ -478,11 +449,11 @@ async fn login_command(
             &text(&t, "proof"),
         )
         .await?;
-    s.data["transactions"] = json!({});
-    s.data["loginVerification"] = Value::Null;
     if sending {
         t["verificationId"] = result["verificationId"].clone();
-        s.data["loginVerification"] = t;
+        t["expiresAt"] = result["expiresAt"].clone();
+        let handle = text(&t, "verificationId");
+        s.data["transactions"][handle] = t;
         Ok(result)
     } else {
         accept_tokens(s, result).await

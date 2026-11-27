@@ -1,18 +1,17 @@
 //! Auth's same-origin BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
-use super::upstream;
+use super::{browser_transactions::BrowserTransactions, upstream};
 use crate::{
     auth::{login_capabilities, login_sessions},
     core::http::*,
     core::identity::Auth,
     core::security::{hash, secret},
-    core::store::WebSessionAccess,
+    core::store::CommitFence,
 };
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use worker::{Method, Request, RequestInit, Response};
 
 static PRODUCT_ROUTES: &[(Method, &str)] = include!(concat!(env!("OUT_DIR"), "/product_routes.rs"));
-const BUSY_LEASE_MS: i64 = 30_000;
 const SESSION_MAX_AGE_MS: i64 = 7_776_000_000;
 
 #[wasm_bindgen(module = "/src/runtime/federation.js")]
@@ -70,15 +69,6 @@ enum BrowserPayload {
     Upstream(upstream::Reply),
 }
 
-impl BrowserPayload {
-    fn successful(&self) -> bool {
-        match self {
-            Self::Account(_) => true,
-            Self::Upstream(reply) => reply.status < 400,
-        }
-    }
-}
-
 fn should_clear(result: &Result<BrowserPayload>) -> bool {
     let code = match result {
         Err(failure) => Some(failure.code),
@@ -90,13 +80,27 @@ fn should_clear(result: &Result<BrowserPayload>) -> bool {
         Some("SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED" | "UNAUTHENTICATED")
     )
 }
-fn anonymous_data() -> Value {
-    json!({"transactions":{},"tokens":null})
-}
-async fn decode(key: &str, id: &str, payload: &str) -> Result<Value> {
+pub(super) async fn decode(key: &str, id: &str, payload: &str) -> Result<Value> {
     let mut value: Value = serde_json::from_str(&open(key, payload).await.map_err(unavailable)?)?;
     ensure(value["id"] == id, 401, "INVALID_CREDENTIALS")?;
     Ok(value["data"].take())
+}
+
+async fn seal_tokens(key: &str, id: &str, tokens: &Value) -> Result<String> {
+    seal(key, &json!({"id":id,"data":tokens}).to_string())
+        .await
+        .map_err(unavailable)
+}
+
+const CURRENT_BROWSER_SESSION: &str =
+    "EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND expires_at>?)";
+
+async fn load_session(a: &Auth, id: &str) -> Result<Value> {
+    a.s.one(
+        "SELECT payload,revision FROM auth_web_session WHERE id_hash=? AND expires_at>?",
+        vec![id.into(), now().into()],
+    )
+    .await
 }
 pub(crate) fn browser_cookie_hash(a: &Auth, cookie: &str) -> String {
     match a.env.var("MOLIS_LOCAL_GENERATION") {
@@ -126,88 +130,59 @@ pub(crate) struct WebSession<'a> {
     pub a: &'a Auth,
     pub data: Value,
     id: String,
-    revision: i64,
+    revision: Option<i64>,
     key: String,
-    read_only: bool,
 }
 impl WebSession<'_> {
     pub fn client(&self) -> Result<String> {
         setting(self.a, "AUTH_WEB_CLIENT_ID")
     }
-    async fn payload(&self) -> Result<String> {
-        ensure(
-            self.data.to_string().len() <= 192000,
-            400,
-            "INVALID_REQUEST",
-        )?;
-        seal(
-            &self.key,
-            &json!({"id":self.id,"data":self.data}).to_string(),
-        )
-        .await
-        .map_err(unavailable)
+    fn fence_bindings(&self) -> Option<Vec<Value>> {
+        self.revision
+            .map(|revision| vec![self.id.clone().into(), revision.into(), now().into()])
     }
-    pub async fn save(&self) -> Result<()> {
-        ensure(!self.read_only, 503, "AUTH_UNAVAILABLE")?;
-        let payload = self.payload().await?;
-        self.a.s.batch(vec![self.a.s.guard("EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')",vec![self.id.clone().into(),self.revision.into()])?,self.a.s.statement("UPDATE auth_web_session SET payload=? WHERE id_hash=?",vec![payload.into(),self.id.clone().into()])?],"VERSION_CONFLICT").await
+
+    async fn clear_rejected_tokens(&self) -> Result<bool> {
+        let Some(bindings) = self.fence_bindings() else {
+            return Ok(false);
+        };
+        let writes = vec![
+            self.a.s.guard(CURRENT_BROWSER_SESSION, bindings)?,
+            self.a.s.statement(
+                "DELETE FROM auth_browser_transaction WHERE browser_hash=?",
+                vec![self.id.clone().into()],
+            )?,
+            self.a.s.statement(
+                "DELETE FROM auth_web_session WHERE id_hash=?",
+                vec![self.id.clone().into()],
+            )?,
+        ];
+        match self.a.s.batch(writes, "VERSION_CONFLICT").await {
+            Ok(()) => Ok(true),
+            Err(failure) if failure.code == "VERSION_CONFLICT" => Ok(false),
+            Err(failure) => Err(failure),
+        }
     }
-    async fn clear_rejected_tokens(&self) -> Result<()> {
-        let payload = seal(
-            &self.key,
-            &json!({"id":self.id,"data":anonymous_data()}).to_string(),
-        )
-        .await
-        .map_err(unavailable)?;
-        self.a
-            .s
-            .run(
-                "UPDATE auth_web_session SET payload=?,revision=revision+1
-             WHERE id_hash=? AND revision=? AND status='READY'",
-                vec![payload.into(), self.id.clone().into(), self.revision.into()],
-            )
-            .await
-    }
-    async fn finish(&self) -> Result<()> {
-        let row = self.a.s.one(
-            "UPDATE auth_web_session SET payload=?,status='READY',busy_until=0 WHERE id_hash=? AND revision=? AND status='BUSY' RETURNING revision",
-            vec![self.payload().await?.into(), self.id.clone().into(), self.revision.into()],
-        ).await?;
-        ensure(!row.is_null(), 409, "VERSION_CONFLICT")
-    }
-    async fn promote(&self, browser_id: &str) -> Result<()> {
-        let payload = seal(
-            &self.key,
-            &json!({"id":browser_id,"data":self.data}).to_string(),
-        )
-        .await
-        .map_err(unavailable)?;
-        let s = &self.a.s;
-        // Rotate authority atomically: the anonymous reference never stores the authenticated payload.
-        s.batch(
-            vec![
-                s.guard(
-                    "EXISTS(SELECT 1 FROM auth_web_session WHERE id_hash=? AND revision=? AND status='BUSY')",
-                    vec![self.id.clone().into(), self.revision.into()],
-                )?,
-                s.statement(
-                    "INSERT INTO auth_web_session(id_hash,payload,status,expires_at) VALUES (?,?,'READY',?)",
-                    vec![browser_id.into(), payload.into(), (now() + SESSION_MAX_AGE_MS).into()],
-                )?,
-                s.statement(
-                    "DELETE FROM auth_web_session WHERE id_hash=? AND revision=?",
-                    vec![self.id.clone().into(), self.revision.into()],
-                )?,
-            ],
-            "VERSION_CONFLICT",
-        )
-        .await
-    }
+
     async fn logout(&mut self, body: &Value) -> Result<Value> {
+        let mut writes = vec![];
+        if let Some(bindings) = self.fence_bindings() {
+            writes.push(self.a.s.guard(CURRENT_BROWSER_SESSION, bindings)?);
+            writes.push(self.a.s.statement(
+                "DELETE FROM auth_web_session WHERE id_hash=?",
+                vec![self.id.clone().into()],
+            )?);
+        }
+        writes.push(self.a.s.statement(
+            "DELETE FROM auth_browser_transaction WHERE browser_hash=?",
+            vec![self.id.clone().into()],
+        )?);
+        self.a.s.batch(writes, "VERSION_CONFLICT").await?;
+        self.revision = None;
         let saved = self.data["tokens"].take();
-        self.data["transactions"] = json!({});
-        self.data["loginVerification"] = Value::Null;
-        self.save().await?;
+        if saved.is_null() {
+            return Ok(json!({"localCleared":true,"remoteRevocation":"UNCONFIRMED"}));
+        }
         let path = if body["scope"] == "ALL_MOLIS_PRODUCTS" {
             "/api/v1/sessions/logout-all"
         } else {
@@ -236,11 +211,6 @@ impl WebSession<'_> {
         proof: Option<&str>,
         key: Option<&str>,
     ) -> Result<Value> {
-        ensure(
-            !self.read_only || method == Method::Get,
-            503,
-            "AUTH_UNAVAILABLE",
-        )?;
         ensure(
             path.starts_with("/api/v1/") && !path.contains('#') && !path.contains(".."),
             400,
@@ -296,10 +266,9 @@ impl WebSession<'_> {
                 );
                 central_failure(failure.status, failure.code)
             })?;
-        command.s.web_session_access = Some(if self.read_only {
-            WebSessionAccess::ReadOnly(self.id.clone(), self.revision)
-        } else {
-            WebSessionAccess::Lease(self.id.clone(), self.revision)
+        command.s.commit_fence = self.fence_bindings().map(|bindings| CommitFence {
+            condition: CURRENT_BROWSER_SESSION,
+            bindings,
         });
         Ok(command)
     }
@@ -320,7 +289,6 @@ impl WebSession<'_> {
     }
 
     pub(crate) async fn login(&self, path: &str, body: &Value, proof: &str) -> Result<Value> {
-        ensure(!self.read_only, 503, "AUTH_UNAVAILABLE")?;
         let mut request = Request::new(&format!("{}{}", self.a.origin, path), Method::Post)?;
         request
             .headers_mut()?
@@ -349,14 +317,45 @@ impl WebSession<'_> {
             return Ok(());
         }
         let old = &self.data["tokens"];
-        let tokens=self.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"refresh_token","clientId":self.client()?,"refreshToken":old["refreshToken"]})),None,None).await.map_err(session_failure)?;
-        shape("TokenSet", &tokens)?;
-        ensure(
-            tokens["session"]["loginSessionId"] == old["session"]["loginSessionId"],
-            403,
-            "FORBIDDEN",
-        )?;
-        self.data["tokens"] = tokens;
+        let revision = self.revision.ok_or_else(version_conflict)?;
+        let tokens = login_sessions::refresh_browser(
+            self.a, &self.client()?, &text(old, "refreshToken"), async |tokens| {
+                shape("TokenSet", tokens)?;
+                ensure(tokens["session"]["loginSessionId"] == old["session"]["loginSessionId"], 403, "FORBIDDEN")?;
+                let payload = seal_tokens(&self.key, &self.id, tokens).await?;
+                Ok(vec![
+                    self.a.s.guard(CURRENT_BROWSER_SESSION, self.fence_bindings().ok_or_else(version_conflict)?)?,
+                    self.a.s.statement(
+                        "UPDATE auth_web_session SET payload=?,revision=revision+1 WHERE id_hash=? AND revision=?",
+                        vec![payload.into(), self.id.clone().into(), revision.into()],
+                    )?,
+                ])
+            }
+        ).await;
+        match tokens {
+            Ok(tokens) => {
+                self.revision = Some(revision + 1);
+                self.data["tokens"] = tokens;
+            }
+            Err(failure) if failure.status == 409 => {
+                let latest = load_session(self.a, &self.id).await?;
+                ensure(
+                    !latest.is_null() && number(&latest, "revision") > revision,
+                    409,
+                    "VERSION_CONFLICT",
+                )?;
+                let tokens = decode(&self.key, &self.id, &text(&latest, "payload")).await?;
+                ensure(
+                    tokens["session"]["loginSessionId"] == old["session"]["loginSessionId"],
+                    409,
+                    "VERSION_CONFLICT",
+                )?;
+                self.data["tokens"] = tokens;
+                self.revision = Some(number(&latest, "revision"));
+                ensure(self.access_is_fresh(), 409, "VERSION_CONFLICT")?;
+            }
+            Err(failure) => return Err(session_failure(failure)),
+        }
         Ok(())
     }
     pub async fn view(&mut self) -> Result<Value> {
@@ -484,83 +483,11 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         .collect();
     ensure(values.len() <= 1, 401, "INVALID_CREDENTIALS")?;
     let mut cookie = values.first().cloned().unwrap_or_default();
-    let mut id = browser_cookie_hash(a, &cookie);
-    let mut create = !token(&cookie);
+    let has_cookie = token(&cookie);
     let session_read = path == "/api/account/session" && method == Method::Get;
-    if create && session_read {
+    if !has_cookie && session_read {
         return anonymous_response(a, &key);
     }
-    let mut observed_revision = None;
-    let mut rejected_read = None;
-    let mut upstream_body = None;
-    let upstream_write = upstream.is_some() && method != Method::Get;
-    let can_read_without_lease = upstream_write
-        || (method == Method::Get
-            && a.request.inner().method() == "GET"
-            && (upstream.is_some() || read_without_lease(path)));
-    if !create && can_read_without_lease {
-        let loaded_at = now();
-        let row = a.s.one(
-            "SELECT revision,status,busy_until,payload FROM auth_web_session WHERE id_hash=? AND expires_at>?",
-            vec![id.clone().into(), loaded_at.into()],
-        ).await?;
-        create = row.is_null();
-        if create && session_read {
-            return anonymous_response(a, &key);
-        }
-        if !create {
-            let revision = number(&row, "revision");
-            observed_revision = Some(revision);
-            if row["status"] == "READY" {
-                if upstream_write {
-                    let expected = csrf(&key, &id);
-                    upstream_body =
-                        Some(write_input(a, &expected, method.clone(), false, true).await?);
-                }
-                let session = WebSession {
-                    a,
-                    data: decode(&key, &id, &text(&row, "payload")).await?,
-                    id: id.clone(),
-                    revision,
-                    key: key.clone(),
-                    read_only: true,
-                };
-                // Anonymous session status is available without a browser-session write.
-                if (session_read && session.data["tokens"].is_null())
-                    || (session.access_is_fresh()
-                        && session.data["tokens"]["accessToken"]
-                            .as_str()
-                            .is_some_and(token))
-                {
-                    let result = if session_read {
-                        session.account_view().await.map(BrowserPayload::Account)
-                    } else if let Some(target) = &upstream {
-                        call_upstream(
-                            target,
-                            &session,
-                            upstream_body.as_ref().and_then(Value::as_str),
-                        )
-                        .await
-                    } else {
-                        management(&session, path, Method::Get, json!({}))
-                            .await
-                            .map(BrowserPayload::Account)
-                    };
-                    if upstream_write || !should_clear(&result) {
-                        if upstream_write && should_clear(&result) {
-                            session.clear_rejected_tokens().await?;
-                        }
-                        return browser_response(a, path, &key, &id, None, result);
-                    }
-                    rejected_read = Some(result);
-                }
-            } else if number(&row, "busy_until") > loaded_at {
-                a.retry_browser_read = !upstream_write;
-                return Err(version_conflict());
-            }
-        }
-    }
-    let incoming_csrf = a.header("X-CSRF-Token");
     let initial_write = method == Method::Post
         && matches!(
             path,
@@ -568,14 +495,16 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 | "/api/account/auth/login/password"
                 | "/api/account/auth/verification-codes"
         );
-    if !create && initial_write && incoming_csrf.starts_with("bootstrap.") {
-        // A tab that obtained a bootstrap proof before another tab logged in
-        // cannot replace the current cookie's live session.
-        ensure(!session_exists(a, &id).await?, 409, "VERSION_CONFLICT")?;
-        create = true;
-    }
-    ensure(!create || initial_write, 401, "LOGIN_REQUIRED")?;
-    let expected_csrf = if create {
+    ensure(has_cookie || initial_write, 401, "LOGIN_REQUIRED")?;
+    let mut id = browser_cookie_hash(a, &cookie);
+    let row = if has_cookie {
+        load_session(a, &id).await?
+    } else {
+        Value::Null
+    };
+    let incoming_csrf = a.header("X-CSRF-Token");
+    let expected_csrf = if initial_write && incoming_csrf.starts_with("bootstrap.") {
+        ensure(row.is_null(), 409, "VERSION_CONFLICT")?;
         let window = now() / BOOTSTRAP_CSRF_WINDOW_MS;
         ensure(
             incoming_csrf == bootstrap_csrf(a, &key, window)
@@ -585,157 +514,116 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         )?;
         incoming_csrf
     } else {
+        ensure(has_cookie, 403, "FORBIDDEN")?;
         csrf(&key, &id)
     };
     let logout = path == "/api/account/logout" && method == Method::Post;
-    let body = if let Some(body) = upstream_body {
-        Ok(body)
-    } else {
-        write_input(
-            a,
-            &expected_csrf,
-            method.clone(),
-            logout,
-            upstream.is_some(),
-        )
-        .await
-    };
-    if !create && body.is_err() {
-        // Retain the missing-session response for invalid writes without
-        // checking existence on the normal, single-statement claim.
-        ensure(session_exists(a, &id).await?, 401, "LOGIN_REQUIRED")?;
-    }
-    let mut body = body?;
-    let (revision, stored_payload) = if create {
+    let mut body = write_input(
+        a,
+        &expected_csrf,
+        method.clone(),
+        logout,
+        upstream.is_some(),
+    )
+    .await?;
+    if !has_cookie {
         cookie = secret();
         id = browser_cookie_hash(a, &cookie);
-        let payload = seal(&key, &json!({"id":id,"data":anonymous_data()}).to_string())
-            .await
-            .map_err(unavailable)?;
-        let claimed_at = now();
-        a.s.run(
-            "INSERT INTO auth_web_session(id_hash,payload,revision,status,expires_at,busy_until) VALUES (?,?,0,'BUSY',?,?)",
-            vec![id.clone().into(), payload.into(), (claimed_at + SESSION_MAX_AGE_MS).into(), (claimed_at + BUSY_LEASE_MS).into()],
-        ).await?;
-        (0, None)
+    }
+    let revision = (!row.is_null()).then(|| number(&row, "revision"));
+    let tokens = if revision.is_some() {
+        decode(&key, &id, &text(&row, "payload")).await?
     } else {
-        let claimed = claim(a, &id, observed_revision, logout)
-            .await
-            .inspect_err(|failure| {
-                // Only a predispatch conflict is safe to retry. A page that
-                // already reached the backend may have attempted to issue a cursor.
-                a.retry_browser_read = can_read_without_lease
-                    && !upstream_write
-                    && rejected_read.is_none()
-                    && failure.status == 409;
-            })?;
-        (
-            number(&claimed, "revision"),
-            Some(text(&claimed, "payload")),
-        )
+        Value::Null
     };
-
+    let mut session = WebSession {
+        a,
+        id: id.clone(),
+        revision,
+        key: key.clone(),
+        data: json!({"tokens":tokens,"transactions":{}}),
+    };
     let mut browser_id = id.clone();
-    let mut set_cookie = create;
-    let completed: Result<Result<BrowserPayload>> = async {
-        let data = if let Some(payload) = stored_payload {
-            decode(&key, &id, &payload).await?
-        } else {
-            anonymous_data()
-        };
-        let authenticated_before = !data["tokens"].is_null();
-        let mut session = WebSession {
-            a,
-            id: id.clone(),
-            revision,
-            data,
-            key: key.clone(),
-            read_only: false,
-        };
-        let mut result = if let Some(rejection) = rejected_read {
-            rejection
-        } else if session_read {
-            session.view().await.map(BrowserPayload::Account)
-        } else if logout {
-            session.logout(&body).await.map(BrowserPayload::Account)
-        } else if path == "/api/account/reauthentications"
-            || path.starts_with("/api/account/auth/")
-            || path == "/api/account/password/reset"
-            || path == "/api/account/password/change"
-            || path.starts_with("/api/account/login-methods/")
-            || path == "/account/callback"
-        {
-            crate::web::web_auth::route(&mut session, path, method, &mut body)
-                .await
-                .map(BrowserPayload::Account)
-        } else {
-            match session.fresh().await {
-                Ok(()) => match &upstream {
-                    Some(target) if upstream_write => {
-                        // A refresh may need the browser lease. Release it before forwarding a Billing write.
-                        session.finish().await?;
-                        let result = call_upstream(target, &session, body.as_str()).await;
-                        if should_clear(&result) {
-                            session.clear_rejected_tokens().await?;
-                        }
-                        return Ok(result);
-                    }
-                    Some(target) => call_upstream(target, &session, body.as_str()).await,
-                    None => management(&session, path, method, body)
-                        .await
-                        .map(BrowserPayload::Account),
-                },
-                Err(failure) => Err(failure),
-            }
-        };
-        if should_clear(&result) {
-            // A rejected central session cannot keep blocking a fresh login behind stale recovery material.
-            session.data["tokens"] = Value::Null;
-            session.data["transactions"] = json!({});
-            session.data["loginVerification"] = Value::Null;
-            if session_read {
-                result = Ok(BrowserPayload::Account(json!({"state":"EXPIRED"})));
-            }
-        }
-        let success = result.as_ref().is_ok_and(BrowserPayload::successful);
-        let promote = !authenticated_before && !session.data["tokens"].is_null() && success;
-        if !authenticated_before && !success {
-            // A failed login must never grant authority to its anonymous browser reference.
-            session.data["tokens"] = Value::Null;
-        }
+    let mut set_cookie = !has_cookie;
+    let auth_operation = path == "/api/account/reauthentications"
+        || path.starts_with("/api/account/auth/")
+        || path.starts_with("/api/account/password/")
+        || path.starts_with("/api/account/login-methods/")
+        || path == "/account/callback";
+    let mut result = if session_read {
+        session.view().await.map(BrowserPayload::Account)
+    } else if logout {
+        session.logout(&body).await.map(BrowserPayload::Account)
+    } else if auth_operation {
+        let (transactions, previous) = BrowserTransactions::load(a, &id, &key, path, &body).await?;
+        session.data["transactions"] = previous.clone();
+        let reply = super::web_auth::route(&mut session, path, method, &mut body).await;
+        let promote = reply.is_ok() && revision.is_none() && !session.data["tokens"].is_null();
         if promote {
             cookie = secret();
             browser_id = browser_cookie_hash(a, &cookie);
-            session.promote(&browser_id).await?;
             set_cookie = true;
-        } else {
-            session.finish().await?;
         }
-        Ok(result)
-    }
-    .await;
-    let completed = if create {
-        match completed {
-            Ok(Ok(payload)) => Ok(Ok(payload)),
-            Err(failure) | Ok(Err(failure)) => {
-                // No response published this new cookie, so no browser can hold the row.
-                a.s.run(
-                    "DELETE FROM auth_web_session WHERE id_hash=?",
-                    vec![id.into()],
-                )
-                .await?;
-                return Err(failure);
-            }
+        let mut writes = transactions
+            .writes(
+                a,
+                &id,
+                &browser_id,
+                &key,
+                &previous,
+                &session.data["transactions"],
+            )
+            .await?;
+        if promote {
+            let payload = seal_tokens(&key, &browser_id, &session.data["tokens"]).await?;
+            let expiry = now() + SESSION_MAX_AGE_MS;
+            writes.push(a.s.statement(
+                "INSERT INTO auth_one_use(token_hash,purpose,binding_hash,payload,expires_at)
+                 VALUES (?,'BROWSER_PROMOTION',?,'{}',?)",
+                vec![
+                    hash(&format!("browser-promotion:{id}")).into(),
+                    id.clone().into(),
+                    expiry.into(),
+                ],
+            )?);
+            writes.push(a.s.statement(
+                "INSERT INTO auth_web_session(id_hash,payload,expires_at) VALUES (?,?,?)",
+                vec![browser_id.clone().into(), payload.into(), expiry.into()],
+            )?);
+        } else if !writes.is_empty()
+            && let Some(bindings) = session.fence_bindings()
+        {
+            writes.insert(0, a.s.guard(CURRENT_BROWSER_SESSION, bindings)?);
         }
+        if !writes.is_empty() {
+            a.s.batch(writes, "VERSION_CONFLICT")
+                .await
+                .map_err(|failure| {
+                    if failure.code == "ALREADY_EXISTS" {
+                        version_conflict()
+                    } else {
+                        failure
+                    }
+                })?;
+        }
+        reply.map(BrowserPayload::Account)
     } else {
-        completed
+        match session.fresh().await {
+            Ok(()) => match &upstream {
+                Some(target) => call_upstream(target, &session, body.as_str()).await,
+                None => management(&session, path, method, body)
+                    .await
+                    .map(BrowserPayload::Account),
+            },
+            Err(failure) => Err(failure),
+        }
     };
-    if completed.is_err() {
-        let released = a.s.one(
-            "UPDATE auth_web_session SET status='READY',busy_until=0 WHERE id_hash=? AND revision=? AND status='BUSY' RETURNING revision",
-            vec![id.clone().into(), revision.into()],
-        ).await?;
-        ensure(!released.is_null(), 409, "VERSION_CONFLICT")?;
+    if should_clear(&result) {
+        let cleared = session.clear_rejected_tokens().await?;
+        if session_read {
+            ensure(cleared, 409, "VERSION_CONFLICT")?;
+            result = Ok(BrowserPayload::Account(json!({"state":"EXPIRED"})));
+        }
     }
     browser_response(
         a,
@@ -743,7 +631,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         &key,
         &browser_id,
         set_cookie.then_some(cookie.as_str()),
-        completed?,
+        result,
     )
 }
 
@@ -793,47 +681,6 @@ async fn write_input(
         )?;
     }
     Ok(body)
-}
-
-async fn session_exists(a: &Auth, id: &str) -> Result<bool> {
-    let row =
-        a.s.one(
-            "SELECT 1 FROM auth_web_session WHERE id_hash=? AND expires_at>?",
-            vec![id.into(), now().into()],
-        )
-        .await?;
-    Ok(!row.is_null())
-}
-
-async fn claim(a: &Auth, id: &str, expected_revision: Option<i64>, logout: bool) -> Result<Value> {
-    let claimed_at = now();
-    let expected = json!(expected_revision);
-    let claimed =
-        a.s.one(
-            "UPDATE auth_web_session SET revision=revision+1,status='BUSY',busy_until=?
-         WHERE id_hash=? AND expires_at>? AND (? IS NULL OR revision=?)
-           AND (status='READY' OR (status='BUSY' AND busy_until<=?) OR ?=1)
-         RETURNING revision,payload",
-            vec![
-                (claimed_at + BUSY_LEASE_MS).into(),
-                id.into(),
-                claimed_at.into(),
-                expected.clone(),
-                expected,
-                claimed_at.into(),
-                logout.into(),
-            ],
-        )
-        .await?;
-    if claimed.is_null() {
-        ensure(
-            expected_revision.is_some() || session_exists(a, id).await?,
-            401,
-            "LOGIN_REQUIRED",
-        )?;
-        return Err(version_conflict());
-    }
-    Ok(claimed)
 }
 
 fn version_conflict() -> Failure {
@@ -905,39 +752,6 @@ fn is_product_route(path: &str, method: &Method) -> bool {
     PRODUCT_ROUTES
         .iter()
         .any(|(declared, template)| declared == method && matches_route_template(path, template))
-}
-
-fn read_without_lease(path: &str) -> bool {
-    // Session status and approved management reads only. A managed page
-    // can issue a cursor under its initial READY revision, through the cursor batch.
-    const ROUTES: &[&str] = &[
-        "/api/account/session",
-        "/api/account/login-methods",
-        "/api/account/login-sessions",
-        "/api/account/me",
-        "/api/account/platform/users",
-        "/api/account/platform/users/{userId}",
-        "/api/account/platform/users/{userId}/permissions",
-        "/api/account/platform/applications",
-        "/api/account/platform/applications/{applicationId}",
-        "/api/account/platform/applications/{applicationId}/clients",
-        "/api/account/platform/clients/{clientId}",
-        "/api/account/tenants",
-        "/api/account/tenant-creation-policy",
-        "/api/account/tenants/{tenantId}",
-        "/api/account/platform/tenants",
-        "/api/account/platform/tenants/{tenantId}",
-        "/api/account/platform/tenants/{tenantId}/members",
-        "/api/account/tenants/{tenantId}/members",
-        "/api/account/tenants/{tenantId}/invitations",
-        "/api/account/invitations",
-        "/api/account/ownership-transfers",
-        "/api/account/tenants/{tenantId}/audit-events",
-        "/api/account/platform/audit-events",
-    ];
-    ROUTES
-        .iter()
-        .any(|template| matches_route_template(path, template))
 }
 
 fn product_target(path: &str, query: Option<&str>) -> String {

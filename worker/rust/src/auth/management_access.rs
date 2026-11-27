@@ -529,8 +529,8 @@ pub async fn read(
         })()),
         _ => None,
     };
-    let browser = a.s.read_browser_session()?;
-    let has_browser_guard = browser.is_some();
+    let browser = a.s.read_fence()?;
+    let has_fence = browser.is_some();
     let mut statements = browser.into_iter().collect::<Vec<_>>();
     statements.extend(query.prerequisites(credential)?);
     statements.extend(query.lookup_statement()?);
@@ -552,7 +552,7 @@ pub async fn read(
             return Err(error);
         }
     };
-    if has_browser_guard {
+    if has_fence {
         ensure(!first(&mut rows)?.is_null(), 409, "VERSION_CONFLICT")?;
     }
     let snapshot = query.context(&mut rows, true)?;

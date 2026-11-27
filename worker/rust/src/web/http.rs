@@ -75,7 +75,6 @@ pub(crate) fn finalize_response(
     mut response: Response,
     a: &Auth,
     id: &str,
-    status: u16,
     retry_after: Option<u64>,
 ) -> worker::Result<Response> {
     if response.status_code() < 400 {
@@ -87,8 +86,6 @@ pub(crate) fn finalize_response(
         response
             .headers_mut()
             .set("Retry-After", &retry_after.to_string())?;
-    } else if status == 409 && a.retry_browser_read {
-        response.headers_mut().set("Retry-After", "0")?;
     }
     with_security_headers(response, id, a.origin.starts_with("https:"))
 }

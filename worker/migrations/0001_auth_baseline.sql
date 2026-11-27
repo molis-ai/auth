@@ -383,11 +383,21 @@ CREATE TABLE auth_web_session (
  id_hash TEXT PRIMARY KEY NOT NULL,
  payload TEXT NOT NULL,
  revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0),
- status TEXT NOT NULL CHECK(status IN ('READY','BUSY')),
  expires_at INTEGER NOT NULL
-, busy_until INTEGER NOT NULL DEFAULT 0 CHECK (busy_until >= 0));
+);
 
 CREATE INDEX ix_web_session_expiry ON auth_web_session(expires_at);
+
+CREATE TABLE auth_browser_transaction (
+ browser_hash TEXT NOT NULL,
+ handle TEXT NOT NULL,
+ payload TEXT NOT NULL,
+ revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0),
+ expires_at INTEGER NOT NULL,
+ PRIMARY KEY(browser_hash,handle)
+);
+
+CREATE INDEX ix_browser_transaction_expiry ON auth_browser_transaction(expires_at);
 
 CREATE TABLE auth_external_profile (
  issuer TEXT NOT NULL, subject TEXT NOT NULL,

@@ -19,7 +19,6 @@ pub struct Auth {
     pub request_id: String,
     pub client_ip: String,
     pub retry_after_at: Cell<Option<i64>>,
-    pub(crate) retry_browser_read: bool,
     pub cookies: Vec<String>,
     pub env: Env,
 }
@@ -51,7 +50,6 @@ impl Auth {
             request_id: log.id.to_owned(),
             client_ip,
             retry_after_at: Cell::new(None),
-            retry_browser_read: false,
             cookies: vec![],
             env: env.clone(),
         })
