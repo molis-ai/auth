@@ -17,12 +17,12 @@ pub(crate) fn view(s: &Value) -> Value {
     json!({"loginSessionId":s["id"],"applicationId":s["application_id"],"clientId":s["client_id"],"authenticatedAt":iso(&s["authenticated_at"]),"lastActiveAt":iso(&s["last_active_at"]),"idleExpiresAt":iso(&json!(number(s,"last_active_at")+IDLE)),"absoluteExpiresAt":iso(&s["absolute_expires_at"]),"sessionRevision":s["session_revision"]})
 }
 const CLIENT_COLUMNS: &str =
-    "c.*,p.version policy_version,p.allowed_origins,e.version environment_version,
+    "c.client_id,c.application_id,c.client_type,c.status,c.version,c.policy_version,c.redirects,
+     c.allowed_origins,e.version environment_version,
      e.id environment_id,e.kind,e.auth_origin,e.delivery_mode,e.provider_mode";
 const CLIENT_POLICY_JOINS: &str =
     "JOIN auth_application app ON app.id=c.application_id AND app.status='ACTIVE'
-    JOIN auth_client_policy p ON p.client_id=c.client_id AND p.policy_profile='unified-account-v2'
-    JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'";
+    JOIN auth_environment e ON e.id=c.environment_id AND e.status='ACTIVE'";
 
 fn client_config(a: &Auth) -> Result<&Value> {
     a.unified_config
@@ -74,7 +74,7 @@ pub(crate) async fn client(a: &Auth, id: &str) -> Result<Value> {
     Ok(c)
 }
 pub(crate) fn client_guard(a: &Auth, c: &Value) -> Result<D1PreparedStatement> {
-    a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id JOIN auth_client_policy p ON p.client_id=c.client_id JOIN auth_environment e ON e.id=p.environment_id WHERE c.client_id=? AND c.version=? AND p.version=? AND e.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND e.status='ACTIVE' AND p.policy_profile='unified-account-v2')",vec![c["client_id"].clone(),c["version"].clone(),c["policy_version"].clone(),c["environment_version"].clone()])
+    a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_application app ON app.id=c.application_id JOIN auth_environment e ON e.id=c.environment_id WHERE c.client_id=? AND c.version=? AND c.policy_version=? AND e.version=? AND c.status='ACTIVE' AND app.status='ACTIVE' AND e.status='ACTIVE')",vec![c["client_id"].clone(),c["version"].clone(),c["policy_version"].clone(),c["environment_version"].clone()])
 }
 const SESSION_COLUMNS: &str =
     "s.*,c.application_id,u.session_epoch current_epoch,u.status user_status";
@@ -132,9 +132,7 @@ fn credential_statement(a: &Auth, digest: &str, refresh: bool) -> Result<D1Prepa
              LEFT JOIN auth_client c ON c.client_id=s.client_id
              LEFT JOIN auth_application app
                ON app.id=c.application_id AND app.status='ACTIVE' AND c.status='ACTIVE'
-             LEFT JOIN auth_client_policy p
-               ON p.client_id=c.client_id AND app.id IS NOT NULL AND p.policy_profile='unified-account-v2'
-             LEFT JOIN auth_environment e ON e.id=p.environment_id AND e.status='ACTIVE'
+             LEFT JOIN auth_environment e ON e.id=c.environment_id AND e.status='ACTIVE' AND app.id IS NOT NULL
              WHERE t.token_hash=?"),
         vec![digest.into()],
     )
@@ -222,7 +220,7 @@ pub(crate) fn active_actor(a: &Auth, digest: &str) -> (String, Vec<Value>) {
              WHERE t.token_hash=? AND {LIVE} AND t.expires_at>?
              AND t.user_epoch=s.user_epoch AND t.session_revision=s.session_revision
              AND {config_matches}
-             AND (?='' OR EXISTS(SELECT 1 FROM json_each(p.allowed_origins)
+             AND (?='' OR EXISTS(SELECT 1 FROM json_each(c.allowed_origins)
                                  WHERE type='text' AND value=?))"
         ),
         args,
@@ -270,7 +268,7 @@ pub(crate) async fn web_login_sessions(a: &Auth, access_token: &str) -> Result<V
             "SELECT app.name product_name,c.client_type,s.last_active_at,s.id=current_login.id AS is_current
              FROM auth_login_access_token current_token
              JOIN auth_login_session current_login ON current_login.id=current_token.login_session_id
-             JOIN auth_client_policy current_policy ON current_policy.client_id=current_login.client_id
+             JOIN auth_client current_policy ON current_policy.client_id=current_login.client_id
              JOIN auth_login_session s ON s.user_id=current_login.user_id
              {SESSION_JOINS} {CLIENT_POLICY_JOINS}
              WHERE current_token.token_hash=? AND {LIVE} AND c.status='ACTIVE'
@@ -339,7 +337,7 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
     shape("TokenRequest", b)?;
     let c = client(a, &text(b, "clientId")).await?;
     let n = now();
-    a.rate_ip("v2-token", 120).await?;
+    a.rate_ip("auth:token", 120).await?;
     if b["grantType"] == "refresh_token" {
         let digest = hash(&text(b, "refreshToken"));
         let s =
@@ -546,11 +544,11 @@ async fn activity(a: &Auth, b: &Value) -> Result<Value> {
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     let implemented = matches!(
         (path, method.clone()),
-        ("/api/v2/auth/token", Method::Post)
-            | ("/api/v2/sessions/current", Method::Get)
-            | ("/api/v2/sessions/current/activity", Method::Post)
-            | ("/api/v2/sessions/current/logout", Method::Post)
-            | ("/api/v2/sessions/logout-all", Method::Post)
+        ("/api/v1/auth/token", Method::Post)
+            | ("/api/v1/sessions/current", Method::Get)
+            | ("/api/v1/sessions/current/activity", Method::Post)
+            | ("/api/v1/sessions/current/logout", Method::Post)
+            | ("/api/v1/sessions/logout-all", Method::Post)
     );
     ensure(implemented, 501, "UNIFIED_ACCOUNT_NOT_IMPLEMENTED")?;
     let b = if method == Method::Post {

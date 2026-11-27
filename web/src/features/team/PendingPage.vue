@@ -16,15 +16,13 @@ interface Invitation {
 interface Transfer {
   transferId: string;
   tenantId: string;
+  tenantName: string;
+  myMembershipId: string;
   fromMembershipId: string;
   toMembershipId: string;
   status: string;
   expiresAt?: string;
   version: number;
-}
-interface Team {
-  name: string;
-  membershipId: string;
 }
 
 const props = defineProps<{
@@ -42,13 +40,11 @@ const ownership = cursorCollection<Transfer>(props.client);
 const invitations = computed(() => received.items.value.filter(item => item.status === "PENDING"));
 const transfers = computed(() => ownership.items.value.filter(item => item.status === "PENDING"));
 const { loading: invitationsLoading, nextCursor: moreInvitations } = received;
-const { nextCursor: moreTransfers } = ownership;
-const transfersLoading = ref(false);
+const { loading: transfersLoading, nextCursor: moreTransfers } = ownership;
 const initialLoading = ref(true);
 const refreshing = ref(false);
 const loading = computed(() => initialLoading.value || refreshing.value || invitationsLoading.value || transfersLoading.value);
 const category = ref<Category>("all");
-const teams = ref<Record<string, Team | null>>({});
 const lastHandled = ref<{ message: string; jumpToTeams: boolean } | null>(null);
 const confirmingTransfer = ref<Transfer | null>(null);
 const confirmDialog = ref<HTMLDialogElement>();
@@ -148,28 +144,8 @@ async function read(section: Section, task: () => Promise<unknown>, restart = ta
 }
 
 const refreshInvitations = () => received.first("/invitations");
-async function loadTeam(id: string) {
-  try {
-    return await props.client.request<Team>("/tenants/" + encodeURIComponent(id), undefined, "GET", undefined, lifetime.signal);
-  } catch (error) {
-    if (error instanceof AuthError && (error.status === 404 || error.code === "TENANT_DISABLED")) return null;
-    throw error;
-  }
-}
-async function loadTransfers(append = false) {
-  if (transfersLoading.value || lifetime.signal.aborted) return;
-  transfersLoading.value = true;
-  try {
-    const loaded = await (append ? ownership.more() : ownership.first("/ownership-transfers"));
-    if (!loaded || lifetime.signal.aborted) return;
-    const known = append ? teams.value : {};
-    const ids = [...new Set(transfers.value.map(transfer => transfer.tenantId))]
-      .filter(id => !Object.hasOwn(known, id));
-    const details = await Promise.all(ids.map(async id => [id, await loadTeam(id)] as const));
-    if (!lifetime.signal.aborted) teams.value = { ...known, ...Object.fromEntries(details) };
-  } finally {
-    transfersLoading.value = false;
-  }
+function loadTransfers(append = false) {
+  return append ? ownership.more() : ownership.first("/ownership-transfers");
 }
 
 async function loadPending() {
@@ -190,14 +166,13 @@ async function refreshAll() {
 }
 
 function transferOperation(transfer: Transfer): "accept" | "cancel" | undefined {
-  const member = teams.value[transfer.tenantId]?.membershipId;
+  const member = transfer.myMembershipId;
   if (member === transfer.toMembershipId) return "accept";
   if (member === transfer.fromMembershipId) return "cancel";
 }
 
 function transferTitle(transfer: Transfer): string {
-  const name = teams.value[transfer.tenantId]?.name;
-  return name ? `「${name}」的所有权交接` : "团队所有权交接";
+  return `「${transfer.tenantName}」的所有权交接`;
 }
 
 function handleTransferClick(transfer: Transfer) {
@@ -227,7 +202,7 @@ async function confirmAcceptTransfer() {
 function updateTransfer(transfer: Transfer) {
   const operation = transferOperation(transfer);
   if (!operation) return;
-  const label = teams.value[transfer.tenantId]?.name;
+  const label = transfer.tenantName;
   return props.mutate(
     "/ownership-transfers/" + encodeURIComponent(transfer.transferId) + "/" + operation,
     { expectedVersion: transfer.version },
@@ -236,12 +211,12 @@ function updateTransfer(transfer: Transfer) {
         ownership.remove(item => item.transferId === transfer.transferId);
         lastHandled.value = {
           message: operation === "accept"
-            ? (label ? `已接受「${label}」的所有权交接，你现在是该团队所有者。` : "已接受团队所有权交接。")
-            : (label ? `已取消「${label}」的所有权交接，团队所有权保持不变。` : "已取消所有权交接。"),
+            ? `已接受「${label}」的所有权交接，你现在是该团队所有者。`
+            : `已取消「${label}」的所有权交接，团队所有权保持不变。`,
           jumpToTeams: operation === "accept",
         };
       },
-      after: () => loadTransfers(),
+      after: async () => { await loadTransfers(); },
       success: operation === "accept" ? "已接受所有权交接" : "已取消所有权交接",
       refreshMessage: "交接已更新，但待处理列表暂未刷新。",
     },
@@ -441,7 +416,7 @@ onBeforeUnmount(() => {
               <div
                 v-for="invitation in invitations"
                 :key="invitation.invitationId"
-                class="v2-row pending-item is-info"
+                class="console-row pending-item is-info"
                 :class="{ 'is-urgent': isExpiringSoon(invitation.expiresAt) }"
               >
                 <div class="pending-row-icon is-invite" aria-hidden="true">
@@ -507,7 +482,7 @@ onBeforeUnmount(() => {
               <div
                 v-for="transfer in transfers"
                 :key="transfer.transferId"
-                class="v2-row pending-item is-warn"
+                class="console-row pending-item is-warn"
                 :class="{ 'is-urgent': transferOperation(transfer) === 'accept' && isExpiringSoon(transfer.expiresAt) }"
               >
                 <div class="pending-row-icon" :class="transferOperation(transfer) === 'accept' ? 'is-transfer-in' : 'is-transfer-out'" aria-hidden="true">

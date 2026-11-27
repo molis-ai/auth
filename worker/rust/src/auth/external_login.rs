@@ -129,7 +129,7 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
     )?;
     check_provider(a, c, p)?;
     target(t, "VERIFIED")?;
-    a.rate_ip("v2-provider-start", 30).await?;
+    a.rate_ip("federation:start", 30).await?;
     let n = now();
     let state = secret();
     let nonce = secret();
@@ -137,9 +137,9 @@ pub async fn start(a: &Auth, t: &Value, c: &Value, p: &str) -> Result<Value> {
     let ticket = secret();
     let context = json!({"state":state,"nonce":nonce,"verifier":verifier,"clientVersion":c["version"],"policyVersion":c["policy_version"],"environmentVersion":c["environment_version"]});
     let encrypted = sealed(a, &context).await?;
-    a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND provider_state_hash IS NULL)",vec![t["id"].clone()])?,a.s.statement("UPDATE auth_product_transaction SET provider_state_hash=?,provider_nonce_hash=?,provider_pkce_verifier_sealed=? WHERE id=?",vec![hash(&state).into(),hash(&nonce).into(),encrypted.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_one_use VALUES (?,'V2_PROVIDER_START',?,?,?)",vec![hash(&ticket).into(),hash(&text(t,"id")).into(),json!({"transactionId":t["id"]}).to_string().into(),(n+60000).min(number(t,"expires_at")).into()])?],"VERSION_CONFLICT").await?;
+    a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND provider_state_hash IS NULL)",vec![t["id"].clone()])?,a.s.statement("UPDATE auth_product_transaction SET provider_state_hash=?,provider_nonce_hash=?,provider_pkce_verifier_sealed=? WHERE id=?",vec![hash(&state).into(),hash(&nonce).into(),encrypted.into(),t["id"].clone()])?,a.s.statement("INSERT INTO auth_one_use VALUES (?,'PROVIDER_START',?,?,?)",vec![hash(&ticket).into(),hash(&text(t,"id")).into(),json!({"transactionId":t["id"]}).to_string().into(),(n+60000).min(number(t,"expires_at")).into()])?],"VERSION_CONFLICT").await?;
     Ok(
-        json!({"browserStartUrl":format!("{}/api/v2/auth/external/{p}/browser-start?ticket={ticket}",a.origin)}),
+        json!({"browserStartUrl":format!("{}/api/v1/auth/external/{p}/browser-start?ticket={ticket}",a.origin)}),
     )
 }
 async fn checked(a: &Auth, t: &Value, p: &str) -> Result<(Value, Value)> {
@@ -190,7 +190,7 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     fields(&b, &["ticket"], &[])?;
     let ticket = text(&b, "ticket");
     ensure(token(&ticket), 400, "INVALID_REQUEST")?;
-    let receipt=a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?",vec![hash(&ticket).into(),now().into()]).await?;
+    let receipt=a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='PROVIDER_START' AND expires_at>?",vec![hash(&ticket).into(),now().into()]).await?;
     ensure(!receipt.is_null(), 401, "INVALID_CREDENTIALS")?;
     let t =
         a.s.one(
@@ -202,13 +202,13 @@ async fn browser_start(a: &mut Auth, p: &str) -> Result<Response> {
     ensure(t["method"] == provider(p)?, 400, "INVALID_REQUEST")?;
     let state = text(&ctx, "state");
     let browser = secret();
-    a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
+    a.s.batch(vec![client_guard(a,&c)?,tx_guard(a,&t,now(),"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='PROVIDER_START' AND expires_at>?)",vec![hash(&ticket).into(),now().into()])?,a.s.statement("DELETE FROM auth_one_use WHERE token_hash=?",vec![hash(&ticket).into()])?,a.s.statement("UPDATE auth_product_transaction SET browser_hash=? WHERE id=? AND browser_hash IS NULL",vec![hash(&browser).into(),t["id"].clone()])?],"VERSION_CONFLICT").await?;
     a.cookies
         .push(cookie_header(&a.origin, &name(a, &state), &browser, 600));
     #[cfg(feature = "mock-provider")]
     if c["provider_mode"] == "MOCK" {
         return redirect(&format!(
-            "{}/api/v2/auth/mock/{p}/authorize?state={state}",
+            "{}/api/v1/auth/mock/{p}/authorize?state={state}",
             a.origin
         ));
     }
@@ -288,7 +288,7 @@ async fn commit_identity(
     }
     #[cfg(feature = "mock-provider")]
     if let Some((digest, binding)) = mock_code {
-        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.as_str().into(),binding.as_str().into(),now().into()])?);
+        writes.push(a.s.guard("EXISTS(SELECT 1 FROM auth_one_use WHERE token_hash=? AND purpose='MOCK_PROVIDER_CODE' AND binding_hash=? AND expires_at>?)",vec![digest.as_str().into(),binding.as_str().into(),now().into()])?);
         writes.push(a.s.statement(
             "DELETE FROM auth_one_use WHERE token_hash=?",
             vec![digest.as_str().into()],
@@ -363,7 +363,7 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
             _ if !live => {
                 let digest = hash(&raw);
                 let binding = hash(&format!("{p}:{state}:{browser}"));
-                let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='V2_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.as_str().into(),binding.as_str().into(),now().into()]).await?;
+                let code = a.s.one("SELECT * FROM auth_one_use WHERE token_hash=? AND purpose='MOCK_PROVIDER_CODE' AND binding_hash=? AND expires_at>?",vec![digest.as_str().into(),binding.as_str().into(),now().into()]).await?;
                 ensure(!code.is_null(), 401, "INVALID_CREDENTIALS")?;
                 let claims = opened(
                     a,

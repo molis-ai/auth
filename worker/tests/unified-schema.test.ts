@@ -72,11 +72,11 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
     db.exec(localSeed)
     assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_environment'), 1)
     assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_application'), 2)
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_client_policy'), 2)
+    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_client'), 2)
     const rows = db
       .prepare(
-        `SELECT c.client_id,c.application_id,c.client_type,c.redirects,p.allowed_origins
-      FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id ORDER BY c.client_id`,
+        `SELECT c.client_id,c.application_id,c.client_type,c.redirects,c.allowed_origins
+      FROM auth_client c ORDER BY c.client_id`,
       )
       .all()
     assert.equal(rows[0].client_type, 'WEB')
@@ -102,7 +102,7 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
       "UPDATE auth_client SET status='DISABLED',redirects='[\"http://127.0.0.1:3999/custom\"]' WHERE client_id='molis-club-unified-local'",
     )
     db.exec(
-      "UPDATE auth_client_policy SET allowed_origins='[\"http://127.0.0.1:3999\"]',version=4 WHERE client_id='molis-club-unified-local'",
+      "UPDATE auth_client SET allowed_origins='[\"http://127.0.0.1:3999\"]',policy_version=4 WHERE client_id='molis-club-unified-local'",
     )
     db.exec(localSeed)
     assert.equal(scalar(db, 'SELECT version AS value FROM auth_environment'), 9)
@@ -116,7 +116,7 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
     assert.equal(
       scalar(
         db,
-        "SELECT version AS value FROM auth_client_policy WHERE client_id='molis-club-unified-local'",
+        "SELECT policy_version AS value FROM auth_client WHERE client_id='molis-club-unified-local'",
       ),
       4,
     )
@@ -146,17 +146,10 @@ test('UAS-11/39/40: production cannot enable mock and registration validates env
       /CHECK constraint/,
     )
     db.exec(localSeed)
+    assert.throws(() => db.exec("UPDATE auth_client SET allowed_origins='{}'"), /CHECK constraint/)
+    assert.throws(() => db.exec("UPDATE auth_client SET allowed_origins='broken'"))
     assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET allowed_origins='{}'"),
-      /CHECK constraint/,
-    )
-    assert.throws(() => db.exec("UPDATE auth_client_policy SET allowed_origins='broken'"))
-    assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET policy_profile='user-chosen-profile'"),
-      /CHECK constraint/,
-    )
-    assert.throws(
-      () => db.exec("UPDATE auth_client_policy SET environment_id='missing'"),
+      () => db.exec("UPDATE auth_client SET environment_id='missing'"),
       /FOREIGN KEY constraint/,
     )
   } finally {

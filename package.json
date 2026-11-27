@@ -18,7 +18,7 @@
     "admin": "npm --prefix worker run admin",
     "contracts:generate": "node contracts/unified-account/generate.ts",
     "contracts:check": "node contracts/unified-account/generate.ts --check && node --test contracts/unified-account/validate.test.ts && node --test contracts/unified-account/verify-product.test.mjs",
-    "test:browser": "node web/scripts/v2-browser.test.mjs",
+    "test:browser": "node web/scripts/console-browser.test.mjs",
     "test:browser:billing": "node web/scripts/billing-browser.test.mjs",
     "start": "node worker/scripts/environment-command.mjs start",
     "deploy": "node worker/scripts/environment-command.mjs deploy"

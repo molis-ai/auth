@@ -11,7 +11,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         "INVALID_REQUEST",
     )?;
     let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-    let result = if path == "/api/v2/auth/login/code" {
+    let result = if path == "/api/v1/auth/login/code" {
         shape("LoginCodeRequest", &b)?;
         let verification_id = text(&b, "verificationId");
         let (mut t, c) = registration::challenge_transaction(a, &verification_id).await?;
@@ -32,7 +32,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         registration::identify(a, &mut t, &c, "code", &input).await?;
         registration::complete(a, &t, &c).await?
     } else {
-        let password = path == "/api/v2/auth/login/password";
+        let password = path == "/api/v1/auth/login/password";
         shape(
             if password {
                 "LoginPasswordRequest"

@@ -156,7 +156,7 @@ try {
   const run = (db, sql, ...params) => db.prepare(sql).bind(...params).run();
   const first = (db, sql, ...params) => db.prepare(sql).bind(...params).first();
   await run(authDb, "UPDATE auth_environment SET kind='TEST',auth_origin=?", origin);
-  await run(authDb, "UPDATE auth_client_policy SET allowed_origins=?", JSON.stringify([origin]));
+  await run(authDb, "UPDATE auth_client SET allowed_origins=?", JSON.stringify([origin]));
   await run(authDb, "UPDATE auth_client SET redirects=?", JSON.stringify([origin + "/account/callback"]));
   auth = await runtime.getWorker("auth");
   unavailable = await runtime.getWorker("without-billing");

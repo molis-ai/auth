@@ -157,7 +157,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
       'NOT_FOUND',
     )
   }
-  const legacyHealth = await direct.fetch(origin + '/api/v2/health')
+  const legacyHealth = await direct.fetch(origin + '/api/v1/health')
   assert.equal(legacyHealth.status, 200)
 
   const db = await mf.getD1Database('DB', 'auth')
@@ -172,7 +172,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
     "UPDATE auth_environment SET kind='TEST',auth_origin=? WHERE id='unified-local'",
     origin,
   )
-  await run('UPDATE auth_client_policy SET allowed_origins=?', JSON.stringify([origin]))
+  await run('UPDATE auth_client SET allowed_origins=?', JSON.stringify([origin]))
   await run('UPDATE auth_client SET redirects=?', JSON.stringify([origin + '/account/callback']))
   await run(
     "INSERT INTO auth_user(id,display_name,status,avatar_data,created_at,updated_at) VALUES ('user-1','Fixture','ACTIVE',NULL,?,?)",
@@ -206,10 +206,6 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await run(
     "INSERT INTO auth_tenant_membership(id,tenant_id,user_id,role,status,joined_at) VALUES ('member-1','team-1','user-1','ADMIN','ACTIVE',?)",
     at,
-  )
-  assert.equal(
-    (await db.prepare('SELECT COUNT(*) count FROM auth_client_product').first()).count,
-    0,
   )
 
   const call = (
@@ -271,7 +267,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await expectData(await call(verify, team), { ...team, userId: 'user-1', role: 'OWNER' })
 
   const legacyAudit = () =>
-    direct.fetch(origin + '/api/v2/platform/audit-events', {
+    direct.fetch(origin + '/api/v1/platform/audit-events', {
       headers: { Authorization: 'Bearer ' + accessToken },
     })
   await expectError(await call(audit, {}), 403, 'FORBIDDEN')
@@ -316,11 +312,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
   await expectError(await call(introspect, {}), 403, 'FORBIDDEN')
   await run("UPDATE auth_client SET status='ACTIVE'")
   await run(
-    "INSERT INTO auth_client SELECT 'other-client','other-client',application_id,client_type,status,version,scopes,redirects FROM auth_client WHERE client_id=?",
-    clientId,
-  )
-  await run(
-    "INSERT INTO auth_client_policy SELECT 'other-client',policy_profile,environment_id,allowed_origins,version,created_at,updated_at FROM auth_client_policy WHERE client_id=?",
+    "INSERT INTO auth_client(id,client_id,application_id,client_type,status,version,redirects,environment_id,allowed_origins,policy_version) SELECT 'other-client','other-client',application_id,client_type,status,version,redirects,environment_id,allowed_origins,policy_version FROM auth_client WHERE client_id=?",
     clientId,
   )
   await run("UPDATE auth_login_session SET client_id='other-client'")
@@ -364,7 +356,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
 
   // Use the separate dev entrypoint with a registration that matches its loopback config.
   await run("UPDATE auth_environment SET kind='LOCAL',auth_origin=?", authOrigin)
-  await run('UPDATE auth_client_policy SET allowed_origins=?', JSON.stringify([authOrigin]))
+  await run('UPDATE auth_client SET allowed_origins=?', JSON.stringify([authOrigin]))
   await expectError(await call(verify, team), 403, 'FORBIDDEN')
   await expectData(
     await local.fetch(authOrigin + verify, {

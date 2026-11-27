@@ -7,7 +7,7 @@ import { captureAuthFailures, challenge, hash, secret } from './fixtures.ts'
 
 const origin = 'http://127.0.0.1:8787'
 const redirectUri = 'http://127.0.0.1:4207/account/callback'
-const api = '/api/v2/auth/management-handoffs'
+const api = '/api/v1/auth/management-handoffs'
 const lifetime = 90 * 86_400_000
 
 function cookie(response: Response, name: string) {
@@ -79,15 +79,9 @@ async function fixture(t: TestContext) {
   }
   await db
     .prepare(
-      "INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects) VALUES ('auth-web','auth-web','molis-work-unified-local-app','WEB','[\"account\",\"profile\"]',?)",
+      "INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins) VALUES ('auth-web','auth-web','molis-work-unified-local-app','WEB',?,'unified-local',?)",
     )
-    .bind(JSON.stringify([origin + '/account/callback']))
-    .run()
-  await db
-    .prepare(
-      "INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at) VALUES ('auth-web','unified-account-v2','unified-local',?,0,0)",
-    )
-    .bind(JSON.stringify([origin]))
+    .bind(JSON.stringify([origin + '/account/callback']), JSON.stringify([origin]))
     .run()
 
   async function source(account = crypto.randomUUID()) {

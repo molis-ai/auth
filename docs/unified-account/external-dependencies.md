@@ -65,14 +65,14 @@ Google Cloud 项目是 Google 存放 OAuth 客户端、授权页配置和项目�
 
 1. 打开 [Google Auth Platform](https://console.cloud.google.com/auth/overview)，选择受公司管理的项目，进入 **Branding**，填应用名 `Molis AI`、用户支持邮箱、开发者联系人。首页、隐私政策及授权域名使用经确认的公司地址，按控制台要求验证。
 2. 在 **Audience** 配置联调受众。公开产品的隔离项目可先选 **External / Testing**，按控制台要求登记测试账号。公司 Workspace 内测若仅面向本组织，可由管理员评估 **Internal**。正式发布时再处理对应品牌和受众状态。
-3. 在 **Clients → Create Client** 选 **Web application**，隔离客户端名称建议 `Molis AI Auth Staging`。Authorized redirect URI 填 `https://auth-staging.molis.ai/api/v2/auth/external/google/callback`。生产拟登记 `https://auth.molis.ai/api/v2/auth/external/google/callback`。Auth 后端发起 OAuth 和换码，此方案无浏览器 JavaScript origin 配置需求。
+3. 在 **Clients → Create Client** 选 **Web application**，隔离客户端名称建议 `Molis AI Auth Staging`。Authorized redirect URI 填 `https://auth-staging.molis.ai/api/v1/auth/external/google/callback`。生产拟登记 `https://auth.molis.ai/api/v1/auth/external/google/callback`。Auth 后端发起 OAuth 和换码，此方案无浏览器 JavaScript origin 配置需求。
 4. 先用 `openid` 完成稳定身份登录，明确产品需要的额外声明再加 `email` 或 `profile`。记录项目、环境、客户端 ID、精确回调和授权页状态。客户端 secret 交目标 Auth 环境的秘密存储。
 
 [创建 Web 客户端](https://developers.google.com/identity/protocols/oauth2/web-server) · [Branding](https://support.google.com/cloud/answer/15549049) · [Audience](https://support.google.com/cloud/answer/15549945) · [OIDC 协议与 ID Token](https://developers.google.com/identity/openid-connect/openid-connect)
 
 ### GitHub
 
-`molis-ai` 组织已登记隔离应用 `Molis AI Auth Staging`（#4002147）。首页为 `https://club-staging.molis.ai`，精确回调为 `https://auth-staging.molis.ai/api/v2/auth/external/github/callback`，wildcard matching 关闭。客户端密钥已加密写入 `molis-auth-staging` 的 `UNIFIED_GITHUB_CLIENT_SECRET`。 [隔离应用设置](https://github.com/organizations/molis-ai/settings/applications/4002147)
+`molis-ai` 组织已登记隔离应用 `Molis AI Auth Staging`（#4002147）。首页为 `https://club-staging.molis.ai`，精确回调为 `https://auth-staging.molis.ai/api/v1/auth/external/github/callback`，wildcard matching 关闭。客户端密钥已加密写入 `molis-auth-staging` 的 `UNIFIED_GITHUB_CLIENT_SECRET`。 [隔离应用设置](https://github.com/organizations/molis-ai/settings/applications/4002147)
 
 浏览器流程使用授权码与 PKCE S256。Auth 先按 GitHub OAuth 元数据校验回调的 `iss`，随后换码并从 `GET /user` 读取稳定数字 `id`。真实授权页面只请求公开资料。 [GitHub OAuth 元数据](https://github.com/.well-known/oauth-authorization-server/login/oauth)
 
@@ -80,7 +80,7 @@ Google Cloud 项目是 Google 存放 OAuth 客户端、授权页配置和项目�
 
 #### GitHub 生产上线准备
 
-2026-11-08，已在 `molis-ai` 下登记独立 OAuth App `Molis AI Auth Production`（#4002664）。首页为 `https://auth.molis.ai`，唯一回调为 `https://auth.molis.ai/api/v2/auth/external/github/callback`，通配匹配和 Device Flow 关闭。已分配 Client ID `Ov23limq0OUD4PsZh6LZ`，客户端密钥待发布确认后生成。 [生产 OAuth 应用](https://github.com/organizations/molis-ai/settings/applications/4002664)
+2026-11-08，已在 `molis-ai` 下登记独立 OAuth App `Molis AI Auth Production`（#4002664）。首页为 `https://auth.molis.ai`，唯一回调为 `https://auth.molis.ai/api/v1/auth/external/github/callback`，通配匹配和 Device Flow 关闭。已分配 Client ID `Ov23limq0OUD4PsZh6LZ`，客户端密钥待发布确认后生成。 [生产 OAuth 应用](https://github.com/organizations/molis-ai/settings/applications/4002664)
 
 Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生产 `AUTH_ORIGIN` 为该域名。旧 `workers.dev` 入口仍启用。正式域名 `/login` 返回 200，无凭据访问 GitHub 回调返回 401 `INVALID_TOKEN`，正式 OAuth 授权和会话仍待验收。当前生产版本 `b6e35a45` 承载 100% 流量，生产分支自动构建关闭。 [生产域名](https://dash.cloudflare.com/200c8682734af6babc8d4ae4afaff221/workers/services/view/molis-auth-production/production/domains) · [生产部署记录](https://dash.cloudflare.com/200c8682734af6babc8d4ae4afaff221/workers/services/view/molis-auth-production/production/deployments)
 

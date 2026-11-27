@@ -103,7 +103,7 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
       )
     }
     const proof = secret()
-    const flow = await post('/api/v2/auth/transactions', {
+    const flow = await post('/api/v1/auth/transactions', {
       clientId: 'molis-auth-web-local',
       redirectUri: origin + '/account/callback',
       codeChallenge: secret(),
@@ -116,7 +116,7 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
     const { data } = await flow.json()
     const password = 'unique-test-password-with-entropy'
     const login = await post(
-      '/api/v2/auth/transactions/' + data.transactionId + '/password',
+      '/api/v1/auth/transactions/' + data.transactionId + '/password',
       { email: 'failure@example.test', password },
       proof,
     )
@@ -133,7 +133,7 @@ test('missing KDF fails closed without creating accounts or authenticating a tra
       assert.equal(log.service, 'molis-auth')
       assert.equal(log.env, 'unknown')
       assert.equal(log.code, 'AUTH_UNAVAILABLE')
-      assert.equal(log.route, '/api/v2/auth/transactions/{transactionId}/password')
+      assert.equal(log.route, '/api/v1/auth/transactions/{transactionId}/password')
     }
     for (const value of [password, proof, 'failure@example.test', data.transactionId])
       assert.ok(failures.lines.every((line) => !line.includes(value)))

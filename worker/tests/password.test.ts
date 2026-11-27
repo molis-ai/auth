@@ -70,7 +70,7 @@ test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong passwo
       ['wrong-password', 401],
     ] as const) {
       const proof = secret()
-      const response = await post('/api/v2/auth/transactions', {
+      const response = await post('/api/v1/auth/transactions', {
         clientId: 'molis-auth-web-local',
         redirectUri: origin + '/account/callback',
         codeChallenge: challenge(secret()),
@@ -82,7 +82,7 @@ test('V2 authenticates a known PBKDF2 encoding vector and rejects a wrong passwo
       })
       const { data } = await response.json()
       const login = await post(
-        '/api/v2/auth/transactions/' + data.transactionId + '/password',
+        '/api/v1/auth/transactions/' + data.transactionId + '/password',
         { email: 'vector@example.test', password },
         proof,
       )

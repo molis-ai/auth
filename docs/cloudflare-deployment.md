@@ -49,7 +49,7 @@ Auth 的应用日志使用单行 JSON。公共字段为 `schema=1`、`service=mo
     | drop cf_message
     | json auth_service="service", auth_env="env", auth_event="event", route="route", status="status"
     | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
-    | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+    | route=~"/api/(v2|account)/.+" | route!~"/api/v1/(health|readiness)"
     | status >= 500 | __error__=""
     [5m]
   )) or vector(0))
@@ -62,7 +62,7 @@ Auth 的应用日志使用单行 JSON。公共字段为 `schema=1`、`service=mo
     | drop cf_message
     | json auth_service="service", auth_env="env", auth_event="event", route="route", status="status"
     | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
-    | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+    | route=~"/api/(v2|account)/.+" | route!~"/api/v1/(health|readiness)"
     | status=~"[235][0-9]{2}"
     [5m]
   ))
@@ -80,7 +80,7 @@ quantile_over_time(0.95,
   | drop cf_message
   | json auth_service="service", auth_env="env", auth_event="event", route="route", duration_ms="duration_ms"
   | __error__="" | auth_service="molis-auth" | auth_env="prod" | auth_event="auth.http.request"
-  | route=~"/api/(v2|account)/.+" | route!~"/api/v2/(health|readiness)"
+  | route=~"/api/(v2|account)/.+" | route!~"/api/v1/(health|readiness)"
   | unwrap duration_ms | __error__=""
   [5m]
 ) by (route)
@@ -93,6 +93,6 @@ quantile_over_time(0.95,
 - Auth 正式入口为 `https://auth.molis.ai`，继续使用 `molis-auth-production` Worker。Club 正式来源为 `https://molis.ai`，使用同一正式 Auth。两个正式 Worker 使用自定义域名并关闭 `workers.dev` 与版本预览地址。
 - 2026-11-19 已创建并迁移新库 `molis-auth-prod` 和 `molis-club-prod`，确认 Auth 17 项迁移、Club 7 项迁移及空用户数据。已删除两套原正式 D1。两个正式 Worker 在部署时切换新库绑定，发布前旧版本依赖 D1 的功能暂不可用。
 - 新 Auth 库已登记 Auth 与 Club 的 Web 客户端、同源回调及 Club 产品归属。发布使用本仓库的 `npm run deploy -- --env prod`。
-- 正式 Google 与 GitHub OAuth 应用分别登记 `https://auth.molis.ai/api/v2/auth/external/google/callback` 和 `https://auth.molis.ai/api/v2/auth/external/github/callback`。阿里云、OAuth、会话和状态密钥按 [正式模板](../secrets.example/prod.properties) 配置。先发布并验收 Auth，再发布 Club。
+- 正式 Google 与 GitHub OAuth 应用分别登记 `https://auth.molis.ai/api/v1/auth/external/google/callback` 和 `https://auth.molis.ai/api/v1/auth/external/github/callback`。阿里云、OAuth、会话和状态密钥按 [正式模板](../secrets.example/prod.properties) 配置。先发布并验收 Auth，再发布 Club。
 
 [三环境执行方案](environment-unification-v2.md) · [Cloudflare 平台目标登记](../config/platform-targets.json)

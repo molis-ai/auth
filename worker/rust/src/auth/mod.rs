@@ -16,25 +16,25 @@ use crate::core::{http::Result, identity::Auth};
 use worker::{Method, Response};
 
 pub(crate) async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if path.starts_with("/api/v2/auth/external/") {
+    if path.starts_with("/api/v1/auth/external/") {
         return external_login::browser(a, path, method).await;
     }
     #[cfg(feature = "mock-provider")]
-    if path.starts_with("/api/v2/auth/mock/") {
+    if path.starts_with("/api/v1/auth/mock/") {
         return external_login::browser(a, path, method).await;
     }
-    if path == "/api/v2/auth/capabilities" {
+    if path == "/api/v1/auth/capabilities" {
         return login_capabilities::route(a, method).await;
     }
     if matches!(
         path,
-        "/api/v2/auth/login/password"
-            | "/api/v2/auth/login/code"
-            | "/api/v2/auth/verification-codes"
+        "/api/v1/auth/login/password"
+            | "/api/v1/auth/login/code"
+            | "/api/v1/auth/verification-codes"
     ) {
         return login_commands::route(a, path, method).await;
     }
-    if path == "/api/v2/auth/transactions" || path.starts_with("/api/v2/auth/transactions/") {
+    if path == "/api/v1/auth/transactions" || path.starts_with("/api/v1/auth/transactions/") {
         return registration::route(a, path, method).await;
     }
     login_sessions::route(a, path, method).await

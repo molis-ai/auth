@@ -81,7 +81,7 @@ for (const mode of [undefined, 'SELF_SERVICE', 'PLATFORM_ONLY', 'UNKNOWN']) {
         token: string | null = access,
       ) {
         const response = await proxy.fetch(
-          new Request(origin + '/api/v2' + path, {
+          new Request(origin + '/api/v1' + path, {
             method: body === undefined ? 'GET' : 'POST',
             headers: {
               'Content-Type': 'application/json',

@@ -2098,6 +2098,7 @@
         "status": "ACTIVE",
         "myRole": "OWNER",
         "membershipId": "xxxxxxxx",
+        "membershipVersion": 1,
         "version": 1
       }
     },
@@ -2291,8 +2292,7 @@
         ],
         "redirectAllowlist": [
           "https://auth.example.invalid"
-        ],
-        "product": "WORK"
+        ]
       }
     },
     {
@@ -2812,21 +2812,6 @@
       "value": null
     },
     {
-      "name": "OwnershipTransferPage:minimal-valid",
-      "schema": "OwnershipTransferPage",
-      "valid": true,
-      "value": {
-        "items": [],
-        "nextCursor": "xxxxxxxx"
-      }
-    },
-    {
-      "name": "OwnershipTransferPage:wrong-root-type",
-      "schema": "OwnershipTransferPage",
-      "valid": false,
-      "value": null
-    },
-    {
       "name": "AuditEventPage:minimal-valid",
       "schema": "AuditEventPage",
       "valid": true,
@@ -2846,9 +2831,6 @@
       "schema": "MyTenantsPage",
       "valid": true,
       "value": {
-        "personalScope": {
-          "kind": "PERSONAL"
-        },
         "items": [],
         "nextCursor": "xxxxxxxx"
       }
@@ -2856,6 +2838,43 @@
     {
       "name": "MyTenantsPage:wrong-root-type",
       "schema": "MyTenantsPage",
+      "valid": false,
+      "value": null
+    },
+    {
+      "name": "OwnershipTransferListItem:minimal-valid",
+      "schema": "OwnershipTransferListItem",
+      "valid": true,
+      "value": {
+        "transferId": "xxxxxxxx",
+        "tenantId": "xxxxxxxx",
+        "fromMembershipId": "xxxxxxxx",
+        "toMembershipId": "xxxxxxxx",
+        "status": "PENDING",
+        "expiresAt": "2026-11-04T08:00:00Z",
+        "version": 1,
+        "tenantName": "xxxxxxxx",
+        "myMembershipId": "xxxxxxxx"
+      }
+    },
+    {
+      "name": "OwnershipTransferListItem:wrong-root-type",
+      "schema": "OwnershipTransferListItem",
+      "valid": false,
+      "value": null
+    },
+    {
+      "name": "OwnershipTransferPage:minimal-valid",
+      "schema": "OwnershipTransferPage",
+      "valid": true,
+      "value": {
+        "items": [],
+        "nextCursor": "xxxxxxxx"
+      }
+    },
+    {
+      "name": "OwnershipTransferPage:wrong-root-type",
+      "schema": "OwnershipTransferPage",
       "valid": false,
       "value": null
     },
@@ -3839,7 +3858,6 @@
         "authOrigin": "https://auth.example.invalid",
         "productOrigin": "https://auth.example.invalid",
         "clientId": "xxxxxxxx",
-        "policyProfile": "unified-account-v2",
         "redirectAllowlist": [
           "https://auth.example.invalid"
         ],
@@ -3863,7 +3881,6 @@
         "authOrigin": "https://auth.example.invalid",
         "productOrigin": "https://auth.example.invalid",
         "clientId": "xxxxxxxx",
-        "policyProfile": "unified-account-v2",
         "redirectAllowlist": [
           "https://auth.example.invalid"
         ],
@@ -3881,7 +3898,6 @@
         "authOrigin": "https://auth.example.invalid",
         "productOrigin": "https://auth.example.invalid",
         "clientId": "xxxxxxxx",
-        "policyProfile": "unified-account-v2",
         "redirectAllowlist": [
           "https://auth.example.invalid"
         ],
@@ -4893,8 +4909,7 @@
           ],
           "redirectAllowlist": [
             "https://auth.example.invalid"
-          ],
-          "product": "WORK"
+          ]
         },
         "requestId": "xxxxxxxx"
       }
@@ -4911,9 +4926,6 @@
       "valid": true,
       "value": {
         "data": {
-          "personalScope": {
-            "kind": "PERSONAL"
-          },
           "items": [],
           "nextCursor": "xxxxxxxx"
         },
@@ -4954,6 +4966,7 @@
           "status": "ACTIVE",
           "myRole": "OWNER",
           "membershipId": "xxxxxxxx",
+          "membershipVersion": 1,
           "version": 1
         },
         "requestId": "xxxxxxxx"

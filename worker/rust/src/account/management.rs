@@ -238,7 +238,7 @@ pub(crate) async fn verify_web_password(
     })?;
     let user_id = text(&session, "user_id");
     a.rate_batch(&[
-        ("v2-password", &a.client_ip, 30, 60_000),
+        ("auth:password", &a.client_ip, 30, 60_000),
         ("web-current-password", &user_id, 10, 300_000),
     ])
     .await?;
@@ -613,9 +613,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     } else {
         json!({})
     };
-    let result = if path == "/api/v2/auth/password-reset/complete" && method == Method::Post {
+    let result = if path == "/api/v1/auth/password-reset/complete" && method == Method::Post {
         reset(a, &b).await?
-    } else if path == "/api/v2/users/me" && method == Method::Get {
+    } else if path == "/api/v1/users/me" && method == Method::Get {
         account_view(
             a,
             sessions::bearer(&a.header("Authorization")),
@@ -623,27 +623,27 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             true,
         )
         .await?
-    } else if path == "/api/v2/users/me/login-methods" && method == Method::Get {
+    } else if path == "/api/v1/users/me/login-methods" && method == Method::Get {
         login_methods_view(a).await?
     } else {
         let (s, c) = sessions::active(a).await?;
         let user = text(&s, "user_id");
         match (path, method) {
-            ("/api/v2/users/me/reauthentications", Method::Post) => {
+            ("/api/v1/users/me/reauthentications", Method::Post) => {
                 shape("ReauthenticationRequest", &b)?;
                 let mut b = b.clone();
                 b["purpose"] = "REAUTH".into();
                 registration::begin(a, &b).await?
             }
-            ("/api/v2/users/me/profile", Method::Patch) => {
+            ("/api/v1/users/me/profile", Method::Patch) => {
                 shape("ProfileUpdateRequest", &b)?;
                 manage(a, &s, &c, &b, "profile", &user).await?
             }
-            ("/api/v2/users/me/password/change", Method::Post) => {
+            ("/api/v1/users/me/password/change", Method::Post) => {
                 shape("PasswordChangeRequest", &b)?;
                 manage(a, &s, &c, &b, "password", &user).await?
             }
-            ("/api/v2/users/me/login-methods/bind", Method::Post) => {
+            ("/api/v1/users/me/login-methods/bind", Method::Post) => {
                 shape("BindMethodRequest", &b)?;
                 manage(a, &s, &c, &b, "bind", &user).await?
             }
@@ -651,7 +651,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 let parts: Vec<_> = path.trim_matches('/').split('/').collect();
                 ensure(
                     parts.len() == 7
-                        && parts[..5] == ["api", "v2", "users", "me", "login-methods"]
+                        && parts[..5] == ["api", "v1", "users", "me", "login-methods"]
                         && ["replace", "unlink"].contains(&parts[6]),
                     404,
                     "NOT_FOUND",

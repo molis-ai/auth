@@ -4,7 +4,7 @@
 
 产品 Host/BFF → Workers JS/WASM 加载器 → `worker/rust/src/lib.rs` → `app.rs` → 领域模块 → `core/store.rs` → D1。
 
-Auth 自身的 Vue 页面 → 同源 `/api/account` BFF → 当前 `/api/v2` 处理器。页面使用 HttpOnly Cookie 与 CSRF，不导入服务端实现、不接触 D1、中央 Token 或服务端证明。Work 的安装身份与 Home 管理共用 Host 内的 V2 会话；业务内容仍归 Work 的原 owner。
+Auth 自身的 Vue 页面 → 同源 `/api/account` BFF → 当前 `/api/v1` 处理器。页面使用 HttpOnly Cookie 与 CSRF，不导入服务端实现、不接触 D1、中央 Token 或服务端证明。Work 的安装身份与 Home 管理共用 Host 内的 V2 会话；业务内容仍归 Work 的原 owner。
 
 Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由 worker-build 生成并加载同目录 WASM。Cloudflare 不运行原生 Rust 二进制。
 

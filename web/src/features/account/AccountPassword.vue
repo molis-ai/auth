@@ -161,13 +161,13 @@ async function save() {
 </template>
 
 <style scoped>
-.v2-console .password-panel .password-form {
+.auth-console .password-panel .password-form {
   display: grid;
   gap: 14px;
   max-width: 440px;
   margin: 0;
 }
-.v2-console .password-form label {
+.auth-console .password-form label {
   display: grid;
   gap: 5px;
   margin: 0;
@@ -175,7 +175,7 @@ async function save() {
   font-size: 12.5px;
   font-weight: 500;
 }
-.v2-console .password-form input {
+.auth-console .password-form input {
   height: 38px;
   min-height: 38px;
   padding: 0 11px;
@@ -186,9 +186,9 @@ async function save() {
   font-size: 13.5px;
   font-weight: 400;
 }
-.v2-console .password-panel .password-error { margin: 0 0 14px; color: #a62b33; }
+.auth-console .password-panel .password-error { margin: 0 0 14px; color: #a62b33; }
 
 @media (max-width: 640px) {
-  .v2-console .password-form input { height: 44px; font-size: 16px; }
+  .auth-console .password-form input { height: 44px; font-size: 16px; }
 }
 </style>

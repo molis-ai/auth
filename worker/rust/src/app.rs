@@ -99,7 +99,7 @@ async fn handle_response(
         let response = with_security_headers(error_response(failure, id)?, id, https)?;
         return Ok((response, None, Some("NOT_FOUND")));
     }
-    if req.method() == Method::Get && path == "/api/v2/health" {
+    if req.method() == Method::Get && path == "/api/v1/health" {
         let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
         return Ok((response, None, None));
     }
@@ -156,16 +156,16 @@ async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
     if web::web_session::matches(path) {
         return web::web_session::route(a, path, method).await;
     }
-    if path == "/api/v2/readiness" && method == Method::Get {
+    if path == "/api/v1/readiness" && method == Method::Get {
         return web::readiness::check(a, env).await;
     }
-    if path == "/api/v2" || path.starts_with("/api/v2/") {
-        return dispatch_v2(a, path, method).await;
+    if path == "/api/v1" || path.starts_with("/api/v1/") {
+        return dispatch_v1(a, path, method).await;
     }
     web::assets::serve(a, env, url, method).await
 }
 
-async fn dispatch_v2(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+async fn dispatch_v1(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     if platform::matches(path) {
         platform::route(a, path, method).await
     } else if audit::matches(path) {

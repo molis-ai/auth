@@ -11,7 +11,7 @@ test('tenant member styles stay scoped after Vue compilation, including override
     assert.equal(style.scoped, true);
     const result = compileStyle({ source: style.content, filename: 'TenantMembers.vue', id: 'data-v-isolation', scoped: true });
     assert.deepEqual(result.errors, []);
-    // Vue :global(.v2-console) followed by descendants compiled to the shell alone.
+    // Vue :global(.auth-console) followed by descendants compiled to the shell alone.
     // Check compiled CSS, not just the intended selector in the source.
     const selectors = [...result.code.matchAll(/([^{}]+)\{/g)].map(match => match[1].trim()).filter(selector => !selector.startsWith('@'));
     for (const selector of selectors) {

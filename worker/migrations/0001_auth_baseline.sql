@@ -60,7 +60,12 @@ CREATE TABLE auth_application (
 CREATE TABLE auth_client (
  id TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE, application_id TEXT NOT NULL REFERENCES auth_application(id),
  client_type TEXT NOT NULL CHECK(client_type IN ('WEB','MACOS','CLI')), status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','DISABLED')),
- version INTEGER NOT NULL DEFAULT 0, scopes TEXT NOT NULL, redirects TEXT NOT NULL
+ version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0),
+ redirects TEXT NOT NULL,
+ environment_id TEXT NOT NULL REFERENCES auth_environment(id),
+ allowed_origins TEXT NOT NULL CHECK(json_valid(allowed_origins) AND json_type(allowed_origins)='array'),
+ policy_version INTEGER NOT NULL DEFAULT 0 CHECK(policy_version>=0),
+ UNIQUE(client_id,environment_id)
 );
 
 CREATE TABLE auth_audit_event (
@@ -95,19 +100,6 @@ CREATE TABLE auth_environment (
  CHECK(substr(auth_origin,1,7)<>'http://' OR kind<>'PRODUCTION')
 );
 
-CREATE TABLE auth_client_policy (
- client_id TEXT PRIMARY KEY NOT NULL REFERENCES auth_client(client_id),
- policy_profile TEXT NOT NULL CHECK(policy_profile='unified-account-v2'),
- environment_id TEXT NOT NULL REFERENCES auth_environment(id),
- allowed_origins TEXT NOT NULL CHECK(json_valid(allowed_origins) AND json_type(allowed_origins)='array'),
- version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0),
- created_at INTEGER NOT NULL,
- updated_at INTEGER NOT NULL,
- UNIQUE(client_id,environment_id)
-);
-
-CREATE INDEX ix_client_policy_environment ON auth_client_policy(environment_id,client_id);
-
 CREATE TABLE auth_platform_permission (
  user_id TEXT NOT NULL REFERENCES auth_user(id),
  permission TEXT NOT NULL CHECK(length(permission) BETWEEN 1 AND 100),
@@ -140,7 +132,7 @@ CREATE INDEX ix_user_phone_user ON auth_user_phone(user_id);
 CREATE TABLE auth_login_session (
  id TEXT PRIMARY KEY NOT NULL,
  user_id TEXT NOT NULL REFERENCES auth_user(id),
- client_id TEXT NOT NULL REFERENCES auth_client_policy(client_id),
+ client_id TEXT NOT NULL REFERENCES auth_client(client_id),
  authenticated_at INTEGER NOT NULL,
  last_active_at INTEGER NOT NULL,
  absolute_expires_at INTEGER NOT NULL,
@@ -317,7 +309,7 @@ CREATE UNIQUE INDEX uk_tenant_pending_transfer ON auth_ownership_transfer(tenant
 
 CREATE TABLE auth_management_result (
  actor_user_id TEXT NOT NULL REFERENCES auth_user(id),
- client_id TEXT NOT NULL REFERENCES auth_client_policy(client_id),
+ client_id TEXT NOT NULL REFERENCES auth_client(client_id),
  operation TEXT NOT NULL,
  target TEXT NOT NULL,
  idempotency_key_hash TEXT NOT NULL,
@@ -344,7 +336,7 @@ CREATE INDEX ix_logout_receipt_expiry ON auth_logout_receipt(expires_at);
 CREATE TABLE auth_management_audit (
  id TEXT PRIMARY KEY NOT NULL,
  actor_user_id TEXT NOT NULL REFERENCES auth_user(id),
- client_id TEXT NOT NULL REFERENCES auth_client_policy(client_id),
+ client_id TEXT NOT NULL REFERENCES auth_client(client_id),
  tenant_id TEXT REFERENCES auth_tenant(id),
  operation TEXT NOT NULL,
  target_type TEXT NOT NULL,
@@ -397,12 +389,6 @@ CREATE TABLE auth_mock_notification (
 
 CREATE INDEX ix_mock_notification_expiry ON auth_mock_notification(expires_at);
 
-CREATE TABLE auth_client_product (
- client_id TEXT PRIMARY KEY NOT NULL REFERENCES auth_client_policy(client_id),
- product TEXT NOT NULL CHECK(product IN ('WORK','CLUB')),
- version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0)
-);
-
 CREATE TABLE auth_web_session (
  id_hash TEXT PRIMARY KEY NOT NULL,
  payload TEXT NOT NULL,
@@ -453,7 +439,7 @@ CREATE TABLE "auth_product_transaction" (
  completed_at INTEGER,
  identity_version INTEGER CHECK(identity_version>=0),
  verified_identity TEXT CHECK(verified_identity IS NULL OR (json_valid(verified_identity) AND json_type(verified_identity)='object')),
- FOREIGN KEY(client_id,environment_id) REFERENCES auth_client_policy(client_id,environment_id),
+ FOREIGN KEY(client_id,environment_id) REFERENCES auth_client(client_id,environment_id),
  FOREIGN KEY(login_session_id,user_id) REFERENCES auth_login_session(id,user_id),
  FOREIGN KEY(login_session_id,client_id) REFERENCES auth_login_session(id,client_id),
  CHECK((purpose='LOGIN' AND method IN ('ACCOUNT_PASSWORD','EMAIL_CODE','EMAIL_PASSWORD','PHONE_OTP','GOOGLE','GITHUB'))
@@ -522,3 +508,5 @@ CREATE INDEX ix_logout_receipt_session ON auth_logout_receipt(login_session_id);
 CREATE INDEX ix_identity_proof_session ON auth_identity_proof(login_session_id) WHERE login_session_id IS NOT NULL;
 CREATE INDEX ix_product_transaction_session ON auth_product_transaction(login_session_id) WHERE login_session_id IS NOT NULL;
 CREATE INDEX ix_management_handoff_source ON auth_management_handoff(source_session);
+
+CREATE INDEX ix_client_environment ON auth_client(environment_id,client_id);

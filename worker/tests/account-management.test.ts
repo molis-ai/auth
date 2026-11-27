@@ -49,7 +49,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       trace = false,
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -195,7 +195,7 @@ test('AUTH-06 profiles, bound identities and password lifecycle on real WASM/D1'
       const state = new URL(first.headers.get('Location')!).searchParams.get('state')!
       const csrf = html.match(/name="csrf" value="([^"]+)"/)![1]
       const response = await p.fetch(
-        new Request(origin + '/api/v2/auth/mock/' + provider + '/authorize', {
+        new Request(origin + '/api/v1/auth/mock/' + provider + '/authorize', {
           method: 'POST',
           headers: {
             Origin: origin,

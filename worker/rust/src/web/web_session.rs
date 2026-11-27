@@ -185,9 +185,9 @@ impl WebSession<'_> {
         self.data["loginVerification"] = Value::Null;
         self.save().await?;
         let path = if body["scope"] == "ALL_MOLIS_PRODUCTS" {
-            "/api/v2/sessions/logout-all"
+            "/api/v1/sessions/logout-all"
         } else {
-            "/api/v2/sessions/current/logout"
+            "/api/v1/sessions/current/logout"
         };
         // Logout uses the saved refresh proof; bearer plus refresh proof is rejected.
         let revoked = self
@@ -218,7 +218,7 @@ impl WebSession<'_> {
             "AUTH_UNAVAILABLE",
         )?;
         ensure(
-            path.starts_with("/api/v2/") && !path.contains('#') && !path.contains(".."),
+            path.starts_with("/api/v1/") && !path.contains('#') && !path.contains(".."),
             400,
             "INVALID_REQUEST",
         )?;
@@ -275,7 +275,7 @@ impl WebSession<'_> {
         }
         let old = self.data["tokens"].take();
         self.save().await?; // Burn recovery material before rotating.
-        let tokens=self.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"refresh_token","clientId":self.client()?,"refreshToken":old["refreshToken"]})),None,None).await.map_err(session_failure)?;
+        let tokens=self.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"refresh_token","clientId":self.client()?,"refreshToken":old["refreshToken"]})),None,None).await.map_err(session_failure)?;
         shape("TokenSet", &tokens)?;
         ensure(
             tokens["session"]["loginSessionId"] == old["session"]["loginSessionId"],
@@ -762,8 +762,8 @@ fn read_without_lease(path: &str) -> bool {
 fn product_target(path: &str, query: Option<&str>) -> String {
     let suffix = path.strip_prefix("/api/account").expect("prefix");
     let mut target = match suffix {
-        "/me" => "/api/v2/users/me".to_owned(),
-        path => format!("/api/v2{path}"),
+        "/me" => "/api/v1/users/me".to_owned(),
+        path => format!("/api/v1{path}"),
     };
     if let Some(query) = query {
         target.push('?');
@@ -777,7 +777,7 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
         shape("ActivityRequest", &body)?;
         return s
             .call(
-                "/api/v2/sessions/current/activity",
+                "/api/v1/sessions/current/activity",
                 method,
                 Some(body),
                 None,
@@ -807,7 +807,7 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
     if path == "/api/account/profile" && method == Method::Patch {
         return s
             .call(
-                "/api/v2/users/me/profile",
+                "/api/v1/users/me/profile",
                 method,
                 Some(body),
                 None,
@@ -826,7 +826,7 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
     }
     if path == "/api/account/login-methods" && method == Method::Get {
         return s
-            .call("/api/v2/users/me/login-methods", method, None, None, None)
+            .call("/api/v1/users/me/login-methods", method, None, None, None)
             .await;
     }
     Err(Failure {
@@ -888,11 +888,11 @@ mod tests {
 
         let origin = "https://auth.example";
         for (request, target) in [
-            ("/api/account/me", "/api/v2/users/me"),
-            ("/api/account/me?", "/api/v2/users/me?"),
+            ("/api/account/me", "/api/v1/users/me"),
+            ("/api/account/me?", "/api/v1/users/me?"),
             (
                 "/api/account/tenants/%2F/members?x=%2F&x=+",
-                "/api/v2/tenants/%2F/members?x=%2F&x=+",
+                "/api/v1/tenants/%2F/members?x=%2F&x=+",
             ),
         ] {
             let url = Url::parse(&format!("{origin}{request}")).expect("request URL");

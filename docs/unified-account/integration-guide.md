@@ -14,7 +14,7 @@ Auth 的 `web/src/shared/api/account-client.ts` 导出 `AccountClient`，用于�
 | --- | --- | --- |
 | Work 页面 | Host `/api/account/*`；非凭据操作映射同一 `system.account` 动作目录 | 控制令牌、同源校验、写操作一次性键由既有请求助手处理；中央 Token 仅由 Host SecretStore 持有 |
 | Auth 页面 | 同源 `/api/account/*`，第三方回到 `/account/callback` | HttpOnly Cookie + CSRF；中央 Token 在 `auth_web_session` 中加密保存 |
-| Host/BFF 到 Auth | 冻结 operationId 对应 `/api/v2/*` | 可信环境、应用/client/来源和当前独立登录；不接受页面自报 userId/product/actor |
+| Host/BFF 到 Auth | 冻结 operationId 对应 `/api/v1/*` | 可信环境、应用/client/来源和当前独立登录；不接受页面自报 userId/product/actor |
 | 后续业务功能 | 调用权益服务，由业务服务复核资源范围 | 页面“允许”只是展示，不是业务授权凭证；本期未接实际收费拦截 |
 
 ## 表单协议示例
@@ -62,7 +62,7 @@ X-CSRF-Token: <本次浏览器会话的 CSRF>
 
 2026-11-08 用户将 C-16 调整为策略控制。`TENANT_CREATION_POLICY` 是 Auth 的受信部署配置，允许 `SELF_SERVICE`（缺省值）和 `PLATFORM_ONLY`；未知取值拒绝自行创建，不回退为开放。它不是页面输入，也不是成员角色或套餐设置。
 
-已登录产品可读取 `GET /api/v2/tenant-creation-policy`。自行创建使用 `POST /api/v2/tenants`、正文 `{name}` 与 Idempotency-Key，成功返回 TenantView；所有者只能是当前会话用户。`PLATFORM_ONLY` 模式拒绝该写入。平台仍通过原 `/api/v2/platform/tenants` 指定所有者，并继续要求 `TENANT_CREATE`，两种模式下都不向普通用户开放平台代建。
+已登录产品可读取 `GET /api/v1/tenant-creation-policy`。自行创建使用 `POST /api/v1/tenants`、正文 `{name}` 与 Idempotency-Key，成功返回 TenantView；所有者只能是当前会话用户。`PLATFORM_ONLY` 模式拒绝该写入。平台仍通过原 `/api/v1/platform/tenants` 指定所有者，并继续要求 `TENANT_CREATE`，两种模式下都不向普通用户开放平台代建。
 
 本阶段通过受控更新部署配置切换策略，不提供浏览器修改配置或运行中热切换接口；每个请求使用其部署版本的配置。需要即时切换时须先停止接收创建请求、排空旧版本在途请求再切换，不把已进入旧版本的请求视为被新配置追溯撤销。切换不修改已有成员或内容。创建不授予订阅或席位。Auth 与 Work 页面均已接入策略和自行创建；Club 待在其实际检出核对。
 
@@ -94,6 +94,6 @@ Auth Vue 页面也调用同源 `/api/account`。`AUTH_WEB_CLIENT_ID` 必须登�
 
 ## 登录能力与 P1 一致性
 
-三端先通过自己的 `GET /api/account/auth/capabilities` 获取 `{ methods }`。Host/BFF 使用注册配置中的 `clientId` 请求 `GET /api/v2/auth/capabilities?clientId=...`，不接受浏览器指定客户端。方式为 `ACCOUNT_PASSWORD`、`EMAIL_CODE`、`PHONE_OTP`、`GOOGLE`、`GITHUB` 的子集；配置缺失时隐藏相应入口，查询失败时显示错误。此接口只说明配置就绪，既不是授权凭据，也不保证远端提供方当前可用。
+三端先通过自己的 `GET /api/account/auth/capabilities` 获取 `{ methods }`。Host/BFF 使用注册配置中的 `clientId` 请求 `GET /api/v1/auth/capabilities?clientId=...`，不接受浏览器指定客户端。方式为 `ACCOUNT_PASSWORD`、`EMAIL_CODE`、`PHONE_OTP`、`GOOGLE`、`GITHUB` 的子集；配置缺失时隐藏相应入口，查询失败时显示错误。此接口只说明配置就绪，既不是授权凭据，也不保证远端提供方当前可用。
 
 第三方身份验证后，由绑定了浏览器会话、事务及 state 的产品回调完成登录；事务 GET 不完成登录。发布次序、平台边界及验收条目见[登录一致性规范](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/login-p1.md)。消费者固定 Auth 1.3.0 的源提交，先发布 Auth，再发布消费者。

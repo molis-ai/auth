@@ -221,7 +221,7 @@ function openPlatformTenant(tenantId: string) {
   </ConsoleShell>
 </template>
 <style>
-.v2-form {
+.account-form {
   max-width: 520px;
 }
 </style>

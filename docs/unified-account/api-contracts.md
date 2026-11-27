@@ -12,9 +12,9 @@ AUTH-12 的[验收矩阵](acceptance-matrix.md)和[固定版本与交付记录](
 
 | 浏览器入口（POST） | 请求 | 中央 Auth 操作 | 成功数据 |
 | --- | --- | --- | --- |
-| `/api/account/auth/login/password` | `identifier,password` | `POST /api/v2/auth/login/password` | `{account:AccountView}` |
-| `/api/account/auth/verification-codes` | `purpose:"LOGIN",channel:"EMAIL"或"SMS",address` | `POST /api/v2/auth/verification-codes` | `verificationId,expiresAt,retryAfterSeconds` |
-| `/api/account/auth/login/code` | `verificationId,code` | `POST /api/v2/auth/login/code` | `{account:AccountView}` |
+| `/api/account/auth/login/password` | `identifier,password` | `POST /api/v1/auth/login/password` | `{account:AccountView}` |
+| `/api/account/auth/verification-codes` | `purpose:"LOGIN",channel:"EMAIL"或"SMS",address` | `POST /api/v1/auth/verification-codes` | `verificationId,expiresAt,retryAfterSeconds` |
+| `/api/account/auth/login/code` | `verificationId,code` | `POST /api/v1/auth/login/code` | `{account:AccountView}` |
 
 这些入口均返回通用 `{data,requestId}` 包装。产品后端补齐可信客户端、回调和发起证明，
 浏览器持有的是产品端验证句柄。密码、邮箱码和手机码登录使用上表入口。
@@ -46,7 +46,7 @@ Work 桌面端通过系统浏览器打开授权页面。被阻止打开时应直
 
 ## 1 边界与版本
 
-中央接口使用 `/api/v2`。Auth 拥有身份、登录会话、资料、租户和成员。套餐、订阅、订单、Credit、权益及计费审计归独立 Billing 服务，账号中心通过[同源挂载](../account-billing-bff.md)访问。Club BFF 和 Work Host 持有本产品会话、短期事务与展示缓存。
+中央接口使用 `/api/v1`。Auth 拥有身份、登录会话、资料、租户和成员。套餐、订阅、订单、Credit、权益及计费审计归独立 Billing 服务，账号中心通过[同源挂载](../account-billing-bff.md)访问。Club BFF 和 Work Host 持有本产品会话、短期事务与展示缓存。
 
 | 合同组 | 内容 | 实现 owner |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ Work 将上游错误转换为本仓库 owner 错误合同，不把 Auth 的错�
 
 ## 3 API-02 产品内认证事务
 
-以下路径均相对 `/api/v2`。页面只接触本产品 API-08，BFF/Host 保存上游事务凭据和 PKCE。工程初始建议：事务 10 分钟、验证码 5 分钟且最多 5 次错误、同目标重发间隔 60 秒、登录码 60 秒、敏感操作证明 5 分钟。这些是 AUTH-01 要固化的配置默认值，不改变 C-34 的 30/90 天规则；总发送限额按 IP、目标和客户端在部署配置中明确。
+以下路径均相对 `/api/v1`。页面只接触本产品 API-08，BFF/Host 保存上游事务凭据和 PKCE。工程初始建议：事务 10 分钟、验证码 5 分钟且最多 5 次错误、同目标重发间隔 60 秒、登录码 60 秒、敏感操作证明 5 分钟。这些是 AUTH-01 要固化的配置默认值，不改变 C-34 的 30/90 天规则；总发送限额按 IP、目标和客户端在部署配置中明确。
 
 | 方法与路径 | 请求 | 成功数据及约束 |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ complete 的数据按 kind 分别包含 `code`、`operationProof`、`newIdentity
 
 Google/GitHub 流程：BFF/Host 创建事务 → 浏览器访问 browserStartUrl → Auth 建立一次性浏览器绑定并跳官方/受控 mock 提供方 → Auth 回调验证提供方 state、浏览器绑定和身份 → 回精确产品回调（仅事务结果和产品 state）→ 原 BFF/Host 用发起方证明完成并换码。提供方 state 与产品 state 分开保存；认证取消、退出或换号后的迟到回调不能建立会话。Google 验证其 OIDC 响应，GitHub 使用其可信稳定用户标识，不能假设两者都是 id_token。
 
-AUTH-05 的 mock 实现使用 `/api/v2/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v2/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md#10-auth-05-实施记录)。
+AUTH-05 的 mock 实现使用 `/api/v1/auth/external/{google或github}/browser-start` 和 `/callback` 两个浏览器入口，中间经过 `/api/v1/auth/mock/{provider}/authorize`。启动票据与模拟提供方码分别有效 60 秒且一次性消费；事务仍为 10 分钟。产品回调查询参数固定为 `transactionId,state,result`（VERIFIED/CANCELLED/FAILED），不得在预登记回调 URL 中预占这三个参数，也不携带登录码或 Token。取消/失败后重新创建事务；成功后原 Host/BFF 调用 complete。模拟页面只选择服务端预置的隔离账号，不接受 subject/email 断言。官方适配器未启用时 LIVE 明确失败。配置与验收证据见[AUTH-05 实施记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md#10-auth-05-实施记录)。
 
 PASSWORD_RESET 仅向已验证邮箱对应的已有账号发出找回证明，未知目标返回等形状的投递受理结果但不创建账号。找回完成不自动签发登录码。BIND/REPLACE 的目标用户必须来自当前会话，并要求 API-03 的再次验证证明。
 

@@ -75,7 +75,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       .run()
     async function api(path: string, body: unknown, proof?: string) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -279,7 +279,7 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       assert.equal(logs.length, 1)
       assert.equal(logs[0].code, 'UPSTREAM_UNAVAILABLE')
       assert.equal(logs[0].status, 503)
-      assert.equal(logs[0].route, '/api/v2/auth/transactions/{transactionId}/challenges')
+      assert.equal(logs[0].route, '/api/v1/auth/transactions/{transactionId}/challenges')
       if (timeout) assert.ok(logs[0].duration_ms >= 9_000)
       const http = await failures.waitFor(
         (log) => log.event === 'auth.http.request' && log.request_id === knownReply.requestId,

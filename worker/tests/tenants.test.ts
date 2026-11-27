@@ -64,7 +64,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       callerOrigin?: string,
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -290,7 +290,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         beta = await create('Beta', other.userId)
         assert.equal((await tenant(alpha.tenantId, ownerClub)).tenantId, alpha.tenantId)
         const mine = ok(await call('/tenants', undefined, owner), 'MyTenantsPage')
-        assert.deepEqual(mine.personalScope, { kind: 'PERSONAL' })
+        assert.equal(mine.items[0].membershipVersion, 0)
         assert.equal(mine.items.length, 1)
         assert.equal((await call('/tenants/' + alpha.tenantId, undefined, outsider)).status, 404)
         assert.equal((await call('/tenants/' + alpha.tenantId, undefined, platform)).status, 404)
@@ -1504,17 +1504,11 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             .bind(expiry),
           db.prepare(`${series} INSERT INTO auth_application(id,name)
           SELECT 'fixture-app-'||n,'Fixture Application' FROM fixture WHERE n<=256`),
-          db
-            .prepare(
-              `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'CLI','[]','[]'
-          FROM fixture UNION ALL SELECT 'fixture-work-client','fixture-work-client',?,'CLI','[]','[]'`,
-            )
-            .bind(workApp),
-          db.prepare(`INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
-          SELECT client_id,'unified-account-v2','unified-local','[]',0,0 FROM auth_client WHERE client_id LIKE 'fixture-%'`),
-          db.prepare(`INSERT INTO auth_client_product(client_id,product)
-          SELECT client_id,'WORK' FROM auth_client WHERE client_id LIKE 'fixture-%'`),
+          db.prepare(
+            `${series} INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+          SELECT 'fixture-client-'||n,'fixture-client-'||n,'fixture-app-'||(1+(n-1)%256),'WEB','[]','unified-local','[]'
+          FROM fixture WHERE n<=512`,
+          ),
           db.prepare(`${series} INSERT INTO auth_management_audit
           (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
           SELECT 'fixture-audit-'||n,'fixture-user-'||(1+(n-1)%256),'molis-work-unified-local',

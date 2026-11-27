@@ -33,9 +33,9 @@ const navigationGroups = computed(() => [
 </script>
 
 <template>
-  <div class="console-shell v2-console">
+  <div class="console-shell auth-console">
     <aside class="workspace-sidebar">
-      <a href="/" class="v2-brand sidebar-brand">
+      <a href="/" class="console-brand sidebar-brand">
         <span class="sidebar-brand-mark">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="4.5" transform="rotate(45 12 12)" stroke="#1f2937" stroke-width="2.4" />

@@ -12,15 +12,15 @@ use worker::{Method, Response};
 
 pub fn matches(path: &str) -> bool {
     [
-        "/api/v2/platform/applications",
-        "/api/v2/platform/clients",
-        "/api/v2/platform/users",
+        "/api/v1/platform/applications",
+        "/api/v1/platform/clients",
+        "/api/v1/platform/users",
     ]
     .iter()
     .any(|p| path == *p || path.starts_with(&format!("{p}/")))
 }
 const APPLICATIONS: &str = "SELECT * FROM auth_application";
-const CLIENTS: &str = "SELECT c.*,p.environment_id,p.allowed_origins,p.version policy_version,cp.product FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id LEFT JOIN auth_client_product cp ON cp.client_id=c.client_id";
+const CLIENTS: &str = "SELECT c.* FROM auth_client c";
 fn application_view(v: &Value) -> Value {
     json!({"applicationId":v["id"],"name":v["name"],"status":v["status"],"version":v["version"]})
 }
@@ -28,7 +28,7 @@ fn client_view(v: &Value) -> Result<Value> {
     let origins: Vec<String> = stored_json(v, "allowed_origins")?;
     let redirects: Vec<String> = stored_json(v, "redirects")?;
     Ok(
-        json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":origins,"redirectAllowlist":redirects,"product":v["product"]}),
+        json!({"clientId":v["client_id"],"applicationId":v["application_id"],"clientType":v["client_type"],"status":v["status"],"version":v["version"],"environmentId":v["environment_id"],"policyVersion":v["policy_version"],"allowedOrigins":origins,"redirectAllowlist":redirects}),
     )
 }
 fn action(path: &str, method: Method) -> Result<Action> {
@@ -110,7 +110,7 @@ impl Service<'_> {
                 )
                 .await?;
             ensure(!ctx.record.is_null(), 404, "NOT_FOUND")?;
-            ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id WHERE c.client_id=? AND c.version=? AND p.version=?)",vec![ctx.record["client_id"].clone(),ctx.record["version"].clone(),ctx.record["policy_version"].clone()])?);
+            ctx.guards.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_client c WHERE c.client_id=? AND c.version=? AND c.policy_version=?)",vec![ctx.record["client_id"].clone(),ctx.record["version"].clone(),ctx.record["policy_version"].clone()])?);
         }
         Ok(ctx)
     }
@@ -123,7 +123,6 @@ impl Service<'_> {
         if !action.op.starts_with("application.") && !action.op.starts_with("client.") {
             return crate::platform::platform_accounts::change(self, action, ctx, b).await;
         }
-        let n = now();
         if action.op.starts_with("application.") {
             let title = name(&b["name"]).map_err(|_| Failure {
                 status: 400,
@@ -180,15 +179,13 @@ impl Service<'_> {
                 .await?;
             ensure(!env.is_null(), 400, "INVALID_REQUEST")?;
             writes.push(self.a.s.guard("EXISTS(SELECT 1 FROM auth_environment WHERE id=? AND version=? AND status='ACTIVE')",vec![env["id"].clone(),env["version"].clone()])?);
-            row = json!({"id":uuid(),"client_id":client,"application_id":action.id,"client_type":b["clientType"],"status":"ACTIVE","version":0,"environment_id":env["id"],"policy_version":0,"allowed_origins":b["allowedOrigins"].to_string(),"redirects":b["redirectAllowlist"].to_string(),"product":b["product"]});
-            writes.push(self.a.s.statement("INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects) VALUES (?,?,?,?, '[\"account\",\"profile\"]',?)",vec![row["id"].clone(),row["client_id"].clone(),row["application_id"].clone(),row["client_type"].clone(),row["redirects"].clone()])?);
-            writes.push(self.a.s.statement("INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at) VALUES (?,'unified-account-v2',?,?,?,?)",vec![row["client_id"].clone(),row["environment_id"].clone(),row["allowed_origins"].clone(),n.into(),n.into()])?);
-            if !row["product"].is_null() {
-                writes.push(self.a.s.statement(
-                    "INSERT INTO auth_client_product(client_id,product) VALUES (?,?)",
-                    vec![row["client_id"].clone(), row["product"].clone()],
-                )?);
-            }
+            row = json!({"id":uuid(),"client_id":client,"application_id":action.id,"client_type":b["clientType"],"status":"ACTIVE","version":0,"environment_id":env["id"],"policy_version":0,"allowed_origins":b["allowedOrigins"].to_string(),"redirects":b["redirectAllowlist"].to_string()});
+            writes.push(self.a.s.statement(
+                "INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+                 VALUES (?,?,?,?,?,?,?)",
+                ["id", "client_id", "application_id", "client_type", "redirects", "environment_id", "allowed_origins"]
+                    .map(|field| row[field].clone()).to_vec(),
+            )?);
         } else {
             ensure(
                 b["expectedVersion"] == row["version"]
@@ -204,14 +201,10 @@ impl Service<'_> {
             row["version"] = (number(&row, "version") + 1).into();
             row["policy_version"] = (number(&row, "policy_version") + 1).into();
             writes.push(self.a.s.statement(
-                "UPDATE auth_client SET status=?,redirects=?,version=version+1 WHERE client_id=?",
-                vec![
-                    row["status"].clone(),
-                    row["redirects"].clone(),
-                    row["client_id"].clone(),
-                ],
+                "UPDATE auth_client SET status=?,redirects=?,allowed_origins=?,version=version+1,
+                 policy_version=policy_version+1 WHERE client_id=?",
+                ["status", "redirects", "allowed_origins", "client_id"].map(|field| row[field].clone()).to_vec(),
             )?);
-            writes.push(self.a.s.statement("UPDATE auth_client_policy SET allowed_origins=?,version=version+1,updated_at=? WHERE client_id=?",vec![row["allowed_origins"].clone(),n.into(),row["client_id"].clone()])?);
         }
         Ok(Change::new(client_view(&row)?, writes))
     }

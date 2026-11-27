@@ -66,7 +66,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       token: string | null = access,
     ) {
       const response = await p.fetch(
-        new Request(origin + '/api/v2/platform' + path, {
+        new Request(origin + '/api/v1/platform' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -145,7 +145,6 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       environmentId: 'unified-local',
       allowedOrigins: ['http://127.0.0.1:4208'],
       redirectAllowlist: ['http://127.0.0.1:4208/account/callback'],
-      product: 'WORK',
     }
     assert.equal(
       (await call('/applications/' + app.applicationId + '/clients', clientBody)).status,
@@ -170,10 +169,10 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal(
       (
         await db
-          .prepare("SELECT policy_profile FROM auth_client_policy WHERE client_id='managed-client'")
+          .prepare("SELECT environment_id FROM auth_client WHERE client_id='managed-client'")
           .first()
-      ).policy_profile,
-      'unified-account-v2',
+      ).environment_id,
+      'unified-local',
     )
     assert.equal((await call('/clients/managed-client')).status, 403)
     await grant('CLIENT_READ')
@@ -228,7 +227,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal(
       (
         await db
-          .prepare("SELECT count(*) n FROM auth_client_policy WHERE client_id='failed-client'")
+          .prepare("SELECT count(*) n FROM auth_client WHERE client_id='failed-client'")
           .first()
       ).n,
       0,
@@ -241,7 +240,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     assert.equal((await db.prepare('SELECT count(*) n FROM auth_platform_permission').first()).n, 0)
     const initialized = await bootstrapPlatform(db, 'admin')
     const meResponse = await p.fetch(
-      new Request(origin + '/api/v2/users/me', { headers: { Authorization: 'Bearer ' + access } }),
+      new Request(origin + '/api/v1/users/me', { headers: { Authorization: 'Bearer ' + access } }),
     )
     assert.equal(meResponse.status, 200)
     const me = await meResponse.json()
@@ -369,7 +368,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
       .first()
     assert.equal(JSON.parse(audit.change_summary).targetId, 'target')
     assert.equal(JSON.parse(audit.change_summary).reason, changeEmail.reason)
-    const deniedEmail = async (body: unknown, path = '/api/v2/users/me/reauthentications') => {
+    const deniedEmail = async (body: unknown, path = '/api/v1/users/me/reauthentications') => {
       const r = await p.fetch(
         new Request(origin + path, {
           method: 'POST',
@@ -393,7 +392,7 @@ test('V2U-04 V2 platform applications and clients require explicit current autho
     await deniedEmail({ ...base, operation: 'UNLINK_METHOD', target: { bindingId: 'occupied' } })
     await deniedEmail(
       { ...base, purpose: 'BIND', method: 'EMAIL_CODE' },
-      '/api/v2/auth/transactions',
+      '/api/v1/auth/transactions',
     )
     // V2C-01: an authenticated operator cannot resurrect retired service administration.
     const beforeRetired = (await db.prepare('SELECT count(*) n FROM auth_audit_event').first()).n

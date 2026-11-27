@@ -101,7 +101,7 @@ async fn begin_unprotected(a: &Auth, b: &Value) -> Result<(Value, Value)> {
         400,
         "INVALID_REQUEST",
     )?;
-    a.rate_ip("v2-begin", 60).await?;
+    a.rate_ip("auth:begin", 60).await?;
     let n = now();
     let t = a.s.batch_returning(
         vec![client_guard(a,&c)?,a.s.statement("INSERT INTO auth_security_sequence(kind,created_at) VALUES ('TRANSACTION',?)",vec![n.into()])?],
@@ -161,26 +161,26 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
     let subject = format!("{channel}:{target}");
     let window = delivery_limit("sendQuotaWindowSeconds") * 1000;
     a.rate_batch(&[
-        ("v2-delivery-ip", &a.client_ip, 60, 60_000),
+        ("delivery:ip", &a.client_ip, 60, 60_000),
         (
-            "v2-delivery-ip-hour",
+            "delivery:ip-hour",
             &a.client_ip,
             delivery_limit("sendQuotaPerIp"),
             window,
         ),
         (
-            "v2-delivery-target",
+            "delivery:target",
             &subject,
             delivery_limit("sendQuotaPerTarget"),
             window,
         ),
         (
-            "v2-delivery-client",
+            "delivery:client",
             &text(c, "client_id"),
             delivery_limit("sendQuotaPerClient"),
             window,
         ),
-        ("v2-delivery-resend", &subject, 1, 60_000),
+        ("delivery:resend", &subject, 1, 60_000),
     ])
     .await?;
     let n = now();
@@ -243,7 +243,7 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
 }
 pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
     shape("VerifyChallengeRequest", b)?;
-    a.rate_ip("v2-verify", 120).await?;
+    a.rate_ip("auth:verify", 120).await?;
     let n = now();
     let q =
         a.s.one(
@@ -398,8 +398,8 @@ async fn identify_once(
         };
         crate::auth::test_admission::Admission::load(a)?.target(&address)?;
         a.rate_batch(&[
-            ("v2-password", &a.client_ip, 30, 60_000),
-            ("v2-password-target", &address, 10, 300_000),
+            ("auth:password", &a.client_ip, 30, 60_000),
+            ("auth:password-target", &address, 10, 300_000),
         ])
         .await?;
         let query = if is_phone {

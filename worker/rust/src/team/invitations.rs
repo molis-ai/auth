@@ -103,7 +103,7 @@ impl Service<'_> {
     ) -> Result<Change> {
         let n = now();
         if action.op == "invitation.create" {
-            self.a.rate_ip("v2-tenant-invite", 60).await?;
+            self.a.rate_ip("tenant:invite", 60).await?;
             let target = &b["target"];
             let kind = text(target, "kind");
             let value = if kind == "EMAIL" {

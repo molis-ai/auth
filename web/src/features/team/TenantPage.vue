@@ -14,6 +14,7 @@ type Tenant = {
   status: string;
   myRole: string;
   membershipId: string;
+  membershipVersion: number;
   version: number;
 };
 type Member = {
@@ -141,16 +142,6 @@ async function nextMemberPage() {
     });
   }
 }
-async function ownMembership(tenant: Tenant) {
-  const match = () => memberDirectory.items.value.find(member => member.membershipId === tenant.membershipId);
-  let own = match();
-  // The API supplies membership versions only in the member directory.
-  // Read further pages only when a member explicitly requests to leave.
-  while (!own && !disposed && selectedTenant.value?.tenantId === tenant.tenantId
-      && await memberDirectory.more()) own = match();
-  return own;
-}
-
 async function lookupTenant(id: string) {
   const loaded = directory.items.value.find(tenant => tenant.tenantId === id);
   if (loaded) return loaded;
@@ -254,7 +245,7 @@ onBeforeUnmount(() => {
             <button
               v-for="tenant in tenants"
               :key="tenant.tenantId"
-              class="v2-row collection-item tenant-choice"
+              class="console-row collection-item tenant-choice"
               :class="{ selected: selectedTenant?.tenantId === tenant.tenantId }"
               :aria-current="selectedTenant?.tenantId === tenant.tenantId ? 'true' : undefined"
               :disabled="busy"
@@ -301,7 +292,6 @@ onBeforeUnmount(() => {
             :submit-write="submitWrite"
             :discard="discard"
             :reload="reloadMembers"
-            :own-membership="ownMembership"
             :leave="refreshDirectory"
             @expired="emit('expired', $event)"
             @order-access-denied="read('directory', refreshDirectory)"

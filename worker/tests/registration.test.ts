@@ -60,7 +60,7 @@ test('AUTH-04 email/password and phone: real verification, isolated mock deliver
       barrier?: string,
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),

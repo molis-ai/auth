@@ -58,13 +58,13 @@ fn view(a: &Auth, t: &Value, suffix: &str) -> Value {
     json!({"handoffId":t["id"],"redirectUrl":format!("{}/account/handoff/{suffix}",a.origin),"expiresAt":iso(&t["expires_at"])})
 }
 pub(crate) fn matches(path: &str) -> bool {
-    path.starts_with("/api/v2/auth/management-handoffs")
+    path.starts_with("/api/v1/auth/management-handoffs")
         || path == "/account/handoff/start"
         || path == "/account/handoff/finish"
 }
 
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
-    if path.starts_with("/api/v2/") {
+    if path.starts_with("/api/v1/") {
         ensure(
             method == Method::Post && a.request.url()?.query().is_none(),
             400,
@@ -74,7 +74,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let (s, c) = sessions::active(a).await?;
         a.rate("management-handoff", &text(&s, "id"), 20, 60_000)
             .await?;
-        let result = if path == "/api/v2/auth/management-handoffs" {
+        let result = if path == "/api/v1/auth/management-handoffs" {
             shape("ManagementHandoffRequest", &b)?;
             ensure(
                 contains(&parsed(&c, "redirects")?, &b["redirectUri"]),
@@ -86,7 +86,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             view(a, &t, &format!("start?id={}", text(&t, "id")))
         } else {
             ensure(
-                path == "/api/v2/auth/management-handoffs/approve",
+                path == "/api/v1/auth/management-handoffs/approve",
                 404,
                 "NOT_FOUND",
             )?;

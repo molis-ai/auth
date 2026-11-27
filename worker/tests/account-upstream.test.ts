@@ -165,7 +165,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
       .run()
   await initializeLocalRuntime({ env: { DB: db } })
   await run("UPDATE auth_environment SET kind='TEST',auth_origin=?", origin)
-  await run('UPDATE auth_client_policy SET allowed_origins=?', JSON.stringify([origin]))
+  await run('UPDATE auth_client SET allowed_origins=?', JSON.stringify([origin]))
   await run('UPDATE auth_client SET redirects=?', JSON.stringify([origin + '/account/callback']))
 
   const direct = await mf.getWorker('auth')

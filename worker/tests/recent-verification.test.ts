@@ -37,7 +37,7 @@ test('AUTH-SESSION active session authorization and operation proof isolation', 
       method = body === undefined ? 'GET' : 'POST',
     ) {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method,
           headers: {
             'Content-Type': 'application/json',

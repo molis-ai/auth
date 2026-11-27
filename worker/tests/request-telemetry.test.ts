@@ -34,9 +34,9 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
   try {
     await initializeLocalRuntime(proxy)
     await proxy.env.DB.prepare('INSERT INTO auth_rate_bucket VALUES (?, 120, ?)')
-      .bind(hash('v2-token:' + ip), Date.now() + 60_000)
+      .bind(hash('auth:token:' + ip), Date.now() + 60_000)
       .run()
-    const health = await proxy.fetch(new Request(origin + '/api/v2/health'))
+    const health = await proxy.fetch(new Request(origin + '/api/v1/health'))
     const asset = await proxy.fetch(new Request(origin + '/auth-ui/assets/logo-Abcd_123.js'))
     assert.equal(health.status, 200)
     assert.equal(asset.status, 200)
@@ -96,10 +96,10 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
 
     await check('/login', 200, '/', 'none')
     await check('/auth-ui/assets/missing-Abcd_123.js', 404, '/auth-ui/{asset}', 'http_error')
-    await check('/api/v2/health', 501, '/api/v2/health', 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED', {
+    await check('/api/v1/health', 501, '/api/v1/health', 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED', {
       method: 'POST',
     })
-    await check('/api/v2/auth/token', 429, '/api/v2/auth/token', 'RATE_LIMITED', {
+    await check('/api/v1/auth/token', 429, '/api/v1/auth/token', 'RATE_LIMITED', {
       method: 'POST',
       body: { grantType: 'refresh_token', clientId: 'molis-auth-web-local', refreshToken: token },
     })
@@ -112,9 +112,9 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
       UNIFIED_ACCOUNT_CONFIG: 'invalid config ' + query,
     })
     await check(
-      '/api/v2/auth/transactions/' + transactionId + '?query=' + query,
+      '/api/v1/auth/transactions/' + transactionId + '?query=' + query,
       503,
-      '/api/v2/auth/transactions/{transactionId}',
+      '/api/v1/auth/transactions/{transactionId}',
       'UNIFIED_CONFIGURATION_INVALID',
       { env: 'unknown' },
     )

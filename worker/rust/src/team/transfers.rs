@@ -13,18 +13,23 @@ pub(super) fn view(r: &Value) -> Value {
 pub fn list() -> Read {
     Read::page(
         format!(
-            "SELECT x.* FROM auth_tenant_membership f
+            "SELECT x.*,t.name tenant_name,f.id my_membership_id FROM auth_tenant_membership f
                  JOIN auth_ownership_transfer x ON x.from_membership_id=f.id
                  JOIN auth_tenant t ON t.id=x.tenant_id
                  WHERE t.status='ACTIVE' AND f.user_id={ACTOR} AND f.status='ACTIVE'
              UNION
-             SELECT x.* FROM auth_tenant_membership m
+             SELECT x.*,t.name tenant_name,m.id my_membership_id FROM auth_tenant_membership m
                  JOIN auth_ownership_transfer x ON x.to_membership_id=m.id
                  JOIN auth_tenant t ON t.id=x.tenant_id
                  WHERE t.status='ACTIVE' AND m.user_id={ACTOR} AND m.status='ACTIVE'"
         ),
         vec![],
-        |row| Ok(view(row)),
+        |row| {
+            let mut transfer = view(row);
+            transfer["tenantName"] = row["tenant_name"].clone();
+            transfer["myMembershipId"] = row["my_membership_id"].clone();
+            Ok(transfer)
+        },
     )
 }
 impl Service<'_> {

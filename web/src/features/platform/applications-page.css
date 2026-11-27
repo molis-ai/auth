@@ -5,7 +5,7 @@
   padding:22px 12px 24px; background:#f9f9fb; border-right:1px solid var(--line);
 }
 .apps-rail-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 10px; }
-.v2-console .applications-rail h1 { margin:0; font-size:16px; font-weight:650; color:var(--ink); }
+.auth-console .applications-rail h1 { margin:0; font-size:16px; font-weight:650; color:var(--ink); }
 .apps-rail-count {
   display:inline-flex; align-items:center; justify-content:center; height:23px; padding:0 9px; border-radius:999px;
   background:#efeff2; border:1px solid #e2e2e7; color:var(--muted);
@@ -24,18 +24,18 @@
 }
 .applications-page .app-search:focus,
 .applications-page .app-field :is(input,select,textarea):focus { outline:2px solid rgba(80,104,183,.25); outline-offset:0; border-color:var(--accent); }
-.v2-console .applications-rail button.app-create-trigger {
+.auth-console .applications-rail button.app-create-trigger {
   width:100%; height:34px; min-height:34px; padding:0 12px; border:1px dashed #c8c8d4; border-radius:8px;
   background:var(--surface); color:var(--ink); font-size:12.5px; font-weight:550;
 }
-.v2-console .applications-rail button.app-create-trigger:enabled:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.auth-console .applications-rail button.app-create-trigger:enabled:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
 .apps-rail-list { display:grid; gap:4px; }
-.v2-console .applications-rail button.app-rail-item {
+.auth-console .applications-rail button.app-rail-item {
   display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:44px; padding:8px 10px;
   border:1px solid transparent; border-radius:10px; background:transparent; text-align:left;
 }
-.v2-console .applications-rail button.app-rail-item:enabled:hover { background:#efeff4; }
-.v2-console .applications-rail button.app-rail-item[aria-current] {
+.auth-console .applications-rail button.app-rail-item:enabled:hover { background:#efeff4; }
+.auth-console .applications-rail button.app-rail-item[aria-current] {
   background:var(--surface); border-color:var(--line); box-shadow:0 1px 2px rgba(25,25,27,.04);
 }
 .app-avatar-sm,.app-avatar-lg {
@@ -81,15 +81,15 @@
 .app-name-field { flex:1 1 200px; }
 .app-status-field { flex:0 1 160px; }
 
-.v2-console .applications-page button.app-button {
+.auth-console .applications-page button.app-button {
   display:inline-flex; align-items:center; justify-content:center; white-space:nowrap;
   height:36px; min-height:36px; padding:0 14px; border:1px solid #d5d5db; border-radius:8px;
   background:var(--surface); color:var(--ink); font-size:13px; font-weight:500;
 }
-.v2-console .applications-page button.app-button:enabled:hover { background:#fafafb; border-color:#c2c2cb; }
-.v2-console .applications-page button.app-button.is-primary { color:#fff; background:var(--primary); border-color:var(--primary); }
-.v2-console .applications-page button.app-button.is-primary:enabled:hover { background:#343439; border-color:#343439; }
-.v2-console .applications-page button.app-button.is-small { height:30px; min-height:30px; padding:0 11px; border-radius:7px; font-size:12px; }
+.auth-console .applications-page button.app-button:enabled:hover { background:#fafafb; border-color:#c2c2cb; }
+.auth-console .applications-page button.app-button.is-primary { color:#fff; background:var(--primary); border-color:var(--primary); }
+.auth-console .applications-page button.app-button.is-primary:enabled:hover { background:#343439; border-color:#343439; }
+.auth-console .applications-page button.app-button.is-small { height:30px; min-height:30px; padding:0 11px; border-radius:7px; font-size:12px; }
 
 .app-operation-dialog {
   width:min(465px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0;
@@ -100,11 +100,11 @@
 .app-operation-dialog form { margin:0; }
 .app-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:18px 22px 14px; border-bottom:1px solid var(--line); }
 .app-dialog-head h3 { margin:0; font-size:16px; font-weight:650; }
-.v2-console .applications-page button.app-dialog-close { width:30px; min-height:30px; padding:0; border:0; background:transparent; color:var(--muted); font-size:18px; }
-.v2-console .applications-page button.app-dialog-close:enabled:hover { background:#f2f2f5; color:var(--ink); }
+.auth-console .applications-page button.app-dialog-close { width:30px; min-height:30px; padding:0; border:0; background:transparent; color:var(--muted); font-size:18px; }
+.auth-console .applications-page button.app-dialog-close:enabled:hover { background:#f2f2f5; color:var(--ink); }
 .app-dialog-body { display:grid; gap:14px; padding:18px 22px; }
 .app-dialog-error { margin:0; color:#a62b33; font-size:13px; overflow-wrap:anywhere; }
-.v2-console .applications-page .app-dialog-foot {
+.auth-console .applications-page .app-dialog-foot {
   display:flex; justify-content:flex-end; gap:10px; margin:0; padding:14px 22px 18px;
   border-top:1px solid var(--line); background:#fafafb;
 }
@@ -118,7 +118,7 @@
 @media(max-width:640px) {
  .app-settings-card { padding:16px; }
  .applications-page .app-search,.applications-page .app-field :is(input,select,textarea) { min-height:44px; font-size:16px; }
- .v2-console .applications-page button.app-button,.v2-console .applications-page button.app-button.is-small,
- .v2-console .applications-page button.app-dialog-close,.v2-console .applications-rail button.app-create-trigger { min-height:44px; }
- .v2-console .applications-page button.app-dialog-close { width:44px; }
+ .auth-console .applications-page button.app-button,.auth-console .applications-page button.app-button.is-small,
+ .auth-console .applications-page button.app-dialog-close,.auth-console .applications-rail button.app-create-trigger { min-height:44px; }
+ .auth-console .applications-page button.app-dialog-close { width:44px; }
 }

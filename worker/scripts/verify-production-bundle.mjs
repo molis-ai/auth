@@ -103,7 +103,7 @@ try {
     'Production WASM must export a fetch function',
   )
   assert(!production.includes(mockPage), 'Production WASM includes the mock provider page')
-  assert(!production.includes('/api/v2/auth/mock/'), 'Production WASM includes the mock API path')
+  assert(!production.includes('/api/v1/auth/mock/'), 'Production WASM includes the mock API path')
   for (const statement of mockDeliveryStatements)
     assert(!production.includes(statement), `Production WASM includes ${statement}`)
   assert(!production.includes(contract), 'Production WASM embeds the entire OpenAPI document')

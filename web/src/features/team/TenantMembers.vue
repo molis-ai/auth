@@ -4,7 +4,7 @@ import type { AccountClient } from '../../shared/api/account-client.ts';
 import { accountErrorMessage } from '../../shared/api/errors.ts';
 import type { WriteOptions } from '../../shared/api/idempotent-submit.ts';
 type Member = { displayName: string; email: string | null; membershipId: string; userId: string; role: string; status: string; version: number };
-type Tenant = { tenantId: string; name: string; status: string; myRole: string; membershipId: string; version: number };
+type Tenant = { tenantId: string; name: string; status: string; myRole: string; membershipId: string; membershipVersion: number; version: number };
 const props = defineProps<{
   client: AccountClient;
   viewerId: string;
@@ -19,7 +19,6 @@ const props = defineProps<{
   canInviteByPhone: boolean;
   refreshPending: boolean;
   reload: (tenant: Tenant) => Promise<void>;
-  ownMembership: (tenant: Tenant) => Promise<Member | undefined>;
   leave: () => Promise<void>;
   discard: (action: string) => void;
   submitWrite: <T>(path: string, body: unknown, options: WriteOptions<T>) => Promise<void>;
@@ -121,10 +120,8 @@ async function submit() {
       path = base + '/ownership-transfers';
       body = { targetMembershipId: member.membershipId, expectedVersion: tenant.version };
     } else if (kind === 'leave') {
-      const mine = await props.ownMembership(tenant);
-      if (!mine) throw Error('请刷新成员列表后重试');
       path = base + '/leave';
-      body = { expectedVersion: mine.version };
+      body = { expectedVersion: tenant.membershipVersion };
     } else {
       if (!member) return;
       path = base + '/members/' + encodeURIComponent(member.membershipId) + (kind === 'role' ? '/role' : '/remove');

@@ -151,7 +151,7 @@ test("AUTH-01: OpenAPI operations have resolved schemas, authority and complete 
     string,
     Record<string, Record<string, unknown>>,
   ][]) {
-    assert.ok(path.startsWith("/api/v2/") || path.startsWith("/api/account/"));
+    assert.ok(path.startsWith("/api/v1/") || path.startsWith("/api/account/"));
     for (const operation of Object.values(methods)) {
       const operationId = String(operation.operationId);
       assert.equal(ids.has(operationId), false, `duplicate ${operationId}`);

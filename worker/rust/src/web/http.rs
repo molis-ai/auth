@@ -24,9 +24,9 @@ pub(crate) fn log_route(path: &str) -> &'static str {
         return mount.log_route;
     }
     match path {
-        "/api/v2/health" => "/api/v2/health",
-        "/api/v2/readiness" => "/api/v2/readiness",
-        "/api/v2/auth/sync-read-proof" => "/api/v2/auth/sync-read-proof",
+        "/api/v1/health" => "/api/v1/health",
+        "/api/v1/readiness" => "/api/v1/readiness",
+        "/api/v1/auth/sync-read-proof" => "/api/v1/auth/sync-read-proof",
         "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
         "/account/handoff/start" => "/account/handoff/start",
         "/account/handoff/finish" => "/account/handoff/finish",
@@ -58,7 +58,7 @@ pub(crate) fn render_error(
 ) -> worker::Result<Response> {
     if let Some((_, seconds)) = rate_limit.filter(|(request, _)| {
         let path = request.path();
-        path.starts_with("/api/v2/") || path.starts_with("/api/account/")
+        path.starts_with("/api/v1/") || path.starts_with("/api/account/")
     }) {
         json_response(
             json!({"error":{"code":error.code,"retryAfterSeconds":seconds},"requestId":id}),

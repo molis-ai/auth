@@ -100,7 +100,7 @@ pub(super) async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<R
             })
             .collect::<String>();
         let html = format!(
-            "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><title>Molis 提供方模拟授权</title><h1>{} 模拟授权</h1><p>仅用于隔离测试。此页面不连接真实提供方。</p><form method=\"post\" action=\"/api/v2/auth/mock/{p}/authorize\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf\" value=\"{}\"><label>测试账号<select name=\"accountId\">{options}</select></label><button name=\"outcome\" value=\"SUCCESS\">同意授权</button><button name=\"outcome\" value=\"CANCEL\">取消</button><button name=\"outcome\" value=\"FAIL\">模拟失败</button></form></html>",
+            "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><title>Molis 提供方模拟授权</title><h1>{} 模拟授权</h1><p>仅用于隔离测试。此页面不连接真实提供方。</p><form method=\"post\" action=\"/api/v1/auth/mock/{p}/authorize\"><input type=\"hidden\" name=\"state\" value=\"{}\"><input type=\"hidden\" name=\"csrf\" value=\"{}\"><label>测试账号<select name=\"accountId\">{options}</select></label><button name=\"outcome\" value=\"SUCCESS\">同意授权</button><button name=\"outcome\" value=\"CANCEL\">取消</button><button name=\"outcome\" value=\"FAIL\">模拟失败</button></form></html>",
             escape(provider(p)?),
             escape(&state),
             challenge(&format!("{browser}:{state}"))
@@ -133,7 +133,7 @@ pub(super) async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<R
         "INVALID_REQUEST",
     )?;
     let mut url =
-        Url::parse(&format!("{}/api/v2/auth/external/{p}/callback", a.origin)).map_err(|_| {
+        Url::parse(&format!("{}/api/v1/auth/external/{p}/callback", a.origin)).map_err(|_| {
             Failure {
                 status: 503,
                 code: "UPSTREAM_UNAVAILABLE",
@@ -170,7 +170,7 @@ pub(super) async fn authorize(a: &mut Auth, p: &str, method: Method) -> Result<R
             client_guard(a, &c)?,
             tx_guard(a, &t, now(), "PENDING")?,
             a.s.statement(
-                "INSERT INTO auth_one_use VALUES (?,'V2_PROVIDER_CODE',?,?,?)",
+                "INSERT INTO auth_one_use VALUES (?,'MOCK_PROVIDER_CODE',?,?,?)",
                 vec![
                     hash(&code).into(),
                     hash(&format!("{p}:{state}:{browser}")).into(),

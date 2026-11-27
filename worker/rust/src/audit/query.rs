@@ -135,18 +135,18 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
 }
 
 pub fn matches(path: &str) -> bool {
-    path == "/api/v2/platform/audit-events"
-        || path.starts_with("/api/v2/platform/audit-events/")
-        || (path.starts_with("/api/v2/tenants/") && path.ends_with("/audit-events"))
+    path == "/api/v1/platform/audit-events"
+        || path.starts_with("/api/v1/platform/audit-events/")
+        || (path.starts_with("/api/v1/tenants/") && path.ends_with("/audit-events"))
 }
 
 pub async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     let (op, tenant_id, access) = match (parts.as_slice(), method) {
-        (["api", "v2", "platform", "audit-events"], Method::Get) => {
+        (["api", "v1", "platform", "audit-events"], Method::Get) => {
             ("audit.platform-list", "", Access::Permission("AUDIT_READ"))
         }
-        (["api", "v2", "tenants", tenant, "audit-events"], Method::Get) => {
+        (["api", "v1", "tenants", tenant, "audit-events"], Method::Get) => {
             ("audit.tenant-list", *tenant, Access::Member(MANAGER_ROLES))
         }
         _ => {

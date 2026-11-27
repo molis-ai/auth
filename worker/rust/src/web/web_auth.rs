@@ -33,7 +33,7 @@ async fn call(
         .unwrap_or(0.0);
     ensure(expiry > now() as f64, 409, "TRANSACTION_EXPIRED")?;
     s.call(
-        &format!("/api/v2/auth/transactions/{}{suffix}", text(t, "id")),
+        &format!("/api/v1/auth/transactions/{}{suffix}", text(t, "id")),
         method,
         body,
         Some(&text(t, "proof")),
@@ -225,9 +225,9 @@ pub async fn route(
         let reply = s
             .call(
                 if reauth {
-                    "/api/v2/users/me/reauthentications"
+                    "/api/v1/users/me/reauthentications"
                 } else {
-                    "/api/v2/auth/transactions"
+                    "/api/v1/auth/transactions"
                 },
                 Method::Post,
                 Some(input),
@@ -256,7 +256,7 @@ pub async fn route(
         let proof = t["resetProof"].take();
         return s
             .call(
-                "/api/v2/auth/password-reset/complete",
+                "/api/v1/auth/password-reset/complete",
                 Method::Post,
                 Some(json!({"transactionId":id,"resetProof":proof,"newPassword":b["newPassword"]})),
                 Some(&text(&t, "proof")),
@@ -322,13 +322,13 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
         (
             "CHANGE_PASSWORD",
             "ProductPasswordChangeRequest",
-            "/api/v2/users/me/password/change".to_owned(),
+            "/api/v1/users/me/password/change".to_owned(),
         )
     } else if path == "/api/account/login-methods/bind" {
         (
             "BIND_METHOD",
             "ProductBindRequest",
-            "/api/v2/users/me/login-methods/bind".into(),
+            "/api/v1/users/me/login-methods/bind".into(),
         )
     } else {
         ensure(
@@ -348,7 +348,7 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
             } else {
                 "ProductUnlinkRequest"
             },
-            format!("/api/v2/users/me/login-methods/{}/{}", parts[3], parts[4]),
+            format!("/api/v1/users/me/login-methods/{}/{}", parts[3], parts[4]),
         )
     };
     shape(schema, b)?;
@@ -418,7 +418,7 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
 
 async fn accept_login(s: &mut WebSession<'_>, t: &Value, result: &Value) -> Result<Value> {
     ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
-    let tokens=s.call("/api/v2/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+    let tokens=s.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
     shape("TokenSet", &tokens)?;
     s.data["tokens"] = tokens;
     Ok(json!({"account":s.view().await?}))
@@ -441,7 +441,7 @@ async fn login_command(
         )?;
         let result = s
             .call(
-                "/api/v2/auth/login/code",
+                "/api/v1/auth/login/code",
                 Method::Post,
                 Some(b.clone()),
                 Some(&text(&t, "proof")),
@@ -471,9 +471,9 @@ async fn login_command(
     let result = s
         .call(
             if sending {
-                "/api/v2/auth/verification-codes"
+                "/api/v1/auth/verification-codes"
             } else {
-                "/api/v2/auth/login/password"
+                "/api/v1/auth/login/password"
             },
             Method::Post,
             Some(input),

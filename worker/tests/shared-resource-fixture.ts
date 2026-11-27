@@ -29,7 +29,7 @@ export function sharedResourceFixture(
     // Resolve tenant from the resource owner, never from a requested scope or role.
     try {
       const response = await authFetch(
-        new Request(authOrigin + '/api/v2/tenants/' + encodeURIComponent(resource.tenantId), {
+        new Request(authOrigin + '/api/v1/tenants/' + encodeURIComponent(resource.tenantId), {
           headers: { Authorization: authorization },
           redirect: 'manual',
         }),

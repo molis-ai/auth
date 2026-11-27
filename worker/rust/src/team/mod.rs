@@ -23,7 +23,7 @@ fn directory_member_view(m: &Value) -> Value {
     result
 }
 pub(crate) fn tenant_view(t: &Value) -> Value {
-    json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"myRole":t["role"],"membershipId":t["membership_id"],"version":t["version"]})
+    json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"myRole":t["role"],"membershipId":t["membership_id"],"membershipVersion":t["membership_version"],"version":t["version"]})
 }
 pub(crate) fn platform_view(t: &Value) -> Value {
     let mut result = json!({"tenantId":t["id"],"name":t["name"],"status":t["status"],"ownerUserId":t["owner_user_id"],"version":t["version"]});
@@ -311,6 +311,7 @@ impl Service<'_> {
                 result = if action.op == "tenant.self-create" {
                     result["role"] = "OWNER".into();
                     result["membership_id"] = member.into();
+                    result["membership_version"] = 0.into();
                     tenant_view(&result)
                 } else {
                     result["created_at"] = n.into();
@@ -359,6 +360,7 @@ impl Service<'_> {
                 )?];
                 t["role"] = ctx.member["role"].clone();
                 t["membership_id"] = ctx.member["id"].clone();
+                t["membership_version"] = ctx.member["version"].clone();
                 Ok(Change::new(
                     if action.op == "tenant.update" {
                         tenant_view(&t)
@@ -582,6 +584,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
                 let mut t = ctx.record.clone();
                 t["role"] = ctx.member["role"].clone();
                 t["membership_id"] = ctx.member["id"].clone();
+                t["membership_version"] = ctx.member["version"].clone();
                 Ok(tenant_view(&t))
             }),
         ),
@@ -598,7 +601,7 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
             Access::Session,
             None,
             Read::page(
-                format!("SELECT t.id,t.name,t.status,t.version,m.id membership_id,m.role
+                format!("SELECT t.id,t.name,t.status,t.version,m.id membership_id,m.version membership_version,m.role
                          FROM auth_tenant t
                          JOIN auth_tenant_membership m ON m.tenant_id=t.id
                          WHERE m.user_id={ACTOR} AND m.status='ACTIVE'"),
@@ -627,20 +630,16 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
         "transfer.list" => (Access::Session, None, transfers::list()),
         _ => unreachable!("only managed tenant reads reach this owner"),
     };
-    let mut result = protocol::read(a, action, access, lookup, Ok(plan)).await?;
-    if action.op == "tenant.list" {
-        result["personalScope"] = json!({"kind":"PERSONAL"});
-    }
-    Ok(result)
+    protocol::read(a, action, access, lookup, Ok(plan)).await
 }
 
 pub(crate) fn matches(path: &str) -> bool {
     [
-        "/api/v2/tenant-creation-policy",
-        "/api/v2/tenants",
-        "/api/v2/platform/tenants",
-        "/api/v2/invitations",
-        "/api/v2/ownership-transfers",
+        "/api/v1/tenant-creation-policy",
+        "/api/v1/tenants",
+        "/api/v1/platform/tenants",
+        "/api/v1/invitations",
+        "/api/v1/ownership-transfers",
     ]
     .iter()
     .any(|prefix| {

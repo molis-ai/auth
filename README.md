@@ -1,6 +1,6 @@
 # Molis Auth
 
-统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，以及 Vue 管理界面。中央 API 只使用 `/api/v2`；Auth 页面通过 `AccountClient` 调用同源 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
+统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，以及 Vue 管理界面。中央 API 只使用 `/api/v1`；Auth 页面通过 `AccountClient` 调用同源 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
 
 ## 当前模型
 

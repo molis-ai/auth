@@ -117,7 +117,7 @@ pub(crate) struct RequestLog<'a> {
 
 impl RequestLog<'_> {
     pub fn finish(&self, status: u16, error_code: Option<&'static str>) {
-        if matches!(self.route, "/api/v2/health" | "/auth-ui/{asset}")
+        if matches!(self.route, "/api/v1/health" | "/auth-ui/{asset}")
             && (200..400).contains(&status)
         {
             return;

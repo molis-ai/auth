@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 
-test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 entries reject without effects', async () => {
+test('V2U-01 V2U-07 V2C-01 current pages retain security headers; retired entries reject without effects', async () => {
   const origin = 'http://127.0.0.1:8787',
     p = await getRustProxy(
       { AUTH_ORIGIN: origin, MOLIS_LOCAL_GENERATION: 'fixture-health' },
@@ -18,16 +18,16 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
       },
     )
   try {
-    const health = await p.fetch(new Request(origin + '/api/v2/health'))
+    const health = await p.fetch(new Request(origin + '/api/v1/health'))
     assert.equal(health.status, 200)
     assert.equal(health.headers.get('Cache-Control'), 'no-store')
     assert.equal((await health.json()).data.status, 'UP')
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 503)
+    assert.equal((await p.fetch(new Request(origin + '/api/v1/readiness'))).status, 503)
     await initializeLocalRuntime(p)
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 200)
+    assert.equal((await p.fetch(new Request(origin + '/api/v1/readiness'))).status, 200)
     await p.env.DB.prepare('DROP INDEX ix_logout_receipt_proof_expiry').run()
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/readiness'))).status, 503)
-    assert.equal((await p.fetch(new Request(origin + '/api/v2/health'))).status, 200)
+    assert.equal((await p.fetch(new Request(origin + '/api/v1/readiness'))).status, 503)
+    assert.equal((await p.fetch(new Request(origin + '/api/v1/health'))).status, 200)
     for (const path of ['/', '/login', '/console']) {
       const r = await p.fetch(new Request(origin + path))
       assert.equal(r.status, 200)
@@ -45,14 +45,14 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
     )
     const before = await p.env.DB.prepare('SELECT count(*) n FROM auth_user').first()
     for (const path of [
-      '/api/v1/health',
-      '/api/v1/auth/transactions',
-      '/api/v1/users/me',
-      '/api/v1/spaces',
-      '/api/v1/platform/applications',
-      '/api/v1/authorization/check',
-      '/api/v1/authorization/allowed-actions',
-      '/api/v1/platform/services',
+      '/api/v2/health',
+      '/api/v2/auth/transactions',
+      '/api/v2/users/me',
+      '/api/v2/spaces',
+      '/api/v2/platform/applications',
+      '/api/v2/authorization/check',
+      '/api/v2/authorization/allowed-actions',
+      '/api/v2/platform/services',
       '/oauth2/token',
       '/oauth2/callback/apple',
       '/.well-known/openid-configuration',
@@ -186,7 +186,7 @@ test('the real Assets router preserves hashed asset responses and the Worker met
       ['/login', 200, 200, 'no-store', /text\/html/, null],
       ['/auth-ui/index.html', 404, 404, 'no-store', /application\/json/, null],
       ['/index.html', 404, 404, 'no-store', /application\/json/, null],
-      ['/api/v2/health', 200, 501, 'no-store', /application\/json/, null],
+      ['/api/v1/health', 200, 501, 'no-store', /application\/json/, null],
     ] as const) {
       const response = await proxy.fetch(new Request(origin + path, { method }))
       const label = `${method} ${path}`

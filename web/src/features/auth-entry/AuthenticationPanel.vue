@@ -420,7 +420,7 @@ if (
         : "EMAIL_CODE";
 </script>
 <template>
-  <form :class="entry ? 'entry-auth-form v2-form' : 'console-card v2-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit">
+  <form :class="entry ? 'entry-auth-form account-form' : 'console-card account-form'" :aria-busy="busy || (loginFlow && capabilitiesState === 'loading')" @submit.prevent="submit">
     <template v-if="entry">
       <div class="login-welcome"><p v-if="purpose === 'LOGIN'">{{ t('欢迎回来') }}</p><div v-else class="panel-heading"><h2>{{ t(purpose === 'EMAIL_SIGNUP' ? '邮箱注册' : '找回密码') }}</h2><p>{{ t(purpose === 'EMAIL_SIGNUP' ? '输入邮箱，验证后设置密码。' : '验证邮箱后，重新设置你的密码。') }}</p></div></div>
     </template>

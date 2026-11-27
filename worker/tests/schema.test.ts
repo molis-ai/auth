@@ -174,10 +174,9 @@ test('deployment preflight requires every migration record and the deployed sche
       INSERT INTO auth_environment(id,kind,auth_origin,delivery_mode,provider_mode,created_at,updated_at)
         VALUES ('deploy-environment','TEST','https://auth.example.test','LIVE','LIVE',0,0);
       INSERT INTO auth_application(id,name) VALUES ('deploy-app','Auth');
-      INSERT INTO auth_client(id,client_id,application_id,client_type,scopes,redirects)
-        VALUES ('deploy-web','deploy-web','deploy-app','WEB','["account","profile"]','["https://auth.example.test/account/callback"]');
-      INSERT INTO auth_client_policy(client_id,policy_profile,environment_id,allowed_origins,created_at,updated_at)
-        VALUES ('deploy-web','unified-account-v2','deploy-environment','["https://auth.example.test"]',0,0);
+      INSERT INTO auth_client(id,client_id,application_id,client_type,redirects,environment_id,allowed_origins)
+        VALUES ('deploy-web','deploy-web','deploy-app','WEB','["https://auth.example.test/account/callback"]',
+          'deploy-environment','["https://auth.example.test"]');
     `)
     const files = readdirSync(migrationDirectory).filter((name) => name.endsWith('.sql'))
     const apply = db.prepare('INSERT INTO d1_migrations(name) VALUES (?)')

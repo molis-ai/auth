@@ -73,7 +73,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
       fixture?: { trace: boolean; barrier?: string },
     ) => {
       const r = await p.fetch(
-        new Request(origin + '/api/v2' + path, {
+        new Request(origin + '/api/v1' + path, {
           method: body === undefined ? 'GET' : 'POST',
           headers: {
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -197,7 +197,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     assert.equal(claims.scope, 'molis-sync:read')
     assert.ok(Number(claims.exp) - Number(claims.iat) <= 30)
     // AC-AUTH-01/03: proof and JWKS endpoints use route templates and omit key and grant data.
-    for (const route of ['/api/v2/auth/sync-read-proof', '/.well-known/molis-sync-jwks.json']) {
+    for (const route of ['/api/v1/auth/sync-read-proof', '/.well-known/molis-sync-jwks.json']) {
       const log = await logs.waitFor(
         (event) => event.event === 'auth.http.request' && event.route === route,
       )
@@ -528,7 +528,7 @@ test('AUTH-03 independent sessions, bounded clocks, rotation, replay, revocation
     )
     const deniedCode = await code()
     const wrongOrigin = await p.fetch(
-      new Request(origin + '/api/v2/auth/token', {
+      new Request(origin + '/api/v1/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.test' },
         body: JSON.stringify(deniedCode),

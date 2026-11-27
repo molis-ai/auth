@@ -65,7 +65,7 @@ pub async fn begin(a: &Auth, b: &Value) -> Result<Value> {
             "FORBIDDEN",
         )?;
     }
-    a.rate_ip("v2-sensitive-start", 60).await?;
+    a.rate_ip("auth:sensitive-start", 60).await?;
     let us =
         a.s.one(
             "SELECT identity_version FROM auth_user WHERE id=?",
@@ -160,8 +160,8 @@ pub async fn identify(a: &Auth, t: &Value, c: &Value, op: &str, b: &Value) -> Re
     )?;
     shape("PasswordLoginRequest", b)?;
     let address = email(&b["email"])?;
-    a.rate_ip("v2-password", 30).await?;
-    a.rate("v2-password-target", &address, 10, 300000).await?;
+    a.rate_ip("auth:password", 30).await?;
+    a.rate("auth:password-target", &address, 10, 300000).await?;
     let candidate=a.s.one("SELECT l.password_hash FROM auth_local_credential l JOIN auth_user_email e ON e.user_id=l.user_id WHERE l.user_id=? AND e.canonical_email=? AND e.verified_at IS NOT NULL",vec![t["user_id"].clone(),address.clone().into()]).await?;
     let encoded = candidate["password_hash"]
         .as_str()

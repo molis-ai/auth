@@ -19,7 +19,7 @@ fn configuration() -> Failure {
 pub(crate) fn matches(path: &str) -> bool {
     matches!(
         path,
-        "/.well-known/molis-sync-jwks.json" | "/api/v2/auth/sync-read-proof"
+        "/.well-known/molis-sync-jwks.json" | "/api/v1/auth/sync-read-proof"
     )
 }
 

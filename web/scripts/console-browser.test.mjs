@@ -106,7 +106,7 @@ try {
     .bind(JSON.stringify([origin + "/account/callback"]))
     .run();
   await db
-    .prepare("UPDATE auth_client_policy SET allowed_origins=?")
+    .prepare("UPDATE auth_client SET allowed_origins=?")
     .bind(JSON.stringify([origin]))
     .run();
   browser = await ChromeHarness.start(profile);
@@ -187,7 +187,7 @@ try {
     await page.fill("[data-qa-input]", value);
   };
   const clickRow = async (marker, text) => {
-    const match = `Array.from(document.querySelectorAll('.v2-row')).find(r=>r.textContent.includes(${JSON.stringify(marker)}))`;
+    const match = `Array.from(document.querySelectorAll('.console-row')).find(r=>r.textContent.includes(${JSON.stringify(marker)}))`;
     await page.wait(
       `Array.from((${match})?.querySelectorAll('button')??[]).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled&&b.getClientRects().length)`,
     );
@@ -550,8 +550,8 @@ try {
     await db.prepare("UPDATE auth_rate_bucket SET expires_at=0").run();
     if(await page.evaluate("Boolean(document.querySelector('.auth-entry'))")) await click('手机验证');
     else {
-      await page.wait("Boolean(document.querySelector('.v2-form select'))");
-      await page.evaluate("{const s=document.querySelector('.v2-form select');s.value='PHONE_OTP';s.dispatchEvent(new Event('change',{bubbles:true}));}");
+      await page.wait("Boolean(document.querySelector('.account-form select'))");
+      await page.evaluate("{const s=document.querySelector('.account-form select');s.value='PHONE_OTP';s.dispatchEvent(new Event('change',{bubbles:true}));}");
     }
     await page.fill("input[type=tel]", "13800000999");
     await click("继续");
@@ -669,42 +669,42 @@ try {
   }
   console.log("PASS browser application creation, rename and status changes");
   await page.wait("document.querySelector('.app-head-meta')?.textContent.includes('0 个已登记客户端')");
-  assert.equal(await page.evaluate("Boolean(document.querySelector('.v2-client-create[open]'))"), false);
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.client-create-dialog[open]'))"), false);
   await click("＋ 登记登录客户端");
-  await page.wait("Boolean(document.querySelector('.v2-client-create[open]'))");
+  await page.wait("Boolean(document.querySelector('.client-create-dialog[open]'))");
   assert.ok([...scripts].some(path => path.includes("/PlatformClients-")));
   assert.ok([...scripts].every(path => !path.includes("/PlatformUsers-")));
   await page.viewport(390, 900);
-  assert.equal(await page.evaluate("document.querySelector('.v2-client-create[open]').getBoundingClientRect().width <= innerWidth - 32"), true);
+  assert.equal(await page.evaluate("document.querySelector('.client-create-dialog[open]').getBoundingClientRect().width <= innerWidth - 32"), true);
   await page.screenshot(join(evidence, "platform-client-create-390.png"));
   await page.viewport(1440, 900);
-  await fillLabel("客户端 ID", "qa-v2-client", ".v2-client-create[open]");
-  await fillLabel("环境 ID", "unified-local", ".v2-client-create[open]");
-  await fillLabel("允许来源", "http://127.0.0.1:43999", ".v2-client-create[open]");
+  await fillLabel("客户端 ID", "qa-v2-client", ".client-create-dialog[open]");
+  await fillLabel("环境 ID", "unified-local", ".client-create-dialog[open]");
+  await fillLabel("允许来源", "http://127.0.0.1:43999", ".client-create-dialog[open]");
   await fillLabel(
     "精确回调地址",
     "http://127.0.0.1:43999/account/callback",
-    ".v2-client-create[open]",
+    ".client-create-dialog[open]",
   );
   await click("登记");
-  await page.wait("!document.querySelector('.v2-client-create[open]') && document.querySelector('.app-rail-item[aria-current] .app-rail-sub')?.textContent.trim() === '1 个客户端'");
+  await page.wait("!document.querySelector('.client-create-dialog[open]') && document.querySelector('.app-rail-item[aria-current] .app-rail-sub')?.textContent.trim() === '1 个客户端'");
   await page.wait("document.querySelector('.app-head-meta')?.textContent.includes('1 个已登记客户端')");
   await click("配置白名单");
   await fillLabel(
     "允许来源（每行一个）",
     "http://127.0.0.1:44999",
-    ".v2-client-edit[open]",
+    ".client-edit-dialog[open]",
   );
   await fillLabel(
     "精确回调地址（每行一个）",
     "http://127.0.0.1:44999/account/callback",
-    ".v2-client-edit[open]",
+    ".client-edit-dialog[open]",
   );
   await click("保存客户端");
-  await page.wait("!document.querySelector('.v2-client-edit[open]') && document.querySelector('.pc-item')?.textContent.includes('44999')");
+  await page.wait("!document.querySelector('.client-edit-dialog[open]') && document.querySelector('.pc-item')?.textContent.includes('44999')");
   const registered = await db
     .prepare(
-      "SELECT c.redirects,p.allowed_origins FROM auth_client c JOIN auth_client_policy p ON p.client_id=c.client_id WHERE c.client_id='qa-v2-client'",
+      "SELECT c.redirects,c.allowed_origins FROM auth_client c WHERE c.client_id='qa-v2-client'",
     )
     .first();
   assert.deepEqual(JSON.parse(registered.redirects), [
@@ -715,13 +715,13 @@ try {
   ]);
   for (const status of ["DISABLED", "ACTIVE"]) {
     await click("配置白名单");
-    await page.wait("Boolean(document.querySelector('.v2-client-edit[open]'))");
+    await page.wait("Boolean(document.querySelector('.client-edit-dialog[open]'))");
     await page.evaluate(
       `{const select=document.querySelector('select[aria-label="客户端状态"]');select.value=${JSON.stringify(status)};select.dispatchEvent(new Event('change',{bubbles:true}));}`,
     );
     await click("保存客户端");
     await page.wait(
-      `!document.querySelector('.v2-client-edit[open]') && document.querySelector('.pc-item .pc-pill:last-child')?.textContent.trim() === ${JSON.stringify(status)}`,
+      `!document.querySelector('.client-edit-dialog[open]') && document.querySelector('.pc-item .pc-pill:last-child')?.textContent.trim() === ${JSON.stringify(status)}`,
     );
     assert.equal(
       (

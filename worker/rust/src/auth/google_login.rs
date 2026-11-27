@@ -62,7 +62,7 @@ impl Google {
         Ok(Self {
             id,
             secret,
-            redirect: format!("{}/api/v2/auth/external/google/callback", a.origin),
+            redirect: format!("{}/api/v1/auth/external/google/callback", a.origin),
         })
     }
     pub(crate) fn authorize_url(&self, state: &str, verifier: &str, nonce: &str) -> Result<Url> {
