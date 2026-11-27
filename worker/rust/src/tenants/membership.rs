@@ -1,4 +1,4 @@
-//! AUTH-10 membership transitions compose with the billing release plan in one batch.
+//! AUTH-10 membership transitions commit atomically with transfer cancellation and revision bumps.
 use crate::{
     auth::management_access as protocol,
     auth::management_access::{Action, Context, Service, expected},
@@ -40,14 +40,20 @@ pub(crate) fn prepare_exit(
     .into();
     ended["version"] = (number(m, "version") + 1).into();
     let n = now();
-    let mut writes=vec![
-        s.a.s.statement("UPDATE auth_tenant_membership SET status=?,ended_at=?,version=version+1 WHERE id=?",vec![ended["status"].clone(),n.into(),m["id"].clone()])?,
-        s.a.s.statement("UPDATE auth_ownership_transfer SET status='CANCELLED',resolved_at=?,version=version+1 WHERE tenant_id=? AND status='PENDING' AND (from_membership_id=? OR to_membership_id=?)",vec![n.into(),m["tenant_id"].clone(),m["id"].clone(),m["id"].clone()])?,
-        s.a.s.statement("UPDATE auth_managed_tenant SET entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",vec![n.into(),m["tenant_id"].clone()])?
+    let writes = vec![
+        s.a.s.statement(
+            "UPDATE auth_tenant_membership SET status=?,ended_at=?,version=version+1 WHERE id=?",
+            vec![ended["status"].clone(), n.into(), m["id"].clone()],
+        )?,
+        s.a.s.statement(
+            "UPDATE auth_ownership_transfer SET status='CANCELLED',resolved_at=?,version=version+1 WHERE tenant_id=? AND status='PENDING' AND (from_membership_id=? OR to_membership_id=?)",
+            vec![n.into(), m["tenant_id"].clone(), m["id"].clone(), m["id"].clone()],
+        )?,
+        s.a.s.statement(
+            "UPDATE auth_managed_tenant SET entitlement_revision=entitlement_revision+1,updated_at=? WHERE space_id=?",
+            vec![n.into(), m["tenant_id"].clone()],
+        )?,
     ];
-    // The billing owner selects and releases the live assignments at commit time,
-    // including any assignment committed after request-time membership reads.
-    writes.extend(s.release_member_seats(m, action.op == "member.leave", n)?);
     Ok(ExitPlan {
         membership: member_view(&ended),
         guards: vec![

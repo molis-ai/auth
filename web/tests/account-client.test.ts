@@ -266,7 +266,7 @@ test("tenant member reads are not blocked by slow invitation and transfer reads"
 test("new console collections retry only marked conflicts on their first pages", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const resources = [
-    "/tenants/t-1/members", "/tenants/t-1/invitations", "/subscriptions", "/platform/applications",
+    "/tenants/t-1/members", "/tenants/t-1/invitations", "/platform/applications",
     "/platform/applications/app-1/clients", "/platform/users", "/platform/users/user-1/permissions",
     "/platform/tenants/t-1/members", "/platform/tenants", "/platform/audit-events",
   ];

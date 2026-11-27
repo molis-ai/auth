@@ -262,12 +262,6 @@ test("AUTH-01: terminal states cannot resurrect; lifecycle and entitlement polic
     false,
   );
   assert.equal(policy.roleRules.transferAccepted.previousOwnerRole, "MEMBER");
-  assert.equal(
-    policy.roleRules.transferAccepted.existingAssignments,
-    "PRESERVE",
-  );
-  assert.equal(policy.entitlementRules.adminGrantsPaidFeatures, false);
-  assert.equal(policy.entitlementRules.sharedReadRequiresPaidFeature, false);
   assert.equal(policy.identityRules.automaticEmailMerge, false);
   assert.equal(policy.deliveryRules.mockProductionAllowed, false);
 });

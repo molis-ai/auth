@@ -279,7 +279,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           ).n,
           1,
         )
-        assert.equal((await db.prepare('SELECT count(*) n FROM billing_subscription').first()).n, 0)
         assert.equal(
           (await call('/platform/tenants', { ...body, name: 'different' }, platform, key)).error
             .code,
@@ -768,37 +767,9 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
       },
     )
     await suite.test(
-      'UAS-16/42: ownership swaps atomically, demotes former owner to MEMBER, preserves seats and retries safely',
+      'UAS-16/42: ownership swaps atomically, demotes former owner to MEMBER and retries safely',
       async () => {
         priorOwner = (await members(alpha.tenantId)).find((x: any) => x.role === 'OWNER')
-        const n = Date.now()
-        await db
-          .prepare("INSERT INTO billing_plan_version VALUES ('fixture-plan',1,'Fixture only',?,?)")
-          .bind(platform.userId, n)
-          .run()
-        await db
-          .prepare("INSERT INTO billing_seat_type VALUES ('fixture-seat','Fixture only',?)")
-          .bind(n)
-          .run()
-        await db
-          .prepare(
-            "INSERT INTO billing_subscription(id,owner_tenant_id,plan_id,plan_version,enabled,starts_at,ends_at,created_at,updated_at) VALUES ('fixture-sub',?,'fixture-plan',1,1,?,?,?,?)",
-          )
-          .bind(alpha.tenantId, n, n + 86400000, n, n)
-          .run()
-        await db
-          .prepare(
-            "INSERT INTO billing_seat_pool(subscription_id,tenant_id,seat_type_id,quantity) VALUES ('fixture-sub',?,'fixture-seat',1)",
-          )
-          .bind(alpha.tenantId)
-          .run()
-        await db
-          .prepare(
-            "INSERT INTO billing_seat_assignment(id,subscription_id,seat_type_id,tenant_id,membership_id,user_id,status,assigned_at) VALUES ('fixture-assignment','fixture-sub','fixture-seat',?,?,?,'ASSIGNED',?)",
-          )
-          .bind(alpha.tenantId, priorOwner.membershipId, owner.userId, n)
-          .run()
-        const seat = await db.prepare('SELECT * FROM billing_seat_assignment').first()
         await db
           .prepare(
             "CREATE TRIGGER fail_owner_promotion BEFORE UPDATE OF role ON auth_tenant_membership WHEN NEW.role='OWNER' AND OLD.role<>'OWNER' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END",
@@ -844,7 +815,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         mOther = accepted.owner
         assert.equal((await tenant(alpha.tenantId, other)).myRole, 'OWNER')
         assert.equal((await tenant(alpha.tenantId, ownerClub)).myRole, 'MEMBER')
-        assert.deepEqual(await db.prepare('SELECT * FROM billing_seat_assignment').first(), seat)
         assert.equal(
           (await members(alpha.tenantId)).filter((x: any) => x.role === 'OWNER').length,
           1,
@@ -950,26 +920,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           exited,
         )
         assert.equal((await call('/tenants/' + alpha.tenantId, undefined, owner)).status, 404)
-        assert.equal(
-          (
-            await db
-              .prepare(
-                "SELECT status,end_reason FROM billing_seat_assignment WHERE id='fixture-assignment'",
-              )
-              .first()
-          ).status,
-          'ENDED',
-        )
-        assert.equal(
-          (
-            await db
-              .prepare(
-                "SELECT end_reason FROM billing_seat_assignment WHERE id='fixture-assignment'",
-              )
-              .first()
-          ).end_reason,
-          'MEMBER_LEFT',
-        )
         priorOwner = (
           await accept(await invite(alpha.tenantId, 'USER', owner.userId, other), owner)
         ).membership
@@ -994,14 +944,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         priorOwner = (
           await accept(await invite(alpha.tenantId, 'USER', owner.userId, other), owner)
         ).membership
-        assert.equal(
-          (
-            await db
-              .prepare("SELECT status FROM billing_seat_assignment WHERE id='fixture-assignment'")
-              .first()
-          ).status,
-          'ENDED',
-        )
       },
     )
     await suite.test(
@@ -1015,8 +957,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
             other,
           ),
         )
-        const subscription = await db.prepare('SELECT * FROM billing_subscription').first()
-        const seats = (await db.prepare('SELECT * FROM billing_seat_assignment').all()).results
         const beforeMembers = await members(alpha.tenantId)
         const body = { expectedVersion: t.version, reason: 'Maintenance fixture' },
           key = secret()
@@ -1108,14 +1048,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           'PlatformTenantView',
         )
         assert.deepEqual(await members(alpha.tenantId), beforeMembers)
-        assert.deepEqual(
-          await db.prepare('SELECT * FROM billing_subscription').first(),
-          subscription,
-        )
-        assert.deepEqual(
-          (await db.prepare('SELECT * FROM billing_seat_assignment').all()).results,
-          seats,
-        )
         await accept(pending, reader)
         ok(
           await call(
@@ -1268,7 +1200,6 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           ['/tenants/' + alpha.tenantId + '/members?limit=100', other],
           ['/platform/tenants?limit=100', platform],
           ['/platform/applications?limit=100', platform],
-          ['/catalog/features?limit=100', platform],
         ] as const) {
           const response = await calls(path, actor)
           assert.equal(ok(response).nextCursor, null, path)

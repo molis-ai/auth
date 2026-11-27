@@ -41,7 +41,6 @@ const id = add('Id', str(1, 160, { pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }))
 const time = add('Timestamp', str(20, 24, { format: 'date-time' }))
 const secret = add('OpaqueSecret', str(32, 4096, { pattern: '^[A-Za-z0-9._~-]+$' }))
 const version = add('Version', num(0))
-const planVersion = add('PlanVersionNumber', num(1))
 const email = add('Email', str(3, 254, { format: 'email' }))
 const phone = add('Phone', str(14, 14, { pattern: '^\\+861[3-9][0-9]{9}$' }))
 const url = add('HttpUrl', str(1, 2048, { format: 'http-url' }))
@@ -114,9 +113,6 @@ add(
     'TENANT_CREATE',
     'TENANT_READ',
     'TENANT_STATUS',
-    'CATALOG_WRITE',
-    'SUBSCRIPTION_READ',
-    'SUBSCRIPTION_WRITE',
     'AUDIT_READ',
     'APPLICATION_READ',
     'APPLICATION_WRITE',
@@ -453,141 +449,6 @@ add(
     tenantVersion: version,
   }),
 )
-add('Feature', obj({ featureId: id, product: en('WORK', 'CLUB', 'SHARED'), name }))
-const featureIds = { ...arr(id, 1000), uniqueItems: true }
-add('SeatType', obj({ seatTypeId: id, name, featureIds }))
-add(
-  'PlanVersion',
-  obj({
-    planId: id,
-    planVersion,
-    name,
-    personalFeatureIds: featureIds,
-    seatTypes: arr(ref('SeatType'), 100),
-  }),
-)
-add(
-  'FeatureCreateRequest',
-  obj({ featureId: id, product: en('WORK', 'CLUB', 'SHARED'), name, reason }),
-)
-add(
-  'PlanVersionCreateRequest',
-  obj({
-    planVersion,
-    name,
-    personalFeatureIds: featureIds,
-    seatTypes: arr(ref('SeatType'), 100),
-    reason,
-  }),
-)
-add('SubscriptionOwner', obj({ kind: en('USER', 'TENANT'), id }))
-add(
-  'Subscription',
-  obj({
-    subscriptionId: id,
-    owner: ref('SubscriptionOwner'),
-    planId: id,
-    planVersion,
-    enabled: bool,
-    startsAt: time,
-    endsAt: time,
-    version,
-    status: en('SCHEDULED', 'ACTIVE', 'EXPIRED', 'DISABLED'),
-  }),
-)
-add('SeatQuantities', {
-  type: 'object',
-  propertyNames: id,
-  additionalProperties: num(0, 1000000),
-  maxProperties: 100,
-})
-const subscriptionCreate = { planId: id, planVersion, startsAt: time, endsAt: time, reason }
-add(
-  'SubscriptionCreateRequest',
-  union(
-    obj({ ...subscriptionCreate, owner: obj({ kind: literal('USER'), id }) }),
-    obj({
-      ...subscriptionCreate,
-      owner: obj({ kind: literal('TENANT'), id }),
-      seatQuantities: ref('SeatQuantities'),
-    }),
-  ),
-)
-add('SubscriptionUpdateRequest', {
-  ...obj(
-    {
-      plan: obj({ planId: id, planVersion }),
-      startsAt: time,
-      endsAt: time,
-      enabled: bool,
-      seatQuantities: ref('SeatQuantities'),
-      ...expected,
-      reason,
-    },
-    ['expectedVersion', 'reason'],
-  ),
-  anyOf: ['plan', 'startsAt', 'endsAt', 'enabled', 'seatQuantities'].map((key) => ({
-    required: [key],
-  })),
-})
-add('SubscriptionRenewRequest', obj({ endsAt: time, ...expected, reason }))
-add(
-  'SeatPool',
-  obj({
-    subscriptionId: id,
-    tenantId: id,
-    seatTypeId: id,
-    quantity: num(0, 1000000),
-    assignedCount: num(0, 1000000),
-    availableCount: num(0, 1000000),
-    version,
-  }),
-)
-const assignmentBase = {
-  assignmentId: id,
-  subscriptionId: id,
-  seatTypeId: id,
-  membershipId: id,
-  userId: id,
-  assignedAt: time,
-  version,
-}
-add(
-  'Assignment',
-  union(
-    obj({
-      ...assignmentBase,
-      status: literal('ASSIGNED'),
-      endedAt: literal(null),
-      endReason: literal(null),
-    }),
-    obj({
-      ...assignmentBase,
-      status: literal('ENDED'),
-      endedAt: time,
-      endReason: en('RELEASED', 'REASSIGNED', 'MEMBER_LEFT', 'MEMBER_REMOVED'),
-    }),
-  ),
-)
-add('SeatAssignRequest', obj({ subscriptionId: id, seatTypeId: id, membershipId: id, ...expected }))
-add('SeatReleaseRequest', obj({ ...expected, reason }, ['expectedVersion']))
-add(
-  'SeatReassignRequest',
-  obj({ targetMembershipId: id, ...expected, reason }, ['targetMembershipId', 'expectedVersion']),
-)
-add(
-  'SeatMutationResult',
-  obj({ assignment: ref('Assignment'), pool: ref('SeatPool'), entitlementRevision: id }),
-)
-add(
-  'SeatReassignResult',
-  obj({
-    endedAssignment: ref('Assignment'),
-    assignment: ref('Assignment'),
-    pool: ref('SeatPool'),
-    entitlementRevision: id,
-  }),
-)
 add(
   'AuditEvent',
   obj({
@@ -608,45 +469,6 @@ add(
     requestId: id,
   }, ['auditEventId', 'actorUserId', 'operation', 'target', 'tenantId', 'occurredAt', 'result', 'changes']),
 )
-add(
-  'EntitlementSource',
-  union(
-    obj({ kind: literal('PERSONAL_SUBSCRIPTION'), subscriptionId: id }),
-    obj({ kind: literal('TENANT_SEAT'), subscriptionId: id, seatTypeId: id, assignmentId: id }),
-  ),
-)
-add(
-  'EntitlementDecision',
-  union(
-    obj({
-      featureId: id,
-      allowed: literal(true),
-      reason: literal('GRANTED'),
-      validUntil: time,
-      sources: arr(ref('EntitlementSource'), 1000, 1),
-    }),
-    obj({
-      featureId: id,
-      allowed: literal(false),
-      reason: literal('FEATURE_NOT_GRANTED'),
-      validUntil: time,
-      sources: arr(ref('EntitlementSource'), 0),
-    }),
-  ),
-)
-add(
-  'EntitlementCheckRequest',
-  obj({ scope: ref('Scope'), featureIds: { ...arr(id, 100, 1), uniqueItems: true } }),
-)
-add(
-  'EntitlementCheckResult',
-  obj({
-    scope: ref('Scope'),
-    evaluatedAt: time,
-    revision: id,
-    decisions: arr(ref('EntitlementDecision'), 100, 1),
-  }),
-)
 for (const item of [
   'LoginMethod',
   'TenantView',
@@ -654,11 +476,6 @@ for (const item of [
   'Membership',
   'Invitation',
   'OwnershipTransfer',
-  'Feature',
-  'PlanVersion',
-  'Subscription',
-  'SeatPool',
-  'Assignment',
   'AuditEvent',
 ]) {
   add(`${item}Page`, obj({ items: arr(ref(item === 'Membership' ? 'TenantMember' : item)), nextCursor: nullable(str(1, 2048)) }))
@@ -1390,154 +1207,6 @@ ep(
   'transfer-owner',
   true,
 )
-for (const [path, operationId, output] of [
-  ['plans', 'listPlans', 'PlanVersionPage'],
-  ['features', 'listFeatures', 'FeaturePage'],
-])
-  ep('API-06', 'get', `/catalog/${path}`, operationId, undefined, output)
-ep(
-  'API-06',
-  'post',
-  '/platform/catalog/features',
-  'createFeature',
-  'FeatureCreateRequest',
-  'Feature',
-  'platform:CATALOG_WRITE',
-  true,
-)
-ep(
-  'API-06',
-  'post',
-  '/platform/catalog/plans/{planId}/versions',
-  'publishPlanVersion',
-  'PlanVersionCreateRequest',
-  'PlanVersion',
-  'platform:CATALOG_WRITE',
-  true,
-)
-ep(
-  'API-06',
-  'get',
-  '/users/me/subscriptions',
-  'listPersonalSubscriptions',
-  undefined,
-  'SubscriptionPage',
-)
-ep(
-  'API-06',
-  'get',
-  '/tenants/{tenantId}/subscriptions',
-  'listTenantSubscriptions',
-  undefined,
-  'SubscriptionPage',
-)
-ep(
-  'API-06',
-  'get',
-  '/tenants/{tenantId}/seat-pools',
-  'listSeatPools',
-  undefined,
-  'SeatPoolPage',
-  'tenant-manager',
-)
-ep(
-  'API-06',
-  'get',
-  '/tenants/{tenantId}/seat-assignments',
-  'listSeatAssignments',
-  undefined,
-  'AssignmentPage',
-  'session',
-  false,
-  'assignment-state',
-)
-ep(
-  'API-06',
-  'post',
-  '/platform/subscriptions',
-  'createSubscription',
-  'SubscriptionCreateRequest',
-  'Subscription',
-  'platform:SUBSCRIPTION_WRITE',
-  true,
-)
-ep(
-  'API-06',
-  'get',
-  '/platform/subscriptions',
-  'listPlatformSubscriptions',
-  undefined,
-  'SubscriptionPage',
-  'platform:SUBSCRIPTION_READ',
-)
-ep(
-  'API-06',
-  'get',
-  '/platform/subscriptions/{subscriptionId}',
-  'getPlatformSubscription',
-  undefined,
-  'Subscription',
-  'platform:SUBSCRIPTION_READ',
-)
-ep(
-  'API-06',
-  'get',
-  '/platform/subscriptions/{subscriptionId}/seat-pools',
-  'listPlatformSeatPools',
-  undefined,
-  'SeatPoolPage',
-  'platform:SUBSCRIPTION_READ',
-)
-ep(
-  'API-06',
-  'patch',
-  '/platform/subscriptions/{subscriptionId}',
-  'updateSubscription',
-  'SubscriptionUpdateRequest',
-  'Subscription',
-  'platform:SUBSCRIPTION_WRITE',
-  true,
-)
-ep(
-  'API-06',
-  'post',
-  '/platform/subscriptions/{subscriptionId}/renew',
-  'renewSubscription',
-  'SubscriptionRenewRequest',
-  'Subscription',
-  'platform:SUBSCRIPTION_WRITE',
-  true,
-)
-ep(
-  'API-06',
-  'post',
-  '/tenants/{tenantId}/seat-assignments',
-  'assignSeat',
-  'SeatAssignRequest',
-  'SeatMutationResult',
-  'tenant-manager',
-  true,
-)
-ep(
-  'API-06',
-  'post',
-  '/tenants/{tenantId}/seat-assignments/{assignmentId}/release',
-  'releaseSeat',
-  'SeatReleaseRequest',
-  'SeatMutationResult',
-  'tenant-manager',
-  true,
-)
-ep(
-  'API-06',
-  'post',
-  '/tenants/{tenantId}/seat-assignments/{assignmentId}/reassign',
-  'reassignSeat',
-  'SeatReassignRequest',
-  'SeatReassignResult',
-  'tenant-manager',
-  true,
-)
 ep(
   'API-06',
   'get',
@@ -1555,14 +1224,6 @@ ep(
   undefined,
   'AuditEventPage',
   'platform:AUDIT_READ',
-)
-ep(
-  'API-07',
-  'post',
-  '/entitlements/check',
-  'checkEntitlements',
-  'EntitlementCheckRequest',
-  'EntitlementCheckResult',
 )
 
 add('ProductLoginResult', obj({ account: ref('AccountView') }))
@@ -1703,13 +1364,12 @@ ep(
 )
 // Fixed non-secret mappings are copied by identifier, not implemented as a wildcard proxy.
 for (const central of [...endpoints].filter((e) =>
-  ['API-05', 'API-06', 'API-07', 'API-10'].includes(e.group),
+  ['API-05', 'API-06', 'API-10'].includes(e.group),
 )) {
-  const path = central.path === '/users/me/subscriptions' ? '/subscriptions' : central.path
   ep(
     'API-08',
     central.method,
-    `/api/account${path}`,
+    `/api/account${central.path}`,
     `product_${central.operationId}`,
     central.input,
     central.output,
@@ -1741,7 +1401,6 @@ const policy = {
     passwordMaxRawUtf16Units: 512,
     pageDefault: 20,
     pageMax: 100,
-    entitlementFeatureMax: 100,
     sendQuotaWindowSeconds: 3600,
     sendQuotaPerIp: 60,
     sendQuotaPerTarget: 10,
@@ -1805,13 +1464,6 @@ const policy = {
       ],
       terminal: ['LEFT', 'REMOVED'],
       rejoin: 'NEW_MEMBERSHIP_ID',
-    },
-    assignment: {
-      initial: 'ASSIGNED',
-      transitions: [['ASSIGNED', 'ENDED']],
-      terminal: ['ENDED'],
-      expiration: 'RETAIN_ASSIGNED',
-      reassign: 'END_OLD_CREATE_NEW_ATOMICALLY',
     },
     session: {
       initial: 'ACTIVE',
@@ -1907,7 +1559,6 @@ const policy = {
       'REMOVE_NON_OWNER',
       'APPOINT_ADMIN',
       'TRANSFER_OWNER',
-      'SEAT_MANAGE',
       'AUDIT_READ',
     ],
     ADMIN: [
@@ -1916,20 +1567,16 @@ const policy = {
       'INVITE',
       'REMOVE_MEMBER',
       'LEAVE',
-      'SEAT_MANAGE',
       'AUDIT_READ',
     ],
     MEMBER: [
       'MEMBERS_READ',
       'LEAVE',
-      'OWN_ASSIGNMENTS_READ',
-      'TENANT_SUBSCRIPTIONS_READ',
       'SHARED_CONTENT_READ_DOWNLOAD',
     ],
     transferAccepted: {
       targetRole: 'OWNER',
       previousOwnerRole: 'MEMBER',
-      existingAssignments: 'PRESERVE',
       uniqueOwner: true,
     },
   },
@@ -1992,25 +1639,10 @@ const policy = {
     'PASSWORD_RESET_AND_REVOKE_ALL',
     'GLOBAL_REVOKE_FENCES_OLD_PENDING_TRANSACTIONS_AND_LATE_REFRESH',
     'ROTATE_REFRESH_ONCE_PER_LOGIN_FAMILY',
-    'MEMBERSHIP_END_AND_ALL_TENANT_ASSIGNMENTS_END_AND_REVISION',
-    'ASSIGN_CAPACITY_VERSION_AND_ENTITLEMENT_REVISION',
-    'REASSIGN_END_OLD_CREATE_NEW_WITHOUT_TRANSIENT_OVERALLOCATION',
-    'RETAINED_ASSIGNED_COUNTS_TOWARDS_EXPIRED_POOL_CAPACITY',
-    'REDUCE_QUANTITY_NOT_BELOW_ASSIGNED',
-    'REMOVE_SEAT_TYPE_ONLY_AFTER_ALL_ASSIGNMENTS_END',
-    'TRANSFER_UNIQUE_OWNER_AND_KEEP_ASSIGNMENTS',
+    'TRANSFER_UNIQUE_OWNER',
     'BIND_IDENTITY_UNIQUE_AND_AT_LEAST_ONE_USABLE_METHOD',
     'IDEMPOTENT_BUSINESS_WRITE_RESULT_AND_AUDIT_COMMIT_TOGETHER',
   ],
-  entitlementRules: {
-    personal: 'VALID_PERSONAL_SUBSCRIPTIONS_UNION',
-    tenant:
-      'ACTIVE_MEMBERSHIP_AND_ACTIVE_TENANT_THEN_PERSONAL_UNION_CURRENT_TENANT_VALID_ASSIGNMENTS',
-    adminGrantsPaidFeatures: false,
-    sharedReadRequiresPaidFeature: false,
-    unavailableIsDenied: false,
-    resultsAreOfflineLicenses: false,
-  },
   deliveryRules: {
     acceptedMeansVerified: false,
     universalTestCode: false,
@@ -2054,7 +1686,7 @@ for (const flow of policy.authenticationFlows)
 const directoryFilters = { status: en('ACTIVE', 'DISABLED'), q: str(0, 128) }
 const auditFilters = {
   tenantId: id,
-  category: en('account', 'tenant', 'app', 'billing'),
+  category: en('account', 'tenant', 'app'),
   operation: id,
   actorUserId: id,
   targetId: id,
@@ -2106,12 +1738,6 @@ for (const e of endpoints) {
   if (e.method === 'get')
     for (const [name, schema] of Object.entries(managementFilters[e.path.replace(/^\/api\/account/, '')] ?? {}))
       parameters.push({ name, in: 'query', schema: rewriteRefs(schema) })
-  if (e.query === 'assignment-state')
-    parameters.push({
-      name: 'state',
-      in: 'query',
-      schema: { type: 'string', enum: ['current', 'history'], default: 'current' },
-    })
   if (e.query === 'LoginCapabilitiesQuery') parameters.push({ name: 'clientId', in: 'query', required: true, schema: { $ref: './schemas.json#/$defs/Id' } })
   if (e.query === 'callback')
     for (const [key, schema] of Object.entries(
@@ -2337,46 +1963,6 @@ fixture('invitation-admin-escalation', 'InvitationCreateRequest', false, {
   target: { kind: 'USER', value: 'user_example' },
   role: 'ADMIN',
 })
-fixture('seat-member-actor-injection', 'SeatAssignRequest', false, {
-  ...(sample(defs.SeatAssignRequest) as object),
-  userId: 'victim',
-})
-fixture('personal-subscription-seat-quantities', 'SubscriptionCreateRequest', false, {
-  ...(sample(defs.SubscriptionCreateRequest) as object),
-  seatQuantities: { demo: 1 },
-})
-fixture('subscription-empty-patch', 'SubscriptionUpdateRequest', false, {
-  expectedVersion: 1,
-  reason: 'test-only',
-})
-fixture('seat-negative-quantity', 'SeatQuantities', false, { demo: -1 })
-fixture('seat-fractional-quantity', 'SeatQuantities', false, { demo: 1.5 })
-fixture('ended-assignment-missing-end-reason', 'Assignment', false, {
-  ...(sample(defs.Assignment) as object),
-  status: 'ENDED',
-})
-fixture('deny-with-source', 'EntitlementDecision', false, {
-  featureId: 'demo.feature',
-  allowed: false,
-  reason: 'FEATURE_NOT_GRANTED',
-  validUntil: '2026-11-04T08:00:00Z',
-  sources: [{ kind: 'PERSONAL_SUBSCRIPTION', subscriptionId: 'sub_example' }],
-})
-fixture('grant-without-source', 'EntitlementDecision', false, {
-  featureId: 'demo.feature',
-  allowed: true,
-  reason: 'GRANTED',
-  validUntil: '2026-11-04T08:00:00Z',
-  sources: [],
-})
-fixture('entitlement-duplicate-features', 'EntitlementCheckRequest', false, {
-  scope: { kind: 'PERSONAL' },
-  featureIds: ['demo.feature', 'demo.feature'],
-})
-fixture('entitlement-101-features', 'EntitlementCheckRequest', false, {
-  scope: { kind: 'PERSONAL' },
-  featureIds: Array.from({ length: 101 }, (_, i) => `demo.${i}`),
-})
 fixture('browser-token-leak', 'AccountView', false, {
   state: 'ANONYMOUS',
   accessToken: 'x'.repeat(40),
@@ -2440,7 +2026,6 @@ fixture('initial-session-revision-zero', 'SessionView', true, {
   ...(sample(defs.SessionView) as object),
   sessionRevision: 0,
 })
-fixture('plan-version-zero-rejected', 'PlanVersionNumber', false, 0)
 fixture('existing-eight-character-password-login', 'PasswordLoginRequest', true, {
   email: 'sample@example.invalid',
   password: 'DemoAb9!',

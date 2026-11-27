@@ -20,7 +20,6 @@
     "passwordMaxRawUtf16Units": 512,
     "pageDefault": 20,
     "pageMax": 100,
-    "entitlementFeatureMax": 100,
     "sendQuotaWindowSeconds": 3600,
     "sendQuotaPerIp": 60,
     "sendQuotaPerTarget": 10,
@@ -578,125 +577,6 @@
       "outputSchema": "OwnershipTransfer"
     },
     {
-      "operationId": "listPlans",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "PlanVersionPage"
-    },
-    {
-      "operationId": "listFeatures",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "FeaturePage"
-    },
-    {
-      "operationId": "createFeature",
-      "authority": "platform:CATALOG_WRITE",
-      "idempotency": "REQUIRED",
-      "inputSchema": "FeatureCreateRequest",
-      "outputSchema": "Feature"
-    },
-    {
-      "operationId": "publishPlanVersion",
-      "authority": "platform:CATALOG_WRITE",
-      "idempotency": "REQUIRED",
-      "inputSchema": "PlanVersionCreateRequest",
-      "outputSchema": "PlanVersion"
-    },
-    {
-      "operationId": "listPersonalSubscriptions",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "listTenantSubscriptions",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "listSeatPools",
-      "authority": "tenant-manager",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SeatPoolPage"
-    },
-    {
-      "operationId": "listSeatAssignments",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "AssignmentPage"
-    },
-    {
-      "operationId": "createSubscription",
-      "authority": "platform:SUBSCRIPTION_WRITE",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionCreateRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "listPlatformSubscriptions",
-      "authority": "platform:SUBSCRIPTION_READ",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "getPlatformSubscription",
-      "authority": "platform:SUBSCRIPTION_READ",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "listPlatformSeatPools",
-      "authority": "platform:SUBSCRIPTION_READ",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SeatPoolPage"
-    },
-    {
-      "operationId": "updateSubscription",
-      "authority": "platform:SUBSCRIPTION_WRITE",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionUpdateRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "renewSubscription",
-      "authority": "platform:SUBSCRIPTION_WRITE",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionRenewRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "assignSeat",
-      "authority": "tenant-manager",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatAssignRequest",
-      "outputSchema": "SeatMutationResult"
-    },
-    {
-      "operationId": "releaseSeat",
-      "authority": "tenant-manager",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatReleaseRequest",
-      "outputSchema": "SeatMutationResult"
-    },
-    {
-      "operationId": "reassignSeat",
-      "authority": "tenant-manager",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatReassignRequest",
-      "outputSchema": "SeatReassignResult"
-    },
-    {
       "operationId": "listTenantAudit",
       "authority": "tenant-manager",
       "idempotency": "NOT_APPLICABLE",
@@ -709,13 +589,6 @@
       "idempotency": "NOT_APPLICABLE",
       "inputSchema": null,
       "outputSchema": "AuditEventPage"
-    },
-    {
-      "operationId": "checkEntitlements",
-      "authority": "session",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": "EntitlementCheckRequest",
-      "outputSchema": "EntitlementCheckResult"
     },
     {
       "operationId": "productLoginCapabilities",
@@ -1152,125 +1025,6 @@
       "outputSchema": "OwnershipTransfer"
     },
     {
-      "operationId": "product_listPlans",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "PlanVersionPage"
-    },
-    {
-      "operationId": "product_listFeatures",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "FeaturePage"
-    },
-    {
-      "operationId": "product_createFeature",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "FeatureCreateRequest",
-      "outputSchema": "Feature"
-    },
-    {
-      "operationId": "product_publishPlanVersion",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "PlanVersionCreateRequest",
-      "outputSchema": "PlanVersion"
-    },
-    {
-      "operationId": "product_listPersonalSubscriptions",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "product_listTenantSubscriptions",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "product_listSeatPools",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SeatPoolPage"
-    },
-    {
-      "operationId": "product_listSeatAssignments",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "AssignmentPage"
-    },
-    {
-      "operationId": "product_createSubscription",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionCreateRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "product_listPlatformSubscriptions",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SubscriptionPage"
-    },
-    {
-      "operationId": "product_getPlatformSubscription",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "product_listPlatformSeatPools",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": null,
-      "outputSchema": "SeatPoolPage"
-    },
-    {
-      "operationId": "product_updateSubscription",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionUpdateRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "product_renewSubscription",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SubscriptionRenewRequest",
-      "outputSchema": "Subscription"
-    },
-    {
-      "operationId": "product_assignSeat",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatAssignRequest",
-      "outputSchema": "SeatMutationResult"
-    },
-    {
-      "operationId": "product_releaseSeat",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatReleaseRequest",
-      "outputSchema": "SeatMutationResult"
-    },
-    {
-      "operationId": "product_reassignSeat",
-      "authority": "product",
-      "idempotency": "REQUIRED",
-      "inputSchema": "SeatReassignRequest",
-      "outputSchema": "SeatReassignResult"
-    },
-    {
       "operationId": "product_listTenantAudit",
       "authority": "product",
       "idempotency": "NOT_APPLICABLE",
@@ -1283,13 +1037,6 @@
       "idempotency": "NOT_APPLICABLE",
       "inputSchema": null,
       "outputSchema": "AuditEventPage"
-    },
-    {
-      "operationId": "product_checkEntitlements",
-      "authority": "product",
-      "idempotency": "NOT_APPLICABLE",
-      "inputSchema": "EntitlementCheckRequest",
-      "outputSchema": "EntitlementCheckResult"
     }
   ],
   "stateMachines": {
@@ -1443,20 +1190,6 @@
       ],
       "rejoin": "NEW_MEMBERSHIP_ID"
     },
-    "assignment": {
-      "initial": "ASSIGNED",
-      "transitions": [
-        [
-          "ASSIGNED",
-          "ENDED"
-        ]
-      ],
-      "terminal": [
-        "ENDED"
-      ],
-      "expiration": "RETAIN_ASSIGNED",
-      "reassign": "END_OLD_CREATE_NEW_ATOMICALLY"
-    },
     "session": {
       "initial": "ACTIVE",
       "transitions": [
@@ -1598,7 +1331,6 @@
       "REMOVE_NON_OWNER",
       "APPOINT_ADMIN",
       "TRANSFER_OWNER",
-      "SEAT_MANAGE",
       "AUDIT_READ"
     ],
     "ADMIN": [
@@ -1607,20 +1339,16 @@
       "INVITE",
       "REMOVE_MEMBER",
       "LEAVE",
-      "SEAT_MANAGE",
       "AUDIT_READ"
     ],
     "MEMBER": [
       "MEMBERS_READ",
       "LEAVE",
-      "OWN_ASSIGNMENTS_READ",
-      "TENANT_SUBSCRIPTIONS_READ",
       "SHARED_CONTENT_READ_DOWNLOAD"
     ],
     "transferAccepted": {
       "targetRole": "OWNER",
       "previousOwnerRole": "MEMBER",
-      "existingAssignments": "PRESERVE",
       "uniqueOwner": true
     }
   },
@@ -1683,24 +1411,10 @@
     "PASSWORD_RESET_AND_REVOKE_ALL",
     "GLOBAL_REVOKE_FENCES_OLD_PENDING_TRANSACTIONS_AND_LATE_REFRESH",
     "ROTATE_REFRESH_ONCE_PER_LOGIN_FAMILY",
-    "MEMBERSHIP_END_AND_ALL_TENANT_ASSIGNMENTS_END_AND_REVISION",
-    "ASSIGN_CAPACITY_VERSION_AND_ENTITLEMENT_REVISION",
-    "REASSIGN_END_OLD_CREATE_NEW_WITHOUT_TRANSIENT_OVERALLOCATION",
-    "RETAINED_ASSIGNED_COUNTS_TOWARDS_EXPIRED_POOL_CAPACITY",
-    "REDUCE_QUANTITY_NOT_BELOW_ASSIGNED",
-    "REMOVE_SEAT_TYPE_ONLY_AFTER_ALL_ASSIGNMENTS_END",
-    "TRANSFER_UNIQUE_OWNER_AND_KEEP_ASSIGNMENTS",
+    "TRANSFER_UNIQUE_OWNER",
     "BIND_IDENTITY_UNIQUE_AND_AT_LEAST_ONE_USABLE_METHOD",
     "IDEMPOTENT_BUSINESS_WRITE_RESULT_AND_AUDIT_COMMIT_TOGETHER"
   ],
-  "entitlementRules": {
-    "personal": "VALID_PERSONAL_SUBSCRIPTIONS_UNION",
-    "tenant": "ACTIVE_MEMBERSHIP_AND_ACTIVE_TENANT_THEN_PERSONAL_UNION_CURRENT_TENANT_VALID_ASSIGNMENTS",
-    "adminGrantsPaidFeatures": false,
-    "sharedReadRequiresPaidFeature": false,
-    "unavailableIsDenied": false,
-    "resultsAreOfflineLicenses": false
-  },
   "deliveryRules": {
     "acceptedMeansVerified": false,
     "universalTestCode": false,

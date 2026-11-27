@@ -22,7 +22,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `auth/{sync_read_proof,test_admission}.rs` | 依赖当前中央会话的同步读证明，以及依赖已验证身份的测试环境准入 |
 | `account/` | 个人资料、登录方式、密码及账号会话管理 |
 | `tenants/` | 团队、角色、创建策略、成员、邀请和所有权交接 |
-| `billing/` | 套餐、订阅、席位、权益以及 Billing Bridge |
+| `billing/` | 供独立 `molis-billing` 服务回调的私有身份与权限桥接（`bridge.rs`）；全部账务存储与业务归属 `molis-billing` |
 | `platform/` | 平台用户和权限、团队治理、应用及登录客户端管理 |
 | `audit/` | 统一管理审计写入与平台、团队审计查询 |
 | `delivery/` | 邮件与短信投递、供应商适配和模板 |

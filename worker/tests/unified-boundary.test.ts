@@ -26,21 +26,27 @@ test('AUTH-02/07/08/09/10: v2 boundaries reject unavailable routes and unauthent
       }
     }
     for (const path of [
-      '/api/v2/entitlements/check',
       '/api/v2/tenants',
       '/api/v2/platform/tenants',
       '/api/v2/invitations',
       '/api/v2/ownership-transfers',
-      '/api/v2/catalog/plans',
-      '/api/v2/platform/catalog/features',
-      '/api/v2/platform/subscriptions',
-      '/api/v2/users/me/subscriptions',
       '/api/v2/platform/audit-events',
-      '/api/v2/tenants/missing/seat-assignments',
     ]) {
       for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
         const response = await proxy.fetch(new Request(origin + path, { method }))
         assert.equal(response.status, 401, method + ' ' + path)
+      }
+    }
+    for (const path of [
+      '/api/v2/entitlements/check',
+      '/api/v2/catalog/plans',
+      '/api/v2/platform/catalog/features',
+      '/api/v2/platform/subscriptions',
+    ]) {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+        const response = await proxy.fetch(new Request(origin + path, { method }))
+        assert.equal(response.status, 501, method + ' ' + path)
+        assert.equal((await response.json()).error.code, 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED')
       }
     }
     for (const table of [

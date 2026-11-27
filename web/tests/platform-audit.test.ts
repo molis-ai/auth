@@ -16,10 +16,8 @@ test("auditOperationMeta maps known operations and classifies unknown operations
   assert.deepEqual(auditOperationMeta("tenant.disable"), { label: "停用团队", category: "tenant" });
   assert.deepEqual(auditOperationMeta("permission.set"), { label: "更新平台权限", category: "account" });
   assert.deepEqual(auditOperationMeta("client.secret-rotate"), { label: "轮换客户端密钥", category: "app" });
-  assert.deepEqual(auditOperationMeta("subscription.update"), { label: "调整订阅与席位", category: "billing" });
   assert.deepEqual(auditOperationMeta("member.custom"), { label: "member.custom", category: "tenant" });
   assert.deepEqual(auditOperationMeta("application.archive"), { label: "application.archive", category: "app" });
-  assert.deepEqual(auditOperationMeta("seat.audit"), { label: "seat.audit", category: "billing" });
   assert.deepEqual(auditOperationMeta("other.event"), { label: "other.event", category: "account" });
 });
 
