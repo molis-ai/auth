@@ -34,18 +34,18 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `web/http.rs` | HTTP 请求日志标签、错误响应和响应后置处理 |
 | `runtime/*.js` | WASM 调用的运行时适配层。模块路径同时供 wasm_bindgen 和 Worker 测试引用 |
 
-`core/` 不引用入口或业务域。 浏览器会话用 `app::handle_internal` 在同一 Worker 调用 V2 API，并传递会话访问约束和原请求 ID。业务域的通用请求体和响应头处理使用 `core/http.rs`。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
+`core/` 不引用入口或业务域。 浏览器会话用 `app::handle_internal` 在同一 Worker 调用中央 v1 API，并传递会话访问约束和原请求 ID。业务域的通用请求体和响应头处理使用 `core/http.rs`。跨域调用使用明确的领域入口，如 `audit/mod.rs` 导出的审计读写接口及 `auth/` 下的会话和管理授权模块。业务数据的访问规则由对应领域维护，新增跨域协作时复用其接口和事务守卫。
 
-中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因团队 OWNER 身份自动获得。付费权益不代替资源访问授权。V1 路由、根会话、OAuth2 用户授权、V1 团队 API 与权限矩阵实现已删除。
+中央事实仍在同一 D1，通过领域函数与原子 batch 协作。平台能力来自 `auth_platform_permission` 的明确授权，不因团队 OWNER 身份自动获得。付费权益不代替资源访问授权。旧版根会话、OAuth2 用户授权、团队 API 与权限矩阵已退役。
 
 ## 会话与安全
 
 - Auth Vue 使用 `web/src/shared/api/account-client.ts` 导出的 `AccountClient`，只调用固定同源 BFF，不自动重放写操作。Work 保留满足本机边界的 Host 请求助手。
-- BFF Cookie 只保存随机引用；`auth_web_session` 的 Token 和临时证明使用稳定的 `AUTH_WEB_SESSION_KEY` 加密并绑定记录 ID。写入要求 Origin/CSRF；退出提高 revision 并先清持久恢复材料，迟到的中央提交与会话保存拒绝。
+- 无 Cookie 时读取会话状态不访问 D1。浏览器发起认证写入时才创建会话行。HTTPS BFF Cookie 使用 `__Host-` 前缀并只保存随机引用。`auth_web_session` 的 Token 和临时证明使用稳定的 `AUTH_WEB_SESSION_KEY` 加密并绑定记录 ID。写入要求 Origin/CSRF；退出提高 revision 并先清持久恢复材料，迟到的中央提交与会话保存拒绝。
 - 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
 - 密码派生由私有 `PASSWORD_KDF` 绑定调用 `PasswordKdf` Durable Object，由 RustCrypto 执行 PBKDF2-HMAC-SHA256 600,000 次，使用 16 字节随机盐和 32 字节派生值。Durable Object 使用独立的 CPU 预算，且不持久化密码、盐或派生值。派生不可用时拒绝请求，无重试或本地回退。无旧密码编码读取或用户映射兼容。线上 Durable Object 的 CPU 耗时需单独观测。
 - 头像实际解码再编码；外部身份不按同邮箱自动合并。外部请求不跟随任意重定向，带超时与大小限制。
-- Auth D1 应用完整迁移链后只保留身份、会话、团队和平台管理等 Auth 数据。新库通过 [D1 单基线](cloudflare-deployment.md#d1-迁移基线)创建。账务数据与接口归独立 Billing Worker，见[同源转发说明](account-billing-bff.md)。
+- Auth D1 保存身份、会话、团队和平台管理等 Auth 数据。新库通过 [D1 单基线](cloudflare-deployment.md#d1-迁移基线)创建。账务数据与接口归独立 Billing Worker，见[同源转发说明](account-billing-bff.md)。
 
 ## 构建与验证
 
