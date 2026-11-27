@@ -422,9 +422,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     }
     let mut observed_revision = None;
     let mut rejected_read = None;
-    let can_read_without_lease = method == Method::Get
-        && a.request.inner().method() == "GET"
-        && (upstream.is_some() || read_without_lease(path));
+    let mut upstream_body = None;
+    let upstream_write = upstream.is_some() && method != Method::Get;
+    let can_read_without_lease = upstream_write
+        || (method == Method::Get
+            && a.request.inner().method() == "GET"
+            && (upstream.is_some() || read_without_lease(path)));
     if !create && can_read_without_lease {
         let loaded_at = now();
         let row = a.s.one(
@@ -439,6 +442,11 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             let revision = number(&row, "revision");
             observed_revision = Some(revision);
             if row["status"] == "READY" {
+                if upstream_write {
+                    let expected = csrf(&key, &id);
+                    upstream_body =
+                        Some(write_input(a, &expected, method.clone(), false, true).await?);
+                }
                 let session = WebSession {
                     a,
                     data: decode(&key, &id, &text(&row, "payload")).await?,
@@ -457,19 +465,24 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                     let result = if session_read {
                         session.account_view().await.map(BrowserPayload::Account)
                     } else if let Some(target) = &upstream {
-                        call_upstream(target, &session, None).await
+                        call_upstream(
+                            target,
+                            &session,
+                            upstream_body.as_ref().and_then(Value::as_str),
+                        )
+                        .await
                     } else {
                         management(&session, path, Method::Get, json!({}))
                             .await
                             .map(BrowserPayload::Account)
                     };
-                    if !should_clear(&result) {
+                    if upstream_write || !should_clear(&result) {
                         return browser_response(a, path, &key, &id, None, result);
                     }
                     rejected_read = Some(result);
                 }
             } else if number(&row, "busy_until") > loaded_at {
-                a.retry_browser_read = true;
+                a.retry_browser_read = !upstream_write;
                 return Err(version_conflict());
             }
         }
@@ -502,14 +515,18 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         csrf(&key, &id)
     };
     let logout = path == "/api/account/logout" && method == Method::Post;
-    let body = write_input(
-        a,
-        &expected_csrf,
-        method.clone(),
-        logout,
-        upstream.is_some(),
-    )
-    .await;
+    let body = if let Some(body) = upstream_body {
+        Ok(body)
+    } else {
+        write_input(
+            a,
+            &expected_csrf,
+            method.clone(),
+            logout,
+            upstream.is_some(),
+        )
+        .await
+    };
     if !create && body.is_err() {
         // Retain the missing-session response for invalid writes without
         // checking existence on the normal, single-statement claim.
@@ -534,8 +551,10 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             .inspect_err(|failure| {
                 // Only a predispatch conflict is safe to retry. A page that
                 // already reached the backend may have attempted to issue a cursor.
-                a.retry_browser_read =
-                    can_read_without_lease && rejected_read.is_none() && failure.status == 409;
+                a.retry_browser_read = can_read_without_lease
+                    && !upstream_write
+                    && rejected_read.is_none()
+                    && failure.status == 409;
             })?;
         (
             number(&claimed, "revision"),
@@ -579,6 +598,11 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         } else {
             match session.fresh().await {
                 Ok(()) => match &upstream {
+                    Some(target) if upstream_write => {
+                        // A refresh may need the browser lease. Release it before forwarding a Billing write.
+                        session.finish().await?;
+                        return Ok(call_upstream(target, &session, body.as_str()).await);
+                    }
                     Some(target) => call_upstream(target, &session, body.as_str()).await,
                     None => management(&session, path, method, body)
                         .await

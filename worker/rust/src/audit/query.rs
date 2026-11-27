@@ -100,7 +100,10 @@ fn audit_page(a: &Auth, action: &Action) -> Result<Read> {
         };
         filters.bind("a.outcome=?", [json!(outcome)]);
     }
-    filters.bind("a.target_type NOT IN ('ACCOUNT_SECURITY','LOCAL_BOOTSTRAP')", []);
+    filters.bind(
+        "a.target_type NOT IN ('ACCOUNT_SECURITY','LOCAL_BOOTSTRAP')",
+        [],
+    );
     let date = |key| {
         filters.values[key]
             .as_str()

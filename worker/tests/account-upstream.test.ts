@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { compatibilityDate } from '../scripts/environment.mjs'
 import { initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { secret } from './fixtures.ts'
+import { hash, secret } from './fixtures.ts'
 
 // Only the Billing operations are fixtures. Both the browser login and Billing's
 // per-request Auth verification run through the compiled Auth Worker and D1.
@@ -424,6 +424,13 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   await expectError(call(browser, orders + '/order%2Fone'), 404, 'NOT_FOUND')
   await expectError(call(browser, balance, { method: 'OPTIONS' }), 405, 'METHOD_NOT_ALLOWED')
 
+  const browserSession = () =>
+    db
+      .prepare('SELECT revision,status FROM auth_web_session WHERE id_hash=?')
+      .bind(hash(browser.cookie.split('=')[1]))
+      .first()
+  const beforeBillingWrites = await browserSession()
+  assert.equal(beforeBillingWrites?.status, 'READY')
   const action = { method: 'POST', headers: { 'Idempotency-Key': 'action.one' } }
   assert.equal(
     (await call(browser, orders + '/order.active/mock-pay' + teamOne, action)).data.hadBody,
@@ -445,6 +452,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     'ORDER_NOT_REFUNDABLE',
   )
 
+  assert.deepEqual(await browserSession(), beforeBillingWrites)
   await run("UPDATE auth_tenant_membership SET role='MEMBER' WHERE tenant_id='team-one'")
   await expectError(call(browser, orders + teamOne, purchase), 403, 'FORBIDDEN')
   assert.equal((await call(browser, balance + teamOne)).status, 200)
