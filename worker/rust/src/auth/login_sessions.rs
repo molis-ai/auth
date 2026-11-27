@@ -407,20 +407,69 @@ async fn exchange(a: &Auth, b: &Value) -> Result<Value> {
         401,
         "INVALID_GRANT",
     )?;
-    let s = json!({"id":uuid(),"user_id":p["user_id"],"client_id":c["client_id"],"application_id":c["application_id"],"authenticated_at":n,"last_active_at":n,"absolute_expires_at":n+ABSOLUTE,"user_epoch":p["user_epoch"],"session_revision":0});
-    let (result, new_tokens) = tokens(a, &s, n, 0)?;
-    let mut writes=vec![client_guard(a,&c)?,a.s.guard("EXISTS(SELECT 1 FROM auth_identity_proof p JOIN auth_product_transaction t ON t.id=p.transaction_id JOIN auth_user u ON u.id=p.user_id WHERE p.token_hash=? AND p.consumed_at IS NULL AND p.expires_at>? AND p.user_epoch=u.session_epoch AND u.status='ACTIVE' AND t.created_seq>COALESCE(u.revoked_before_seq,0))",vec![digest.clone().into(),n.into()])?,a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?,a.s.statement("INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at) VALUES (?,?,?,?,?,?,?,?,?)",vec![s["id"].clone(),s["user_id"].clone(),s["client_id"].clone(),n.into(),n.into(),(n+ABSOLUTE).into(),s["user_epoch"].clone(),p["created_seq"].clone(),n.into()])?];
-    writes.extend(new_tokens);
-    writes.push(crate::audit::account(
-        a,
-        "account.token",
-        s["user_id"].clone(),
-        &s["client_id"],
-        json!({"loginSessionId":s["id"]}),
-    )?);
+    let mut writes = vec![
+        client_guard(a, &c)?,
+        a.s.guard("EXISTS(SELECT 1 FROM auth_identity_proof p JOIN auth_product_transaction t ON t.id=p.transaction_id JOIN auth_user u ON u.id=p.user_id WHERE p.token_hash=? AND p.consumed_at IS NULL AND p.expires_at>? AND p.user_epoch=u.session_epoch AND u.status='ACTIVE' AND t.created_seq>COALESCE(u.revoked_before_seq,0))",vec![digest.clone().into(),n.into()])?,
+        a.s.statement("UPDATE auth_identity_proof SET consumed_at=? WHERE token_hash=?",vec![n.into(),digest.into()])?,
+    ];
+    let result = create_login(a, &c, &p, n, &mut writes)?;
     a.s.batch(writes, "VERSION_CONFLICT").await?;
     Ok(result)
 }
+
+pub(crate) async fn issue_browser_login(
+    a: &Auth,
+    transaction: &Value,
+    client: &Value,
+) -> Result<Value> {
+    ensure(
+        transaction["purpose"] == "LOGIN" && transaction["status"] == "VERIFIED",
+        409,
+        "VERSION_CONFLICT",
+    )?;
+    let n = now();
+    let mut writes = vec![
+        client_guard(a, client)?,
+        a.s.guard(
+            "EXISTS(SELECT 1 FROM auth_product_transaction WHERE id=? AND status='VERIFIED' AND expires_at>?
+             AND user_id=? AND user_epoch=? AND created_seq=?)",
+            vec![transaction["id"].clone(), n.into(), transaction["user_id"].clone(),
+                 transaction["user_epoch"].clone(), transaction["created_seq"].clone()],
+        )?,
+        crate::auth::registration::boundary(a, transaction, &text(transaction, "user_id"), number(transaction, "user_epoch"))?,
+        a.s.statement("UPDATE auth_product_transaction SET status='CONSUMED',completed_at=? WHERE id=?",
+            vec![n.into(), transaction["id"].clone()])?,
+    ];
+    let result = create_login(a, client, transaction, n, &mut writes)?;
+    a.s.batch(writes, "VERSION_CONFLICT").await?;
+    Ok(result)
+}
+
+fn create_login(
+    a: &Auth,
+    client: &Value,
+    verified: &Value,
+    n: i64,
+    writes: &mut Vec<D1PreparedStatement>,
+) -> Result<Value> {
+    let session = json!({"id":uuid(),"user_id":verified["user_id"],"client_id":client["client_id"],"application_id":client["application_id"],"authenticated_at":n,"last_active_at":n,"absolute_expires_at":n+ABSOLUTE,"user_epoch":verified["user_epoch"],"session_revision":0});
+    let (result, tokens) = tokens(a, &session, n, 0)?;
+    writes.push(a.s.statement(
+        "INSERT INTO auth_login_session(id,user_id,client_id,authenticated_at,last_active_at,absolute_expires_at,user_epoch,created_seq,identity_verified_at)
+         VALUES (?,?,?,?,?,?,?,?,?)",
+        vec![session["id"].clone(),session["user_id"].clone(),session["client_id"].clone(),n.into(),n.into(),(n+ABSOLUTE).into(),session["user_epoch"].clone(),verified["created_seq"].clone(),n.into()],
+    )?);
+    writes.extend(tokens);
+    writes.push(crate::audit::account(
+        a,
+        "account.token",
+        session["user_id"].clone(),
+        &session["client_id"],
+        json!({"loginSessionId":session["id"]}),
+    )?);
+    Ok(result)
+}
+
 async fn logout(a: &Auth, b: &Value, all: bool) -> Result<Value> {
     shape("LogoutRequest", b)?;
     let Credential {

@@ -1,4 +1,4 @@
-//! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
+//! Auth's same-origin BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
 use super::upstream;
 use crate::{
     auth::{login_capabilities, login_sessions},
@@ -38,7 +38,7 @@ fn session_failure(failure: Failure) -> Failure {
         failure
     }
 }
-fn v2_failure(status: u16, code: &str) -> Failure {
+fn central_failure(status: u16, code: &str) -> Failure {
     // Only forward declared codes, never an upstream body or secret-bearing message.
     let known = [
         "INVALID_REQUEST",
@@ -266,10 +266,42 @@ impl WebSession<'_> {
             self.a.retry_after_at.set(retry_after_at);
         }
         if status >= 400 {
-            return Err(v2_failure(status, &text(&value["error"], "code")));
+            return Err(central_failure(status, &text(&value["error"], "code")));
         }
         Ok(value["data"].clone())
     }
+    pub(crate) async fn login(&self, path: &str, body: &Value, proof: &str) -> Result<Value> {
+        ensure(!self.read_only, 503, "AUTH_UNAVAILABLE")?;
+        let mut request = Request::new(&format!("{}{}", self.a.origin, path), Method::Post)?;
+        request
+            .headers_mut()?
+            .set("X-Auth-Initiator-Proof", proof)?;
+        let log = RequestLog {
+            started: now(),
+            env: log_env(&self.a.env),
+            id: &self.a.request_id,
+            route: super::http::log_route(path),
+            method: "POST",
+        };
+        let mut command = Auth::new(request, &self.a.env, &log, Some(self.a.client_ip.clone()))?;
+        command.s.web_session_access =
+            Some(WebSessionAccess::Lease(self.id.clone(), self.revision));
+        let result = crate::auth::login_commands::execute(
+            &command,
+            path,
+            body,
+            crate::auth::login_commands::Completion::Session,
+        )
+        .await;
+        if let Err(failure) = &result {
+            command.s.log_failure("internal", failure, log.started);
+            if failure.status == 429 {
+                self.a.retry_after_at.set(command.retry_after_at.get());
+            }
+        }
+        result.map_err(|failure| central_failure(failure.status, failure.code))
+    }
+
     fn access_is_fresh(&self) -> bool {
         self.data["tokens"]["accessExpiresAt"]
             .as_str()
@@ -308,7 +340,7 @@ impl WebSession<'_> {
             self.data["tokens"]["accessToken"].as_str().unwrap_or(""),
         )
         .await
-        .map_err(|failure| v2_failure(failure.status, failure.code))
+        .map_err(|failure| central_failure(failure.status, failure.code))
         .map_err(session_failure)?;
         Ok(
             json!({"state":"AUTHENTICATED","user":me["user"],"session":me["session"],"capabilities":me["platformCapabilities"]}),
@@ -394,9 +426,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         // The browser origin was checked above. The registration is chosen by the BFF.
         let registration = login_sessions::registered_client(a, &client_id)
             .await
-            .map_err(|failure| v2_failure(failure.status, failure.code))?;
+            .map_err(|failure| central_failure(failure.status, failure.code))?;
         return login_capabilities::response(a, &registration)
-            .map_err(|failure| v2_failure(failure.status, failure.code));
+            .map_err(|failure| central_failure(failure.status, failure.code));
     }
     // Only the browser-bound callback completes provider authorization; status polling is read-only.
     if path == "/account/callback" {
@@ -929,7 +961,7 @@ async fn management(s: &WebSession<'_>, path: &str, method: Method, body: Value)
             s.data["tokens"]["accessToken"].as_str().unwrap_or(""),
         )
         .await
-        .map_err(|failure| v2_failure(failure.status, failure.code))
+        .map_err(|failure| central_failure(failure.status, failure.code))
         .map_err(session_failure);
     }
     if path == "/api/account/login-methods" && method == Method::Get {

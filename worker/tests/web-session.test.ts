@@ -247,6 +247,18 @@ test('V2U-03 V2U-07 same-origin BFF hides proofs, persists encrypted login, and 
         code: code.credential,
       }),
     )
+    // Browser login consumes the verification transaction while issuing its session.
+    assert.deepEqual(
+      {
+        ...(await db
+          .prepare(
+            "SELECT t.status, (SELECT count(*) FROM auth_identity_proof p WHERE p.transaction_id=t.id AND p.kind='LOGIN_CODE') codes FROM auth_product_transaction t JOIN auth_verification_challenge c ON c.transaction_id=t.id WHERE c.id=?",
+          )
+          .bind(sent.verificationId)
+          .first()),
+      },
+      { status: 'CONSUMED', codes: 0 },
+    )
     assert.equal(
       (
         await db

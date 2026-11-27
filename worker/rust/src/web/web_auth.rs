@@ -420,10 +420,14 @@ async fn mutate(s: &mut WebSession<'_>, path: &str, method: Method, b: &Value) -
 async fn accept_login(s: &mut WebSession<'_>, t: &Value, result: &Value) -> Result<Value> {
     ensure(result["state"] == t["state"], 403, "FORBIDDEN")?;
     let tokens=s.call("/api/v1/auth/token",Method::Post,Some(json!({"grantType":"authorization_code","clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"code":result["code"],"codeVerifier":t["verifier"]})),None,None).await?;
+    accept_tokens(s, tokens).await
+}
+async fn accept_tokens(s: &mut WebSession<'_>, tokens: Value) -> Result<Value> {
     shape("TokenSet", &tokens)?;
     s.data["tokens"] = tokens;
     Ok(json!({"account":s.view().await?}))
 }
+
 async fn login_command(
     s: &mut WebSession<'_>,
     path: &str,
@@ -440,17 +444,11 @@ async fn login_command(
             403,
             "FORBIDDEN",
         )?;
-        let result = s
-            .call(
-                "/api/v1/auth/login/code",
-                Method::Post,
-                Some(b.clone()),
-                Some(&text(&t, "proof")),
-                None,
-            )
+        let tokens = s
+            .login("/api/v1/auth/login/code", b, &text(&t, "proof"))
             .await?;
         s.data["loginVerification"] = Value::Null;
-        return accept_login(s, &t, &result).await;
+        return accept_tokens(s, tokens).await;
     }
     let sending = path.ends_with("/verification-codes");
     shape(
@@ -470,16 +468,14 @@ async fn login_command(
     input["codeChallengeMethod"] = "S256".into();
     input["initiatorChallenge"] = challenge(&text(&t, "proof")).into();
     let result = s
-        .call(
+        .login(
             if sending {
                 "/api/v1/auth/verification-codes"
             } else {
                 "/api/v1/auth/login/password"
             },
-            Method::Post,
-            Some(input),
-            Some(&text(&t, "proof")),
-            None,
+            &input,
+            &text(&t, "proof"),
         )
         .await?;
     s.data["transactions"] = json!({});
@@ -489,6 +485,6 @@ async fn login_command(
         s.data["loginVerification"] = t;
         Ok(result)
     } else {
-        accept_login(s, &t, &result).await
+        accept_tokens(s, result).await
     }
 }

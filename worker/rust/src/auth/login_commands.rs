@@ -1,7 +1,27 @@
 //! Public login commands; verification state and credential issuance stay in Auth.
-use crate::{auth::registration, core::http::*, core::identity::Auth, core::security::challenge};
+use crate::{
+    auth::{login_sessions, registration},
+    core::http::*,
+    core::identity::Auth,
+    core::security::challenge,
+};
 use serde_json::{Value, json};
 use worker::{Method, Response};
+
+#[derive(Clone, Copy)]
+pub(crate) enum Completion {
+    Code,
+    Session,
+}
+
+impl Completion {
+    async fn finish(self, a: &Auth, t: &Value, c: &Value) -> Result<Value> {
+        match self {
+            Self::Code => registration::complete(a, t, c).await,
+            Self::Session => login_sessions::issue_browser_login(a, t, c).await,
+        }
+    }
+}
 
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     ensure(method == Method::Post, 405, "METHOD_NOT_ALLOWED")?;
@@ -11,9 +31,22 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         "INVALID_REQUEST",
     )?;
     let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
-    let result = if path == "/api/v1/auth/login/code" {
-        shape("LoginCodeRequest", &b)?;
-        let verification_id = text(&b, "verificationId");
+    let result = execute(a, path, &b, Completion::Code).await?;
+    Ok(json_response(
+        json!({"data":result,"requestId":a.request_id}),
+        200,
+    )?)
+}
+
+pub(crate) async fn execute(
+    a: &Auth,
+    path: &str,
+    b: &Value,
+    completion: Completion,
+) -> Result<Value> {
+    Ok(if path == "/api/v1/auth/login/code" {
+        shape("LoginCodeRequest", b)?;
+        let verification_id = text(b, "verificationId");
         let (mut t, c) = registration::challenge_transaction(a, &verification_id).await?;
         ensure(
             t["purpose"] == "LOGIN" && (t["method"] == "EMAIL_CODE" || t["method"] == "PHONE_OTP"),
@@ -30,7 +63,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         .await?;
         let input = json!({"verificationProof":proof["verificationProof"]});
         registration::identify(a, &mut t, &c, "code", &input).await?;
-        registration::complete(a, &t, &c).await?
+        completion.finish(a, &t, &c).await?
     } else {
         let password = path == "/api/v1/auth/login/password";
         shape(
@@ -39,7 +72,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             } else {
                 "SendLoginVerificationRequest"
             },
-            &b,
+            b,
         )?;
         let proof = a.header("X-Auth-Initiator-Proof");
         ensure(
@@ -62,7 +95,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                 &json!({"identifier":b["identifier"],"password":b["password"]}),
             )
             .await?;
-            registration::complete(a, &t, &c).await?
+            completion.finish(a, &t, &c).await?
         } else {
             let sent = registration::send(
                 a,
@@ -73,9 +106,5 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             .await?;
             json!({"verificationId":sent["challengeId"],"expiresAt":sent["expiresAt"],"retryAfterSeconds":sent["retryAfterSeconds"]})
         }
-    };
-    Ok(json_response(
-        json!({"data":result,"requestId":a.request_id}),
-        200,
-    )?)
+    })
 }
