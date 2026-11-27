@@ -16,6 +16,13 @@ fn configuration() -> Failure {
     }
 }
 
+pub(crate) fn matches(path: &str) -> bool {
+    matches!(
+        path,
+        "/.well-known/molis-sync-jwks.json" | "/api/v2/auth/sync-read-proof"
+    )
+}
+
 pub(crate) async fn route(a: &Auth, path: &str, method: Method) -> Result<Response> {
     ensure(method == Method::Get, 405, "METHOD_NOT_ALLOWED")?;
     let configured = a

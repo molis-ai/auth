@@ -16,7 +16,12 @@ use crate::{
 use serde_json::{Value, json};
 use worker::{D1PreparedStatement, Method, Response};
 
+const ENTITLEMENTS_CHECK: &str = "/api/v2/entitlements/check";
+
 pub fn matches(path: &str) -> bool {
+    if path == ENTITLEMENTS_CHECK {
+        return true;
+    }
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
     if matches!(
         parts.as_slice(),
@@ -233,6 +238,9 @@ async fn read(a: &Auth, action: &Action) -> Result<Value> {
 }
 
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+    if path == ENTITLEMENTS_CHECK {
+        return entitlements::route(a, method).await;
+    }
     let action = match action(path, method) {
         Ok(action) => action,
         Err(error) => {
@@ -254,7 +262,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             400,
             "INVALID_REQUEST",
         )?;
-        let b = serde_json::from_str(&crate::app::bounded(a, 262144).await?)?;
+        let b = serde_json::from_str(&bounded(&mut a.request, 262144).await?)?;
         shape(schema, &b)?;
         if !action.op.starts_with("seat.") || b.get("reason").is_some() {
             ensure(

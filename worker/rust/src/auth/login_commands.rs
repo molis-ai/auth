@@ -10,7 +10,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         415,
         "INVALID_REQUEST",
     )?;
-    let b: Value = serde_json::from_str(&crate::app::bounded(a, 16384).await?)?;
+    let b: Value = serde_json::from_str(&bounded(&mut a.request, 16384).await?)?;
     let result = if path == "/api/v2/auth/login/code" {
         shape("LoginCodeRequest", &b)?;
         let verification_id = text(&b, "verificationId");

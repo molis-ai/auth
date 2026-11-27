@@ -57,6 +57,12 @@ async fn pending(a: &Auth, id: &str) -> Result<Value> {
 fn view(a: &Auth, t: &Value, suffix: &str) -> Value {
     json!({"handoffId":t["id"],"redirectUrl":format!("{}/account/handoff/{suffix}",a.origin),"expiresAt":iso(&t["expires_at"])})
 }
+pub(crate) fn matches(path: &str) -> bool {
+    path.starts_with("/api/v2/auth/management-handoffs")
+        || path == "/account/handoff/start"
+        || path == "/account/handoff/finish"
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     if path.starts_with("/api/v2/") {
         ensure(
@@ -64,7 +70,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             400,
             "INVALID_REQUEST",
         )?;
-        let b: Value = serde_json::from_str(&crate::app::bounded(a, 8192).await?)?;
+        let b: Value = serde_json::from_str(&bounded(&mut a.request, 8192).await?)?;
         let (s, c) = sessions::active(a).await?;
         a.rate("management-handoff", &text(&s, "id"), 20, 60_000)
             .await?;

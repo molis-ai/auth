@@ -293,6 +293,10 @@ impl WebSession<'_> {
 fn csrf(key: &str, id: &str) -> String {
     hash(&format!("web-csrf:{key}:{id}"))
 }
+pub(crate) fn matches(path: &str) -> bool {
+    path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback"
+}
+
 pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
     ensure(
         a.header("Authorization").is_empty() && a.header("X-Auth-Initiator-Proof").is_empty(),
@@ -566,7 +570,7 @@ async fn write_input(
         400,
         "INVALID_REQUEST",
     )?;
-    let body = serde_json::from_str(&crate::app::bounded(a, 220000).await?)?;
+    let body = serde_json::from_str(&bounded(&mut a.request, 220000).await?)?;
     if logout {
         shape("ProductLogoutRequest", &body)?;
         ensure(

@@ -296,6 +296,51 @@ pub fn error_response(e: Failure, id: &str) -> worker::Result<worker::Response> 
     json_response(json!({"error":{"code":e.code},"requestId":id}), e.status)
 }
 
+pub(crate) fn with_security_headers(
+    mut response: worker::Response,
+    id: &str,
+    https: bool,
+) -> worker::Result<worker::Response> {
+    for (k, v) in [
+        ("X-Request-ID", id),
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "no-referrer"),
+        ("X-Frame-Options", "DENY"),
+        (
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com https://avatars.githubusercontent.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        ),
+    ] {
+        if (k == "Content-Security-Policy" || k == "Referrer-Policy")
+            && response.headers().get(k)?.is_some()
+        {
+            continue;
+        }
+        response.headers_mut().set(k, v)?;
+    }
+    if https {
+        response
+            .headers_mut()
+            .set("Strict-Transport-Security", "max-age=31536000")?;
+    }
+    Ok(response)
+}
+
+pub(crate) async fn bounded(request: &mut worker::Request, max: usize) -> Result<String> {
+    use futures_util::StreamExt;
+    let mut stream = request.stream()?;
+    let mut bytes = Vec::new();
+    while let Some(part) = stream.next().await {
+        let part = part?;
+        ensure(bytes.len() + part.len() <= max, 413, "INVALID_REQUEST")?;
+        bytes.extend(part);
+    }
+    String::from_utf8(bytes).map_err(|_| Failure {
+        status: 400,
+        code: "INVALID_REQUEST",
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

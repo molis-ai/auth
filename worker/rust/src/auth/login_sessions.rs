@@ -561,7 +561,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             415,
             "INVALID_REQUEST",
         )?;
-        serde_json::from_str(&crate::app::bounded(a, 16384).await?)?
+        serde_json::from_str(&bounded(&mut a.request, 16384).await?)?
     } else {
         json!({})
     };
