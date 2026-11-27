@@ -138,6 +138,7 @@ impl<'a> Route<'a> {
             .as_str()
             .unwrap_or_default();
         ensure(token(access), 401, "SESSION_EXPIRED")?;
+        // Upstream `molis-billing` exposes its HTTP API under `/api/v1/*` (not Auth's retired V1);
         // Billing verifies the current central session and subject before executing the operation.
         let mut input = json!({
             "path": format!("/api/v1{}", self.suffix),
