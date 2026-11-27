@@ -1,5 +1,5 @@
 //! Auth's same-origin V2 BFF. Only an opaque HttpOnly cookie crosses the browser boundary.
-use super::billing;
+use super::upstream;
 use crate::{
     auth::{login_capabilities, login_sessions},
     core::http::*,
@@ -65,13 +65,30 @@ fn v2_failure(status: u16, code: &str) -> Failure {
             .unwrap_or("AUTH_UNAVAILABLE"),
     }
 }
-fn should_clear(result: &Result<Value>) -> bool {
-    result.as_ref().err().is_some_and(|failure| {
-        matches!(
-            failure.code,
-            "SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED"
-        )
-    })
+enum BrowserPayload {
+    Account(Value),
+    Upstream(upstream::Reply),
+}
+
+impl BrowserPayload {
+    fn successful(&self) -> bool {
+        match self {
+            Self::Account(_) => true,
+            Self::Upstream(reply) => reply.status < 400,
+        }
+    }
+}
+
+fn should_clear(result: &Result<BrowserPayload>) -> bool {
+    let code = match result {
+        Err(failure) => Some(failure.code),
+        Ok(BrowserPayload::Upstream(reply)) => reply.error_code(),
+        Ok(BrowserPayload::Account(_)) => None,
+    };
+    matches!(
+        code,
+        Some("SESSION_EXPIRED" | "SESSION_REVOKED" | "LOGIN_REQUIRED")
+    )
 }
 fn anonymous_data() -> Value {
     json!({"transactions":{},"tokens":null})
@@ -303,10 +320,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         400,
         "INVALID_REQUEST",
     )?;
-    let billing = billing::matches(path)
-        .then(|| billing::Route::parse(path, &a.request.inner().method()))
-        .transpose()?;
-    let success_status = billing.as_ref().map_or(200, billing::Route::status);
+    let upstream = upstream::Target::parse(path, || a.request.inner().method())?;
     let request_url = a.request.url()?;
     if path != "/account/callback"
         && (path == "/api/account/session"
@@ -378,7 +392,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let mut rejected_read = None;
     let can_read_without_lease = method == Method::Get
         && a.request.inner().method() == "GET"
-        && (billing.is_some() || read_without_lease(path));
+        && (upstream.is_some() || read_without_lease(path));
     if !create && can_read_without_lease {
         let loaded_at = now();
         let row = a.s.one(
@@ -406,14 +420,16 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
                             .is_some_and(token))
                 {
                     let result = if session_read {
-                        session.account_view().await
-                    } else if let Some(route) = &billing {
-                        route.call(&session, Value::Null).await
+                        session.account_view().await.map(BrowserPayload::Account)
+                    } else if let Some(target) = &upstream {
+                        call_upstream(target, &session, None).await
                     } else {
-                        management(&session, path, Method::Get, json!({})).await
+                        management(&session, path, Method::Get, json!({}))
+                            .await
+                            .map(BrowserPayload::Account)
                     };
                     if !should_clear(&result) {
-                        return browser_response(a, path, &key, &id, None, result, success_status);
+                        return browser_response(a, path, &key, &id, None, result);
                     }
                     rejected_read = Some(result);
                 }
@@ -425,7 +441,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     }
     ensure(!create || session_read, 401, "LOGIN_REQUIRED")?;
     let logout = path == "/api/account/logout" && method == Method::Post;
-    let body = write_input(a, &key, &id, method.clone(), logout, billing.as_ref()).await;
+    let body = write_input(a, &key, &id, method.clone(), logout, upstream.is_some()).await;
     if body.is_err() {
         // Retain the missing-session response for invalid writes without
         // checking existence on the normal, single-statement claim.
@@ -461,7 +477,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
 
     let mut browser_id = id.clone();
     let mut set_cookie = create;
-    let completed: Result<Result<Value>> = async {
+    let completed: Result<Result<BrowserPayload>> = async {
         let data = if let Some(payload) = stored_payload {
             decode(&key, &id, &payload).await?
         } else {
@@ -479,9 +495,9 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         let mut result = if let Some(rejection) = rejected_read {
             rejection
         } else if session_read {
-            session.view().await
+            session.view().await.map(BrowserPayload::Account)
         } else if logout {
-            session.logout(&body).await
+            session.logout(&body).await.map(BrowserPayload::Account)
         } else if path == "/api/account/reauthentications"
             || path.starts_with("/api/account/auth/")
             || path == "/api/account/password/reset"
@@ -489,12 +505,16 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             || path.starts_with("/api/account/login-methods/")
             || path == "/account/callback"
         {
-            crate::web::web_auth::route(&mut session, path, method, &mut body).await
+            crate::web::web_auth::route(&mut session, path, method, &mut body)
+                .await
+                .map(BrowserPayload::Account)
         } else {
             match session.fresh().await {
-                Ok(()) => match &billing {
-                    Some(route) => route.call(&session, body).await,
-                    None => management(&session, path, method, body).await,
+                Ok(()) => match &upstream {
+                    Some(target) => call_upstream(target, &session, body.as_str()).await,
+                    None => management(&session, path, method, body)
+                        .await
+                        .map(BrowserPayload::Account),
                 },
                 Err(failure) => Err(failure),
             }
@@ -505,11 +525,12 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             session.data["transactions"] = json!({});
             session.data["loginVerification"] = Value::Null;
             if session_read {
-                result = Ok(json!({"state":"EXPIRED"}));
+                result = Ok(BrowserPayload::Account(json!({"state":"EXPIRED"})));
             }
         }
-        let promote = !authenticated_before && !session.data["tokens"].is_null() && result.is_ok();
-        if !authenticated_before && result.is_err() {
+        let success = result.as_ref().is_ok_and(BrowserPayload::successful);
+        let promote = !authenticated_before && !session.data["tokens"].is_null() && success;
+        if !authenticated_before && !success {
             // A failed login must never grant authority to its anonymous browser reference.
             session.data["tokens"] = Value::Null;
         }
@@ -538,8 +559,21 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
         &browser_id,
         set_cookie.then_some(cookie.as_str()),
         completed?,
-        success_status,
     )
+}
+
+async fn call_upstream(
+    target: &upstream::Target<'_>,
+    session: &WebSession<'_>,
+    body: Option<&str>,
+) -> Result<BrowserPayload> {
+    let access = session.data["tokens"]["accessToken"]
+        .as_str()
+        .unwrap_or_default();
+    target
+        .call(session.a, access, body)
+        .await
+        .map(BrowserPayload::Upstream)
 }
 
 async fn write_input(
@@ -548,22 +582,21 @@ async fn write_input(
     id: &str,
     method: Method,
     logout: bool,
-    billing: Option<&billing::Route<'_>>,
+    upstream: bool,
 ) -> Result<Value> {
     if method == Method::Get {
-        return Ok(if billing.is_some() {
-            Value::Null
-        } else {
-            json!({})
-        });
+        return Ok(if upstream { Value::Null } else { json!({}) });
     }
     ensure(
         a.header("Origin") == a.origin && a.header("X-CSRF-Token") == csrf(key, id),
         403,
         "FORBIDDEN",
     )?;
-    if let Some(route) = billing {
-        return route.body(a).await;
+    if upstream {
+        // The same-origin proxy carries the original JSON text in a Value::String.
+        return Ok(upstream::Target::body(a)
+            .await?
+            .map_or(Value::Null, Value::String));
     }
     ensure(
         a.header("Content-Type").split(';').next() == Some("application/json"),
@@ -636,12 +669,11 @@ fn browser_response(
     key: &str,
     browser_id: &str,
     cookie: Option<&str>,
-    result: Result<Value>,
-    success_status: u16,
+    result: Result<BrowserPayload>,
 ) -> Result<Response> {
     let mut response = if path == "/account/callback" {
         let (message, status) = match &result {
-            Ok(value) if value["status"] == "CONSUMED" => (
+            Ok(BrowserPayload::Account(value)) if value["status"] == "CONSUMED" => (
                 "授权已完成，请返回原页面继续。此窗口将由原页面自动关闭。",
                 200,
             ),
@@ -661,10 +693,13 @@ fn browser_response(
         page.headers_mut().set("Referrer-Policy", "no-referrer")?;
         page
     } else {
-        json_response(
-            json!({"data":result?,"requestId":a.request_id}),
-            success_status,
-        )?
+        match result? {
+            BrowserPayload::Account(data) => {
+                json_response(json!({"data":data,"requestId":a.request_id}), 200)?
+            }
+            BrowserPayload::Upstream(reply) if reply.status >= 400 => return reply.response(),
+            BrowserPayload::Upstream(reply) => reply.response()?,
+        }
     };
     response
         .headers_mut()

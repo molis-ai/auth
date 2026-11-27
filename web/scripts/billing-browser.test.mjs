@@ -125,7 +125,7 @@ try {
     }),
   };
   const authWorker = {
-    ...workerModules(root, "src/runtime/entrypoint.js", "src/runtime/billing-transport.js"),
+    ...workerModules(root, "src/runtime/entrypoint.js", "src/runtime/internal-transport.js"),
     compatibilityDate, bindings, d1Databases: { DB: "auth-billing-browser" },
     durableObjects: { PASSWORD_KDF: { className: "PasswordKdf", useSQLite: true } },
   };

@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { compatibilityDate } from '../scripts/environment.mjs'
 import { initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { billingFetch } from '../rust/src/runtime/billing-transport.js'
+import { upstreamFetch } from '../rust/src/runtime/internal-transport.js'
 import { hash, secret } from './fixtures.ts'
 
 const header = 'X-Molis-Internal-Secret'
@@ -40,7 +40,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
     modulesRoot: workerPath('.'),
     modules: [
       { type: 'ESModule' as const, path: workerPath('src/runtime/entrypoint.js') },
-      { type: 'ESModule' as const, path: workerPath('src/runtime/billing-transport.js') },
+      { type: 'ESModule' as const, path: workerPath('src/runtime/internal-transport.js') },
       { type: 'ESModule' as const, path: workerPath('build/index.js') },
       { type: 'CompiledWasm' as const, path: workerPath('build/index_bg.wasm') },
     ],
@@ -402,7 +402,7 @@ test('Auth bridge enforces the private channel and reads current Work billing id
 
 test('Billing outbound uses test/prod service bindings and only dev may use the loopback', async (t) => {
   const path = '/api/v1/orders'
-  const input = { method: 'GET', path, accessToken }
+  const input = { service: 'BILLING', method: 'GET', path, accessToken }
   const network = t.mock.method(globalThis, 'fetch', async () => Response.json({ data: {} }))
   const bound = t.mock.fn(async (request: Request) => {
     assert.equal(request.url, 'https://billing.internal/api/v1/orders?product=WORK')
@@ -427,19 +427,21 @@ test('Billing outbound uses test/prod service bindings and only dev may use the 
       AUTH_ORIGIN: authOrigin,
       MOLIS_INTERNAL_SECRET: shared,
     }
-    await expectError(await billingFetch(vars, input), 503, 'BILLING_UNAVAILABLE')
+    await expectError(await upstreamFetch(vars, input), 503, 'UPSTREAM_UNAVAILABLE')
     await expectError(
-      await billingFetch({ ...vars, MOLIS_INTERNAL_SECRET: '', BILLING: { fetch: bound } }, input),
+      await upstreamFetch({ ...vars, MOLIS_INTERNAL_SECRET: '', BILLING: { fetch: bound } }, input),
       503,
-      'BILLING_UNAVAILABLE',
+      'UPSTREAM_UNAVAILABLE',
     )
-    const response = await billingFetch(
+    const response = await upstreamFetch(
       { ...vars, BILLING: { fetch: bound } },
       {
+        service: 'BILLING',
         method: 'POST',
         path,
-        query: { product: 'WORK' },
-        body: { planId: 'work-personal-test' },
+        query: 'product=WORK',
+        body: '{"planId":"work-personal-test"}',
+        contentType: 'application/json',
         idempotencyKey: 'fixture-order',
         requestId: 'fixture-request',
         accessToken,
@@ -454,9 +456,9 @@ test('Billing outbound uses test/prod service bindings and only dev may use the 
   assert.equal(bound.mock.callCount(), 2)
   assert.equal(network.mock.callCount(), 0)
   const dev = { MOLIS_ENVIRONMENT: 'dev', AUTH_ORIGIN: authOrigin, MOLIS_INTERNAL_SECRET: shared }
-  await expectError(await billingFetch(dev, input), 503, 'BILLING_UNAVAILABLE')
+  await expectError(await upstreamFetch(dev, input), 503, 'UPSTREAM_UNAVAILABLE')
   assert.equal(
-    (await billingFetch({ ...dev, MOLIS_LOCAL_GENERATION: 'fixture' }, input)).status,
+    (await upstreamFetch({ ...dev, MOLIS_LOCAL_GENERATION: 'fixture' }, input)).status,
     200,
   )
   const devRequest = network.mock.calls[0].arguments[0] as Request
@@ -465,7 +467,7 @@ test('Billing outbound uses test/prod service bindings and only dev may use the 
   assert.equal(devRequest.headers.get('Authorization'), 'Bearer ' + accessToken)
   assert.equal(devRequest.redirect, 'manual')
   await expectError(
-    await billingFetch(
+    await upstreamFetch(
       { ...dev, MOLIS_LOCAL_GENERATION: 'fixture' },
       { ...input, accessToken: '' },
     ),
@@ -476,7 +478,12 @@ test('Billing outbound uses test/prod service bindings and only dev may use the 
 })
 
 test('Billing outbound refuses unexpected paths, redirects and upstream transport failures', async () => {
-  const goodInput = { method: 'GET', path: '/api/v1/credits/balance', accessToken }
+  const goodInput = {
+    service: 'BILLING',
+    method: 'GET',
+    path: '/api/v1/credits/balance',
+    accessToken,
+  }
   const outbound = {
     MOLIS_ENVIRONMENT: 'prod',
     MOLIS_INTERNAL_SECRET: shared,
@@ -491,14 +498,27 @@ test('Billing outbound refuses unexpected paths, redirects and upstream transpor
     '//elsewhere.invalid/api/v1/orders',
     '/api/v1/orders/..',
     '/api/v1/orders/%2Ffoo',
+    '/api/v1/orders/%2e%2e',
+    '/api/v1/orders//one',
+    '/api/v1/orders/one\n',
+    '/api/v1/orders/one\\two',
     '/internal/v1/credits/holds',
     '/internal/v1/audit-events',
   ]) {
-    await expectError(await billingFetch(outbound, { ...goodInput, path }), 400, 'INVALID_REQUEST')
+    await expectError(await upstreamFetch(outbound, { ...goodInput, path }), 400, 'INVALID_REQUEST')
   }
-  await expectError(await billingFetch(outbound, goodInput), 503, 'BILLING_UNAVAILABLE')
+  for (const input of [
+    { ...goodInput, service: 'UNKNOWN' },
+    { ...goodInput, method: 'OPTIONS' },
+    { ...goodInput, body: '{}', contentType: 'application/json' },
+  ]) {
+    await expectError(await upstreamFetch(outbound, input), 400, 'INVALID_REQUEST')
+  }
+  await expectError(await upstreamFetch(outbound, goodInput), 503, 'UPSTREAM_UNAVAILABLE')
+  outbound.BILLING.fetch = () => new Response('Not JSON')
+  await expectError(await upstreamFetch(outbound, goodInput), 503, 'UPSTREAM_UNAVAILABLE')
   outbound.BILLING.fetch = () => {
     throw Error(shared)
   }
-  await expectError(await billingFetch(outbound, goodInput), 503, 'BILLING_UNAVAILABLE')
+  await expectError(await upstreamFetch(outbound, goodInput), 503, 'UPSTREAM_UNAVAILABLE')
 })

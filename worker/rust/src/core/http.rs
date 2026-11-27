@@ -201,7 +201,7 @@ pub(crate) fn valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
 
-pub(crate) fn billing_request_id(request: &worker::Request) -> String {
+pub(crate) fn internal_request_id(request: &worker::Request) -> String {
     request
         .headers()
         .get("X-Request-Id")

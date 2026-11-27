@@ -1,5 +1,5 @@
 //! Public HTTP response policy and request log labels.
-use super::billing;
+use super::upstream::{self, Mount};
 use crate::core::{
     http::*,
     identity::{Auth, DEFAULT_RETRY_AFTER, retry_after_seconds},
@@ -9,8 +9,8 @@ use serde_json::json;
 use worker::{Request, Response};
 
 pub(crate) fn request_id(request: &Request) -> String {
-    if billing::matches(&request.path()) {
-        billing_request_id(request)
+    if upstream::mount(&request.path()).is_some() {
+        internal_request_id(request)
     } else {
         uuid()
     }
@@ -20,6 +20,9 @@ pub(crate) fn request_id(request: &Request) -> String {
 // for structured request logs and metrics without pulling in a full web router framework.
 pub(crate) fn log_route(path: &str) -> &'static str {
     static ROUTES: &[&str] = include!(concat!(env!("OUT_DIR"), "/log_routes.rs"));
+    if let Some(mount) = upstream::mount(path) {
+        return mount.log_route;
+    }
     match path {
         "/api/v2/health" => "/api/v2/health",
         "/api/v2/readiness" => "/api/v2/readiness",
@@ -29,7 +32,6 @@ pub(crate) fn log_route(path: &str) -> &'static str {
         "/account/handoff/finish" => "/account/handoff/finish",
         "/api/account/login-sessions" => "/api/account/login-sessions",
         "/account/callback" => "/account/callback",
-        _ if billing::matches(path) => "/api/account/billing/*",
         "/" | "/login" | "/console" => "/",
         _ if path.starts_with("/auth-ui/") => "/auth-ui/{asset}",
         _ => ROUTES
@@ -51,7 +53,7 @@ pub(crate) fn retry_after(external: bool, status: u16, retry_after_at: Option<i6
 pub(crate) fn render_error(
     error: Failure,
     id: &str,
-    is_billing: bool,
+    upstream: Option<&Mount>,
     rate_limit: Option<(&Request, u64)>,
 ) -> worker::Result<Response> {
     if let Some((_, seconds)) = rate_limit.filter(|(request, _)| {
@@ -62,8 +64,8 @@ pub(crate) fn render_error(
             json!({"error":{"code":error.code,"retryAfterSeconds":seconds},"requestId":id}),
             429,
         )
-    } else if is_billing {
-        billing::error_response(error, id)
+    } else if let Some(mount) = upstream {
+        mount.error_response(error, id)
     } else {
         error_response(error, id)
     }

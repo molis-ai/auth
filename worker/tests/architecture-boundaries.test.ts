@@ -10,7 +10,7 @@ const domains = [
   'app',
   'audit',
   'auth',
-  'billing',
+  'internal',
   'delivery',
   'platform',
   'tenants',
@@ -48,6 +48,13 @@ test('Rust source root contains only the Worker entry and router files', () => {
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
   assert.deepEqual(files.sort(), ['app.rs', 'lib.rs'])
+})
+
+test('Auth backend source has no Billing modules', () => {
+  const violations = sourceFiles(source)
+    .map((file) => relative(source, file))
+    .filter((file) => /billing/i.test(file))
+  assert.deepEqual(violations, [])
 })
 
 test('Rust core does not reference the application or business domains', () => {

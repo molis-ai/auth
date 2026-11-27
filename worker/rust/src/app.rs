@@ -107,13 +107,13 @@ async fn handle_response(
         CallMode::External => (true, None, None),
         CallMode::Internal { access, client_ip } => (false, Some(access), Some(client_ip)),
     };
-    let is_billing = web::billing::matches(path);
+    let upstream = web::upstream::mount(path);
     let mut a = match Auth::new(req, env, log, client_ip) {
         Ok(a) => a,
         Err(e) => {
             log_failure(log.env, id, log.route, "initialize", &e, log.started);
             let code = e.code;
-            let response = web::http::render_error(e, id, is_billing, None)?;
+            let response = web::http::render_error(e, id, upstream, None)?;
             let response = with_security_headers(response, id, https)?;
             return Ok((response, None, Some(code)));
         }
@@ -134,7 +134,7 @@ async fn handle_response(
             let code = e.code;
             let rate_limit = retry_after.map(|seconds| (&a.request, seconds));
             (
-                web::http::render_error(e, id, is_billing, rate_limit)?,
+                web::http::render_error(e, id, upstream, rate_limit)?,
                 Some(code),
             )
         }

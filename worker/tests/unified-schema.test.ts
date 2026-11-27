@@ -3,9 +3,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
 
-const migrationName = '0005_unified_account.sql'
-const directory = new URL('../migration-history/through-0020/', import.meta.url)
-const migration = readFileSync(new URL(migrationName, directory), 'utf8')
+const directory = new URL('../migrations/', import.meta.url)
 const localSeed = readFileSync(
   new URL('../unified-account-local-seed.sql', import.meta.url),
   'utf8',
@@ -15,13 +13,10 @@ function database() {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
   for (const name of readdirSync(directory)
-    .filter((name) => name.endsWith('.sql') && name < migrationName)
+    .filter((name) => name.endsWith('.sql'))
     .sort()) {
     db.exec(readFileSync(new URL(name, directory), 'utf8'))
   }
-  db.exec(migration)
-  // These domain-constraint tests also use the independent product registry.
-  db.exec(readFileSync(new URL('0011_entitlement_client_product.sql', directory), 'utf8'))
   return db
 }
 
@@ -73,43 +68,6 @@ function member(db: DatabaseSync, id: string, tenantId: string, user: string, ro
   ).run(id, tenantId, user, role)
 }
 
-function catalog(db: DatabaseSync) {
-  db.exec(`
-    INSERT INTO billing_feature VALUES ('feature','SHARED','Test feature',0);
-    INSERT INTO billing_seat_type VALUES ('standard','Test seat',0);
-    INSERT INTO billing_plan_version VALUES ('plan',1,'Test plan','u',0);
-    INSERT INTO billing_plan_personal_feature VALUES ('plan',1,'feature');
-    INSERT INTO billing_plan_seat_type VALUES ('plan',1,'standard');
-    INSERT INTO billing_plan_seat_feature VALUES ('plan',1,'standard','feature');
-  `)
-}
-
-function subscription(db: DatabaseSync, id: string, tenantId: string) {
-  db.prepare(
-    `INSERT INTO billing_subscription
-    (id,owner_tenant_id,plan_id,plan_version,enabled,starts_at,ends_at,created_at,updated_at)
-    VALUES (?,?,'plan',1,1,0,1000,0,0)`,
-  ).run(id, tenantId)
-  db.prepare(
-    "INSERT INTO billing_seat_pool(subscription_id,tenant_id,seat_type_id,quantity) VALUES (?,?,'standard',1)",
-  ).run(id, tenantId)
-}
-
-function assign(
-  db: DatabaseSync,
-  id: string,
-  sub: string,
-  tenantId: string,
-  membership: string,
-  user: string,
-) {
-  db.prepare(
-    `INSERT INTO billing_seat_assignment
-    (id,subscription_id,seat_type_id,tenant_id,membership_id,user_id,status,assigned_at)
-    VALUES (?,?,'standard',?,?,?,'ASSIGNED',100)`,
-  ).run(id, sub, tenantId, membership, user)
-}
-
 test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrites registrations or grants access', () => {
   const db = database()
   try {
@@ -139,7 +97,6 @@ test('UAS-11/39/40: opt-in local seed is repeatable, isolated and never overwrit
       'auth_local_credential',
       'auth_platform_permission',
       'auth_managed_tenant',
-      'billing_subscription',
     ]) {
       assert.equal(scalar(db, `SELECT count(*) AS value FROM ${table}`), 0)
     }
@@ -373,7 +330,7 @@ test('UAS-07/11/26/41: transactions and proofs bind purpose, environment, curren
       /FOREIGN KEY constraint/,
     )
     assert.throws(
-      () => db.exec("UPDATE auth_product_transaction SET method='EMAIL_CODE'"),
+      () => db.exec("UPDATE auth_product_transaction SET method='UNKNOWN'"),
       /CHECK constraint/,
     )
     assert.throws(
@@ -473,110 +430,6 @@ test('UAS-12/13/16/34/42: managed tenants retain membership incarnations and enf
       VALUES ('transfer','a','a-owner','a-member-again','PENDING',0,1000)`)
     assert.throws(
       () => db.exec('UPDATE auth_ownership_transfer SET to_membership_id=from_membership_id'),
-      /CHECK constraint/,
-    )
-  } finally {
-    db.close()
-  }
-})
-
-test('UAS-17/18/19/28/36/37: subscription and seat keys reject wrong owners, cross-tenant members and duplicate current assignments', () => {
-  const db = configured()
-  try {
-    tenant(db, 'a', 'u')
-    tenant(db, 'b', 'v')
-    member(db, 'a-member', 'a', 'w')
-    catalog(db)
-    subscription(db, 'sub-a', 'a')
-    assert.throws(
-      () => db.exec("UPDATE billing_subscription SET owner_user_id='u'"),
-      /CHECK constraint/,
-    )
-    assert.throws(
-      () => db.exec('UPDATE billing_subscription SET ends_at=starts_at'),
-      /CHECK constraint/,
-    )
-    assert.throws(() => db.exec('UPDATE billing_seat_pool SET quantity=-1'), /CHECK constraint/)
-    assert.throws(
-      () => db.exec("UPDATE billing_seat_pool SET tenant_id='b'"),
-      /FOREIGN KEY constraint/,
-    )
-    assert.throws(
-      () => assign(db, 'wrong-member', 'sub-a', 'a', 'b-owner', 'v'),
-      /FOREIGN KEY constraint/,
-    )
-    assert.throws(
-      () => assign(db, 'wrong-user', 'sub-a', 'a', 'a-member', 'v'),
-      /FOREIGN KEY constraint/,
-    )
-    assign(db, 'assignment', 'sub-a', 'a', 'a-member', 'w')
-    assert.throws(() => assign(db, 'duplicate', 'sub-a', 'a', 'a-member', 'w'), /UNIQUE constraint/)
-    db.exec('UPDATE billing_subscription SET enabled=0')
-    assert.equal(
-      scalar(db, "SELECT count(*) AS value FROM billing_seat_assignment WHERE status='ASSIGNED'"),
-      1,
-    )
-    db.exec(
-      "UPDATE billing_seat_assignment SET status='ENDED',ended_at=200,end_reason='RELEASED' WHERE id='assignment'",
-    )
-    assign(db, 'new-assignment', 'sub-a', 'a', 'a-member', 'w')
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM billing_seat_assignment'), 2)
-    assert.throws(() => db.exec('DELETE FROM billing_seat_pool'), /FOREIGN KEY constraint/)
-    db.exec(`INSERT INTO billing_subscription
-      (id,owner_user_id,plan_id,plan_version,enabled,starts_at,ends_at,created_at,updated_at)
-      VALUES ('personal','u','plan',1,1,0,1000,0,0)`)
-    assert.throws(
-      () =>
-        db.exec(
-          "INSERT INTO billing_seat_pool(subscription_id,tenant_id,seat_type_id,quantity) VALUES ('personal','a','standard',1)",
-        ),
-      /FOREIGN KEY constraint/,
-    )
-  } finally {
-    db.close()
-  }
-})
-
-test('UAS-19/21/22/30: existing guarded batches roll back capacity changes together with idempotency and audit records', () => {
-  const db = configured()
-  try {
-    tenant(db, 'a', 'u')
-    member(db, 'a-member', 'a', 'v')
-    catalog(db)
-    subscription(db, 'sub-a', 'a')
-    assign(db, 'assignment', 'sub-a', 'a', 'a-member', 'v')
-    db.exec('BEGIN')
-    try {
-      db.exec(`INSERT INTO auth_management_result VALUES
-        ('u','molis-work-unified-local','subscription.resize','sub-a','key-digest','request-digest',200,'{"quantity":0}',0,1000)`)
-      db.exec(`INSERT INTO auth_management_audit
-        (id,actor_user_id,client_id,tenant_id,operation,target_type,target_id,outcome,request_id,occurred_at)
-        VALUES ('audit','u','molis-work-unified-local','a','subscription.resize','subscription','sub-a','SUCCESS','request',0)`)
-      // Capacity counts preserved ASSIGNED history even when its subscription expires.
-      db.exec(`INSERT INTO auth_write_guard(id,ok) SELECT 'capacity',
-        (0 >= (SELECT count(*) FROM billing_seat_assignment
-          WHERE subscription_id='sub-a' AND seat_type_id='standard' AND status='ASSIGNED'))`)
-      db.exec(
-        "UPDATE billing_seat_pool SET quantity=0,version=version+1 WHERE subscription_id='sub-a'",
-      )
-      assert.fail('Expected capacity guard rejection')
-    } catch (error) {
-      db.exec('ROLLBACK')
-      assert.match(String(error), /CHECK constraint/)
-    }
-    assert.equal(scalar(db, 'SELECT quantity AS value FROM billing_seat_pool'), 1)
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_management_result'), 0)
-    assert.equal(scalar(db, 'SELECT count(*) AS value FROM auth_management_audit'), 0)
-    db.exec(`INSERT INTO auth_management_result VALUES
-      ('u','molis-work-unified-local','seat.release','assignment','key-digest','request-digest',200,'{"released":true}',0,1000)`)
-    assert.throws(
-      () =>
-        db.exec(`INSERT INTO auth_management_result VALUES
-      ('u','molis-work-unified-local','seat.release','assignment','key-digest','changed-request',200,'{}',0,1000)`),
-      /UNIQUE constraint/,
-    )
-    assert.throws(
-      () => db.exec("UPDATE auth_management_result SET response_json='[]'"),
       /CHECK constraint/,
     )
   } finally {

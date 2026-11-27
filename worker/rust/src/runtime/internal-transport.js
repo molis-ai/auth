@@ -1,21 +1,24 @@
 const internalSecretHeader = 'X-Molis-Internal-Secret'
 const secretFormat = /^[A-Za-z0-9_-]{43}$/u
-const localBillingOrigin = 'http://127.0.0.1:8788'
-const boundBillingOrigin = 'https://billing.internal'
+const services = new Map([
+  ['BILLING', { localOrigin: 'http://127.0.0.1:8788', boundOrigin: 'https://billing.internal' }],
+])
+const methods = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 const internalPaths = new Set([
   '/internal/v1/sessions/introspect',
   '/internal/v1/subjects/verify',
   '/internal/v1/platform/audit/authorize',
 ])
-const orderId = String.raw`(?!\.{1,2}(?:/|$))[A-Za-z0-9_.-]{1,128}`
-const billingReadPath = new RegExp(
-  `^/api/v1/(?:catalog/plans|subscriptions|credits/(?:balance|ledger)|orders(?:/${orderId})?)$`,
-  'u',
-)
-const billingWritePath = new RegExp(
-  `^/api/v1/(?:orders(?:/${orderId}/(?:mock-pay|refund))?|entitlements/check)$`,
-  'u',
-)
+function validPath(path) {
+  return (
+    typeof path === 'string' &&
+    path.startsWith('/api/v1/') &&
+    path.length > '/api/v1/'.length &&
+    !/[^A-Za-z0-9_./~-]/u.test(path) &&
+    !path.includes('//') &&
+    !path.split('/').some((segment) => segment === '.' || segment === '..')
+  )
+}
 
 function serviceError(status, code) {
   const requestId = crypto.randomUUID()
@@ -38,7 +41,7 @@ function sharedSecret(env) {
   return typeof secret === 'string' && secretFormat.test(secret) ? secret : undefined
 }
 
-export function isLocalBillingTransport(env) {
+export function isLocalInternalTransport(env) {
   return (
     env.MOLIS_ENVIRONMENT === 'dev' &&
     Boolean(env.MOLIS_LOCAL_GENERATION) &&
@@ -65,52 +68,56 @@ export async function authBridgeTransport(request, env, authorize) {
   }
 }
 
-// Call from an authenticated server handler with a route, parsed query and JSON body.
-// This transport accepts no incoming Request or browser header collection.
-export async function billingFetch(
+// Only authenticated server code supplies these fields. Construct all outbound headers here.
+export async function upstreamFetch(
   env,
-  { method, path, query, body, idempotencyKey, requestId, accessToken },
+  { service, method, path, query, body, contentType, idempotencyKey, requestId, accessToken },
 ) {
+  const target = services.get(service)
   if (
-    typeof path !== 'string' ||
-    !(
-      (method === 'GET' && billingReadPath.test(path)) ||
-      (method === 'POST' && billingWritePath.test(path))
-    ) ||
-    (method === 'GET' && body !== undefined)
+    !target ||
+    !validPath(path) ||
+    !methods.has(method) ||
+    (method === 'GET' && body !== undefined) ||
+    (body !== undefined &&
+      (typeof body !== 'string' ||
+        typeof contentType !== 'string' ||
+        contentType.split(';', 1)[0].trim().toLowerCase() !== 'application/json')) ||
+    (query !== undefined && typeof query !== 'string')
   )
     return serviceError(400, 'INVALID_REQUEST')
-  const local = isLocalBillingTransport(env)
+
+  const local = isLocalInternalTransport(env)
   const binding =
-    env.MOLIS_ENVIRONMENT === 'test' || env.MOLIS_ENVIRONMENT === 'prod' ? env.BILLING : undefined
+    env.MOLIS_ENVIRONMENT === 'test' || env.MOLIS_ENVIRONMENT === 'prod' ? env[service] : undefined
   const secret = sharedSecret(env)
   if (!secret || (!local && typeof binding?.fetch !== 'function'))
-    return serviceError(503, 'BILLING_UNAVAILABLE')
+    return serviceError(503, 'UPSTREAM_UNAVAILABLE')
   if (typeof accessToken !== 'string' || !secretFormat.test(accessToken))
     return serviceError(401, 'UNAUTHENTICATED')
   try {
-    const url = new URL(local ? localBillingOrigin : boundBillingOrigin)
+    const url = new URL(local ? target.localOrigin : target.boundOrigin)
     url.pathname = path
-    if (query !== undefined) url.search = new URLSearchParams(query).toString()
+    if (query !== undefined) url.search = '?' + query
     const headers = new Headers({
       Accept: 'application/json',
       Authorization: 'Bearer ' + accessToken,
       [internalSecretHeader]: secret,
     })
-    if (body !== undefined) headers.set('Content-Type', 'application/json')
+    if (body !== undefined) headers.set('Content-Type', contentType)
     if (idempotencyKey !== undefined) headers.set('Idempotency-Key', idempotencyKey)
     if (requestId !== undefined) headers.set('X-Request-ID', requestId)
     const request = new Request(url, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body,
       redirect: 'manual',
       signal: AbortSignal.timeout(10000),
     })
     const response = await (local ? fetch(request) : binding.fetch(request))
-    const contentType = response.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase()
-    if ((response.status >= 300 && response.status < 400) || contentType !== 'application/json')
-      return serviceError(503, 'BILLING_UNAVAILABLE')
+    const mime = response.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase()
+    if ((response.status >= 300 && response.status < 400) || mime !== 'application/json')
+      return serviceError(503, 'UPSTREAM_UNAVAILABLE')
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -120,6 +127,6 @@ export async function billingFetch(
       },
     })
   } catch {
-    return serviceError(503, 'BILLING_UNAVAILABLE')
+    return serviceError(503, 'UPSTREAM_UNAVAILABLE')
   }
 }

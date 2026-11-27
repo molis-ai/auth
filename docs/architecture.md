@@ -22,11 +22,13 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 | `auth/{sync_read_proof,test_admission}.rs` | 依赖当前中央会话的同步读证明，以及依赖已验证身份的测试环境准入 |
 | `account/` | 个人资料、登录方式、密码及账号会话管理 |
 | `tenants/` | 团队、角色、创建策略、成员、邀请和所有权交接 |
-| `billing/` | 供独立 `molis-billing` 服务回调的私有身份与权限桥接（`bridge.rs`）；全部账务存储与业务归属 `molis-billing` |
+| `internal/` | 私有服务入口的中央会话、团队成员和平台审计权限核验 |
 | `platform/` | 平台用户和权限、团队治理、应用及登录客户端管理 |
 | `audit/` | 统一管理审计写入与平台、团队审计查询 |
 | `delivery/` | 邮件与短信投递、供应商适配和模板 |
-| `web/` | 同源 Cookie/CSRF、浏览器会话、网页认证事务、账号与账单 BFF |
+| `web/` | 同源 Cookie/CSRF、浏览器会话、网页认证事务、账号 BFF |
+| `web/upstream.rs` | 同源上游挂载、会话转发和响应校验，订阅与账单挂载到独立 Billing Worker |
+| `runtime/internal-transport.js` | 命名入口鉴权、固定服务绑定与安全请求头 |
 | `web/assets.rs` | 网页入口、规范域名跳转、静态资源和缓存 |
 | `web/readiness.rs` | 存活响应与就绪探针，核对 D1 结构和 Web 客户端环境配置 |
 | `web/http.rs` | HTTP 请求日志标签、错误响应和响应后置处理 |
@@ -43,7 +45,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 - 中央 Access/Refresh Token、授权码和一次性状态只保存摘要。刷新结果不确定时不重发旧 refresh；读取或刷新不计用户活动。
 - 密码派生由私有 `PASSWORD_KDF` 绑定调用 `PasswordKdf` Durable Object，由 RustCrypto 执行 PBKDF2-HMAC-SHA256 600,000 次，使用 16 字节随机盐和 32 字节派生值。Durable Object 使用独立的 CPU 预算，且不持久化密码、盐或派生值。派生不可用时拒绝请求，无重试或本地回退。无旧密码编码读取或用户映射兼容。线上 Durable Object 的 CPU 耗时需单独观测。
 - 头像实际解码再编码；外部身份不按同邮箱自动合并。外部请求不跟随任意重定向，带超时与大小限制。
-- SQL 文件只创建现行 V2 所需表；V1 会话、授权、成员、邀请及服务表已移除，BFF 表包含在[当前迁移基线](../worker/migrations/0020_auth_baseline.sql)中。新库直接应用基线，已有库按[部署手册](cloudflare-deployment.md#d1-迁移基线)核对并登记。
+- Auth D1 应用完整迁移链后只保留身份、会话、团队和平台管理等 Auth 数据。历史基线 0020 及后续迁移按[部署手册](cloudflare-deployment.md#d1-迁移基线)保留和应用。账务数据与接口归独立 Billing Worker，见[同源转发说明](account-billing-bff.md)。
 
 ## 构建与验证
 
