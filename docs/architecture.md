@@ -51,7 +51,7 @@ Wrangler 本地、预览、正式入口均为 `worker/rust/build/index.js`，由
 
 `npm run setup` 安装固定 Rust 1.96.0、wasm32-unknown-unknown 与 worker-build；不改变已有默认工具链。worker-build 使用 `worker/rust/Cargo.toml` 中 `worker` 依赖锁定的精确版本，安装在忽略的 `worker/rust/.tools/`，Cargo.lock 纳入版本管理。
 
-`npm test` 包括可执行合同、两种 Cargo feature 配置的 Rust 单元测试、真实 WASM + workerd + 隔离 D1，以及包含 `AccountClient` 的 Web 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归迁移记录](history/unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](unified-account/v2-consolidation.md)。
+`npm test` 包括可执行合同、两种 Cargo feature 配置的 Rust 单元测试、真实 WASM + workerd + 隔离 D1，以及包含 `AccountClient` 的 Web 回归。旧协议专属用例随实现删除，现行安全断言及替代覆盖见 [V2 回归迁移记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/v2-test-transition.md)。Auth 与 Work 真实页面验证、联合专项、固定基线与当前全量结果见 [V2 整合方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v2-consolidation.md)。
 
 `npm run build` 构建页面，并使用本地夹具对 Worker 执行 dry-run。部署入口使用 `build:rust:production`，编译时关闭 `mock-provider` 和 `mock-delivery`，保留线上 `test` 白名单准入。正式环境配置与授权步骤见[部署说明](cloudflare-deployment.md)。
 

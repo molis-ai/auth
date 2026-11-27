@@ -72,7 +72,7 @@ test('V2U-01 V2U-07 V2C-01 current pages retain security headers; removed V1 ent
         assert.equal(r.status, 404, method + ' ' + path)
         assert.equal((await r.json()).error.code, 'NOT_FOUND')
       }
-    for (const path of ['/complete', '/provider', '/console/callback'])
+    for (const path of ['/complete', '/provider', '/console/callback', '/auth-ui/index.html'])
       assert.equal((await p.fetch(new Request(origin + path))).status, 404)
     assert.deepEqual(await p.env.DB.prepare('SELECT count(*) n FROM auth_user').first(), before)
     for (const name of ['auth_service', 'auth_service_token'])
@@ -184,6 +184,7 @@ test('the real Assets router preserves hashed asset responses and the Worker met
       ],
       ['/auth-ui/assets/missing-Abcd_123.js', 404, 404, 'no-store', null, null],
       ['/login', 200, 200, 'no-store', /text\/html/, null],
+      ['/auth-ui/index.html', 404, 404, 'no-store', /application\/json/, null],
       ['/index.html', 404, 404, 'no-store', /application\/json/, null],
       ['/api/v2/health', 200, 501, 'no-store', /application\/json/, null],
     ] as const) {

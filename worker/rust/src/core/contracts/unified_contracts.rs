@@ -46,7 +46,7 @@ fn format_matches(format: &str, value: &str) -> bool {
             .expect("email pattern")
     });
     static ENCODED_PATH_SEPARATOR_OR_CONTROL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)%(2f|5c|0[0-9a-f]|1[0-9a-f]|7f)").expect("local-path pattern")
+        Regex::new(r"%(2[fF]|5[cC]|[01][0-9a-fA-F]|7[fF])").expect("local-path pattern")
     });
     match format {
         "date-time" => {

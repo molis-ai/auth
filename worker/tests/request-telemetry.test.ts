@@ -26,7 +26,9 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
     },
     undefined,
     async (request: Request) =>
-      new Response('fixture', { status: new URL(request.url).pathname === '/missing' ? 404 : 200 }),
+      new Response('fixture', {
+        status: new URL(request.url).pathname === '/auth-ui/assets/missing-Abcd_123.js' ? 404 : 200,
+      }),
     logs,
   )
   try {
@@ -35,7 +37,7 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
       .bind(hash('v2-token:' + ip), Date.now() + 60_000)
       .run()
     const health = await proxy.fetch(new Request(origin + '/api/v2/health'))
-    const asset = await proxy.fetch(new Request(origin + '/auth-ui/logo.svg'))
+    const asset = await proxy.fetch(new Request(origin + '/auth-ui/assets/logo-Abcd_123.js'))
     assert.equal(health.status, 200)
     assert.equal(asset.status, 200)
     const skipped = [health, asset].map((response) => response.headers.get('X-Request-ID'))
@@ -93,7 +95,7 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
     }
 
     await check('/login', 200, '/', 'none')
-    await check('/auth-ui/missing', 404, '/auth-ui/{asset}', 'http_error')
+    await check('/auth-ui/assets/missing-Abcd_123.js', 404, '/auth-ui/{asset}', 'http_error')
     await check('/api/v2/health', 501, '/api/v2/health', 'UNIFIED_ACCOUNT_NOT_IMPLEMENTED', {
       method: 'POST',
     })

@@ -1,6 +1,6 @@
 # Auth、Club、Work 三环境改造 · 第二版执行方案
 
-本版从三个 IDEA 项目目录现有的未提交实现继续开发。第一版的业务约定、ENV-01 至 ENV-20 定义和历史执行结果见[第一版历史方案](history/environment-unification-plan.md)。执行顺序、补充验收和后续决策以本版为准。
+本版从三个 IDEA 项目目录现有的未提交实现继续开发。第一版的业务约定、ENV-01 至 ENV-20 定义和历史执行结果见[第一版历史方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/environment-unification-plan.md)。执行顺序、补充验收和后续决策以本版为准。
 
 ## 交付目标
 

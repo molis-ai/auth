@@ -2,7 +2,7 @@
 
 状态：2026-11-08，Work 网页、Work Tauri 分发包和 Club 已通过真实 GitHub staging 登录和回跳。[Work #1975](https://github.com/molis-ai/molis-work/pull/1975) 已合入 `main`。[Auth #3](https://github.com/molis-ai/auth/pull/3) 的 GitHub LIVE 适配与实测 staging 配置已通过 CI 并合入 Auth `main`（`99c28b3`），Cloudflare 生产构建关闭，合入后生产仍由 `b6e35a45` 承载。Work Tauri 无代理回跳和 Club 真实再次验证已复测，GitHub 成功绑定与换绑由隔离 WASM/D1 的不同夹具身份覆盖。两个隔离域名已绑定，阿里云短信申请材料已准备，Titan Pro Light 已核实。短信资质和模板申请、Titan 专用发件邮箱和试投、Google 项目确认和真实联调待推进。Cloudflare Email Sending 暂缓。
 
-本台账供统一账号主流程认领和交接，承接 [T-03](../history/unified-account/delivery.md#6-剩余待办与依赖顺序) 和 [X-01 至 X-03](../history/unified-account/development-tasks.md)。盘点版本为 Auth `67904ef`、Work `d20f07c98`、Club `9ad3a66` 的 `origin/main`。Work 主线包含 [桌面回跳修复 #1965](https://github.com/molis-ai/molis-work/pull/1965)，Club 主线包含 [Cloudflare mock 预览 #28](https://github.com/molis-ai/molis-club/pull/28)。
+本台账供统一账号主流程认领和交接，承接 [T-03](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/delivery.md#6-剩余待办与依赖顺序) 和 [X-01 至 X-03](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/development-tasks.md)。盘点版本为 Auth `67904ef`、Work `d20f07c98`、Club `9ad3a66` 的 `origin/main`。Work 主线包含 [桌面回跳修复 #1965](https://github.com/molis-ai/molis-work/pull/1965)，Club 主线包含 [Cloudflare mock 预览 #28](https://github.com/molis-ai/molis-club/pull/28)。
 
 ## 盘点与认领
 
@@ -16,7 +16,7 @@
 
 记录进度时分别填资源状态（待申请、已提交、已获批）、适配状态（mock、LIVE 已实现）和联调证据（待验、实际送达或官方回调已验）。每次提交补控制台工单或应用引用、账号归属、环境、负责人和日期。真实密钥值由管理员放入目标环境的秘密存储。
 
-现行 v2 投递与验证见 [delivery/mod.rs](../../worker/rust/src/delivery/mod.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](../history/mail-delivery.md)
+现行 v2 投递与验证见 [delivery/mod.rs](../../worker/rust/src/delivery/mod.rs) 和 [registration.rs](../../worker/rust/src/auth/registration.rs)。历史 SMTP 文档属于旧实现，真实 SMTP 也缺联调证据。[历史邮件投递](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/mail-delivery.md)
 
 GitHub 已在 staging 启用真实授权与回调，Google v2 仍用模拟授权。各环境按已部署的适配和配置启用登录方式。[external_login.rs](../../worker/rust/src/auth/external_login.rs) · [management.rs](../../worker/rust/src/account/management.rs) · [unified_policy.rs](../../worker/rust/src/core/contracts/unified_policy.rs)
 
@@ -91,7 +91,7 @@ Cloudflare 回读确认 `auth.molis.ai` 已绑定 `molis-auth-production`，生�
 | 统一账号 v2 | `UNIFIED_ACCOUNT_CONFIG` 与生产 D1 的 `auth_environment` 对齐，使用独立生产环境 ID、`PRODUCTION / LIVE / LIVE` 和正式 Auth 来源。核对 D1 迁移记录、备份和旧版本兼容性，再登记获准试点的应用、客户端、产品、来源和精确回调。直接套用 staging seed 会带入隔离客户端，生产登记须单独准备。现行生产配置要求 LIVE，邮件和短信目前仍缺 LIVE 投递适配。 |
 | Work 与 Club 回跳 | Work 由发布负责人确认实际包的数字回环端口与 `/account/callback`。Club 当前可达入口为 `https://adeptify.me`，其 `/account/callback` 本次探测返回 404。确认候选 Club Worker 的回调路由及 BFF 服务绑定、`MOLIS_CLUB_ACCOUNT_CONFIG` 和独立会话密钥，再登记产品回调。GitHub 应用只登记上表的 Auth 回调。 |
 
-1. **发布前验收。** 基于包含 Auth #3 的候选提交对齐生产配置和校验，跑合同、OAuth、部署测试和生产 dry run。在独立数据上演练登记、回跳、D1 迁移兼容和回退。记录生产完整版本 ID、候选提交与版本 ID、试点客户端、观察窗口和回滚负责人。D-09 存量归属与旧客户端切换按 [账号迁移方案](account-migration-plan.md) 验收。
+1. **发布前验收。** 基于包含 Auth #3 的候选提交对齐生产配置和校验，跑合同、OAuth、部署测试和生产 dry run。在独立数据上演练登记、回跳、D1 迁移兼容和回退。记录生产完整版本 ID、候选提交与版本 ID、试点客户端、观察窗口和回滚负责人。D-09 存量归属与旧客户端切换按 [账号迁移方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/account-migration-plan.md) 验收。
 2. **批准后发布与试点。** 先由组织管理员生成生产密钥。通过 `wrangler versions upload --secrets-file` 或等效的版本操作上传候选，核对版本、路由、绑定和密钥名称，随后按批准窗口提升版本。`wrangler secret put` 会立即部署，候选准备使用版本命令。先只给获准的独立客户端开放 GitHub，保持现有登录入口可用。 [Worker 版本](https://developers.cloudflare.com/workers/versions-and-deployments/) · [Cloudflare 密钥与版本操作](https://developers.cloudflare.com/workers/configuration/secrets/)
 3. **正式冒烟与放量。** Work 分发包和 Club 用受控账号跑 GitHub 首登、复登、跨端同一用户、取消与重放拒绝。用有其他可用登录方式的账号验证绑定、再次验证及解绑保护，双账号换绑按可用测试身份安排。确认系统 Chrome 回到 Work、Club 建立会话、刷新与退出正常，同时抽查原有登录、会话及回调。观察 HTTP 5xx、换码失败、回跳超时和会话完成率，再决定扩大范围。邮件、短信和 Google 按各自验收状态开放。
 4. **回滚。** 发现旧登录受损、身份归属异常或回跳持续失败时，先停止试点入口和新事务。将生产 Worker 回滚到发布前确认的版本（目前为 `b6e35a45`），同步回退本轮 Work / Club 入口配置。验证正式域名、原登录、会话和生产流量，撤销受影响的新试点会话。D1 备份和迁移单独处置，保留已写入的用户和身份数据，先在独立副本验证恢复方案。 [Cloudflare Worker 回滚](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/) · [D1 迁移](https://developers.cloudflare.com/workers/wrangler/commands/d1/#d1-migrations)

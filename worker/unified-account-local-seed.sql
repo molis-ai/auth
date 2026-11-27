@@ -1,4 +1,4 @@
--- Explicit, opt-in LOCAL bootstrap after all migrations through 0011. Not part of local-seed.sql.
+-- Optional LOCAL login clients for the Work and Club test fixtures.
 -- Execute only against a disposable/local database. Creates no users, credentials,
 -- platform permissions, managed tenants, subscriptions or seats.
 -- Existing registrations are never overwritten, enabled or silently re-profiled.
@@ -20,7 +20,7 @@ SELECT client_id,'unified-account-v2','unified-local','["http://127.0.0.1:3000"]
 WHERE id='molis-club-unified-local-client' AND client_id='molis-club-unified-local'
   AND application_id='molis-club-unified-local-app' AND client_type='WEB';
 
--- Explicit product registration for these isolated clients only (requires 0011).
+-- Explicit product registration for these isolated clients only.
 -- Never overwrite an existing product mapping or infer production clients by name.
 INSERT OR IGNORE INTO auth_client_product(client_id,product)
 SELECT p.client_id,'WORK' FROM auth_client_policy p JOIN auth_client c ON c.client_id=p.client_id

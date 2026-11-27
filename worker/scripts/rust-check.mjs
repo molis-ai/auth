@@ -14,7 +14,7 @@ const commands = {
 }
 if (!commands[action]) throw new Error('Unknown Rust action')
 const featureConfigs = ['check', 'clippy', 'test'].includes(action)
-  ? [[], ['--no-default-features']]
+  ? [[], ['--features', 'mock-provider,mock-delivery']]
   : [[]]
 const clippyArgs = action === 'clippy' ? ['--', '-D', 'warnings'] : []
 for (const features of featureConfigs)

@@ -25,7 +25,8 @@ pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Resu
     // `index.html` for arbitrary unknown URLs.
     let pages = ["/", "/login", "/console"];
     let page = pages.contains(&path);
-    ensure(page || path.starts_with("/auth-ui/"), 404, "NOT_FOUND")?;
+    let asset = path.strip_prefix("/auth-ui/assets/");
+    ensure(page || asset.is_some(), 404, "NOT_FOUND")?;
     // Documents use the configured origin before cookies or login forms are created.
     // API writes retain their strict Origin and CSRF checks.
     if page && url.origin().ascii_serialization() != a.origin {
@@ -38,11 +39,8 @@ pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Resu
         return Ok(response);
     }
     let mut target = url.clone();
-    let asset = path.strip_prefix("/auth-ui/assets/");
     if page {
         target.set_path("/index.html");
-    } else if asset.is_none() {
-        target.set_path(&path[8..]);
     }
     target.set_query(None);
     let mut r = env
@@ -60,7 +58,9 @@ pub(crate) async fn serve(a: &Auth, env: &Env, url: Url, method: Method) -> Resu
     // Asset responses have immutable headers; copy them before adding our security policy.
     let headers = worker::Headers::new();
     for (key, value) in r.headers().entries() {
-        headers.set(&key, &value)?;
+        if !key.eq_ignore_ascii_case("CF-Cache-Status") {
+            headers.set(&key, &value)?;
+        }
     }
     let environment = env
         .var("MOLIS_ENVIRONMENT")

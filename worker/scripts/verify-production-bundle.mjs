@@ -72,11 +72,11 @@ function report(label, bytes) {
 }
 
 const fixture = readFileSync(fixtureWasm)
-assert(fixture.includes(mockPage), 'Default WASM is missing the mock provider page')
+assert(fixture.includes(mockPage), 'Fixture WASM is missing the mock provider page')
 for (const statement of mockDeliveryStatements)
-  assert(fixture.includes(statement), `Default WASM is missing ${statement}`)
-assert(!fixture.includes(contract), 'Default WASM embeds the entire OpenAPI document')
-const fixtureHash = report('Default', fixture)
+  assert(fixture.includes(statement), `Fixture WASM is missing ${statement}`)
+assert(!fixture.includes(contract), 'Fixture WASM embeds the entire OpenAPI document')
+const fixtureHash = report('Fixture', fixture)
 
 const staging = mkdtempSync(join(tmpdir(), 'molis-auth-production-'))
 try {
@@ -177,9 +177,9 @@ try {
     productionHash,
     'Wrangler overwrote the production WASM',
   )
-  assert.equal(sha256(readFileSync(fixtureWasm)), fixtureHash, 'Default WASM was overwritten')
+  assert.equal(sha256(readFileSync(fixtureWasm)), fixtureHash, 'Fixture WASM was overwritten')
   console.log(`Wrangler bundle and production WASM SHA-256 match: ${bundledHash}`)
-  console.log(`Default WASM SHA-256 unchanged: ${fixtureHash}`)
+  console.log(`Fixture WASM SHA-256 unchanged: ${fixtureHash}`)
 } finally {
   rmSync(staging, { recursive: true, force: true })
 }

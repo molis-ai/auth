@@ -23,7 +23,7 @@ fn audit_view(r: &Value) -> Result<Value> {
 fn audit_timestamp(value: &str) -> Result<i64> {
     use std::sync::LazyLock;
     static RFC3339: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"(?i)^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$")
+        regex::Regex::new(r"^([0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})$")
             .expect("audit timestamp pattern")
     });
     let captures = RFC3339
