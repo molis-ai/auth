@@ -1,4 +1,5 @@
 import { ReadOnlyCache } from "./read-only-cache.ts";
+import { reportApiIssue, reportCache } from "../telemetry.ts";
 
 /** Same-origin account client. Central credentials and proofs belong to the same-origin Host/BFF. */
 export interface AccountView {
@@ -100,6 +101,7 @@ export class AccountClient {
       this.checkGeneration(generation);
       if (method !== "GET" && !this.csrf) await this.bootstrapSession();
       const cached = method === "GET" ? this.readCache.read(path) : undefined;
+      if (cached) reportCache(path, cached.hit);
       if (cached?.hit) return cached.value as T;
       const data = await this.send<T>(path, body, method, generation, signal, key);
       if (cached && !cached.hit) cached.remember(data);
@@ -231,6 +233,7 @@ export class AccountClient {
     };
     signal.addEventListener("abort", cancel, { once: true });
     const sentCsrf = this.csrf;
+    const started = performance.now();
     try {
       const response = await this.transport(
         this.origin + "/api/account" + path,
@@ -285,8 +288,15 @@ export class AccountClient {
     } catch (error) {
       this.checkGeneration(generation);
       if (controller.signal.reason === CANCEL) throw new AuthError("CANCELLED");
-      if (controller.signal.reason === TIMEOUT) throw new AuthError("RESULT_UNKNOWN");
-      if (error instanceof AuthError) throw error;
+      if (controller.signal.reason === TIMEOUT) {
+        reportApiIssue(path, 0, "TIMEOUT", started, "");
+        throw new AuthError("RESULT_UNKNOWN");
+      }
+      if (error instanceof AuthError) {
+        reportApiIssue(path, error.status, error.code, started, error.requestId);
+        throw error;
+      }
+      reportApiIssue(path, 0, "NETWORK_ERROR", started, "");
       throw new AuthError("RESULT_UNKNOWN");
     } finally {
       clearTimeout(timer);

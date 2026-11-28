@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { lazyComponent } from "./shared/components/lazy-component.ts";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from "vue";
+import { reportBrowserError } from "./shared/telemetry.ts";
 import AuthEntry from "./features/auth-entry/AuthEntry.vue";
 import AuthEntryShell from "./features/auth-entry/AuthEntryShell.vue";
 import { entryText } from "./features/auth-entry/entry-copy.ts";
@@ -100,6 +101,7 @@ function restoreNavigation() {
   const { target, subjectId } = readLocation();
   void navigate(target, subjectId, false);
 }
+onErrorCaptured(error => { reportBrowserError("vue_error", error); });
 onMounted(() => window.addEventListener("popstate", restoreNavigation));
 onBeforeUnmount(() => window.removeEventListener("popstate", restoreNavigation));
 function openTeamBilling(tenantId: string) {

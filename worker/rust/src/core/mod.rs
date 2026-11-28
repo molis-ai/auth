@@ -6,3 +6,4 @@ pub(crate) mod management_protocol;
 pub(crate) mod password_kdf;
 pub(crate) mod security;
 pub(crate) mod store;
+pub(crate) mod telemetry;

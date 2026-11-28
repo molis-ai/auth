@@ -26,6 +26,7 @@ pub(crate) fn log_route(path: &str) -> &'static str {
     match path {
         "/api/v1/health" => "/api/v1/health",
         "/api/v1/readiness" => "/api/v1/readiness",
+        super::telemetry::PATH => super::telemetry::PATH,
         "/api/v1/auth/sync-read-proof" => "/api/v1/auth/sync-read-proof",
         "/.well-known/molis-sync-jwks.json" => "/.well-known/molis-sync-jwks.json",
         "/account/handoff/start" => "/account/handoff/start",
