@@ -120,11 +120,8 @@ test('ENV-U-01: the Auth test deployment pins account, Worker, route and D1 inde
   })
   assert.equal(authEnvironment('test', true, root).platform.d1_databases[0].remote, true)
   assert.equal(authEnvironment('test', true, root).platform.services, undefined)
-  assert.equal(platform.observability, undefined)
-
-  writeFileSync(configPath, `${testConfig.trimEnd()}\ngrafanaLogsDestination=molis-grafana-logs\n`)
   assert.equal(authEnvironment('test', true, root).platform.observability, undefined)
-  assert.deepEqual(authEnvironment('test', false, root).platform.observability, {
+  assert.deepEqual(platform.observability, {
     enabled: true,
     redact_query_string: true,
     logs: {
@@ -136,6 +133,9 @@ test('ENV-U-01: the Auth test deployment pins account, Worker, route and D1 inde
     },
     traces: { enabled: false },
   })
+
+  writeFileSync(configPath, testConfig.replace(/^grafanaLogsDestination=.*\n?/mu, ''))
+  assert.equal(authEnvironment('test', false, root).platform.observability, undefined)
 })
 
 test('only local dev reads the shared account and keeps both credentials out of Worker bindings', (t) => {
