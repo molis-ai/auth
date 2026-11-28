@@ -1,40 +1,72 @@
 # Molis Auth
 
-统一账号服务：Cloudflare Worker（Rust/WASM）与 D1，以及 Vue 管理界面。中央 API 只使用 `/api/v1`；Auth 页面通过 `AccountClient` 调用同源 `/api/account`，和 Work 一样不在浏览器保存 access/refresh token 或身份验证证明。
+Molis 生态的**统一身份与组织底座**，基于 Cloudflare Worker（Rust/WASM）、D1、Static Assets 与 Vue 3 构建。
 
-## 当前模型
+## 在产品矩阵中的位置
 
-- 用户、已验证邮箱/手机、Google/GitHub 身份、密码与账号安全版本由 Auth 持有。
-- 每个产品独立登录会话；刷新轮换、当前登录退出、所有产品退出均使用 统一账号协议。
-- 租户使用 OWNER / ADMIN / MEMBER，与平台权限独立。`TENANT_CREATION_POLICY=SELF_SERVICE` 默认允许登录用户创建并成为所有者；`PLATFORM_ONLY` 关闭自助创建，平台仍须独立的 `TENANT_CREATE` 权限。
-- 应用、登录客户端、用户可用状态、平台权限管理均有明确的平台能力、版本与幂等键，不使用部署环境里的超管用户白名单。
-- 订阅、套餐、租户席位与权益继续使用现有 统一账号协议 商业模型。创建租户不附送付费权限。
+```mermaid
+flowchart TB
+  Products["业务产品<br/>molis-work / molis-club 等"]
+  Auth["Molis Auth（本仓库）<br/>统一身份 · 会话 · 租户组织 · 平台权限 · 账号控制台"]
+  Billing["molis-billing<br/>订阅 · 订单 · Credit 账本"]
 
-V1 API、OAuth2 用户授权入口、Team/VIEWER、按应用角色排列的权限矩阵、Apple 登录、浏览器持有 Token 的 SDK 及双栈迁移工具已退出当前实现。不支持旧客户端或旧会话恢复。历史 SQL 编号与设计材料保留为历史记录，不作为另一套运行时读取或授权路径。
+  Products -- "登录认证 / 会话 / 租户与成员" --> Auth
+  Billing -- "AuthInternal：会话与权限核验" --> Auth
+  Auth -- "同源 BFF：控制台账单转发" --> Billing
+```
 
-## 本地开发
+- **对业务产品（Work / Club 等）**：统一承载注册登录、产品独立会话、个人资料、租户与成员关系，各业务端不再自建账号体系。
+- **对计费服务（molis-billing）**：Auth 管“你是谁、你在哪个团队、有什么角色”，Billing 管“钱、套餐和 Credit”；Auth 通过私有 `AuthInternal` 桥接为其提供实时鉴权，并在控制台以同源 BFF 转发账单请求。
+- **对终端用户与平台管理员**：直接提供无浏览器 Token 暴露的登录页、个人与团队管理控制台、平台治理后台。
 
-要求 Node 22.18+、npm、Rust/WASM 构建工具。开发使用 `config/dev.properties` 和被 Git 忽略的 `secrets/dev.properties`。也可显式选择 test。准备本地 D1、配置凭据和登记客户端的步骤见 [Cloudflare 部署](docs/cloudflare-deployment.md)。
+## 模块划分
+
+### 后端模块（`worker/rust/src/`）
+
+| 模块 | 做什么 |
+| --- | --- |
+| `auth` | 注册、一步登录（密码 / 验证码 / Google / GitHub）、会话令牌轮换与登出、管理访问控制 |
+| `account` | 个人资料、头像、邮箱/手机绑定与换绑、密码与二次安全验证 |
+| `team` | 租户创建、成员角色（`OWNER` / `ADMIN` / `MEMBER`）、邀请与所有权转移 |
+| `platform` | 应用与客户端登记、用户启停、平台细粒度能力权限与租户创建策略 |
+| `audit` | 账号安全与平台管理审计记录及分页查询 |
+| `delivery` | 邮件与短信验证码投递（本地 Mock / 阿里云） |
+| `web` | 控制台同源 BFF（`/api/account/*`）、HttpOnly Cookie 会话、壳页渲染与 Billing 转发 |
+| `internal` | 面向内部服务的私有鉴权桥接（`AuthInternal` / `/internal/v1/*`） |
+| `core` | HTTP、D1 原子存储、加密签名、契约校验与分层定时清理等基础设施 |
+
+### 前端与契约
+
+| 目录 | 做什么 |
+| --- | --- |
+| `web/` | Vue 3 账号登录与控制台前端（登录入口、个人中心、安全设置、团队管理、账单面板、平台治理） |
+| `contracts/` | `unified-account` 跨产品接口契约，供 Auth 与各业务端保持协议同步 |
+| `worker/migrations/` | 单基线 D1 数据结构（`0001_auth_baseline.sql`） |
+
+## 本地开发与验证
+
+需要 Node.js 22.18+ 与 npm。
 
 ```sh
+cp secrets.example/dev.properties secrets/dev.properties
 npm run setup
-npm start -- --env dev
+npm start -- --env dev          # 本地启动 http://127.0.0.1:8787
 ```
 
-本地 dev 数据库准备好后，首次启动 Auth 会创建共享的普通预览账号。邮箱 `PREVIEW_ACCOUNT_EMAIL` 和初始密码 `PREVIEW_ACCOUNT_PASSWORD` 都从 `secrets/dev.properties` 读取。新成员从 `secrets.example/dev.properties` 复制模板后，填入团队共享的 dev 账号、密码和其余凭据。升级已有配置时，将邮箱从 `config/dev.properties` 移到密钥文件，与初始密码放在一起。每位开发者用相同账号密码登录本机的 Auth、Club 和 Work，数据各自保存在本机。重复启动会保留已有密码。test 的同名字段可记录由平台单独创建的测试账号凭据。本地启动和部署 test 均不会用它们创建或重置账号。测试账号登录仍需满足 test 白名单。prod 不读取预览账号凭据。
-
-Auth 和产品客户端必须使用同一版 `contracts/unified-account`。开发、测试和部署见 [三环境执行方案](docs/environment-unification.md)。
-
-## 验证
+常用检查：
 
 ```sh
-npm test
+npm run format:check && npm run clippy && npm test
 npm run build
-npm run contracts:check
 ```
 
-`npm test` 包含合同校验、两种 Cargo feature 配置的 Rust 单测、真实 workerd/D1 的认证/租户/商业/管理集成与数据库约束，以及包含 `AccountClient` 的 Web 用例。测试只创建临时数据。旧测试的职责迁移见 [历史回归迁移记录](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/history/unified-account/v%32-test-transition.md)。
+| 环境 | 域名 | Worker | D1 |
+| --- | --- | --- | --- |
+| `dev` | `http://127.0.0.1:8787` | `molis-auth-local` | `auth-local` |
+| `test` | `https://auth.test.molis.ai` | `molis-auth-test` | `molis-auth-test` |
+| `prod` | `https://auth.molis.ai` | `molis-auth-production` | `molis-auth-prod` |
 
-真实页面专项在构建 Auth 与 Work 后运行 `MOLIS_WORK_SOURCE=/absolute/path/to/molis-work npm run test:browser`。它借用 Work 的公开 Chrome test-kit 和机器测试槽，创建临时 D1、随机端口与独立浏览器 profile，验证注册登录、租户创建、资料、再次验证、绑定邮箱、改密、会话撤销后重新登录及退出；投递明确为 mock。截图默认写临时目录，可用 `AUTH_BROWSER_EVIDENCE_DIR` 指定。该命令不访问已有浏览器或数据库，不计为 LIVE 供应商验收。
+## 延伸文档
 
-[接入手册](docs/unified-account/integration-guide.md) · [统一方案](https://github.com/molis-ai/auth/blob/bfcc70c70cf7dd54761f245c86fdc48d323006f7/docs/unified-account/v%32-consolidation.md) · [部署](docs/cloudflare-deployment.md)
+- [系统架构](docs/architecture.md) · [三环境执行方案](docs/environment-unification.md) · [Cloudflare 部署](docs/cloudflare-deployment.md)
+- [统一账号接入手册](docs/unified-account/integration-guide.md) · [API 契约](docs/unified-account/api-contracts.md) · [Account-Billing BFF](docs/account-billing-bff.md)
