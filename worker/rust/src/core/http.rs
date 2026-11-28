@@ -1,8 +1,9 @@
 use regex::Regex;
 use serde_json::{Value, json};
-use std::sync::LazyLock;
+use std::{borrow::Cow, sync::LazyLock};
 
 pub type Result<T> = std::result::Result<T, Failure>;
+pub(crate) type ResponseWithErrorCode = (worker::Response, Option<Cow<'static, str>>);
 #[derive(Debug)]
 pub struct Failure {
     pub status: u16,
@@ -123,7 +124,7 @@ pub(crate) struct RequestLog<'a> {
 }
 
 impl RequestLog<'_> {
-    pub fn finish(&self, status: u16, error_code: Option<&'static str>) {
+    pub fn finish(&self, status: u16, error_code: Option<&str>) {
         if matches!(
             self.route,
             "/api/v1/health" | "/auth-ui/{asset}" | "/api/account/telemetry"

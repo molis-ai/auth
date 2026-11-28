@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { compatibilityDate } from '../scripts/environment.mjs'
 import { initializeLocalRuntime } from '../scripts/local-runtime.mjs'
-import { hash, secret } from './fixtures.ts'
+import { captureAuthLogs, hash, secret } from './fixtures.ts'
 
 // Only the Billing operations are fixtures. Both the browser login and Billing's
 // per-request Auth verification run through the compiled Auth Worker and D1.
@@ -105,6 +105,7 @@ export default { fetch: () => new Response('Private fixture', { status: 404 }) }
 test('account Billing routes reuse HttpOnly login and enforce current Auth identity', async (t) => {
   const origin = 'https://auth.localhost'
   const shared = secret()
+  const logs = captureAuthLogs()
   const root = new URL('../rust/', import.meta.url)
   const modulePath = (path: string) => fileURLToPath(new URL(path, root))
   const auth = {
@@ -138,6 +139,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   }
   const mf = new Miniflare(
     convertV4MiniflareOptions({
+      handleStructuredLogs: logs.handleStructuredLogs,
       workers: [
         {
           ...auth,
@@ -229,6 +231,7 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
     assert.equal(result.error.code, code)
     assert.equal(result.data, undefined)
     assert.equal(typeof result.error.message, 'string')
+    return result
   }
   async function login(label: string) {
     const browser = { cookie: '', csrf: '' }
@@ -415,7 +418,18 @@ test('account Billing routes reuse HttpOnly login and enforce current Auth ident
   )
   await expectError(call(browser, balance + '?ownerKind=TENANT'), 400, 'INVALID_REQUEST')
   await expectError(call(browser, balance + teamOne + '&ownerId=team-two'), 400, 'INVALID_REQUEST')
-  await expectError(call(browser, balance + '?limit=1'), 400, 'INVALID_REQUEST')
+  const invalidBalance = await expectError(
+    call(browser, balance + '?limit=1'),
+    400,
+    'INVALID_REQUEST',
+  )
+  for (const event of ['auth.upstream.request', 'auth.http.request']) {
+    const entry = await logs.waitFor(
+      (item) => item.event === event && item.request_id === invalidBalance.requestId,
+    )
+    assert.equal(entry.status, 400, event)
+    assert.equal(entry.error_code, 'INVALID_REQUEST', event)
+  }
   await expectError(call(browser, '/billing/internal/v1/credits/holds', purchase), 404, 'NOT_FOUND')
   await expectError(call(browser, '/billing/internal/v1/audit-events'), 404, 'NOT_FOUND')
   await expectError(call(browser, '/billing/audit-events'), 404, 'NOT_FOUND')

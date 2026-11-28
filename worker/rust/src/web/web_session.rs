@@ -395,7 +395,11 @@ pub(crate) fn matches(path: &str) -> bool {
     path == "/api/account" || path.starts_with("/api/account/") || path == "/account/callback"
 }
 
-pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response> {
+pub(crate) async fn route(
+    a: &mut Auth,
+    path: &str,
+    method: Method,
+) -> Result<ResponseWithErrorCode> {
     ensure(
         a.header("Authorization").is_empty() && a.header("X-Auth-Initiator-Proof").is_empty(),
         400,
@@ -452,10 +456,8 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
             .map_err(|failure| central_failure(failure.status, failure.code))?;
         let result = login_capabilities::describe(a, &registration)
             .map_err(|failure| central_failure(failure.status, failure.code))?;
-        return Ok(json_response(
-            json!({"data":result,"requestId":a.request_id}),
-            200,
-        )?);
+        let response = json_response(json!({"data":result,"requestId":a.request_id}), 200)?;
+        return Ok((response, None));
     }
     // Only the browser-bound callback completes provider authorization; status polling is read-only.
     if path == "/account/callback" {
@@ -476,7 +478,7 @@ pub async fn route(a: &mut Auth, path: &str, method: Method) -> Result<Response>
     let has_cookie = token(&cookie);
     let session_read = path == "/api/account/session" && method == Method::Get;
     if !has_cookie && session_read {
-        return anonymous_response(a, &key);
+        return Ok((anonymous_response(a, &key)?, None));
     }
     let initial_write = method == Method::Post
         && matches!(
@@ -778,7 +780,7 @@ fn browser_response(
     browser_id: &str,
     cookie: Option<&str>,
     result: Result<BrowserPayload>,
-) -> Result<Response> {
+) -> Result<ResponseWithErrorCode> {
     let mut response = if path == "/account/callback" {
         let (message, status) = match &result {
             Ok(BrowserPayload::Account(value)) if value["status"] == "CONSUMED" => (
@@ -805,7 +807,10 @@ fn browser_response(
             BrowserPayload::Account(data) => {
                 json_response(json!({"data":data,"requestId":a.request_id}), 200)?
             }
-            BrowserPayload::Upstream(reply) if reply.status >= 400 => return reply.response(),
+            BrowserPayload::Upstream(reply) if reply.status >= 400 => {
+                let code = reply.error_code().map(|code| code.to_owned().into());
+                return Ok((reply.response()?, code));
+            }
             BrowserPayload::Upstream(reply) => reply.response()?,
         }
     };
@@ -827,7 +832,7 @@ fn browser_response(
             ),
         )?;
     }
-    Ok(response)
+    Ok((response, None))
 }
 fn is_product_route(path: &str, method: &Method) -> bool {
     PRODUCT_ROUTES
