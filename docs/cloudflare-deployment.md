@@ -14,7 +14,7 @@ Cloudflare Static Assets 对带 Range 的请求返回完整 200，本服务交�
 
 ## D1 迁移基线
 
-`worker/migrations/0001_auth_baseline.sql` 用于新建空库。使用目标环境的 Wrangler 配置运行 `d1 migrations apply`，再登记环境、应用和客户端。部署前核对配置指向已完成登记的新库。
+`worker/migrations/0001_auth_baseline.sql` 用于新建空库。按编号应用其后的迁移。0002 为安全序列的两个外键加索引，适用于已完成基线的库。使用目标环境的 Wrangler 配置运行 `d1 migrations apply`，再登记环境、应用和客户端。部署前核对配置指向已完成登记的新库。
 
 旧版 Auth 库保留各自的迁移记录。切换环境时先核对新库的资源 ID 和登记，避免对旧库运行建库基线。
 

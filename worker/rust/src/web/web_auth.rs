@@ -150,7 +150,10 @@ pub async fn route(
         let mut t = json!({"method":b["method"],"purpose":purpose,"proof":secret(),"verifier":secret(),"state":secret(),"status":"PENDING"});
         let mut input = json!({"clientId":s.client()?,"redirectUri":format!("{}/account/callback",s.a.origin),"purpose":purpose,"method":b["method"],"state":t["state"],"codeChallenge":challenge(&text(&t,"verifier")),"codeChallengeMethod":"S256","initiatorChallenge":challenge(&text(&t,"proof"))});
         if reauth {
-            input.as_object_mut().expect("request").remove("purpose");
+            input
+                .as_object_mut()
+                .ok_or_else(Failure::invalid_request)?
+                .remove("purpose");
             if let Some(reuse) = b.get("useSession") {
                 input["useSession"] = reuse.clone();
             }

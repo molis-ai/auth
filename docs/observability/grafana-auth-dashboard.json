@@ -2495,84 +2495,129 @@
                       "spec": {
                         "title": "后端指标",
                         "layout": {
-                          "kind": "GridLayout",
+                          "kind": "RowsLayout",
                           "spec": {
-                            "items": [
+                            "rows": [
                               {
-                                "kind": "GridLayoutItem",
+                                "kind": "RowsLayoutRow",
                                 "spec": {
-                                  "x": 0,
-                                  "y": 0,
-                                  "width": 14,
-                                  "height": 9,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k1"
+                                  "hideHeader": true,
+                                  "collapse": false,
+                                  "layout": {
+                                    "kind": "GridLayout",
+                                    "spec": {
+                                      "items": [
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 14,
+                                            "height": 9,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k1"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 14,
+                                            "y": 0,
+                                            "width": 10,
+                                            "height": 9,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k2"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 9,
+                                            "width": 14,
+                                            "height": 10,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k3"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 14,
+                                            "y": 9,
+                                            "width": 10,
+                                            "height": 10,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k4"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 19,
+                                            "width": 24,
+                                            "height": 11,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k5"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
                                   }
                                 }
                               },
                               {
-                                "kind": "GridLayoutItem",
+                                "kind": "RowsLayoutRow",
                                 "spec": {
-                                  "x": 14,
-                                  "y": 0,
-                                  "width": 10,
-                                  "height": 9,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k2"
-                                  }
-                                }
-                              },
-                              {
-                                "kind": "GridLayoutItem",
-                                "spec": {
-                                  "x": 0,
-                                  "y": 9,
-                                  "width": 14,
-                                  "height": 10,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k3"
-                                  }
-                                }
-                              },
-                              {
-                                "kind": "GridLayoutItem",
-                                "spec": {
-                                  "x": 14,
-                                  "y": 9,
-                                  "width": 10,
-                                  "height": 10,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k4"
-                                  }
-                                }
-                              },
-                              {
-                                "kind": "GridLayoutItem",
-                                "spec": {
-                                  "x": 0,
-                                  "y": 19,
-                                  "width": 10,
-                                  "height": 11,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k5"
-                                  }
-                                }
-                              },
-                              {
-                                "kind": "GridLayoutItem",
-                                "spec": {
-                                  "x": 10,
-                                  "y": 19,
-                                  "width": 14,
-                                  "height": 11,
-                                  "element": {
-                                    "kind": "ElementReference",
-                                    "name": "k6"
+                                  "hideHeader": true,
+                                  "collapse": false,
+                                  "layout": {
+                                    "kind": "GridLayout",
+                                    "spec": {
+                                      "items": [
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 24,
+                                            "height": 11,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "k6"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "conditionalRendering": {
+                                    "kind": "ConditionalRenderingGroup",
+                                    "spec": {
+                                      "visibility": "show",
+                                      "condition": "and",
+                                      "items": [
+                                        {
+                                          "kind": "ConditionalRenderingVariable",
+                                          "spec": {
+                                            "variable": "request_id",
+                                            "operator": "matches",
+                                            "value": "^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$"
+                                          }
+                                        }
+                                      ]
+                                    }
                                   }
                                 }
                               }
@@ -2594,8 +2639,8 @@
         "title": "Molis Billing 看板",
         "type": "link",
         "icon": "external link",
-        "tooltip": "打开现有 Billing 日志看板",
-        "url": "/d/molis-auth-billing/molis-auth-and-billing?${env:queryparam}",
+        "tooltip": "打开 Billing 日志看板",
+        "url": "/d/molis-billing-observability-v2/molis-billing-observability-v2?${env:queryparam}",
         "tags": [],
         "asDropdown": false,
         "targetBlank": true,
@@ -2648,8 +2693,8 @@
           "pluginId": "loki",
           "regex": "",
           "current": {
-            "text": "grafanacloud-tealcondor2539-logs",
-            "value": "grafanacloud-logs"
+            "text": "",
+            "value": ""
           },
           "options": [],
           "refresh": "onDashboardLoad",

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { getRustProxy, initializeLocalRuntime } from '../scripts/local-runtime.mjs'
 import { captureAuthLogs, hash, secret } from './fixtures.ts'
 
@@ -134,7 +135,13 @@ test('browser telemetry accepts only same-origin bounded batches before Auth and
     { AUTH_ORIGIN: origin, MOLIS_ENVIRONMENT: 'test', UNIFIED_ACCOUNT_CONFIG: 'invalid' },
     undefined,
     undefined,
-    logs,
+    {
+      ...logs,
+      fixtureEntrypoint: readFileSync(
+        new URL('./fixtures/d1-request-barrier.mjs', import.meta.url),
+        'utf8',
+      ),
+    },
   )
   const parent = crypto.randomUUID()
   const privateValue = 'private-body-should-not-appear'
@@ -149,14 +156,15 @@ test('browser telemetry accepts only same-origin bounded batches before Auth and
     env: 'prod',
     stack: privateValue,
   }
-  const send = (body: unknown, actualOrigin = origin) =>
+  const send = (body: unknown, actualOrigin = origin, contentType = 'application/json') =>
     proxy.fetch(
       new Request(`${origin}/api/account/telemetry`, {
         method: 'POST',
         headers: {
           Origin: actualOrigin,
           'Sec-Fetch-Site': 'same-origin',
-          'Content-Type': 'application/json',
+          'Content-Type': contentType,
+          'X-Fixture-Barrier': 'd1-trace',
         },
         body: JSON.stringify(body),
       }),
@@ -169,8 +177,16 @@ test('browser telemetry accepts only same-origin bounded batches before Auth and
       400,
     )
     assert.equal((await send([{ ...sample, padding: 'x'.repeat(8500) }])).status, 413)
+    for (const type of ['application/json; charset=UTF-8', 'text/plain']) {
+      assert.equal(
+        (await send([{ kind: 'session', page: 'login', outcome: 'clean' }], origin, type)).status,
+        204,
+      )
+    }
     const response = await send([sample])
     assert.equal(response.status, 204)
+    assert.deepEqual(JSON.parse(response.headers.get('X-Fixture-D1-Calls')!), { read: 0, write: 0 })
+    console.log('D1_SAMPLE browser-telemetry', response.headers.get('X-Fixture-D1-Calls'))
     const entry = await logs.waitFor((log) => log.event === 'auth.web.api_issue')
     assert.deepEqual(entry, {
       schema: 1,

@@ -1,9 +1,11 @@
 import { createApp } from "vue";
 import App from "./App.vue";
-import { startBrowserTelemetry } from "./shared/telemetry.ts";
+import { reportBrowserError, startBrowserTelemetry } from "./shared/telemetry.ts";
 import "./shared/styles/calm.css";
 import "./features/auth-entry/auth-entry.css";
 import "./shared/styles/interaction-feedback.css";
 
 startBrowserTelemetry();
-createApp(App).mount("#app");
+const app = createApp(App);
+app.config.errorHandler = (error) => reportBrowserError("vue_error", error);
+app.mount("#app");

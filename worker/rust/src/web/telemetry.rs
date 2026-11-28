@@ -7,6 +7,7 @@ use crate::core::http::{Failure, RequestLog, Result, bounded, ensure};
 pub(crate) const PATH: &str = "/api/account/telemetry";
 const MAX_BODY: usize = 8192;
 const MAX_EVENTS: usize = 16;
+const REQUESTS_PER_MINUTE: u32 = 600;
 const ENDPOINTS: &[&str] = &[
     "/session",
     "/auth/login/password",
@@ -49,7 +50,7 @@ fn take_budget(started: i64) -> bool {
     BUDGET.with(|budget| {
         let (previous, count) = budget.get();
         let count = if previous == minute { count } else { 0 };
-        if count >= 120 {
+        if count >= REQUESTS_PER_MINUTE {
             return false;
         }
         budget.set((minute, count + 1));
@@ -222,9 +223,11 @@ pub(crate) async fn ingest(
     ensure(
         url.query().is_none()
             && request.headers().get("Content-Type")?.is_some_and(|mime| {
-                mime.split(';')
-                    .next()
-                    .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+                mime.split(';').next().is_some_and(|value| {
+                    ["application/json", "text/plain"]
+                        .iter()
+                        .any(|mime| value.trim().eq_ignore_ascii_case(mime))
+                })
             }),
         400,
         "INVALID_REQUEST",

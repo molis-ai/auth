@@ -78,7 +78,7 @@ fn statement(db: &D1Database, table: &str, key: &str, now: f64) -> Result<D1Prep
     };
     db.prepare(format!(
         "DELETE FROM {table} WHERE {key} IN (SELECT t.{key} FROM {table} t {source}
-         WHERE {expiry}<=?1{retain} ORDER BY {expiry},t.{key} LIMIT {ROWS_PER_TABLE})"
+         WHERE {expiry}<=?1{retain} ORDER BY {expiry} LIMIT {ROWS_PER_TABLE})"
     ))
     .bind(&[JsValue::from_f64(cutoff)])
 }
@@ -92,12 +92,12 @@ pub(crate) async fn run(env: &Env) {
     let mut rounds = 0;
     let mut failed = false;
     let reason = match env.d1("DB") {
-        Err(error) => {
+        Err(_) => {
             log_event(
                 "auth.cleanup.failure",
                 environment,
                 &request_id,
-                [("error", json!(error.to_string()))],
+                [("error_code", json!("AUTH_UNAVAILABLE"))],
                 true,
             );
             "database_error"
@@ -157,7 +157,7 @@ pub(crate) async fn run(env: &Env) {
                                     _ => false,
                                 };
                         }
-                        Err(error) => {
+                        Err(_) => {
                             failed = true;
                             totals[index] = None;
                             pending[index] = false;
@@ -165,7 +165,10 @@ pub(crate) async fn run(env: &Env) {
                                 "auth.cleanup.failure",
                                 environment,
                                 &request_id,
-                                [("table", json!(table)), ("error", json!(error.to_string()))],
+                                [
+                                    ("table", json!(table)),
+                                    ("error_code", json!("AUTH_UNAVAILABLE")),
+                                ],
                                 true,
                             );
                         }

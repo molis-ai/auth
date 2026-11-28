@@ -293,7 +293,8 @@ test('LIVE signup and password reset mail: shared delivery, failed delivery and 
       assert.equal(upstream.service, 'molis-auth')
       assert.equal(upstream.env, 'dev')
       assert.equal(upstream.action, 'SingleSendMail')
-      assert.equal(upstream.outcome, timeout ? 'timeout' : 'upstream_error')
+      assert.equal(upstream.outcome, 'failed')
+      assert.equal(upstream.error_code, timeout ? 'TIMEOUT' : 'UPSTREAM_ERROR')
       for (const value of [
         'alice@example.test',
         known.proof,

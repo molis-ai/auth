@@ -1,6 +1,7 @@
 const PATH = "/api/account/telemetry";
 const BATCH_SIZE = 16;
 const DETAIL_LIMIT = 20;
+const FLUSH_DELAY_MS = 3000;
 const ENDPOINTS = new Set([
   "/session", "/auth/login/password", "/auth/login/code", "/auth/verification-codes",
   "/auth/transactions", "/tenants", "/tenant-creation-policy", "/login-methods",
@@ -30,11 +31,33 @@ type BrowserMetric = PerformanceEntry & {
 };
 
 let details: Detail[] | undefined;
+let detailsSent = 0;
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let collectPerformance = false;
+const chunkErrors = new WeakSet<object>();
 let hadError = false;
 const cache = new Map<string, { hits: number; misses: number }>();
 
 function push(event: Detail) {
-  if (details && details.length < DETAIL_LIMIT) details.push(event);
+  if (!details || detailsSent + details.length >= DETAIL_LIMIT) return;
+  details.push(event);
+  flushTimer ??= setTimeout(flushDetails, FLUSH_DELAY_MS);
+}
+
+function send(events: unknown[]) {
+  for (let offset = 0; offset < events.length; offset += BATCH_SIZE) {
+    const body = new Blob([JSON.stringify(events.slice(offset, offset + BATCH_SIZE))], { type: "application/json" });
+    navigator.sendBeacon(PATH, body);
+  }
+}
+
+function flushDetails() {
+  clearTimeout(flushTimer);
+  flushTimer = undefined;
+  if (!details?.length) return;
+  send(details);
+  detailsSent += details.length;
+  details.length = 0;
 }
 
 function endpoint(path: string) {
@@ -57,6 +80,10 @@ function currentView() {
 export function reportBrowserError(kind: ErrorKind, error?: unknown) {
   if (!details) return;
   hadError = true;
+  if (error && typeof error === "object") {
+    if (chunkErrors.has(error)) return;
+    if (kind === "chunk_load") chunkErrors.add(error);
+  }
   const name = error instanceof Error ? error.name : "Other";
   push({ kind: "error", error_kind: kind, name: ERROR_NAMES.has(name) ? name : "Other", view: currentView() });
 }
@@ -88,7 +115,7 @@ export function markApiDegraded(path: string, requestId: string) {
 }
 
 export function reportCache(path: string, hit: boolean) {
-  if (!details) return;
+  if (!collectPerformance) return;
   const route = endpoint(path);
   const entry = cache.get(route) ?? { hits: 0, misses: 0 };
   const key = hit ? "hits" : "misses";
@@ -154,37 +181,44 @@ function collectVitals() {
 
 export function startBrowserTelemetry() {
   const environment = document.querySelector<HTMLMetaElement>('meta[name="molis-environment"]')?.content;
-  if (document.visibilityState !== "visible" || (!environment?.startsWith("TEST") && !environment?.startsWith("DEV") && Math.random() >= 0.1)) return;
-  if (!navigator.sendBeacon) return;
+  if (details || typeof navigator.sendBeacon !== "function") return;
+  const sampled = environment?.startsWith("TEST") || environment?.startsWith("DEV") || Math.random() < 0.1;
   const page = currentView() === "login" ? "login" : "account";
   details = [];
-  const finishVitals = collectVitals();
-  const controller = new AbortController();
-  const options = { signal: controller.signal };
+  let finishVitals: ReturnType<typeof collectVitals> | undefined;
+  let reportedPerformance = false;
+
+  const startVitals = () => {
+    if (!sampled || reportedPerformance || finishVitals || document.visibilityState !== "visible") return;
+    collectPerformance = true;
+    finishVitals = collectVitals();
+  };
+  startVitals();
+
   window.addEventListener("error", (event: Event) => {
     if (event instanceof ErrorEvent) reportBrowserError("js_error", event.error);
     else if (event.target instanceof HTMLScriptElement &&
       event.target.src.startsWith(`${location.origin}/auth-ui/assets/`)) reportBrowserError("chunk_load");
-  }, { ...options, capture: true });
-  window.addEventListener("unhandledrejection", event => reportBrowserError("unhandled_rejection", event.reason), options);
+  }, { capture: true });
+  window.addEventListener("unhandledrejection", event => reportBrowserError("unhandled_rejection", event.reason));
   window.addEventListener("vite:preloadError", event =>
-    reportBrowserError("chunk_load", (event as Event & { payload?: unknown }).payload), options);
-  const finish = () => {
-    if (!details) return;
-    controller.abort();
-    const batch = [
+    reportBrowserError("chunk_load", (event as Event & { payload?: unknown }).payload));
+  const flush = () => {
+    flushDetails();
+    if (!finishVitals) return;
+    send([
       { kind: "session", page, outcome: hadError ? "error" : "clean" },
       ...Object.entries(finishVitals()).map(([metric, value]) => ({ kind: "vital", page, metric, value })),
       ...Array.from(cache, ([endpoint, counts]) => ({ kind: "cache", endpoint, ...counts })),
-      ...details,
-    ];
-    details = undefined;
+    ]);
+    finishVitals = undefined;
+    reportedPerformance = true;
+    collectPerformance = false;
     cache.clear();
-    for (let offset = 0; offset < batch.length; offset += BATCH_SIZE) {
-      const body = new Blob([JSON.stringify(batch.slice(offset, offset + BATCH_SIZE))], { type: "application/json" });
-      navigator.sendBeacon(PATH, body);
-    }
   };
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") finish(); }, options);
-  window.addEventListener("pagehide", finish, { ...options, once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
+    else startVitals();
+  });
+  window.addEventListener("pagehide", flush);
 }

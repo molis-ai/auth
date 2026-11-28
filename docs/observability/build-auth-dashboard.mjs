@@ -2,7 +2,6 @@ import { writeFileSync } from 'node:fs'
 
 // Auth 监控看板, modeled on the three-tab design reviewed in antigravity.
 const dashboardUid = 'molis-auth-observability-v2'
-const datasourceUid = 'grafanacloud-logs'
 const source = '${datasource}'
 const range = '$__range'
 const activityWindow = '$__auto'
@@ -171,6 +170,15 @@ panel('k4', 'Top 4xx / 5xx 错误码分布', 'bargauge', '取窗口内返回次�
 const cleanupTimeline = `max_over_time(\n${authCleanup}\n| keep duration_ms | unwrap duration_ms | __error__="" [10m])`
 const cleanupFailures = aggregate(logs('auth[.]cleanup[.]failure'), { window: '60m' })
 panel('k5', 'Cron 定时清理耗时与 8s 预算红线', 'timeseries', '维护耗时以毫秒计，失败明细按最近一小时计数。', [query(cleanupTimeline, '清理耗时'), query(`${cleanupFailures} or vector(0)`, '失败明细')], { unit: 'ms', thresholds: [green(), red(8000)], overrides: [labelOverride('清理耗时',['custom.thresholdsStyle',{mode:'line'}]), labelOverride('失败明细',['unit','short'],['color',{mode:'fixed',fixedColor:'red'}],['custom.axisPlacement','right'])] })
+// Keep this query and its request ID visibility rule identical in the Billing dashboard.
+const traceVisibility = { kind: 'ConditionalRenderingGroup', spec: {
+  visibility: 'show', condition: 'and', items: [
+    { kind: 'ConditionalRenderingVariable', spec: {
+      variable: 'request_id', operator: 'matches',
+      value: '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$',
+    } },
+  ],
+} }
 const crossTrace = logs('auth[.]|billing[.]', ['request_id'], { billing: true, requestId: true })
 panel('k6', 'X-Request-Id 跨 Auth ↔ Billing 串联日志排障', 'logs', '填入完整 X-Request-Id，以时间排序查看当前环境两项服务实际记录的事件。', [{ ...query(crossTrace), maxLines: 200 }])
 
@@ -179,6 +187,13 @@ function grid(items) {
 }
 function row(layout) { return { kind: 'RowsLayoutRow', spec: { hideHeader: true, collapse: false, layout } } }
 function tab(title, items) { return { kind: 'TabsLayoutTab', spec: { title, layout: grid(items) } } }
+function backendTab(items) {
+  const traceRow = row(grid([['k6',0,0,24,11]]))
+  traceRow.spec.conditionalRendering = traceVisibility
+  return { kind: 'TabsLayoutTab', spec: { title: '后端指标', layout: {
+    kind: 'RowsLayout', spec: { rows: [row(grid(items)), traceRow] },
+  } } }
+}
 function custom(name, label, options, defaultValue) {
   const current = options.find(option => option.value === defaultValue)
   return { kind: 'CustomVariable', spec: { name, label, query: options.map(({text,value}) => text === value ? value : `${text} : ${value}`).join(','), options, current, multi:false, includeAll:false, allowCustomValue:false, hide:'dontHide', skipUrlSync:false } }
@@ -195,13 +210,13 @@ const resource = {
       row({ kind:'TabsLayout', spec:{ tabs:[
         tab('业务指标', [['b1',0,0,16,11],['b2',16,0,8,11],['b3',0,11,12,8],['b4',12,11,12,8],['b5',0,19,24,8]]),
         tab('前端指标', [['f1',0,0,24,8],['f2',0,8,14,10],['f3',14,8,10,10],['f4',0,18,14,9],['f5',14,18,10,9]]),
-        tab('后端指标', [['k1',0,0,14,9],['k2',14,0,10,9],['k3',0,9,14,10],['k4',14,9,10,10],['k5',0,19,10,11],['k6',10,19,14,11]]),
+        backendTab([['k1',0,0,14,9],['k2',14,0,10,9],['k3',0,9,14,10],['k4',14,9,10,10],['k5',0,19,24,11]]),
       ] } }),
     ] } },
-    links: [{ title:'Molis Billing 看板', type:'link', icon:'external link', tooltip:'打开现有 Billing 日志看板', url:'/d/molis-auth-billing/molis-auth-and-billing?${env:queryparam}', tags:[], asDropdown:false, targetBlank:true, includeVars:false, keepTime:true }],
+    links: [{ title:'Molis Billing 看板', type:'link', icon:'external link', tooltip:'打开 Billing 日志看板', url:'/d/molis-billing-observability-v2/molis-billing-observability-v2?${env:queryparam}', tags:[], asDropdown:false, targetBlank:true, includeVars:false, keepTime:true }],
     timeSettings: { from:'now-24h', to:'now', timezone:'browser', autoRefresh:'1m', autoRefreshIntervals:['1m','5m','15m','1h'], quickRanges:['1h','6h','24h','7d'].map(value=>({display:value,from:`now-${value}`,to:'now'})), hideTimepicker:false, weekStart:'monday' },
     variables: [
-      { kind:'DatasourceVariable', spec:{ name:'datasource', label:'Loki 数据源', pluginId:'loki', regex:'', current:option(datasourceUid,'grafanacloud-tealcondor2539-logs'), options:[], refresh:'onDashboardLoad', multi:false, includeAll:false, allowCustomValue:false, hide:'dontHide', skipUrlSync:false } },
+      { kind:'DatasourceVariable', spec:{ name:'datasource', label:'Loki 数据源', pluginId:'loki', regex:'', current:option(''), options:[], refresh:'onDashboardLoad', multi:false, includeAll:false, allowCustomValue:false, hide:'dontHide', skipUrlSync:false } },
       custom('env','环境',[option('prod','PROD 生产环境'),option('test','TEST 测试环境')],'prod'),
       custom('channel','登录渠道',[option('.+','全渠道'),option('password','密码'),option('email_code','邮箱验证码'),option('phone_otp','短信验证码'),option('google','Google'),option('github','GitHub')],'.+'),
       custom('page','页面',[option('login|account','全部页面'),option('login','登录页'),option('account','账号控制台')],'login|account'),
@@ -210,4 +225,6 @@ const resource = {
   },
 }
 
-writeFileSync(new URL('./grafana-auth-dashboard.json', import.meta.url), `${JSON.stringify(resource,null,2)}\n`)
+const output = `${JSON.stringify(resource, null, 2)}\n`
+if (process.argv.includes('--stdout')) process.stdout.write(output)
+else writeFileSync(new URL('./grafana-auth-dashboard.json', import.meta.url), output)

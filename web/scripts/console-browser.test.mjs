@@ -36,6 +36,7 @@ const profile = mkdtempSync(join(tmpdir(), "auth-console-chrome-"));
 let proxy, browser, page, origin;
 const requests = [];
 const scripts = new Set();
+const testBeacons = new Map();
 const memberReads = [];
 const entryFixtures = loginEntryFixtures();
 const server = http.createServer(async (req, res) => {
@@ -55,6 +56,12 @@ const server = http.createServer(async (req, res) => {
       ),
     );
     requests.push({method:req.method,path:url.pathname,status:r.status});
+    if (url.pathname === "/api/account/telemetry") {
+      const contentType = req.headers["content-type"];
+      if (contentType && Buffer.concat(parts).includes("SELF_TEST_BEACON")) {
+        testBeacons.set(contentType, { status: r.status, origin: req.headers.origin, site: req.headers["sec-fetch-site"] });
+      }
+    }
     if (r.ok && url.pathname.endsWith(".js")) scripts.add(url.pathname);
     if (req.method === "GET" && /^\/api\/account\/tenants\/[^/]+\/members$/.test(url.pathname)) {
       memberReads.push(url.searchParams);
@@ -72,6 +79,7 @@ try {
   proxy = await getRustProxy(
     {
       AUTH_ORIGIN: origin,
+      MOLIS_ENVIRONMENT: "dev",
       PROVIDER_STATE_KEY: randomBytes(32).toString("base64url"),
       AUTH_WEB_CLIENT_ID: "molis-auth-web-local",
       AUTH_WEB_SESSION_KEY: randomBytes(32).toString("base64url"),
@@ -205,6 +213,19 @@ try {
     entry.transferSize === 0 && entry.decodedBodySize > 0)`), "the login logo is cached by Chrome");
   await page.evaluate("history.replaceState(null, '', '/')");
   console.log("PASS P0-1 startup outage is visible and retry restores the anonymous entry");
+  for (const contentType of ["application/json;charset=UTF-8", "text/plain;charset=UTF-8"]) {
+    assert.equal(await page.evaluate(`navigator.sendBeacon("/api/account/telemetry", new Blob([
+      JSON.stringify([{kind:"session",page:"login",outcome:"clean",fixture:"SELF_TEST_BEACON"}])
+    ], {type:${JSON.stringify(contentType)}}))`), true);
+  }
+  const beaconDeadline = Date.now() + 5000;
+  while (testBeacons.size < 2 && Date.now() < beaconDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(testBeacons.size, 2);
+  for (const beacon of testBeacons.values())
+    assert.deepEqual(beacon, { status: 204, origin, site: "same-origin" });
+  console.log("PASS Chrome same-origin navigator.sendBeacon accepts JSON and text/plain");
   for (const width of [1440,1024,390]) {
     await page.viewport(width,900);
     assert.ok(await page.evaluate('document.documentElement.scrollWidth<=innerWidth'));

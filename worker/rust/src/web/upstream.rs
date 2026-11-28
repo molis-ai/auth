@@ -145,7 +145,7 @@ impl<'a> Target<'a> {
                 ("error_code", json!(error_code)),
                 (
                     "outcome",
-                    json!(if status < 500 { "success" } else { "failed" }),
+                    json!(if status < 400 { "success" } else { "failed" }),
                 ),
                 ("duration_ms", json!((now() - started).max(0))),
             ],

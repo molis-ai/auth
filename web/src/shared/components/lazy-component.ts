@@ -1,5 +1,7 @@
 import { defineAsyncComponent, defineComponent, h, shallowRef, type AsyncComponentLoader, type Component } from "vue";
 
+import { reportBrowserError } from "../telemetry.ts";
+
 export function lazyComponent<T extends Component>(loader: AsyncComponentLoader<T>) {
   const retryLoad = shallowRef<() => void>();
   const status = defineComponent({
@@ -13,7 +15,8 @@ export function lazyComponent<T extends Component>(loader: AsyncComponentLoader<
   return defineAsyncComponent({
     loader,
     loadingComponent: status,
-    onError: (_error, retry) => {
+    onError: (error, retry) => {
+      reportBrowserError("chunk_load", error);
       retryLoad.value = () => {
         retryLoad.value = undefined;
         retry();

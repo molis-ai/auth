@@ -5,17 +5,18 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { verifyDeploymentDatabase } from '../scripts/deployment-readiness.mjs'
 
 const migrationDirectory = new URL('../migrations/', import.meta.url)
-const baseline = '0001_auth_baseline.sql'
+const migrations = ['0001_auth_baseline.sql', '0002_auth_security_sequence_indexes.sql']
 
 function database() {
   const db = new DatabaseSync(':memory:')
   db.exec('PRAGMA foreign_keys=ON')
-  db.exec(readFileSync(new URL(baseline, migrationDirectory), 'utf8'))
+  for (const migration of migrations)
+    db.exec(readFileSync(new URL(migration, migrationDirectory), 'utf8'))
   return db
 }
 
-test('a single fresh Auth baseline creates the expected indexes and drops unused storage', () => {
-  assert.deepEqual(readdirSync(migrationDirectory), [baseline])
+test('fresh Auth migrations create the expected indexes and drop unused storage', () => {
+  assert.deepEqual(readdirSync(migrationDirectory).sort(), migrations)
   const db = database()
   try {
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
@@ -24,6 +25,8 @@ test('a single fresh Auth baseline creates the expected indexes and drops unused
       [],
     )
     const indexes = {
+      ix_login_session_created_sequence: ['created_seq'],
+      ix_user_revoked_sequence: ['revoked_before_seq'],
       ix_ownership_transfer_from: ['from_membership_id', 'id'],
       ix_ownership_transfer_to: ['to_membership_id', 'id'],
       ix_tenant_membership_tenant_status_id: ['tenant_id', 'status', 'id'],
@@ -143,6 +146,24 @@ test('AUTH-C-02 a fresh database has no retired V1 token, member, invitation or 
     ])
       assert.equal(db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n, 0, table)
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [])
+  } finally {
+    db.close()
+  }
+})
+
+test('security sequence insertion checks user and session foreign keys by index', () => {
+  const db = database()
+  try {
+    const sql =
+      "INSERT INTO auth_security_sequence(kind,created_at) SELECT 'REVOCATION',? WHERE EXISTS(SELECT 1 FROM auth_user WHERE id=?)"
+    const plan = db
+      .prepare('EXPLAIN QUERY PLAN ' + sql)
+      .all(1, 'fixture')
+      .map((row) => row.detail)
+      .join('\n')
+    assert.doesNotMatch(plan, /SCAN (auth_login_session|auth_user)\b/u)
+    assert.match(plan, /ix_login_session_created_sequence/u)
+    assert.match(plan, /ix_user_revoked_sequence/u)
   } finally {
     db.close()
   }

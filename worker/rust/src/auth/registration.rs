@@ -280,6 +280,29 @@ pub(crate) async fn authenticate_challenge(
     id: &str,
     credential: &str,
 ) -> Result<()> {
+    let started = now();
+    let result = check_challenge(a, t, c, q, id, credential).await;
+    if result.is_err() {
+        crate::core::telemetry::verification(
+            a,
+            "auth.verification.verified",
+            q["channel"].as_str().unwrap_or_default(),
+            c["delivery_mode"] == "LIVE",
+            started,
+            &result,
+        );
+    }
+    result
+}
+
+async fn check_challenge(
+    a: &Auth,
+    t: &Value,
+    c: &Value,
+    q: &Value,
+    id: &str,
+    credential: &str,
+) -> Result<()> {
     let n = now();
     ensure(
         !q.is_null()

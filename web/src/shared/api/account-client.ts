@@ -100,12 +100,11 @@ export class AccountClient {
       if (signout) await signout;
       this.checkGeneration(generation);
       if (method !== "GET" && !this.csrf) await this.bootstrapSession();
-      const cached = method === "GET" ? this.readCache.read(path) : undefined;
+      const cached = method === "GET" && body === undefined && !key ? this.readCache.read(path) : undefined;
       if (cached) reportCache(path, cached.hit);
       if (cached?.hit) return cached.value as T;
-      const data = await this.send<T>(path, body, method, generation, signal, key);
-      if (cached && !cached.hit) cached.remember(data);
-      return data;
+      const fetch = (requestSignal: AbortSignal) => this.send<T>(path, body, method, generation, requestSignal, key);
+      return cached ? this.readCache.load(path, signal, fetch) : fetch(signal);
     }, signal);
   }
 
@@ -293,7 +292,8 @@ export class AccountClient {
         throw new AuthError("RESULT_UNKNOWN");
       }
       if (error instanceof AuthError) {
-        reportApiIssue(path, error.status, error.code, started, error.requestId);
+        const status = error.code === "INVALID_RESPONSE" && error.status < 400 ? 0 : error.status;
+        reportApiIssue(path, status, error.code, started, error.requestId);
         throw error;
       }
       reportApiIssue(path, 0, "NETWORK_ERROR", started, "");

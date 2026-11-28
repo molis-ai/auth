@@ -10,7 +10,7 @@
     "dev": "node worker/scripts/environment-command.mjs start",
     "build:web": "npm --prefix web run build",
     "check": "npm run contracts:check && npm --prefix worker run check && npm --prefix worker test",
-    "test": "node --test scripts/environment-properties.test.mjs && npm run check && npm --prefix web test",
+    "test": "node --test scripts/*.test.mjs && npm run check && npm --prefix web test",
     "build": "npm run build:web && npm --prefix worker run build",
     "format": "npm --prefix worker run format",
     "format:check": "npm --prefix worker run format:check",
