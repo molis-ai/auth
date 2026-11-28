@@ -109,7 +109,9 @@ test('AC-AUTH-02/03 Aliyun logs one sanitized JSON event per request and reports
         event: 'auth.aliyun.request',
         request_id: requestId,
         action,
-        outcome,
+        provider: 'aliyun',
+        outcome: outcome === 'success' ? 'success' : 'failed',
+        error_code: outcome === 'success' ? 'none' : outcome.toUpperCase(),
         http_status: status,
         ...(verification && { verification_result: verification }),
       })
@@ -128,13 +130,13 @@ test('Aliyun separates network failures and timeouts from calls rejected before 
   assert.equal(log.mock.callCount(), 0)
 
   await assert.rejects(aliyunRpc('key', 'secret', send, input, requestId, 'prod'))
-  assert.equal(readEvent(log.mock.calls[0].arguments).outcome, 'network_error')
+  assert.equal(readEvent(log.mock.calls[0].arguments).error_code, 'NETWORK_ERROR')
 
   const timeout = t.mock.method(AbortSignal, 'timeout', () => AbortSignal.abort())
   await assert.rejects(aliyunRpc('key', 'secret', send, input, requestId, 'private-env'))
   assert.equal(timeout.mock.calls[0].arguments[0], 10000)
   assert.equal(log.mock.callCount(), 2)
-  assert.equal(readEvent(log.mock.calls[1].arguments).outcome, 'timeout')
+  assert.equal(readEvent(log.mock.calls[1].arguments).error_code, 'TIMEOUT')
   assert.equal(readEvent(log.mock.calls[1].arguments).env, 'unknown')
   for (const call of log.mock.calls) assert.equal(readEvent(call.arguments).http_status, undefined)
 })

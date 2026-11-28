@@ -1195,6 +1195,12 @@ test(
         headers: { ...options.headers, 'X-Fixture-Barrier': 'web-session-trace' },
       })
       assert.deepEqual(JSON.parse(response.headers.get('X-Fixture-D1-Calls')!), counts)
+      console.log(
+        'D1_SAMPLE',
+        b?.cookie ? 'with-cookie' : 'no-cookie',
+        path,
+        response.headers.get('X-Fixture-D1-Calls'),
+      )
       return response
     }
 

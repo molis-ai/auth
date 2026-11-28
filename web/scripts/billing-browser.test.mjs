@@ -29,6 +29,7 @@ const secret = () => randomBytes(32).toString("base64url");
 const shared = secret();
 const phones = ["13800000991", "13800000992"];
 const trace = [];
+const applicationErrors = [];
 const prefix = "/api/account/billing";
 let origin, runtime, browser, page, auth, unavailable, identity;
 let useMissingBinding = () => false;
@@ -163,6 +164,14 @@ try {
   identity = await runtime.getWorker("verify-fixture");
   browser = await ChromeHarness.start(profile);
   page = await browser.page();
+  const captureError = (event, sessionId) => {
+    if (sessionId === page.sessionId) applicationErrors.push(event.type ?? "uncaught");
+  };
+  browser.on("Runtime.exceptionThrown", captureError);
+  browser.on("Runtime.consoleAPICalled", (event, sessionId) => {
+    if (event.type === "error") captureError(event, sessionId);
+  });
+  await page.command("Runtime.enable");
   await page.command("Page.enable");
   await page.command("Emulation.setTimezoneOverride", { timezoneId: "Asia/Shanghai" });
   await page.viewport(1440, 900);
@@ -528,6 +537,8 @@ try {
   console.log("PASS A09 open billing panel clears order controls and unrelated ledger on role downgrade");
 
   assert.ifError(handlerError);
+  assert.deepEqual(applicationErrors, []);
+  console.log("PASS 0 uncaught JavaScript exceptions or console.error calls");
   writeFileSync(join(evidence, "billing-requests.json"), JSON.stringify(trace, null, 2) + "\n");
   console.log("Browser evidence " + evidence);
 } catch (error) {

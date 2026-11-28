@@ -107,18 +107,30 @@ export async function upstreamFetch(
     if (body !== undefined) headers.set('Content-Type', contentType)
     if (idempotencyKey !== undefined) headers.set('Idempotency-Key', idempotencyKey)
     if (requestId !== undefined) headers.set('X-Request-ID', requestId)
+    const signal = AbortSignal.timeout(10_000)
     const request = new Request(url, {
       method,
       headers,
       body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(10000),
+      signal,
     })
-    const response = await (local ? fetch(request) : binding.fetch(request))
+    // Service bindings can ignore Request.signal. Enforce the deadline on both
+    // the initial fetch and the stream consumed by Rust.
+    let abort
+    const deadline = new Promise((_, reject) => {
+      abort = () => reject(signal.reason)
+      signal.addEventListener('abort', abort, { once: true })
+    })
+    const response = await Promise.race([
+      local ? fetch(request) : binding.fetch(request),
+      deadline,
+    ]).finally(() => signal.removeEventListener('abort', abort))
     const mime = response.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase()
     if ((response.status >= 300 && response.status < 400) || mime !== 'application/json')
       return serviceError(503, 'UPSTREAM_UNAVAILABLE')
-    return new Response(response.body, {
+    const bodyStream = response.body?.pipeThrough(new TransformStream(), { signal })
+    return new Response(bodyStream, {
       status: response.status,
       headers: {
         'Content-Type': 'application/json',

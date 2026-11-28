@@ -1192,6 +1192,7 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
         assert.deepEqual(policy.d1Calls, oneRead)
         for (const [path, actor] of [
           ['/tenants?limit=100', other],
+          ['/invitations?limit=100', other],
           ['/tenants/' + alpha.tenantId + '/members?limit=100', other],
           ['/platform/tenants?limit=100', platform],
           ['/platform/applications?limit=100', platform],
@@ -1199,6 +1200,11 @@ test('AUTH-07 real managed tenants, directed invitations and ownership lifecycle
           const response = await calls(path, actor)
           assert.equal(ok(response).nextCursor, null, path)
           assert.deepEqual(response.d1Calls, oneRead, path)
+          console.log(
+            'D1_SAMPLE',
+            path.replace(/\/tenants\/[^/]+\//, '/tenants/{id}/'),
+            JSON.stringify(response.d1Calls),
+          )
         }
         const finalResponse = await calls(path + '&cursor=' + paged.nextCursor, platform)
         const finalPage = ok(finalResponse)

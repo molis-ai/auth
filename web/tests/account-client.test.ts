@@ -600,3 +600,30 @@ test("scoped lookups hit the cache, and mutations and account changes invalidate
   assert.deepEqual(await client.request("/tenants?limit=20"), { sequence: 5 });
   client.close();
 });
+
+test("concurrent scoped reads share transport and keep other callers alive on cancellation", async () => {
+  const started = Promise.withResolvers<AbortSignal>();
+  const deliver = Promise.withResolvers<Response>();
+  let calls = 0;
+  const client = new AccountClient({
+    origin,
+    fetch: async (url, init) => {
+      if (accountPath(url) === "/session")
+        return reply("csrf", { state: "AUTHENTICATED", user: { userId: "one" } });
+      calls++;
+      started.resolve(init!.signal!);
+      return deliver.promise;
+    },
+  });
+  await client.session();
+  const cancel = new AbortController();
+  const first = client.request("/tenants?limit=20", undefined, "GET", undefined, cancel.signal);
+  const second = client.request("/tenants?limit=20");
+  const signal = await started.promise;
+  cancel.abort();
+  await assert.rejects(first, /CANCELLED/);
+  assert.equal(signal.aborted, false);
+  deliver.resolve(reply("csrf", { items: [] }));
+  assert.deepEqual(await second, { items: [] });
+  assert.equal(calls, 1);
+});

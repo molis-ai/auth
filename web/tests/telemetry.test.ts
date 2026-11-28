@@ -48,3 +48,41 @@ test("script telemetry ignores external resources and preserves Auth chunk failu
   ]);
   assert.ok(!body.includes("private fixture detail"));
 });
+
+test("unsampled production pages collect hidden, delayed and later errors within the page cap", async (t) => {
+  t.mock.method(Math, "random", () => 0.9);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const window = new EventTarget();
+  const document = Object.assign(new EventTarget(), {
+    visibilityState: "hidden",
+    querySelector: () => ({ content: "PROD" }),
+  });
+  Object.assign(globalThis, { window, document });
+  const beacons: Blob[] = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { sendBeacon(_: string, body: Blob) { beacons.push(body); return true; } },
+  });
+  const telemetry = await import("../src/shared/telemetry.ts?prod");
+  telemetry.startBrowserTelemetry();
+  telemetry.reportBrowserError("vue_error", new Error("secret"));
+  telemetry.reportPopup("GOOGLE", "blocked");
+  telemetry.reportApiIssue("/billing/credits/balance", 503, "BILLING_UNAVAILABLE", 0, "");
+  telemetry.markApiDegraded("/billing/credits/balance", "");
+  assert.equal(beacons.length, 0);
+  t.mock.timers.tick(3000);
+  assert.deepEqual(JSON.parse(await beacons[0].text()).map((event: { kind: string }) => event.kind),
+    ["error", "oauth_popup", "api_issue"]);
+  assert.equal(JSON.parse(await beacons[0].text())[2].degraded, true);
+  document.visibilityState = "visible";
+  document.dispatchEvent(new Event("visibilitychange"));
+  telemetry.reportCache("/tenants", true);
+  for (let i = 0; i < 30; i++) telemetry.reportBrowserError("vue_error");
+  document.visibilityState = "hidden";
+  document.dispatchEvent(new Event("visibilitychange"));
+  window.dispatchEvent(new Event("pagehide"));
+  const remaining = (await Promise.all(beacons.slice(1).map(body => body.text())))
+    .flatMap(body => JSON.parse(body));
+  assert.equal(remaining.length, 17);
+  assert.ok(remaining.every(event => event.kind === "error"));
+});
