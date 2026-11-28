@@ -41,7 +41,7 @@ Auth 的应用日志使用单行 JSON。公共字段为 `schema=1`、`service=mo
 
 `auth.aliyun.request` 使用同一个请求 ID。按 `action` 统计总调用数及 `outcome=success` 的比例，用 `duration_ms` 计算耗时。发送成功表示供应商接受了请求。短信校验成功表示供应商返回了校验结果，`verification_result` 标记验证码是否匹配。`auth.cleanup` 为每次定时运行生成独立的请求 ID，只记录清理轮数、按表汇总的删除数、耗时和停止原因。
 
-在 Grafana Explore 选择 Loki 数据源。先按 Cloudflare 提供的 `cloudflare_script_name` 筛 Worker，再解析 Auth 记录中的服务和环境。下面的写法兼容应用 JSON 作为日志行和 Cloudflare 在 `message` 中包装应用 JSON 两种情况。现有阿里云查询可沿用相同的解析步骤，再按 `action` 和 `outcome` 过滤。正式环境已登记导出目的地。测试环境启用导出后，将 Worker 改为 `molis-auth-test`，环境改为 `test`。[Cloudflare Workers 日志格式](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) · [Grafana OTLP 日志格式](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/)
+在 Grafana Explore 选择 Loki 数据源。先按 Cloudflare 提供的 `cloudflare_script_name` 筛 Worker，再解析 Auth 记录中的服务和环境。下面的写法兼容应用 JSON 作为日志行和 Cloudflare 在 `message` 中包装应用 JSON 两种情况。现有阿里云查询可沿用相同的解析步骤，再按 `action` 和 `outcome` 过滤。正式与测试环境均已登记导出目的地。查询测试环境时，将 Worker 改为 `molis-auth-test`，环境改为 `test`。[Cloudflare Workers 日志格式](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) · [Grafana OTLP 日志格式](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/)
 
 核心 API 服务端可用率按 2xx、3xx 与 5xx 计算，排除 4xx（包括 429）。窗口内无符合条件的请求时显示无数据，有请求且无 5xx 时为 100%。
 
