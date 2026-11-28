@@ -220,7 +220,16 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
             return Ok(receipt);
         }
         let delivery_started = now();
-        if let Err(error) = crate::delivery::send_live(a, t, c, &channel, &id, &m).await {
+        let sent = crate::delivery::send_live(a, t, c, &channel, &id, &m).await;
+        crate::core::telemetry::verification(
+            a,
+            "auth.verification.sent",
+            &channel,
+            true,
+            delivery_started,
+            &sent,
+        );
+        if let Err(error) = sent {
             if password_reset {
                 a.s.log_failure("mail.password_reset", &error, delivery_started);
                 // Keep the challenge pending so even a late delivery cannot authorize a reset.
@@ -245,10 +254,22 @@ pub(crate) async fn send(a: &Auth, t: &Value, c: &Value, b: &Value) -> Result<Va
         a.s.batch(vec![client_guard(a,c)?,tx_guard(a,t,completed,"PENDING")?,a.s.guard("EXISTS(SELECT 1 FROM auth_verification_challenge WHERE id=? AND invalidated_at IS NULL AND expires_at>?)",vec![id.clone().into(),completed.into()])?,a.s.statement("UPDATE auth_verification_challenge SET delivery_status='ACCEPTED' WHERE id=?",vec![id.clone().into()])?],"VERSION_CONFLICT").await?;
         return Ok(receipt);
     }
+    let started = now();
     if deliver {
         writes.push(delivery::enqueue_mock(a, c, &m, &channel)?);
     }
-    a.s.batch(writes, "VERSION_CONFLICT").await?;
+    let result = a.s.batch(writes, "VERSION_CONFLICT").await;
+    if deliver {
+        crate::core::telemetry::verification(
+            a,
+            "auth.verification.sent",
+            &channel,
+            false,
+            started,
+            &result,
+        );
+    }
+    result?;
     Ok(receipt)
 }
 pub(crate) async fn authenticate_challenge(
@@ -302,6 +323,7 @@ pub(crate) async fn authenticate_challenge(
 }
 
 pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) -> Result<Value> {
+    let started = now();
     shape("VerifyChallengeRequest", b)?;
     a.rate_ip("auth:verify", 120).await?;
     let q =
@@ -347,6 +369,14 @@ pub(crate) async fn verify(a: &Auth, t: &Value, c: &Value, id: &str, b: &Value) 
         writes.push(a.s.statement("UPDATE auth_product_transaction SET user_id=?,user_epoch=?,binding_id=?,target=?,status='VERIFIED' WHERE id=?",vec![user["user_id"].clone(),epoch.into(),user["binding_id"].clone(),json!({"identityVersion":number(&user,"identity_version")}).to_string().into(),t["id"].clone()])?);
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
+    crate::core::telemetry::verification(
+        a,
+        "auth.verification.verified",
+        q["channel"].as_str().unwrap_or_default(),
+        c["delivery_mode"] == "LIVE",
+        started,
+        &Ok(()),
+    );
     Ok(json!({"verificationProof":proof,"expiresAt":iso(&json!(expires))}))
 }
 pub(crate) fn new_user(a: &Auth, id: &str, n: i64) -> Result<Vec<D1PreparedStatement>> {
@@ -622,6 +652,7 @@ async fn identify_once(
             t["status"] = "VERIFIED".into();
             t["user_id"] = user.into();
             t["user_epoch"] = epoch.into();
+            t["observed_new_user"] = (creating_code_identity || op == "email-signup").into();
             Ok(true)
         }
     }

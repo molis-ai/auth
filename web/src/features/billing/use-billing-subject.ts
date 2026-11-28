@@ -8,6 +8,7 @@ import type {
 } from "./billing-types.ts";
 import { cursorCollection } from "../../shared/api/cursor-collection.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
+import { markApiDegraded } from "../../shared/telemetry.ts";
 import { IdempotentSubmit } from "../../shared/api/idempotent-submit.ts";
 
 import { createRequiredContext, type EmitFor } from "../../shared/composables/create-required-context.ts";
@@ -267,6 +268,11 @@ export function useBillingSubject(props: Props, emit: Emit) {
       await task();
     } catch (error) {
       if (signal.aborted || accessChanged(error, section === "orders", true)) return;
+      const endpoints = {
+        subscription: "/billing/subscriptions", balance: "/billing/credits/balance", catalog: "/billing/catalog/plans",
+        orders: "/billing/orders", ledger: "/billing/credits/ledger",
+      };
+      markApiDegraded(endpoints[section], error instanceof AuthError ? error.requestId : "");
       errors[section] = {
         message: message(error), code: error instanceof AuthError ? error.code : undefined,
         retry: () => void read(section, task),

@@ -60,11 +60,11 @@ pub(crate) fn log_env(env: &worker::Env) -> &'static str {
         .unwrap_or("unknown")
 }
 
-pub(crate) fn log_event<const N: usize>(
+pub(crate) fn log_event(
     event: &'static str,
     env: &'static str,
     request_id: &str,
-    fields: [(&'static str, Value); N],
+    fields: impl IntoIterator<Item = (&'static str, Value)>,
     error: bool,
 ) {
     let envelope = [
@@ -124,8 +124,10 @@ pub(crate) struct RequestLog<'a> {
 
 impl RequestLog<'_> {
     pub fn finish(&self, status: u16, error_code: Option<&'static str>) {
-        if matches!(self.route, "/api/v1/health" | "/auth-ui/{asset}")
-            && (200..400).contains(&status)
+        if matches!(
+            self.route,
+            "/api/v1/health" | "/auth-ui/{asset}" | "/api/account/telemetry"
+        ) && (200..400).contains(&status)
         {
             return;
         }

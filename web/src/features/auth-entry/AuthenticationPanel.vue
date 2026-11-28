@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AuthFlow, FlowCancelled, mayChooseAuthMethod, watchProvider, type AuthCompletion } from "./auth-flow.ts";
 import { accountErrorMessage } from "../../shared/api/errors.ts";
+import { reportPopup } from "../../shared/telemetry.ts";
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { initialOperationMethod, operationMethods } from "./entry-methods.ts";
 import { entryText } from "./entry-copy.ts";
@@ -147,6 +148,7 @@ async function progress(value: Transaction) {
     );
   else if (value.nextStep === "COMPLETE") await complete();
 }
+const attemptedPopups = new Set<string>();
 async function submit(reserved?: Window | null) {
   if (loginFlow && (capabilitiesState.value !== 'ready' || !available(method.value))) return;
   if (busy.value || props.blocked || providerPending.value) return;
@@ -157,7 +159,12 @@ async function submit(reserved?: Window | null) {
   }
   if (props.entry && method.value === 'EMAIL_PASSWORD') rememberEmail(remember.value ? address.value.trim() : '');
   if (["GOOGLE", "GITHUB"].includes(method.value) && !transaction.value) {
+    const provider = method.value;
+    const retry = attemptedPopups.has(provider);
+    attemptedPopups.add(provider);
+    if (retry) reportPopup(provider, "retry_started");
     if (!flow.open(reserved ?? props.authorizationPopup)) {
+      reportPopup(provider, "blocked");
       failure.value = "请允许打开授权窗口";
       return;
     }
@@ -239,11 +246,12 @@ async function submit(reserved?: Window | null) {
       retryAt.value = Date.now() + (result.retryAfterSeconds ?? 60) * 1000;
 
     } else if (t.nextStep === "START_PROVIDER") {
+      const provider = method.value;
       const result = await request<Transaction>(path, {
         step: "START_PROVIDER",
       });
       watchProvider(flow, result.browserStartUrl, {
-        start: () => { providerPending.value = true; },
+        start: () => { providerPending.value = true; reportPopup(provider, "started"); },
         active: () => active && Boolean(transaction.value),
         read: () => request<Transaction>("/auth/transactions/" + t.handle),
         complete: async () => {
@@ -251,6 +259,7 @@ async function submit(reserved?: Window | null) {
             ? await request<AccountView>("/session")
             : undefined;
           if (account && account.state !== "AUTHENTICATED") throw Error("登录状态已失效，请重新登录。");
+          reportPopup(provider, "completed");
           providerPending.value = false;
           clear();
           flow.closeWindow();
@@ -258,6 +267,7 @@ async function submit(reserved?: Window | null) {
           emit("complete", { handle: t.handle, ...(account ? { account } : {}) });
         },
         failed: async error => {
+          reportPopup(provider, error ? "failed" : "closed");
           await cancel();
           failure.value = error ? accountErrorMessage(error) : "第三方登录未完成，请重新发起。";
         },

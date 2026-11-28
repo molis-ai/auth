@@ -9,6 +9,7 @@ use crate::{
     core::security::*,
 };
 use serde_json::{Value, json};
+use std::cell::Cell;
 use wasm_bindgen::prelude::*;
 use worker::{Method, Response, Url};
 #[wasm_bindgen(module = "/src/runtime/federation.js")]
@@ -229,7 +230,8 @@ async fn commit_identity(
     c: &Value,
     identity: &Value,
     #[cfg(feature = "mock-provider")] mock_code: Option<&(String, String)>,
-) -> Result<()> {
+) -> Result<Option<bool>> {
+    let mut new_user_account = None;
     let mut writes = vec![client_guard(a, c)?, tx_guard(a, t, now(), "PENDING")?];
     if crate::auth::sensitive_transactions::protected(t) {
         let mut verified_identity = identity.clone();
@@ -245,6 +247,7 @@ async fn commit_identity(
         let n = now();
         let user;
         let epoch;
+        new_user_account = Some(existing.is_null());
         if existing.is_null() {
             user = uuid();
             epoch = 0;
@@ -293,16 +296,62 @@ async fn commit_identity(
         )?);
     }
     a.s.batch(writes, "VERSION_CONFLICT").await?;
-    Ok(())
+    Ok(new_user_account)
 }
 
 async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
+    let started = now();
+    let login = Cell::new(false);
+    let entry = Cell::new("api");
+    let new_user = Cell::new(None);
+    let rejected = Cell::new(None);
+    let result = callback_inner(a, p, &login, &entry, &new_user, &rejected).await;
+    if login.get() {
+        let metric = match (&result, rejected.get()) {
+            (Err(failure), _) => Err(Failure {
+                status: failure.status,
+                code: failure.code,
+            }),
+            (_, Some(code)) => Err(Failure { status: 401, code }),
+            _ => Ok(()),
+        };
+        crate::core::telemetry::login(
+            a,
+            entry.get(),
+            if p == "google" { "google" } else { "github" },
+            new_user.get(),
+            started,
+            &metric,
+        );
+    }
+    result
+}
+
+async fn callback_inner(
+    a: &mut Auth,
+    p: &str,
+    login: &Cell<bool>,
+    entry: &Cell<&'static str>,
+    new_user: &Cell<Option<bool>>,
+    rejected: &Cell<Option<&'static str>>,
+) -> Result<Response> {
     a.rate_ip("federation:callback", 120).await?;
     let mut b = q(a)?;
     let state = text(&b, "state");
     ensure(token(&state), 400, "INVALID_REQUEST")?;
     let browser = cookie_value(a, &state);
     let (t, c, ctx) = flow(a, p, &state, &browser).await?;
+    login.set(t["purpose"] == "LOGIN");
+    entry.set(
+        if t["redirect_uri"]
+            .as_str()
+            .is_some_and(|uri| uri.ends_with("/account/callback"))
+        {
+            "browser"
+        } else {
+            "api"
+        },
+    );
     let live = c["provider_mode"] == "LIVE";
     if live {
         if p == "github" && b.get("iss").is_some() {
@@ -349,8 +398,10 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
             "VERSION_CONFLICT",
         ).await?;
         if b["error"] == "access_denied" {
+            rejected.set(Some("PROVIDER_CANCELLED"));
             "CANCELLED"
         } else {
+            rejected.set(Some("PROVIDER_REJECTED"));
             "FAILED"
         }
     } else {
@@ -376,14 +427,35 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
                 mock_provider::normalize(p, &claims, &t, &ctx)?
             }
             "google" => {
-                Google::configured(a)?
+                let started = now();
+                let result = Google::configured(a)?
                     .exchange(&raw, &text(&ctx, "verifier"), &text(&ctx, "nonce"))
-                    .await?
+                    .await;
+                crate::core::telemetry::outcome(
+                    a,
+                    "auth.external.request",
+                    started,
+                    &result,
+                    [
+                        ("provider", json!("google")),
+                        ("action", json!("token_exchange")),
+                    ],
+                );
+                result?
             }
             _ => {
-                Github::configured(a)?
+                let started = now();
+                let result = Github::configured(a)?
                     .exchange(&raw, &text(&ctx, "verifier"))
-                    .await?
+                    .await;
+                crate::core::telemetry::outcome(
+                    a,
+                    "auth.external.request",
+                    started,
+                    &result,
+                    [("provider", json!("github")), ("action", json!("userinfo"))],
+                );
+                result?
             }
         };
         // A concurrent first login can win the identity insert. Retry only the
@@ -398,12 +470,10 @@ async fn callback(a: &mut Auth, p: &str) -> Result<Response> {
                 mock_code.as_ref(),
             )
         };
-        match commit().await {
-            Err(e) if e.code == "ALREADY_EXISTS" => {
-                commit().await?;
-            }
+        new_user.set(match commit().await {
+            Err(e) if e.code == "ALREADY_EXISTS" => commit().await?,
             result => result?,
-        }
+        });
         "VERIFIED"
     };
     a.cookies

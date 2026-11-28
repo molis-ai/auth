@@ -126,3 +126,75 @@ test('AC-AUTH-01/03 external requests log one sanitized outcome, including early
     await proxy.dispose()
   }
 })
+
+test('browser telemetry accepts only same-origin bounded batches before Auth and D1 initialization', async () => {
+  const origin = 'http://127.0.0.1:8787'
+  const logs = captureAuthLogs()
+  const proxy = await getRustProxy(
+    { AUTH_ORIGIN: origin, MOLIS_ENVIRONMENT: 'test', UNIFIED_ACCOUNT_CONFIG: 'invalid' },
+    undefined,
+    undefined,
+    logs,
+  )
+  const parent = crypto.randomUUID()
+  const privateValue = 'private-body-should-not-appear'
+  const sample = {
+    kind: 'api_issue',
+    endpoint: '/billing/credits/balance',
+    status: 503,
+    error_code: 'BILLING_UNAVAILABLE',
+    duration_ms: 22,
+    degraded: true,
+    parent_request_id: parent,
+    env: 'prod',
+    stack: privateValue,
+  }
+  const send = (body: unknown, actualOrigin = origin) =>
+    proxy.fetch(
+      new Request(`${origin}/api/account/telemetry`, {
+        method: 'POST',
+        headers: {
+          Origin: actualOrigin,
+          'Sec-Fetch-Site': 'same-origin',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }),
+    )
+  try {
+    assert.equal((await send([sample], 'https://another.invalid')).status, 403)
+    assert.equal((await send(Array(17).fill(sample))).status, 400)
+    assert.equal(
+      (await send([{ ...sample, endpoint: `/billing/orders/${privateValue}` }])).status,
+      400,
+    )
+    assert.equal((await send([{ ...sample, padding: 'x'.repeat(8500) }])).status, 413)
+    const response = await send([sample])
+    assert.equal(response.status, 204)
+    const entry = await logs.waitFor((log) => log.event === 'auth.web.api_issue')
+    assert.deepEqual(entry, {
+      schema: 1,
+      service: 'molis-auth',
+      env: 'test',
+      event: 'auth.web.api_issue',
+      request_id: parent,
+      release: 'unknown',
+      endpoint: '/billing/credits/balance',
+      status: 503,
+      error_code: 'BILLING_UNAVAILABLE',
+      duration_ms: 22,
+      degraded: true,
+    })
+    assert.equal(logs.records.filter((log) => log.event === 'auth.web.api_issue').length, 1)
+    assert.equal(
+      logs.lines.some((line) => line.includes(privateValue)),
+      false,
+    )
+    assert.equal(
+      logs.records.some((log) => log.request_id === response.headers.get('X-Request-ID')),
+      false,
+    )
+  } finally {
+    await proxy.dispose()
+  }
+})

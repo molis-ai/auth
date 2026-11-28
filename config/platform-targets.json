@@ -10,14 +10,14 @@
     "workerName": "molis-auth-test",
     "billingWorkerName": "molis-billing-test",
     "databaseName": "molis-auth-test",
-    "databaseId": "a40965f5-e9e9-4d97-b471-d4e76368630e",
+    "databaseId": "aebe90fc-2c8d-4e73-b318-d5fa5c376c84",
     "authOrigin": "https://auth.test.molis.ai"
   },
   "prod": {
     "workerName": "molis-auth-production",
     "billingWorkerName": "molis-billing-production",
     "databaseName": "molis-auth-prod",
-    "databaseId": "649fadf9-f897-4d37-915c-b404ec336e69",
+    "databaseId": "03dba427-ffc6-4f01-a57b-9b504f206237",
     "authOrigin": "https://auth.molis.ai"
   }
 }

@@ -2,7 +2,7 @@
 //! The existing 600k-iteration credential format and policy are unchanged.
 use crate::{
     core::http::{Failure, Result, now},
-    core::identity::Auth,
+    core::{identity::Auth, telemetry},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -32,13 +32,24 @@ pub fn normalized(raw: &str) -> Option<String> {
 }
 async fn bits(raw: &str, salt: &[u8], auth: &Auth) -> Result<Vec<u8>> {
     let started = now();
-    crate::core::password_kdf::remote_derive(raw, salt, &auth.env)
+    let result = crate::core::password_kdf::remote_derive(raw, salt, &auth.env)
         .await
         .map_err(|error| {
             let failure = Failure::from(error);
             auth.s.log_failure("password.kdf", &failure, started);
             failure
-        })
+        });
+    telemetry::outcome(
+        auth,
+        "auth.external.request",
+        started,
+        &result,
+        [
+            ("provider", serde_json::json!("password_kdf")),
+            ("action", serde_json::json!("derive")),
+        ],
+    );
+    result
 }
 pub async fn matches(raw: &str, encoded: &str, auth: &Auth) -> Result<bool> {
     let Some(value) = normalized(raw) else {

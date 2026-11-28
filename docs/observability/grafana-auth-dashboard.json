@@ -1,0 +1,2780 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "molis-auth-observability-v2"
+  },
+  "spec": {
+    "title": "Molis Auth 监控看板",
+    "description": "Auth 业务指标、前端体验与后端稳定性。环境单选，统一 schema 1。",
+    "tags": [
+      "molis",
+      "auth",
+      "cloudflare",
+      "loki"
+    ],
+    "annotations": [],
+    "cursorSync": "Off",
+    "editable": true,
+    "preload": false,
+    "elements": {
+      "kpi-availability": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "核心 API 可用率",
+          "description": "按 2xx、3xx 和 5xx 计算。排除探针、遥测和 4xx。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "1 - (((sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\" | status=~\"5[0-9]{2}\"\n| keep app_service\n[$__range]))) or (vector(0))) / (sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\" | status=~\"[235][0-9]{2}\"\n| keep app_service\n[$__range]))))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "auto",
+                "textMode": "value",
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 0.99
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.999
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "kpi-errors": {
+        "kind": "Panel",
+        "spec": {
+          "id": 2,
+          "title": "5xx 请求错误数",
+          "description": "对外响应每个请求计一次。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\" | status=~\"5[0-9]{2}\"\n| keep app_service\n[$__range])) or vector(0)",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "auto",
+                "textMode": "value",
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 6
+                      },
+                      {
+                        "color": "red",
+                        "value": 11
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "kpi-login": {
+        "kind": "Panel",
+        "spec": {
+          "id": 3,
+          "title": "全渠道登录成功率",
+          "description": "基于落地的登录结果事件。OAuth 以平台处理提供方回调为准。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "((sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | outcome=\"success\"\n| keep app_service\n[$__range]))) or (vector(0))) / (sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\"\n| keep app_service\n[$__range])))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "auto",
+                "textMode": "value",
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 0.9
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.97
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "kpi-browser": {
+        "kind": "Panel",
+        "spec": {
+          "id": 4,
+          "title": "前端无报错会话率",
+          "description": "样本为页面初次可见至离开前台的一段体验。生产采样 10%。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "((sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]session\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]session\" | outcome=\"clean\"\n| keep app_service\n[$__range]))) or (vector(0))) / (sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]session\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]session\"\n| keep app_service\n[$__range])))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "auto",
+                "textMode": "value",
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 0.98
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.995
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "kpi-cleanup": {
+        "kind": "Panel",
+        "spec": {
+          "id": 5,
+          "title": "Cron 定时清理",
+          "description": "近两小时最长一次清理运行时间。8 秒为维护预算。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "max_over_time(\n{service_name=~\".+\"} |~ \"auth[.]cleanup\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", duration_ms=\"duration_ms\", stop_reason=\"stop_reason\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]cleanup\"\n| keep duration_ms | unwrap duration_ms | __error__=\"\" [2h])",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "auto",
+                "textMode": "value",
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "center",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "ms",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 6000
+                      },
+                      {
+                        "color": "red",
+                        "value": 8000
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "b1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 6,
+          "title": "分渠道登录量与成功率趋势",
+          "description": "密码、邮箱验证码、短信验证码、Google 和 GitHub。登录成功率使用右轴。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (method) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\"\n| keep method\n[$__auto]))",
+                        "legendFormat": "{{method}} · 登录量",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "((sum by (method) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\" | outcome=\"success\"\n| keep method\n[$__auto]))) or (0 * (sum by (method) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\"\n| keep method\n[$__auto]))))) / (sum by (method) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\"\n| keep method\n[$__auto])))",
+                        "legendFormat": "{{method}} · 成功率",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": "/成功率$/"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "percentunit"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      },
+                      {
+                        "id": "max",
+                        "value": 1
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "b2": {
+        "kind": "Panel",
+        "spec": {
+          "id": 7,
+          "title": "新增注册 vs 老用户登录",
+          "description": "仅使用已确认新用户状态的成功登录。入口可在序列标签中查看。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\" | outcome=\"success\" | new_user=~\"true|false\"\n| label_format category=`{{ if eq .new_user \"true\" }}新增注册{{ else }}老用户{{ end }} · {{ .entry }}`\n| keep category\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "piechart",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "pieType": "donut",
+                "displayLabels": [
+                  "percent"
+                ],
+                "legend": {
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "values": [
+                    "value",
+                    "percent"
+                  ]
+                },
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "b3": {
+        "kind": "Panel",
+        "spec": {
+          "id": 8,
+          "title": "验证码发送成功率与核销漏斗",
+          "description": "同窗聚合，对比实际投递尝试、供应商接受和已核销的验证码。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]verification[.](sent|verified)\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", channel=\"channel\", provider=\"provider\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]verification[.](sent|verified)\" | app_event=\"auth.verification.sent\"\n| label_format category=`{{ .channel }} · {{ .provider }} · 发送尝试`\n| keep category\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]verification[.](sent|verified)\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", channel=\"channel\", provider=\"provider\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]verification[.](sent|verified)\" | app_event=\"auth.verification.sent\" | outcome=\"success\"\n| label_format category=`{{ .channel }} · {{ .provider }} · 发送成功`\n| keep category\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]verification[.](sent|verified)\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", channel=\"channel\", provider=\"provider\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]verification[.](sent|verified)\" | app_event=\"auth.verification.verified\" | outcome=\"success\"\n| label_format category=`{{ .channel }} · {{ .provider }} · 核销成功`\n| keep category\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "displayMode": "basic",
+                "textMode": "value_and_name",
+                "namePlacement": "left",
+                "showUnfilled": true,
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "displayName": "${__field.name}",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "b4": {
+        "kind": "Panel",
+        "spec": {
+          "id": 9,
+          "title": "登录失败原因 Top 分布",
+          "description": "包含身份校验、限流和提供方取消。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "topk(10, sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]login[.]result\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", method=\"method\", outcome=\"outcome\", error_code=\"error_code\", new_user=\"new_user\", entry=\"entry\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]login[.]result\" | method=~\"${channel:raw}\" | outcome=\"failed\"\n| label_format category=`{{ .error_code }}`\n| keep category\n[$__range])))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "displayMode": "basic",
+                "textMode": "value_and_name",
+                "namePlacement": "left",
+                "showUnfilled": true,
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "displayName": "${__field.name}",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "b5": {
+        "kind": "Panel",
+        "spec": {
+          "id": 10,
+          "title": "租户与团队协同活跃事件",
+          "description": "新建租户、发出邀请、接受邀请、完成所有权转移和停启用。按实际提交计数。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (action) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]tenant[.]event\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", action=\"action\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]tenant[.]event\" | outcome=\"success\"\n| keep action\n[$__auto]))",
+                        "legendFormat": "{{action}}",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "f1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 11,
+          "title": "Core Web Vitals 页面加载性能（P75）",
+          "description": "按页面看 TTFB、FCP、LCP、INP、CLS。CLS 无量纲，其他指标是毫秒。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "quantile_over_time(0.75,\n{service_name=~\".+\"} |~ \"auth[.]web[.]vital\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", page=\"page\", metric=\"metric\", value=\"value\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]vital\"\n| page=~\"${page:raw}\"\n| keep page, metric, value\n| unwrap value | __error__=\"\"\n[$__range]) by (page, metric)",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "labelsToFields",
+                  "spec": {
+                    "options": {
+                      "mode": "columns"
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "merge",
+                  "spec": {
+                    "options": {}
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "indexByName": {
+                        "page": 0,
+                        "metric": 1,
+                        "Value #A": 2
+                      },
+                      "renameByName": {
+                        "page": "页面",
+                        "metric": "指标",
+                        "Value #A": "P75"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "showHeader": true,
+                "cellHeight": "sm"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "f2": {
+        "kind": "Panel",
+        "spec": {
+          "id": 12,
+          "title": "前端运行时异常与异步分包加载失败",
+          "description": "按异常类型、页面、白名单异常名和 Worker 版本聚合。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (kind, view, error_name, release) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]error\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", kind=\"kind\", view=\"view\", release=\"release\", error_name=\"name\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]error\"\n| keep kind, view, error_name, release\n[$__auto]))",
+                        "legendFormat": "{{kind}} · {{view}} · {{error_name}}",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "f3": {
+        "kind": "Panel",
+        "spec": {
+          "id": 13,
+          "title": "OAuth 登录弹窗体验漏斗",
+          "description": "各提供方的启动、完成、关闭、拦截、重试和失败。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]oauth_popup\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", provider=\"provider\", outcome=\"outcome\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]oauth_popup\"\n| label_format category=`{{ .provider }} · {{ .outcome }}`\n| keep category\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "displayMode": "basic",
+                "textMode": "value_and_name",
+                "namePlacement": "left",
+                "showUnfilled": true,
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "displayName": "${__field.name}",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "f4": {
+        "kind": "Panel",
+        "spec": {
+          "id": 14,
+          "title": "AccountClient 浏览器侧接口异常与局部降级",
+          "description": "按归一化接口、状态、错误码及降级状态查看次数和 P95。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (endpoint, status, error_code, degraded) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]api_issue\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", endpoint=\"endpoint\", status=\"status\", error_code=\"error_code\", degraded=\"degraded\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]api_issue\"\n| keep endpoint, status, error_code, degraded\n[$__range]))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "quantile_over_time(0.95,\n{service_name=~\".+\"} |~ \"auth[.]web[.]api_issue\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", endpoint=\"endpoint\", status=\"status\", error_code=\"error_code\", degraded=\"degraded\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]api_issue\"\n| keep endpoint, status, error_code, degraded, duration_ms\n| unwrap duration_ms | __error__=\"\"\n[$__range]) by (endpoint, status, error_code, degraded)",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "labelsToFields",
+                  "spec": {
+                    "options": {
+                      "mode": "columns"
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "merge",
+                  "spec": {
+                    "options": {}
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "indexByName": {
+                        "Value #A": 0,
+                        "Value #B": 1,
+                        "endpoint": 2,
+                        "status": 3,
+                        "error_code": 4,
+                        "degraded": 5
+                      },
+                      "renameByName": {
+                        "Value #A": "次数",
+                        "Value #B": "P95",
+                        "endpoint": "接口",
+                        "status": "状态",
+                        "error_code": "错误码",
+                        "degraded": "降级"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "showHeader": true,
+                "cellHeight": "sm"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "P95"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "ms"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "f5": {
+        "kind": "Panel",
+        "spec": {
+          "id": 15,
+          "title": "控制台 ReadOnlyCache 只读缓存命中率",
+          "description": "按浏览器聚合真实 GET 读请求的命中和缺失。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "(sum(sum_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]cache\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", hits=\"hits\", misses=\"misses\", endpoint=\"endpoint\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]cache\"\n| keep hits | unwrap hits | __error__=\"\" [30m]))) / ((sum(sum_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]cache\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", hits=\"hits\", misses=\"misses\", endpoint=\"endpoint\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]cache\"\n| keep hits | unwrap hits | __error__=\"\" [30m]))) + (sum(sum_over_time(\n{service_name=~\".+\"} |~ \"auth[.]web[.]cache\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", hits=\"hits\", misses=\"misses\", endpoint=\"endpoint\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]web[.]cache\"\n| keep misses | unwrap misses | __error__=\"\" [30m]))))",
+                        "legendFormat": "命中率",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": null
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "k1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 16,
+          "title": "核心 API 吞吐量 (QPS) 与 5xx 趋势",
+          "description": "基于五分钟窗口，探针与遥测不进入核心 API 分母。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum (rate(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\"\n| keep app_service\n[5m]))",
+                        "legendFormat": "核心请求 QPS",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\" | status=~\"5[0-9]{2}\"\n| keep app_service\n[5m])) or vector(0)",
+                        "legendFormat": "5xx 错误数",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "5xx 错误数"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      },
+                      {
+                        "id": "color",
+                        "value": {
+                          "mode": "fixed",
+                          "fixedColor": "red"
+                        }
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      },
+                      {
+                        "id": "custom.drawStyle",
+                        "value": "bars"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "k2": {
+        "kind": "Panel",
+        "spec": {
+          "id": 17,
+          "title": "关键路由响应延迟（P50 / P95）",
+          "description": "按 HTTP 方法和归一化路由比较响应耗时。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "topk(10, quantile_over_time(0.5,\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\"\n| label_format category=`{{ .method }} {{ .route }} · P50`\n| keep category, duration_ms\n| unwrap duration_ms | __error__=\"\"\n[$__range]) by (category))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "topk(10, quantile_over_time(0.95,\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", route=\"route\", method=\"method\", status=\"status\", error_code=\"error_code\", duration_ms=\"duration_ms\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\"\n| route=~\"/api/(account|v1)/.+\" | route!~\"/api/(v1/(health|readiness)|account/telemetry)\"\n| label_format category=`{{ .method }} {{ .route }} · P95`\n| keep category, duration_ms\n| unwrap duration_ms | __error__=\"\"\n[$__range]) by (category))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "displayMode": "basic",
+                "textMode": "value_and_name",
+                "namePlacement": "left",
+                "showUnfilled": true,
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "ms",
+                  "displayName": "${__field.name}",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "k3": {
+        "kind": "Panel",
+        "spec": {
+          "id": 18,
+          "title": "跨服务与外部依赖健康矩阵（Billing / OAuth / KDF / Aliyun）",
+          "description": "每个依赖的请求量、成功率、P95 及有日志的失败原因。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (dependency) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}`\n| keep dependency\n[$__range]))",
+                        "legendFormat": "请求量",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "((sum by (dependency) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}` | outcome=\"success\"\n| keep dependency\n[$__range]))) or (0 * (sum by (dependency) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}`\n| keep dependency\n[$__range]))))) / (sum by (dependency) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}`\n| keep dependency\n[$__range])))",
+                        "legendFormat": "成功率",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "quantile_over_time(0.95,\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}`\n| keep dependency, duration_ms\n| unwrap duration_ms | __error__=\"\"\n[$__range]) by (dependency)",
+                        "legendFormat": "P95",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "D",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "topk(10, sum by (dependency, reason) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.](upstream|external|aliyun)[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", upstream=\"upstream\", provider=\"provider\", route=\"route\", action=\"action\", outcome=\"outcome\", duration_ms=\"duration_ms\", http_status=\"http_status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.](upstream|external|aliyun)[.]request\"\n| label_format dependency=`{{ if .upstream }}{{ .upstream }} · {{ .route }}{{ else }}{{ .provider | default \"aliyun\" }} · {{ .action }}{{ end }}` | outcome!=\"success\" | label_format reason=`{{ .error_code | default .outcome }}`\n| keep dependency, reason\n[$__range])))",
+                        "legendFormat": "失败数",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "labelsToFields",
+                  "spec": {
+                    "options": {
+                      "mode": "columns"
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "merge",
+                  "spec": {
+                    "options": {}
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "indexByName": {
+                        "dependency": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3,
+                        "Value #D": 4,
+                        "reason": 5
+                      },
+                      "renameByName": {
+                        "dependency": "依赖",
+                        "Value #A": "请求量",
+                        "Value #B": "成功率",
+                        "Value #C": "P95",
+                        "Value #D": "失败数",
+                        "reason": "失败原因"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "showHeader": true,
+                "cellHeight": "sm"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "成功率"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "percentunit"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "P95"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "ms"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "k4": {
+        "kind": "Panel",
+        "spec": {
+          "id": 19,
+          "title": "Top 4xx / 5xx 错误码分布",
+          "description": "取窗口内返回次数最多的状态与业务错误码组合。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "topk(10, sum by (category) (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]http[.]request\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", status=\"status\", error_code=\"error_code\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]http[.]request\" | status=~\"[45][0-9]{2}\"\n| label_format category=`{{ .status }} · {{ .error_code }}`\n| keep category\n[$__range])))",
+                        "queryType": "instant"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "filterFieldsByName",
+                  "spec": {
+                    "options": {
+                      "exclude": {
+                        "names": [
+                          "Time"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "rowsToFields",
+                  "spec": {
+                    "options": {
+                      "mappings": [
+                        {
+                          "fieldName": "category",
+                          "handlerKey": "field.name"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "displayMode": "basic",
+                "textMode": "value_and_name",
+                "namePlacement": "left",
+                "showUnfilled": true,
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "values": false
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "displayName": "${__field.name}",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "k5": {
+        "kind": "Panel",
+        "spec": {
+          "id": 20,
+          "title": "Cron 定时清理耗时与 8s 预算红线",
+          "description": "维护耗时以毫秒计，失败明细按最近一小时计数。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "max_over_time(\n{service_name=~\".+\"} |~ \"auth[.]cleanup\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", duration_ms=\"duration_ms\", stop_reason=\"stop_reason\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]cleanup\"\n| keep duration_ms | unwrap duration_ms | __error__=\"\" [10m])",
+                        "legendFormat": "清理耗时",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum (count_over_time(\n{service_name=~\".+\"} |~ \"auth[.]cleanup[.]failure\"\n| cloudflare_script_name=~\"molis-auth-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\"\n| __error__=\"\" | app_service=~\"molis-auth\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| app_event=~\"auth[.]cleanup[.]failure\"\n| keep app_service\n[60m])) or vector(0)",
+                        "legendFormat": "失败明细",
+                        "queryType": "range"
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "ms",
+                  "noValue": "—",
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "linear",
+                    "lineWidth": 2,
+                    "fillOpacity": 12,
+                    "showPoints": "never",
+                    "spanNulls": false
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 8000
+                      }
+                    ]
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "清理耗时"
+                    },
+                    "properties": [
+                      {
+                        "id": "custom.thresholdsStyle",
+                        "value": {
+                          "mode": "line"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "失败明细"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      },
+                      {
+                        "id": "color",
+                        "value": {
+                          "mode": "fixed",
+                          "fixedColor": "red"
+                        }
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "k6": {
+        "kind": "Panel",
+        "spec": {
+          "id": 21,
+          "title": "X-Request-Id 跨 Auth ↔ Billing 串联日志排障",
+          "description": "填入完整 X-Request-Id，以时间排序查看当前环境两项服务实际记录的事件。",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "loki",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "{service_name=~\".+\"} |= ${request_id:doublequote}\n| cloudflare_script_name=~\"molis-(auth|billing)-(production|test)\"\n| json cf_message=\"message\"\n| line_format `{{ .cf_message | default (__line__) }}`\n| drop cf_message\n| json app_service=\"service\", app_env=\"env\", app_event=\"event\", app_schema=\"schema\", request_id=\"request_id\"\n| __error__=\"\" | app_service=~\"molis-auth|molis-billing\" | app_env=\"${env:raw}\" | app_schema=\"1\"\n| request_id=~\".+\" | request_id=${request_id:doublequote}",
+                        "queryType": "range",
+                        "maxLines": 200
+                      }
+                    }
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "maxDataPoints": 360
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "13.0.0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "enableLogDetails": true,
+                "sortOrder": "Ascending",
+                "dedupStrategy": "none",
+                "prettifyLogMessage": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "—",
+                  "color": {
+                    "mode": "palette-classic"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "kind": "RowsLayout",
+      "spec": {
+        "rows": [
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "hideHeader": true,
+              "collapse": false,
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": [
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 5,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "kpi-availability"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 5,
+                        "y": 0,
+                        "width": 5,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "kpi-errors"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 10,
+                        "y": 0,
+                        "width": 5,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "kpi-login"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 15,
+                        "y": 0,
+                        "width": 5,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "kpi-browser"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 20,
+                        "y": 0,
+                        "width": 4,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "kpi-cleanup"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "hideHeader": true,
+              "collapse": false,
+              "layout": {
+                "kind": "TabsLayout",
+                "spec": {
+                  "tabs": [
+                    {
+                      "kind": "TabsLayoutTab",
+                      "spec": {
+                        "title": "业务指标",
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 16,
+                                  "height": 11,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "b1"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 11,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "b2"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 11,
+                                  "width": 12,
+                                  "height": 8,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "b3"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 12,
+                                  "y": 11,
+                                  "width": 12,
+                                  "height": 8,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "b4"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 19,
+                                  "width": 24,
+                                  "height": 8,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "b5"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "TabsLayoutTab",
+                      "spec": {
+                        "title": "前端指标",
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 24,
+                                  "height": 8,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "f1"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 8,
+                                  "width": 14,
+                                  "height": 10,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "f2"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 14,
+                                  "y": 8,
+                                  "width": 10,
+                                  "height": 10,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "f3"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 18,
+                                  "width": 14,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "f4"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 14,
+                                  "y": 18,
+                                  "width": 10,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "f5"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "TabsLayoutTab",
+                      "spec": {
+                        "title": "后端指标",
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 14,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k1"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 14,
+                                  "y": 0,
+                                  "width": 10,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k2"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 9,
+                                  "width": 14,
+                                  "height": 10,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k3"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 14,
+                                  "y": 9,
+                                  "width": 10,
+                                  "height": 10,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k4"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 19,
+                                  "width": 10,
+                                  "height": 11,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k5"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 10,
+                                  "y": 19,
+                                  "width": 14,
+                                  "height": 11,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "k6"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "links": [
+      {
+        "title": "Molis Billing 看板",
+        "type": "link",
+        "icon": "external link",
+        "tooltip": "打开现有 Billing 日志看板",
+        "url": "/d/molis-auth-billing/molis-auth-and-billing?${env:queryparam}",
+        "tags": [],
+        "asDropdown": false,
+        "targetBlank": true,
+        "includeVars": false,
+        "keepTime": true
+      }
+    ],
+    "timeSettings": {
+      "from": "now-24h",
+      "to": "now",
+      "timezone": "browser",
+      "autoRefresh": "1m",
+      "autoRefreshIntervals": [
+        "1m",
+        "5m",
+        "15m",
+        "1h"
+      ],
+      "quickRanges": [
+        {
+          "display": "1h",
+          "from": "now-1h",
+          "to": "now"
+        },
+        {
+          "display": "6h",
+          "from": "now-6h",
+          "to": "now"
+        },
+        {
+          "display": "24h",
+          "from": "now-24h",
+          "to": "now"
+        },
+        {
+          "display": "7d",
+          "from": "now-7d",
+          "to": "now"
+        }
+      ],
+      "hideTimepicker": false,
+      "weekStart": "monday"
+    },
+    "variables": [
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "datasource",
+          "label": "Loki 数据源",
+          "pluginId": "loki",
+          "regex": "",
+          "current": {
+            "text": "grafanacloud-tealcondor2539-logs",
+            "value": "grafanacloud-logs"
+          },
+          "options": [],
+          "refresh": "onDashboardLoad",
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      },
+      {
+        "kind": "CustomVariable",
+        "spec": {
+          "name": "env",
+          "label": "环境",
+          "query": "PROD 生产环境 : prod,TEST 测试环境 : test",
+          "options": [
+            {
+              "text": "PROD 生产环境",
+              "value": "prod"
+            },
+            {
+              "text": "TEST 测试环境",
+              "value": "test"
+            }
+          ],
+          "current": {
+            "text": "PROD 生产环境",
+            "value": "prod"
+          },
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      },
+      {
+        "kind": "CustomVariable",
+        "spec": {
+          "name": "channel",
+          "label": "登录渠道",
+          "query": "全渠道 : .+,密码 : password,邮箱验证码 : email_code,短信验证码 : phone_otp,Google : google,GitHub : github",
+          "options": [
+            {
+              "text": "全渠道",
+              "value": ".+"
+            },
+            {
+              "text": "密码",
+              "value": "password"
+            },
+            {
+              "text": "邮箱验证码",
+              "value": "email_code"
+            },
+            {
+              "text": "短信验证码",
+              "value": "phone_otp"
+            },
+            {
+              "text": "Google",
+              "value": "google"
+            },
+            {
+              "text": "GitHub",
+              "value": "github"
+            }
+          ],
+          "current": {
+            "text": "全渠道",
+            "value": ".+"
+          },
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      },
+      {
+        "kind": "CustomVariable",
+        "spec": {
+          "name": "page",
+          "label": "页面",
+          "query": "全部页面 : login|account,登录页 : login,账号控制台 : account",
+          "options": [
+            {
+              "text": "全部页面",
+              "value": "login|account"
+            },
+            {
+              "text": "登录页",
+              "value": "login"
+            },
+            {
+              "text": "账号控制台",
+              "value": "account"
+            }
+          ],
+          "current": {
+            "text": "全部页面",
+            "value": "login|account"
+          },
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "request_id",
+          "label": "X-Request-Id",
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "query": "",
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      }
+    ]
+  }
+}

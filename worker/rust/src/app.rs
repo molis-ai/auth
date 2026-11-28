@@ -64,6 +64,16 @@ async fn handle_response(
         let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
         return Ok((response, None));
     }
+    if path == web::telemetry::PATH {
+        let (response, code) = match web::telemetry::ingest(req, env, &url, log).await {
+            Ok(response) => (response, None),
+            Err(failure) => {
+                let code = failure.code;
+                (error_response(failure, id)?, Some(code))
+            }
+        };
+        return Ok((with_security_headers(response, id, https)?, code));
+    }
     let upstream = web::upstream::mount(path);
     let mut a = match Auth::new(req, env, log, None) {
         Ok(a) => a,

@@ -127,6 +127,34 @@ impl<'a> Target<'a> {
     }
 
     pub(super) async fn call(&self, a: &Auth, access: &str, body: Option<&str>) -> Result<Reply> {
+        let started = now();
+        let result = self.call_inner(a, access, body).await;
+        let (status, error_code) = match &result {
+            Ok(reply) => (reply.status, reply.error_code().unwrap_or("none")),
+            Err(failure) => (failure.status, failure.code),
+        };
+        log_event(
+            "auth.upstream.request",
+            log_env(&a.env),
+            &a.request_id,
+            [
+                ("upstream", json!("molis-billing")),
+                ("route", json!(billing_route(self.suffix))),
+                ("method", json!(self.method)),
+                ("status", json!(status)),
+                ("error_code", json!(error_code)),
+                (
+                    "outcome",
+                    json!(if status < 500 { "success" } else { "failed" }),
+                ),
+                ("duration_ms", json!((now() - started).max(0))),
+            ],
+            status >= 500,
+        );
+        result
+    }
+
+    async fn call_inner(&self, a: &Auth, access: &str, body: Option<&str>) -> Result<Reply> {
         let key = a.http()?.headers().get("Idempotency-Key")?;
         ensure(key.as_deref().is_none_or(valid_id), 400, "INVALID_REQUEST")?;
         ensure(token(access), 401, "SESSION_EXPIRED")?;
@@ -203,6 +231,24 @@ impl<'a> Target<'a> {
         };
         Ok(Reply { status, envelope })
     }
+}
+
+fn billing_route(suffix: &str) -> &'static str {
+    const ROLES: &[(&str, &str)] = &[
+        ("/catalog/plans", "/api/v1/catalog/plans"),
+        ("/subscriptions", "/api/v1/subscriptions"),
+        ("/orders", "/api/v1/orders"),
+        ("/orders/{id}", "/api/v1/orders/{id}"),
+        ("/orders/{id}/mock-pay", "/api/v1/orders/{id}/mock-pay"),
+        ("/orders/{id}/refund", "/api/v1/orders/{id}/refund"),
+        ("/credits/balance", "/api/v1/credits/balance"),
+        ("/credits/ledger", "/api/v1/credits/ledger"),
+        ("/entitlements/check", "/api/v1/entitlements/check"),
+    ];
+    ROLES
+        .iter()
+        .find_map(|(pattern, route)| matches_route_template(suffix, pattern).then_some(*route))
+        .unwrap_or("unmatched")
 }
 
 fn valid_code(code: &str) -> bool {

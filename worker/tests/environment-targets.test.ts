@@ -84,7 +84,7 @@ test('ENV-U-01: the Auth test deployment pins account, Worker, route and D1 inde
     workerName: 'molis-auth-production',
     authOrigin: 'https://auth.molis.ai',
     databaseName: 'molis-auth-prod',
-    databaseId: '649fadf9-f897-4d37-915c-b404ec336e69',
+    databaseId: '03dba427-ffc6-4f01-a57b-9b504f206237',
     accountId: 'f'.repeat(32),
   }
   for (const [key, wrong] of Object.entries(wrongTargets)) {
@@ -103,7 +103,8 @@ test('ENV-U-01: the Auth test deployment pins account, Worker, route and D1 inde
   assert.equal(platform.name, 'molis-auth-test')
   assert.equal(platform.compatibility_date, compatibilityDate)
   assert.deepEqual(platform.routes, [{ pattern: 'auth.test.molis.ai', custom_domain: true }])
-  assert.equal(platform.d1_databases[0].database_id, 'a40965f5-e9e9-4d97-b471-d4e76368630e')
+  assert.equal(platform.d1_databases[0].database_name, 'molis-auth-test')
+  assert.equal(platform.d1_databases[0].database_id, 'aebe90fc-2c8d-4e73-b318-d5fa5c376c84')
   assert.equal(platform.d1_databases[0].remote, undefined)
   assert.equal(platform.vars.AUTH_TEST_ADMISSION, undefined)
   assert.equal(platform.vars.ALIYUN_SMS_TEST_ALLOWLIST, undefined)
@@ -162,7 +163,7 @@ test('only local dev reads the shared account and keeps both credentials out of 
       assert.equal(settings.platform.d1_databases[0].database_name, 'molis-auth-prod')
       assert.equal(
         settings.platform.d1_databases[0].database_id,
-        '649fadf9-f897-4d37-915c-b404ec336e69',
+        '03dba427-ffc6-4f01-a57b-9b504f206237',
       )
       assert.throws(() => authEnvironment('prod', true, root), /deploy only/u)
       assert.deepEqual(settings.platform.services, [

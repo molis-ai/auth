@@ -3,9 +3,10 @@ use crate::{
     auth::{login_sessions, registration},
     core::http::*,
     core::identity::Auth,
-    core::security::challenge,
+    core::{security::challenge, telemetry},
 };
 use serde_json::{Value, json};
+use std::cell::Cell;
 use worker::Method;
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,18 @@ pub async fn route(a: &Auth, path: &str, method: Method, body: Value) -> Result<
 }
 
 pub(crate) async fn browser_password(
+    a: &Auth,
+    client_id: &str,
+    body: &Value,
+    prepare: impl AsyncFnOnce(&Value) -> Result<Vec<worker::D1PreparedStatement>>,
+) -> Result<Value> {
+    let started = now();
+    let result = browser_password_inner(a, client_id, body, prepare).await;
+    telemetry::login(a, "browser", "password", Some(false), started, &result);
+    result
+}
+
+async fn browser_password_inner(
     a: &Auth,
     client_id: &str,
     body: &Value,
@@ -107,6 +120,22 @@ pub(crate) async fn browser_code(
     initiator: &str,
     prepare: impl AsyncFnOnce(&Value) -> Result<Vec<worker::D1PreparedStatement>>,
 ) -> Result<Value> {
+    let started = now();
+    let observed = Cell::new(("unknown", None));
+    let result = browser_code_inner(a, client_id, body, initiator, prepare, &observed).await;
+    let (method, new_user) = observed.get();
+    telemetry::login(a, "browser", method, new_user, started, &result);
+    result
+}
+
+async fn browser_code_inner(
+    a: &Auth,
+    client_id: &str,
+    body: &Value,
+    initiator: &str,
+    prepare: impl AsyncFnOnce(&Value) -> Result<Vec<worker::D1PreparedStatement>>,
+    observed: &Cell<(&'static str, Option<bool>)>,
+) -> Result<Value> {
     use crate::account::management::{USER_VIEW, platform_capabilities, user_view_value};
     use crate::core::security::uuid;
     use login_sessions as sessions;
@@ -166,11 +195,15 @@ pub(crate) async fn browser_code(
         400,
         "INVALID_REQUEST",
     )?;
+    let method = telemetry::login_method(&t["method"]);
+    observed.set((method, None));
     a.rate_ip("auth:verify", 120).await?;
+    let verification_started = now();
     registration::authenticate_challenge(a, &t, &c, &q, &id, &text(body, "code")).await?;
 
     let n = now();
     let existing = first(identities);
+    observed.set((method, Some(existing.is_null())));
     let target = text(&q, "canonical_target");
     let (table, column) = if email {
         ("auth_user_email", "canonical_email")
@@ -240,6 +273,14 @@ pub(crate) async fn browser_code(
     )?;
     writes.extend(prepare(&tokens).await?);
     a.s.batch(writes, "VERSION_CONFLICT").await?;
+    telemetry::verification(
+        a,
+        "auth.verification.verified",
+        if email { "EMAIL" } else { "SMS" },
+        c["delivery_mode"] == "LIVE",
+        verification_started,
+        &Ok(()),
+    );
     Ok(
         json!({"account":{"state":"AUTHENTICATED","user":user_view_value(a,&user_id,&user),
         "session":tokens["session"],"capabilities":platform_capabilities(capabilities)}}),
@@ -252,6 +293,43 @@ pub(crate) async fn execute(
     b: &Value,
     completion: Completion,
 ) -> Result<Value> {
+    let started = now();
+    let observed = Cell::new((
+        if path == "/api/v1/auth/login/password" {
+            "password"
+        } else {
+            "unknown"
+        },
+        None,
+    ));
+    let result = execute_inner(a, path, b, completion, &observed).await;
+    if matches!(
+        path,
+        "/api/v1/auth/login/password" | "/api/v1/auth/login/code"
+    ) {
+        let (method, new_user) = observed.get();
+        telemetry::login(
+            a,
+            match completion {
+                Completion::Code => "api",
+                Completion::Session => "browser",
+            },
+            method,
+            new_user,
+            started,
+            &result,
+        );
+    }
+    result
+}
+
+async fn execute_inner(
+    a: &Auth,
+    path: &str,
+    b: &Value,
+    completion: Completion,
+    observed: &Cell<(&'static str, Option<bool>)>,
+) -> Result<Value> {
     Ok(if path == "/api/v1/auth/login/code" {
         shape("LoginCodeRequest", b)?;
         let verification_id = text(b, "verificationId");
@@ -261,6 +339,8 @@ pub(crate) async fn execute(
             400,
             "INVALID_REQUEST",
         )?;
+        let method = telemetry::login_method(&t["method"]);
+        observed.set((method, None));
         let proof = registration::verify(
             a,
             &t,
@@ -271,6 +351,7 @@ pub(crate) async fn execute(
         .await?;
         let input = json!({"verificationProof":proof["verificationProof"]});
         registration::identify(a, &mut t, &c, "code", &input).await?;
+        observed.set((method, t["observed_new_user"].as_bool()));
         completion.finish(a, &t, &c).await?
     } else {
         let password = path == "/api/v1/auth/login/password";
@@ -295,6 +376,7 @@ pub(crate) async fn execute(
             "method":if password {"ACCOUNT_PASSWORD"} else if b["channel"] == "SMS" {"PHONE_OTP"} else {"EMAIL_CODE"}
         })).await?;
         if password {
+            observed.set(("password", Some(false)));
             registration::identify(
                 a,
                 &mut t,

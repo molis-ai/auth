@@ -693,7 +693,9 @@ pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Val
         a.s.batch(guards, "VERSION_CONFLICT").await?;
         return Ok(result);
     }
-    runner
+    let replayed = std::cell::Cell::new(false);
+    let started = now();
+    let result = runner
         .run(
             async {
                 let change = service.change(&action, &ctx, &b).await?;
@@ -711,6 +713,7 @@ pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Val
                 })
             },
             async || {
+                replayed.set(true);
                 let (s, c) = login_sessions::active(a).await?;
                 let service = Service { a, s, c };
                 if leave {
@@ -734,5 +737,23 @@ pub async fn route(a: &Auth, path: &str, method: Method, b: Value) -> Result<Val
             },
             "VERSION_CONFLICT",
         )
-        .await
+        .await;
+    let metric_action = match action.op {
+        "tenant.create" | "tenant.self-create" => "created",
+        "invitation.create" => "invitation_created",
+        "invitation.accept" => "invitation_accepted",
+        "transfer.accept" | "tenant.platform-transfer-owner" => "transfer_accepted",
+        "tenant.disable" | "tenant.enable" => "status_changed",
+        _ => return result,
+    };
+    if !replayed.get() || result.is_err() {
+        crate::core::telemetry::outcome(
+            a,
+            "auth.tenant.event",
+            started,
+            &result,
+            [("action", json!(metric_action))],
+        );
+    }
+    result
 }

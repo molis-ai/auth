@@ -202,6 +202,7 @@ export function authEnvironment(name, local, configRoot = root) {
           ],
         }
       : {}),
+    ...(!local ? { version_metadata: { binding: 'AUTH_VERSION_METADATA' } } : {}),
     assets: webAssetConfig(),
     vars,
     triggers: { crons: ['0 * * * *'] },
