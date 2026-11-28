@@ -33,10 +33,10 @@ pub async fn handle(req: Request, env: Env) -> worker::Result<Response> {
             log_failure(log.env, &id, log.route, "respond", &failure, log.started);
             let code = failure.code;
             let response = with_security_headers(error_response(failure, &id)?, &id, https)?;
-            (response, Some(code))
+            (response, Some(code.into()))
         }
     };
-    log.finish(response.status_code(), error_code);
+    log.finish(response.status_code(), error_code.as_deref());
     Ok(response)
 }
 
@@ -45,7 +45,7 @@ async fn handle_response(
     env: &Env,
     url: Url,
     log: &RequestLog<'_>,
-) -> worker::Result<(Response, Option<&'static str>)> {
+) -> worker::Result<ResponseWithErrorCode> {
     let id = log.id;
     let path = url.path();
     let https = url.scheme() == "https";
@@ -58,7 +58,7 @@ async fn handle_response(
             code: "NOT_FOUND",
         };
         let response = with_security_headers(error_response(failure, id)?, id, https)?;
-        return Ok((response, Some("NOT_FOUND")));
+        return Ok((response, Some("NOT_FOUND".into())));
     }
     if req.inner().method() == "GET" && path == "/api/v1/health" {
         let response = with_security_headers(web::readiness::health_response(id)?, id, https)?;
@@ -69,7 +69,7 @@ async fn handle_response(
             Ok(response) => (response, None),
             Err(failure) => {
                 let code = failure.code;
-                (error_response(failure, id)?, Some(code))
+                (error_response(failure, id)?, Some(code.into()))
             }
         };
         return Ok((with_security_headers(response, id, https)?, code));
@@ -82,16 +82,16 @@ async fn handle_response(
             let code = e.code;
             let response = web::http::render_error(e, id, upstream, None)?;
             let response = with_security_headers(response, id, https)?;
-            return Ok((response, Some(code)));
+            return Ok((response, Some(code.into())));
         }
     };
     let result = dispatch(&mut a, env, url).await;
     let status = result
         .as_ref()
-        .map_or_else(|e| e.status, Response::status_code);
+        .map_or_else(|e| e.status, |(response, _)| response.status_code());
     let retry_after = web::http::retry_after(status, a.retry_after_at.get());
     let (response, error_code) = match result {
-        Ok(response) => (response, None),
+        Ok(outcome) => outcome,
         Err(e) => {
             log_failure(log.env, id, log.route, "dispatch", &e, log.started);
             let code = e.code;
@@ -101,7 +101,7 @@ async fn handle_response(
             let rate_limit = retry_after.map(|seconds| (request, seconds));
             (
                 web::http::render_error(e, id, upstream, rate_limit)?,
-                Some(code),
+                Some(code.into()),
             )
         }
     };
@@ -109,7 +109,7 @@ async fn handle_response(
     Ok((response, error_code))
 }
 
-async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
+async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<ResponseWithErrorCode> {
     let path = url.path();
     let method = a.http()?.method();
     if method == Method::Get
@@ -125,20 +125,18 @@ async fn dispatch(a: &mut Auth, env: &Env, url: Url) -> Result<Response> {
         });
     }
 
-    if auth::sync_read_proof::matches(path) {
-        return auth::sync_read_proof::route(a, path, method).await;
-    }
-    if auth::management_handoff::matches(path) {
-        return auth::management_handoff::route(a, path, method).await;
-    }
-    if web::web_session::matches(path) {
+    let response = if auth::sync_read_proof::matches(path) {
+        auth::sync_read_proof::route(a, path, method).await
+    } else if auth::management_handoff::matches(path) {
+        auth::management_handoff::route(a, path, method).await
+    } else if web::web_session::matches(path) {
         return web::web_session::route(a, path, method).await;
-    }
-    if path == "/api/v1/readiness" && method == Method::Get {
-        return web::readiness::check(a, env).await;
-    }
-    if path == "/api/v1" || path.starts_with("/api/v1/") {
-        return web::v1::route(a, path, method).await;
-    }
-    web::assets::serve(a, env, url, method).await
+    } else if path == "/api/v1/readiness" && method == Method::Get {
+        web::readiness::check(a, env).await
+    } else if path == "/api/v1" || path.starts_with("/api/v1/") {
+        web::v1::route(a, path, method).await
+    } else {
+        web::assets::serve(a, env, url, method).await
+    }?;
+    Ok((response, None))
 }
